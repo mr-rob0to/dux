@@ -398,9 +398,11 @@ skill calls, kept in the ship skill directory.
    12) and passes it with `gh pr create --body-file`, since `--fill` ignores the
    template. Verbose material goes inside `<details>`.
 
-The ship skill is vendored into this repo at `skills/ship/` and
-`~/.agents/skills/ship` becomes a symlink to it, so milestone 5 is an ordinary
-PR with a diff Codex can review and commits that can carry break-verification.
+The ship skill is bundled in this repo at `skills/ship/` from milestone 1 and
+installed by `dux-install` (section 18), so milestone 5 is an ordinary PR with a
+diff Codex can review and commits that can carry break-verification. Milestone 5
+also moves the reviewer commands and per-shape models into `config/` with the
+defaults in `templates/config/`, so the skill works for anyone who installs Dux.
 
 Not ported: hook enforcement, CI auto-repair, transient reruns, evidence branch.
 
@@ -514,7 +516,35 @@ Each milestone is its own session and PR, per the operator's one-session rule.
 - No worker inbox in v1. Blocked and needs-decision always resolve by retry with
   the answer in the brief. A bidirectional worker (`--input-format stream-json`)
   is a later milestone if retries prove costly.
-- The ship skill is vendored into this repo.
+- The ship skill is bundled in this repo and installed by symlink.
+- Dux is open source under the MIT license. The operator's personal rules stay in
+  their global CLAUDE.md; the repo encodes them only as configurable defaults.
 - `finding` writes to stderr so command substitution can never swallow it.
 - Approach A (agent distro) over native-only or a daemon.
 - PR template lives in each repo, filled by `/ship`, not in global CLAUDE.md.
+
+## 18. Distribution
+
+Dux is an open-source agent distro under the MIT license. The repo is the
+product; there is no build or package.
+
+- **Bundled**: every skill under `skills/` (`ship`, `dux-project`,
+  `dux-dispatch`, `dux-status`, `dux-recover`), every script under `bin/`, and
+  every default under `templates/`.
+- **Personal, gitignored**: `data/`, `state/`, `config/`. `templates/config/`
+  holds the defaults `dux-install` copies into `config/` on first run:
+  `reviewer` (default `codex exec -m gpt-5.6-sol --sandbox read-only`),
+  `security-reviewer` (default: the Claude `security-reviewer` agent, Codex
+  variant documented), `models` (per shape), `backend` (empty means
+  auto-detect).
+- **Install**: `bin/dux-install` symlinks each bundled skill into
+  `~/.claude/skills/<name>`. An existing real directory there is refused until
+  the operator confirms, then moved to `<name>.bak`. `bin/dux-uninstall` removes
+  only symlinks that point into this repo. Updating the repo updates the skills.
+- **No personal identifiers in tracked files**: no operator paths, usernames,
+  project names, or accounts. `make lint` greps for a denylist kept in
+  `tests/personal-identifiers.txt`, which is itself gitignored and seeded by
+  `dux-install` from the operator's home directory name and registry.
+- **The operator's global rules stay global.** `/ship` must stand alone for a
+  stranger: every rule it depends on is either in its own text or a config
+  default. The operator's global CLAUDE.md may be stricter, never required.

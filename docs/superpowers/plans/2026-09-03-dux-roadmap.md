@@ -9,7 +9,7 @@ One milestone is one session and one PR. After a milestone's PR merges, the next
 
 ## Milestone 1: Skeleton (7 tasks)
 
-Harness with fake claude and fake herdr; `dux-env` (findings on stderr); `dux-lock` keyed on `CLAUDE_PID`; `dux-project` and PR template; backend adapters (`open`, `exists`, `tail`, `close`, `notify`) behind `dux-backend`; `dux-doctor`; `CLAUDE.md`, `.claude/settings.json` session hooks, `dux-project` skill, README.
+Harness with fake claude and fake herdr; `dux-env` (findings on stderr); `dux-lock` keyed on `CLAUDE_PID`; `dux-project` and PR template; backend adapters (`open`, `exists`, `tail`, `close`, `notify`) behind `dux-backend`; `dux-doctor`; `CLAUDE.md`, `.claude/settings.json` session hooks, `dux-project` skill, README; MIT LICENSE, CONTRIBUTING, the ship skill copied in unchanged, and `dux-install` / `dux-uninstall` with the personal-identifier lint.
 
 Design review 2026-09-03 (fresh Fable): 4 Critical, 14 Important, 12 Minor; all Critical and Important fixed in spec and plan, Minor fixed where in M1 scope, the rest carried into the tasks below.
 
@@ -53,7 +53,7 @@ Model per shape: plan `claude-fable-5-1` effort high; ship `claude-opus-5` effor
 
 ## Milestone 5: `/ship` port (7 tasks)
 
-Task 0 vendors the skill: copy `~/.agents/skills/ship/SKILL.md` to `dux/skills/ship/SKILL.md`, replace `~/.agents/skills/ship` with a symlink to it, commit unchanged. Then every later task is an ordinary diff in this repo.
+The skill is already bundled at `skills/ship/` and installed by symlink (milestone 1). Task 0 here extracts the operator-specific parts into config so the skill stands alone: reviewer and security-reviewer commands read from `config/reviewer` and `config/security-reviewer`, per-shape models from `config/models`, with defaults in `templates/config/`; the Sol-or-Terra fallback becomes a documented config note. Acceptance: a fresh clone with default config runs `/ship` end to end on a throwaway repo.
 
 | # | Task | Files | Acceptance |
 |---|---|---|---|
