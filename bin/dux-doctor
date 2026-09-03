@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Preflight. See spec sections 3 and 9.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+rc=0
+ok()   { echo "ok $1"; }
+fail() { echo "FAIL $1: $2"; rc=1; }
+check_cmd() { if command -v "$1" >/dev/null 2>&1; then ok "$1"; else fail "$1" "not on PATH"; fi; }
+
+for c in claude codex gh jq git; do check_cmd "$c"; done
+if command -v gh >/dev/null 2>&1; then
+  if gh auth status >/dev/null 2>&1; then ok "gh auth"; else fail "gh auth" "run gh auth login"; fi
+fi
+
+backend="$("$DUX_ROOT/bin/dux-backend" name 2>/dev/null)" || backend=""
+case "$backend" in
+  tmux|herdr) check_cmd "$backend" ;;
+  *)          fail "backend" "could not select a backend" ;;
+esac
+
+reg="$DUX_DATA/projects.md"
+if [ -s "$reg" ] && grep -q '^- ' "$reg"; then ok "registry"; else fail "registry" "no projects in $reg; run dux-project add"; fi
+
+echo "backend: ${backend:-none}"
+echo "lock: $("$DUX_ROOT/bin/dux-lock" status)"
+exit $rc
