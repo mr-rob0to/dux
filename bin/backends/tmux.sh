@@ -19,11 +19,16 @@ _win() { local ep="$1"; echo "${ep##*:}"; }          # window id (@N)
 _ses() { local ep="${1#tmux:}"; echo "${ep%%:*}"; }  # session name
 
 backend_open() {  # id cwd cmd
+  # Create the window first and turn remain-on-exit on before the command runs,
+  # otherwise a command that exits quickly takes the window with it.
   local id="$1" cwd="$2" cmd="$3" ses wid
   ses="$(_session)"
-  wid="$(_tmux new-window -d -t "$ses" -n "dux-$id" -c "$cwd" -P -F '#{window_id}' "$cmd")" \
+  wid="$(_tmux new-window -d -t "$ses" -n "dux-$id" -c "$cwd" -P -F '#{window_id}')" \
     || finding "tmux could not open a window for $id"
-  _tmux set-option -w -t "$wid" remain-on-exit on >/dev/null
+  _tmux set-option -w -t "$wid" remain-on-exit on >/dev/null \
+    || finding "tmux could not set remain-on-exit on $wid for $id"
+  _tmux respawn-pane -k -t "$wid" -c "$cwd" "$cmd" >/dev/null \
+    || finding "tmux could not start the command in $wid for $id"
   echo "tmux:$ses:$wid"
 }
 
