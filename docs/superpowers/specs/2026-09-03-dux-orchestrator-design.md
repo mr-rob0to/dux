@@ -45,7 +45,8 @@ Non-goals for v1
 
 ```
 ~/Documents/dev/projects/dux/
-  CLAUDE.md                 operating contract, <=150 lines, always loaded
+  AGENTS.md                 operating contract, <=150 lines, always loaded
+  CLAUDE.md                 two-line import of AGENTS.md (Claude Code reads this name)
   skills/
     dux-dispatch/SKILL.md   intake -> brief -> spawn
     dux-status/SKILL.md     fleet digest from files
@@ -548,3 +549,35 @@ product; there is no build or package.
 - **The operator's global rules stay global.** `/ship` must stand alone for a
   stranger: every rule it depends on is either in its own text or a config
   default. The operator's global CLAUDE.md may be stricter, never required.
+
+## 19. Harness support
+
+Dux separates the harness that runs the orchestrator from the harness that runs
+workers. They are supported at different levels.
+
+**Workers** are a command in a container plus a brief plus a status file, so
+any harness that can run bash works. `bin/workers/<harness>.sh` provides one
+function, `worker_cmd <brief-path> <model> <effort>`, that prints the command
+line: Claude Code uses `claude -p`, Codex uses `codex exec --full-auto`. The
+default worker harness is `claude`; `config/worker-harness` overrides it and a
+brief may name one. Both harnesses read the brief's rules, and the project's
+`AGENTS.md` (Codex) or `CLAUDE.md` (Claude Code) load as usual. Milestone 2
+ships both adapters and the end-to-end test runs on each.
+
+**The orchestrator** depends on five harness features. The layout is
+harness-neutral from milestone 1 (`AGENTS.md` canonical, `CLAUDE.md` an import,
+skills with frontmatter both harnesses read). Behavior parity is not:
+
+| Feature | Claude Code (verified, v1) | Codex (milestone 7) |
+|---|---|---|
+| Wake on event | Monitor tool; zero tokens idle | `bin/dux-wait` blocks until the next event, then returns; Codex calls it in a bounded loop |
+| Phone push and reply | PushNotification and Remote Control | local toast plus optional webhook; no reply path |
+| Session hooks | SessionStart / SessionEnd | `bin/dux` launcher wrapper acquires the lock, runs the harness, releases on exit |
+| Session pid | `CLAUDE_PID` | the launcher's own pid |
+| Instructions and skills | `CLAUDE.md` import, `/skill` | `AGENTS.md`, `$skill` |
+
+The README lists verified orchestrator harnesses. A harness is verified only
+when `tests/harness/<name>.md` has been run through by hand on a real
+installation and the transcript is committed. Unverified harnesses are not
+refused, but `dux-doctor` says "orchestrator harness not verified" and the
+Monitor-dependent steps in `AGENTS.md` carry a fallback line.

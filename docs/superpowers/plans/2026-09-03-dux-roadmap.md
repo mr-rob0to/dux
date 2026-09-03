@@ -1,4 +1,4 @@
-# Dux Roadmap: milestones 1 to 6
+# Dux Roadmap: milestones 1 to 7
 
 **Where this stands**
 - Current milestone: 1 (skeleton), plan `2026-09-03-dux-m1-skeleton.md`, not started.
@@ -9,13 +9,13 @@ One milestone is one session and one PR. After a milestone's PR merges, the next
 
 ## Milestone 1: Skeleton (7 tasks)
 
-Harness with fake claude and fake herdr; `dux-env` (findings on stderr); `dux-lock` keyed on `CLAUDE_PID`; `dux-project` and PR template; backend adapters (`open`, `exists`, `tail`, `close`, `notify`) behind `dux-backend`; `dux-doctor`; `CLAUDE.md`, `.claude/settings.json` session hooks, `dux-project` skill, README; MIT LICENSE, CONTRIBUTING, the ship skill copied in unchanged, and `dux-install` / `dux-uninstall` with the personal-identifier lint.
+Harness with fake claude and fake herdr; `dux-env` (findings on stderr); `dux-lock` keyed on `CLAUDE_PID`; `dux-project` and PR template; backend adapters (`open`, `exists`, `tail`, `close`, `notify`) behind `dux-backend`; `dux-doctor`; `AGENTS.md` (canonical) with `CLAUDE.md` import, `.claude/settings.json` session hooks, `dux-project` skill, README; MIT LICENSE, CONTRIBUTING, the ship skill copied in unchanged, and `dux-install` / `dux-uninstall` with the personal-identifier lint.
 
 Design review 2026-09-03 (fresh Fable): 4 Critical, 14 Important, 12 Minor; all Critical and Important fixed in spec and plan, Minor fixed where in M1 scope, the rest carried into the tasks below.
 
 Acceptance: `make check` green; doctor passes on both backends; two real repos register with correct base branches; a Herdr tab opens without stealing focus.
 
-## Milestone 2: Dispatch (8 tasks)
+## Milestone 2: Dispatch (9 tasks)
 
 | # | Task | Files | Acceptance |
 |---|---|---|---|
@@ -23,10 +23,11 @@ Acceptance: `make check` green; doctor passes on both backends; two real repos r
 | 2 | Task id and folder `bin/dux-task-new` | `bin/dux-task-new`, `tests/dux-task-new.bats` | prints `<project>-<shape>-<yyyymmdd>-<3 alnum>`; creates `data/tasks/<id>/`; refuses unknown project or shape |
 | 3 | Brief renderer `bin/dux-brief` | `bin/dux-brief`, `templates/brief.md`, `tests/dux-brief.bats` | renders spec section 5.3 sections from flags `--intent-file`, `--criteria-file`, `--plan`, `--tasks`, `--issue-file`; refuses a brief over 60 lines excluding the fenced issue block; issue block fenced `<untrusted-issue>` and capped at 4,000 chars; rules include "exit after blocked or needs-decision", "write `working: waiting on <what> <url>` before any wait over 10 minutes", and for `plan` shape: "design review is a subagent inside this task; the docs-only PR is the approval artifact; never wait on the operator" |
 | 4 | Worktree per mechanism `bin/dux-worktree` | `bin/dux-worktree`, `tests/dux-worktree.bats` | precedence per the operator's global rule: a "Worktrees" section in the project's CLAUDE.md or AGENTS.md, then `make worktree name=<branch> base=<base>` (both fitfights repos use this form and choose the path themselves), then a repo script, then `git worktree add <repo>/.worktrees/<branch>`; after `make` or script, discover the path from `git worktree list --porcelain` by branch and refuse if absent; asserts `.worktrees/` is ignored; fetches `origin/<base>` first and refuses when the new worktree is not on that tip; installs a `pre-push` hook refusing `<base>`; copies `.env*` only for `ship`; `remove` refuses dirty or unpushed |
-| 5 | Worker wrapper `bin/dux-worker-wrap` | `bin/dux-worker-wrap`, `templates/worker-settings.json`, `tests/dux-worker-wrap.bats` | invoked as `dux-worker-wrap <id>` only; writes `state/<id>.pid`; exports `DUX_STATUS_LOG`; runs `claude -p "$(cat brief.md)" --model <m> --effort <e> --dangerously-skip-permissions --settings templates/worker-settings.json --output-format stream-json --verbose > state/<id>.out`; heartbeat `working: heartbeat` every 300 s only if `<id>.out` grew; on non-zero exit without terminal line appends `failed: worker exited <code>`, on zero exit `ended: exit 0 without terminal status`; on Herdr mirrors status to `herdr pane report-agent` and sets title via `report-metadata`; skips those under tmux. Break-verify that the settings deny rules block `git push origin <base>` under bypass mode before M2 closes; if they do not, the `pre-push` hook is the only guard and the spec says so |
+| 4b | Worker harness adapters | `bin/workers/claude.sh`, `bin/workers/codex.sh`, `tests/fakes/codex`, `tests/worker-adapter.bats` | each defines `worker_cmd <brief> <model> <effort>` printing one command line; claude: `claude -p "$(cat brief)" --model <m> --effort <e> --dangerously-skip-permissions --settings templates/worker-settings.json --output-format stream-json --verbose`; codex: `codex exec --full-auto -m <m> "$(cat brief)"` with the sandbox flag the installed version requires; `config/worker-harness` selects, default `claude`; fake codex mirrors fake claude; the shared adapter test runs once per harness |
+| 5 | Worker wrapper `bin/dux-worker-wrap` | `bin/dux-worker-wrap`, `templates/worker-settings.json`, `tests/dux-worker-wrap.bats` | invoked as `dux-worker-wrap <id>` only; writes `state/<id>.pid`; exports `DUX_STATUS_LOG`; runs the command from the selected worker adapter with output to `state/<id>.out`; heartbeat `working: heartbeat` every 300 s only if `<id>.out` grew; on non-zero exit without terminal line appends `failed: worker exited <code>`, on zero exit `ended: exit 0 without terminal status`; on Herdr mirrors status to `herdr pane report-agent` and sets title via `report-metadata`; skips those under tmux. Break-verify that the settings deny rules block `git push origin <base>` under bypass mode before M2 closes; if they do not, the `pre-push` hook is the only guard and the spec says so |
 | 6 | Spawn `bin/dux-spawn` | `bin/dux-spawn`, `tests/dux-spawn.bats` | all five refusals from spec 5.5 tested; success records endpoint and `running`; posts issue start comment when source is `gh:` |
 | 7 | Teardown `bin/dux-teardown` | `bin/dux-teardown`, `tests/dux-teardown.bats` | refuses non-terminal, dirty, unpushed; otherwise backend close, worktree remove, ledger `done|failed`; task folder kept |
-| 8 | Skill `skills/dux-dispatch` and end-to-end | `skills/dux-dispatch/SKILL.md`, `tests/e2e-dispatch.bats` | e2e with fake claude on both backends: spawn, `done: PR`, teardown; skill dry-run dispatches a scout against a throwaway repo |
+| 8 | Skill `skills/dux-dispatch` and end-to-end | `skills/dux-dispatch/SKILL.md`, `tests/e2e-dispatch.bats` | e2e with fake claude and fake codex on both backends (four runs): spawn, `done: PR`, teardown; skill dry-run dispatches a scout against a throwaway repo with each real harness |
 
 Model per shape: plan `claude-fable-5-1` effort high; ship `claude-opus-5` effort max; scout `claude-sonnet-5` effort medium. M2 acceptance includes each id resolving under `claude --model <id> -p 'say ok'`.
 
@@ -76,3 +77,13 @@ Each guard broken once with the failure pasted into the commit. `/ship` is prose
 | 4 | Restart drill | kill Dux mid-task; restart; digest matches reality; worker unaffected; Monitor re-armed |
 
 Findings from dogfood become tests before they become fixes.
+
+## Milestone 7: Codex as orchestrator harness (5 tasks)
+
+| # | Task | Files | Acceptance |
+|---|---|---|---|
+| 1 | Launcher `bin/dux` | `bin/dux`, `tests/dux-launcher.bats` | `dux [claude\|codex]` acquires the lock with its own pid, starts the watcher, execs the harness in the repo, releases on exit; on Claude Code the SessionStart hook sees the lock already held by an ancestor pid and reports ok |
+| 2 | Blocking wait `bin/dux-wait` | `bin/dux-wait`, `tests/dux-wait.bats` | blocks until a new line lands in `state/events.log` or `--timeout` elapses; prints the line; used where Monitor is unavailable |
+| 3 | AGENTS.md fallback lines | `AGENTS.md` | each Monitor-dependent instruction carries "if this harness has no Monitor tool, run `bin/dux-wait --timeout 1200` and act on its output"; still under 150 lines |
+| 4 | Notify fallback | `bin/dux-notify`, `templates/config/webhook` | when PushNotification is unavailable, post the line to `config/webhook` if set; document that phone reply is Claude Code only |
+| 5 | Verification transcript | `tests/harness/codex.md`, `README.md` | the checklist run by hand on a real Codex install: start, dispatch, wake via dux-wait, recover, restart; transcript committed; README lists Codex as verified |

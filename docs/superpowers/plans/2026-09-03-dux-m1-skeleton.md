@@ -17,7 +17,7 @@
 
 ## Global Constraints
 
-- `CLAUDE.md` is at most 150 lines (spec section 13).
+- `AGENTS.md` is the operating contract and is at most 150 lines; `CLAUDE.md` is a two-line import of it (spec sections 13 and 19). Codex reads `AGENTS.md`, Claude Code reads `CLAUDE.md`.
 - Scripts own mechanics; a script that meets a surprise stops and prints a finding, never guesses (spec section 3).
 - Dux never writes to a project repo except through `dux-project` installing a missing PR template (spec sections 2 and 12).
 - Backend endpoints are opaque strings recorded from creation responses, never derived from labels (spec section 9).
@@ -1155,10 +1155,11 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 
 ---
 
-### Task 7: Operating contract `CLAUDE.md`, `dux-project` skill, README
+### Task 7: Operating contract `AGENTS.md`, `dux-project` skill, README
 
 **Files:**
-- Create: `CLAUDE.md`
+- Create: `AGENTS.md`
+- Create: `CLAUDE.md` (two lines: a comment and `@AGENTS.md`)
 - Create: `.claude/settings.json`
 - Create: `skills/dux-project/SKILL.md`
 - Create: `README.md`
@@ -1174,12 +1175,17 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 ```bash
 load helpers/setup
 
-@test "CLAUDE.md is at most 150 lines" {
-  [ "$(wc -l < "$DUX_ROOT/CLAUDE.md")" -le 150 ]
+@test "AGENTS.md is at most 150 lines" {
+  [ "$(wc -l < "$DUX_ROOT/AGENTS.md")" -le 150 ]
 }
 
-@test "CLAUDE.md carries the fixed section headers in order" {
-  run grep -E '^## ' "$DUX_ROOT/CLAUDE.md"
+@test "CLAUDE.md is only an import of AGENTS.md" {
+  [ "$(wc -l < "$DUX_ROOT/CLAUDE.md")" -le 2 ]
+  grep -qx '@AGENTS.md' "$DUX_ROOT/CLAUDE.md"
+}
+
+@test "AGENTS.md carries the fixed section headers in order" {
+  run grep -E '^## ' "$DUX_ROOT/AGENTS.md"
   [ "${lines[0]}" = "## Identity" ]
   [ "${lines[1]}" = "## Hard rules" ]
   [ "${lines[2]}" = "## Session start" ]
@@ -1206,11 +1212,18 @@ load helpers/setup
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `bats tests/contract.bats`
-Expected: 4 fail (no CLAUDE.md, no skills, no settings).
+Expected: 5 fail (no AGENTS.md, no CLAUDE.md, no skills, no settings).
 
-- [ ] **Step 3: Write CLAUDE.md**
+- [ ] **Step 3: Write AGENTS.md and the CLAUDE.md import**
 
 `CLAUDE.md`:
+
+```markdown
+<!-- Claude Code reads this name; the contract lives in AGENTS.md. Edit that file. -->
+@AGENTS.md
+```
+
+`AGENTS.md`:
 
 ```markdown
 # Dux
@@ -1345,6 +1358,8 @@ decisions. Delivery goes through `/ship`.
 Design: `docs/superpowers/specs/2026-09-03-dux-orchestrator-design.md`.
 Plans: `docs/superpowers/plans/`.
 
+Verified orchestrator harness: Claude Code. Worker harnesses: Claude Code and Codex (milestone 2). Codex as orchestrator: milestone 7.
+
 ## Run
 
     cd ~/Documents/dev/projects/dux && claude
@@ -1362,7 +1377,7 @@ Expected: lint clean; all tests pass.
 
 - [ ] **Step 8: Break-verify**
 
-Append 200 blank lines to `CLAUDE.md`. Run `bats tests/contract.bats`. Expected: "CLAUDE.md is at most 150 lines" fails. Remove the lines. Paste into commit.
+Append 200 blank lines to `AGENTS.md`. Run `bats tests/contract.bats`. Expected: "AGENTS.md is at most 150 lines" fails. Remove the lines. Paste into commit.
 
 - [ ] **Step 9: Dry run the skill**
 
@@ -1373,7 +1388,7 @@ Open `claude` in the dux repo. Ask it to register `fitfights_ios`. Expected: it 
 Tick all boxes above, set "Tasks done: 7 of 8" in the header, then:
 
 ```bash
-git add CLAUDE.md .claude/settings.json skills README.md tests/contract.bats docs/superpowers/plans
+git add AGENTS.md CLAUDE.md .claude/settings.json skills README.md tests/contract.bats docs/superpowers/plans
 git commit -m "feat: add Dux operating contract, dux-project skill, README
 
 Break-verified: <paste>
