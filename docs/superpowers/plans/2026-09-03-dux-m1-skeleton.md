@@ -4,8 +4,8 @@
 
 **Where this stands**
 - Milestone: 1 of 6 (see `2026-09-03-dux-roadmap.md`). Tasks done: 8 of 8.
-- reviewed_sha: none yet. Fix rounds used: 0 of 3.
-- Next action: /ship the branch; operator merges.
+- reviewed_sha: a3288cc (Codex gpt-5.6-sol, no findings). Fix rounds used: 3 of 3.
+- Next action: PR open via /ship; operator merges. Then re-run bin/dux-install from the main checkout.
 
 **Goal:** Stand up the Dux repo with its shared shell library, single-session lock, project registry, backend adapters for tmux and Herdr, doctor, operating contract, installer, bundled ship skill, MIT license, and a test harness with fake `claude` and fake `herdr`.
 
