@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Single live Dux session per DUX_HOME. See spec section 7.
-# The lock is created with noclobber so two sessions racing for it cannot both win.
+# The pid is published by hard-linking a private temp file into place, so the
+# lock file is created atomically and is never observed empty by a racer. An
+# empty lock file can therefore only come from outside and is never reclaimed.
 set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
@@ -12,23 +14,28 @@ me="${DUX_SESSION_PID:-${CLAUDE_PID:-$PPID}}"
 is_pid() { case "$1" in ''|*[!0-9]*) return 1 ;; *) [ "$1" -gt 0 ] ;; esac; }
 alive()  { is_pid "$1" && kill -0 "$1" 2>/dev/null; }
 holder() { [ -f "$lock" ] && cat "$lock"; }
-# Publish the pid atomically: write it to a private file, then hard-link that
-# file into place. ln fails when the lock exists, and the lock is never empty.
+empty_lock() { [ -f "$lock" ] && [ ! -s "$lock" ]; }
+
+# The temp file is named by this process's own pid, so two acquires for the
+# same session never share (and truncate) one inode.
 claim() {
-  local tmp="$lock.$me.tmp"
+  local tmp="$lock.$$.tmp"
   { echo "$me" > "$tmp"; } 2>/dev/null || finding "cannot write to $DUX_STATE"
   if ln "$tmp" "$lock" 2>/dev/null; then rm -f "$tmp"; return 0; fi
   rm -f "$tmp"; return 1
 }
 
-# Only one session may remove a stale lock; a reclaim marker older than a
+# Only one session may remove a stale lock, and only a lock naming a dead pid
+# is stale: an empty file is never removed. A reclaim marker older than a
 # minute belongs to a session that died mid-reclaim and is cleared.
 retire_stale_lock() {
+  local h
   if [ -d "$reclaim" ] && [ -n "$(find "$reclaim" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
     rmdir "$reclaim" 2>/dev/null || true
   fi
   mkdir "$reclaim" 2>/dev/null || return 0
-  alive "$(holder || true)" || rm -f "$lock"
+  h="$(holder || true)"
+  if [ -n "$h" ] && ! alive "$h"; then rm -f "$lock"; fi
   rmdir "$reclaim"
 }
 
@@ -40,17 +47,19 @@ case "${1:-}" in
     if alive "$h"; then echo "held by pid $h"; exit 3; fi
     retire_stale_lock
     claim && exit 0
-    h="$(holder || true)"
-    [ -n "$h" ] || finding "cannot create $lock and no session holds it"
-    echo "held by pid $h"; exit 3 ;;
+    [ -f "$lock" ] || finding "cannot create $lock and no session holds it"
+    empty_lock && finding "$lock is empty; remove it if no Dux session is running"
+    echo "held by pid $(holder)"; exit 3 ;;
   release)
     h="$(holder || true)"
     [ "$h" = "$me" ] && rm -f "$lock"; exit 0 ;;
   status)
-    h="$(holder || true)"
-    if [ -z "$h" ]; then echo free
-    elif alive "$h"; then echo "held by pid $h (alive)"
-    else echo "held by pid $h (dead)"; fi ;;
+    if [ ! -f "$lock" ]; then echo free
+    elif empty_lock; then echo "lock file empty"
+    else
+      h="$(holder)"
+      if alive "$h"; then echo "held by pid $h (alive)"; else echo "held by pid $h (dead)"; fi
+    fi ;;
   holder) holder || true ;;
   *) die "usage: dux-lock acquire|release|status|holder" ;;
 esac

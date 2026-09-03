@@ -89,3 +89,37 @@ load helpers/setup
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: cannot write to $DUX_HOME/state"* ]]
 }
+
+@test "an in-flight temp file from the same session is never touched" {
+  echo stray > "$DUX_HOME/state/dux.lock.$$.tmp"
+  DUX_SESSION_PID=$$ run dux-lock acquire
+  [ "$status" -eq 0 ]
+  [ "$(cat "$DUX_HOME/state/dux.lock")" = "$$" ]
+  [ "$(cat "$DUX_HOME/state/dux.lock.$$.tmp")" = stray ]
+}
+
+@test "an empty lock file is never reclaimed" {
+  : > "$DUX_HOME/state/dux.lock"
+  DUX_SESSION_PID=$$ run dux-lock acquire
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $DUX_HOME/state/dux.lock is empty"* ]]
+  [ -f "$DUX_HOME/state/dux.lock" ]
+  run dux-lock status; [ "$output" = "lock file empty" ]
+}
+
+@test "a hard-link failure with no holder is a finding" {
+  mkdir -p "$DUX_HOME/bin"; printf '#!/bin/sh\nexit 1\n' > "$DUX_HOME/bin/ln"; chmod +x "$DUX_HOME/bin/ln"
+  PATH="$DUX_HOME/bin:$PATH" DUX_SESSION_PID=$$ run dux-lock acquire
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: cannot create $DUX_HOME/state/dux.lock and no session holds it"* ]]
+  [ ! -f "$DUX_HOME/state/dux.lock" ]
+}
+
+@test "same-session acquires in parallel all succeed and leave no temp files" {
+  jobs=""; for i in 1 2 3 4 5 6; do
+    ( DUX_SESSION_PID=$$ dux-lock acquire >/dev/null 2>&1; echo $? > "$DUX_HOME/state/rc.$i" ) & jobs="$jobs $!"
+  done; wait $jobs || true
+  [ "$(cat "$DUX_HOME"/state/rc.* | grep -c '^0$')" -eq 6 ]
+  [ "$(cat "$DUX_HOME/state/dux.lock")" = "$$" ]
+  [ -z "$(ls "$DUX_HOME"/state/dux.lock.*.tmp 2>/dev/null)" ]
+}
