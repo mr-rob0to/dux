@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Fake tmux for tests: fails the subcommand named in $FAKE_TMUX_FAIL, otherwise
+# delegates to the real tmux found on PATH after tests/fakes.
+set -u
+real="$(PATH="${PATH#*/tests/fakes:}" command -v tmux)" || { echo "fake tmux: no real tmux on PATH" >&2; exit 127; }
+sub=""; skip=0
+for a in "$@"; do
+  if [ "$skip" = 1 ]; then skip=0; continue; fi
+  case "$a" in -L|-S|-f) skip=1 ;; -*) ;; *) sub="$a"; break ;; esac
+done
+if [ -n "${FAKE_TMUX_FAIL:-}" ] && [ "$sub" = "$FAKE_TMUX_FAIL" ]; then
+  echo "fake tmux: $sub failed" >&2; exit 1
+fi
+exec "$real" "$@"

@@ -14,7 +14,7 @@ backend_open() {  # id cwd cmd
   [ -n "$pane" ] || finding "herdr tab create returned no pane id for $id"
   # pane run types into a live shell; without a prompt the command would be lost.
   if ! herdr pane wait-output "$pane" --regex '[$%>#] ?$' --timeout 10000 >/dev/null 2>&1; then
-    herdr pane close "$pane" >/dev/null 2>&1 || true
+    backend_close "herdr:$pane"   # fail-closed: a focused pane or a failed close is its own finding
     finding "no shell prompt in pane $pane for $id within 10s; pane closed, command not sent"
   fi
   herdr pane run "$pane" "$cmd" >/dev/null || finding "herdr pane run failed for $id on $pane"
