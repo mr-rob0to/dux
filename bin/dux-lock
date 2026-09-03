@@ -1,23 +1,40 @@
 #!/usr/bin/env bash
 # Single live Dux session per DUX_HOME. See spec section 7.
+# The lock is created with noclobber so two sessions racing for it cannot both win.
 set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 lock="$DUX_STATE/dux.lock"
+reclaim="$lock.reclaim"
 me="${DUX_SESSION_PID:-${CLAUDE_PID:-$PPID}}"
 
-alive() { kill -0 "$1" 2>/dev/null; }
-
+is_pid() { case "$1" in ''|*[!0-9]*) return 1 ;; *) [ "$1" -gt 0 ] ;; esac; }
+alive()  { is_pid "$1" && kill -0 "$1" 2>/dev/null; }
 holder() { [ -f "$lock" ] && cat "$lock"; }
+claim()  { ( set -o noclobber; echo "$me" > "$lock" ) 2>/dev/null; }
+
+# Only one session may remove a stale lock; a reclaim marker older than a
+# minute belongs to a session that died mid-reclaim and is cleared.
+retire_stale_lock() {
+  if [ -d "$reclaim" ] && [ -n "$(find "$reclaim" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+    rmdir "$reclaim" 2>/dev/null || true
+  fi
+  mkdir "$reclaim" 2>/dev/null || return 0
+  alive "$(holder || true)" || rm -f "$lock"
+  rmdir "$reclaim"
+}
 
 case "${1:-}" in
   acquire)
+    claim && exit 0
     h="$(holder || true)"
-    if [ -n "$h" ] && [ "$h" != "$me" ] && alive "$h"; then
-      echo "held by pid $h"; exit 3
-    fi
-    echo "$me" > "$lock" ;;
+    [ "$h" = "$me" ] && exit 0
+    if alive "$h"; then echo "held by pid $h"; exit 3; fi
+    retire_stale_lock
+    claim && exit 0
+    h="$(holder || true)"
+    echo "held by pid ${h:-unknown}"; exit 3 ;;
   release)
     h="$(holder || true)"
     [ "$h" = "$me" ] && rm -f "$lock"; exit 0 ;;
