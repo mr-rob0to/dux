@@ -29,8 +29,9 @@
 ## Conventions used by every task
 
 - Exit codes: `0` success, `1` unexpected error (`die`), `2` finding (a refusal the operator must read), `3` lock held by another live session.
-- A finding is printed to stdout as `finding: <one line>` so the calling agent relays it verbatim.
-- Tests run with `DUX_HOME` pointed at a temp dir so no test touches real `data/` or `state/`.
+- A finding is printed to stderr as `finding: <one line>` so command substitution can never swallow it; the calling agent relays it verbatim. bats `run` merges stderr into `$output`, so tests assert on `$output` unchanged.
+- Tests run with `DUX_HOME` pointed at a temp dir so no test touches real `data/` or `state/`. A test that needs `DUX_HOME` unset copies `bin/dux-env` under a temp `DUX_ROOT` first.
+- `.gitignore` already ignores `data/`, `state/`, `.worktrees/` (committed with the spec).
 - Run the suite with `make test`. Run lint with `make lint`. `make check` runs both.
 
 ---
@@ -67,7 +68,7 @@ test:
 	$(BATS) --recursive tests
 
 lint:
-	shellcheck -s bash bin/* bin/backends/*.sh tests/fakes/* tests/helpers/*.bash
+	shellcheck -s bash bin/dux-* bin/backends/*.sh tests/fakes/* tests/helpers/*.bash
 
 check: lint test
 ```
@@ -143,7 +144,10 @@ case "$1 ${2:-}" in
   "pane read")
     n=120; while [ $# -gt 0 ]; do [ "$1" = "--lines" ] && n="$2"; shift; done
     tail -n "$n" "${FAKE_HERDR_OUTPUT:-/dev/null}" ;;
-  "pane run"|"pane close"|"pane report-agent"|"pane report-metadata"|"notification show")
+  "pane close")
+    [ -n "${FAKE_HERDR_CLOSE_FAIL:-}" ] && { echo '{"error":{"code":"close_failed"}}' >&2; exit 1; }
+    echo '{"result":{}}' ;;
+  "pane run"|"pane wait-output"|"pane report-agent"|"pane report-metadata"|"notification show")
     echo '{"result":{}}' ;;
   "status ")
     printf 'server:\n  status: running\n' ;;
@@ -232,7 +236,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 - Test: `tests/dux-env.bats`
 
 **Interfaces:**
-- Produces (sourced, never executed): variables `DUX_ROOT`, `DUX_HOME` (defaults to `DUX_ROOT`), `DUX_DATA`, `DUX_STATE`, `DUX_CONFIG`, `DUX_TASKS`; functions `die <msg>` (stderr, exit 1), `finding <msg>` (stdout `finding: <msg>`, exit 2), `log <msg>` (stderr, prefixed `dux:`), `now` (UTC ISO-8601 seconds), `require_cmd <name>...` (dies naming the first missing command).
+- Produces (sourced, never executed): variables `DUX_ROOT`, `DUX_HOME` (defaults to `DUX_ROOT`), `DUX_DATA`, `DUX_STATE`, `DUX_CONFIG`, `DUX_TASKS`; functions `die <msg>` (stderr, exit 1), `finding <msg>` (stderr `finding: <msg>`, exit 2), `log <msg>` (stderr, prefixed `dux:`), `now` (UTC ISO-8601 seconds), `require_cmd <name>...` (dies naming the first missing command).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -248,14 +252,22 @@ load helpers/setup
 }
 
 @test "DUX_HOME defaults to DUX_ROOT when unset" {
-  run bash -c 'unset DUX_HOME; source "$DUX_ROOT/bin/dux-env"; echo "$DUX_HOME"'
-  [ "$output" = "$DUX_ROOT" ]
+  mkdir -p "$DUX_HOME/fakeroot/bin"; cp "$DUX_ROOT/bin/dux-env" "$DUX_HOME/fakeroot/bin/"
+  run bash -c 'unset DUX_HOME DUX_ROOT; source "'"$DUX_HOME"'/fakeroot/bin/dux-env"; echo "$DUX_HOME"'
+  [ "$output" = "$DUX_HOME/fakeroot" ]
 }
 
-@test "finding prints to stdout and exits 2" {
-  run bash -c 'source "$DUX_ROOT/bin/dux-env"; finding "worktree is dirty"'
+@test "finding prints to stderr and exits 2" {
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; finding "worktree is dirty" 2>&1 >/dev/null'
   [ "$status" -eq 2 ]
   [ "$output" = "finding: worktree is dirty" ]
+}
+
+@test "finding is not swallowed by command substitution" {
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; f() { finding "inner"; }; x="$(f)" || exit $?; echo "reached"'
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: inner"* ]]
+  [[ "$output" != *reached* ]]
 }
 
 @test "die prints to stderr and exits 1" {
@@ -279,7 +291,7 @@ load helpers/setup
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `bats tests/dux-env.bats`
-Expected: all 6 fail, "No such file or directory" for `bin/dux-env`.
+Expected: all 7 fail, "No such file or directory" for `bin/dux-env`.
 
 - [ ] **Step 3: Write the library**
 
@@ -302,7 +314,7 @@ export DUX_ROOT DUX_HOME DUX_DATA DUX_STATE DUX_CONFIG DUX_TASKS
 
 log()     { printf 'dux: %s\n' "$*" >&2; }
 die()     { printf 'dux: %s\n' "$*" >&2; exit 1; }
-finding() { printf 'finding: %s\n' "$*"; exit 2; }
+finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 now()     { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
 require_cmd() {
@@ -316,11 +328,11 @@ require_cmd() {
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `bats tests/dux-env.bats`
-Expected: 6 pass.
+Expected: 7 pass.
 
 - [ ] **Step 5: Break-verify**
 
-Change `finding` to exit 1. Run the file. Expected: "finding prints to stdout and exits 2" fails on `[ "$status" -eq 2 ]`. Restore. Paste into commit.
+Change `finding` to print to stdout (drop `>&2`). Run the file. Expected: "finding is not swallowed by command substitution" fails because `reached` is printed. Restore. Paste into commit.
 
 - [ ] **Step 6: Commit**
 
@@ -344,7 +356,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 
 **Interfaces:**
 - Consumes: `bin/dux-env`.
-- Produces: `dux-lock acquire` (writes `$DUX_STATE/dux.lock` with the caller's pid, given as `$DUX_SESSION_PID` or `$PPID`; exit 0, or exit 3 printing `held by pid <n>` if that pid is alive; reclaims a dead pid's lock), `dux-lock release` (removes the lock only if it holds our pid), `dux-lock status` (prints `free`, or `held by pid <n> (alive|dead)`), `dux-lock holder` (prints the pid or nothing).
+- Produces: `dux-lock acquire` (writes `$DUX_STATE/dux.lock` with the session pid: `$DUX_SESSION_PID`, else `$CLAUDE_PID` which Claude Code sets in every Bash tool environment to the live `claude` process, else `$PPID`; exit 0, or exit 3 printing `held by pid <n>` if that pid is alive; reclaims a dead pid's lock), `dux-lock release` (removes the lock only if it holds our pid), `dux-lock status` (prints `free`, or `held by pid <n> (alive|dead)`), `dux-lock holder` (prints the pid or nothing).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -359,8 +371,14 @@ load helpers/setup
   [ "$(cat "$DUX_HOME/state/dux.lock")" = "$$" ]
 }
 
+@test "acquire uses CLAUDE_PID when DUX_SESSION_PID is unset" {
+  run env -u DUX_SESSION_PID CLAUDE_PID=$$ dux-lock acquire
+  [ "$status" -eq 0 ]
+  [ "$(cat "$DUX_HOME/state/dux.lock")" = "$$" ]
+}
+
 @test "second acquire by another live pid exits 3 and names the holder" {
-  sleep 30 & other=$!
+  sleep 30 3>&- & other=$!
   DUX_SESSION_PID=$other dux-lock acquire
   DUX_SESSION_PID=$$ run dux-lock acquire
   kill $other
@@ -397,7 +415,7 @@ load helpers/setup
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `bats tests/dux-lock.bats`
-Expected: 5 fail, `dux-lock: command not found`.
+Expected: 6 fail, `dux-lock: command not found`.
 
 - [ ] **Step 3: Write the script**
 
@@ -411,7 +429,7 @@ set -u
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 lock="$DUX_STATE/dux.lock"
-me="${DUX_SESSION_PID:-$PPID}"
+me="${DUX_SESSION_PID:-${CLAUDE_PID:-$PPID}}"
 
 alive() { kill -0 "$1" 2>/dev/null; }
 
@@ -442,7 +460,7 @@ Run: `chmod +x bin/dux-lock`
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `bats tests/dux-lock.bats`
-Expected: 5 pass.
+Expected: 6 pass.
 
 - [ ] **Step 5: Break-verify**
 
@@ -472,7 +490,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 
 **Interfaces:**
 - Consumes: `bin/dux-env`.
-- Produces: `dux-project add <name> <path> [--base <branch>] [--issues off|label:<x>]` appends one line to `$DUX_DATA/projects.md` and installs the PR template if the project lacks one; `dux-project list` prints names; `dux-project get <name> <key>` prints one field (`path`, `base`, `worktree`, `issues`); `dux-project resolve-base <path>` prints the base branch or a finding when signals disagree.
+- Produces: `dux-project add <name> <path> [--base <branch>] [--issues off|label:<x>]` appends one line to `$DUX_DATA/projects.md` and installs the PR template if the project lacks one, printing `installed PR template; commit it in <path> before dispatching ship tasks` because an untracked file is invisible to worktrees; `dux-project list` prints names; `dux-project get <name> <key>` prints one field (`path`, `base`, `worktree`, `issues`); `dux-project resolve-base <path>` prints the base branch or a finding when signals disagree.
 - Registry line format, exactly: `- <name> path=<abs> base=<branch> worktree=<make|script|git> issues=<off|label:x> (added <YYYY-MM-DD>)`.
 
 - [ ] **Step 1: Write the failing test**
@@ -539,6 +557,21 @@ make_repo() {  # $1 dir, $2 default branch; creates a bare origin and a clone
   [[ "$output" == *"existing PR template left alone"* ]]
 }
 
+@test "add stops with a finding when base signals disagree" {
+  make_repo "$DUX_HOME/repoH" main
+  printf '# Repo\n\nThe base branch is `staging`.\n' > "$DUX_HOME/repoH/CLAUDE.md"
+  PATH="$DUX_ROOT/bin:/usr/bin:/bin" run dux-project add repoH "$DUX_HOME/repoH"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: base branch signals disagree"* ]]
+  ! grep -q '^- repoH ' "$DUX_HOME/data/projects.md"
+}
+
+@test "add with a missing path is a finding, not a bash error" {
+  run dux-project add x "$DUX_HOME/does-not-exist"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: not a git repository"* ]]
+}
+
 @test "resolve-base uses origin/HEAD when gh is unavailable" {
   make_repo "$DUX_HOME/repoG" develop
   PATH="$DUX_ROOT/bin:/usr/bin:/bin" run dux-project resolve-base "$DUX_HOME/repoG"
@@ -556,7 +589,7 @@ make_repo() {  # $1 dir, $2 default branch; creates a bare origin and a clone
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `bats tests/dux-project.bats`
-Expected: 8 fail, `dux-project: command not found`.
+Expected: 10 fail, `dux-project: command not found`.
 
 - [ ] **Step 3: Write the PR template**
 
@@ -620,7 +653,7 @@ resolve_base() {  # $1 path. Spec section 4 and /ship step 0.
   head="$(cd "$p" && git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)"
   for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
     [ -f "$p/$f" ] || continue
-    docs="$(grep -oiE '(base|default|trunk) branch[^a-z]{0,6}`?[a-z0-9_./-]+`?' "$p/$f" | head -1 | grep -oE '`[^`]+`' | tr -d '`' || true)"
+    docs="$(grep -oiE '(base|default|trunk) branch[^a-z]{0,6}`[a-z0-9_./-]+`' "$p/$f" | head -1 | grep -oE '`[^`]+`' | tr -d '`' || true)"
     [ -n "$docs" ] && break
   done
   local candidates
@@ -636,13 +669,13 @@ install_template() {  # $1 path
   local t="$1/.github/PULL_REQUEST_TEMPLATE.md"
   if [ -f "$t" ]; then log "existing PR template left alone: $t"; echo "existing PR template left alone"; return; fi
   mkdir -p "$1/.github" && cp "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md" "$t"
-  log "installed PR template: $t"
+  echo "installed PR template; commit it in $1 before dispatching ship tasks"
 }
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
   add)
-    name="${1:?name}"; path="${2:?path}"; shift 2
+    name="${1:?name}"; path="${2:?path}"; given="$2"; shift 2
     base=""; issues="off"
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -651,11 +684,11 @@ case "$cmd" in
         *) die "unknown flag $1" ;;
       esac
     done
-    path="$(cd "$path" 2>/dev/null && pwd)" || finding "not a git repository: $2"
+    path="$(cd "$path" 2>/dev/null && pwd)" || finding "not a git repository: $given"
     git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 || finding "not a git repository: $path"
     grep -q "^- $name " "$registry" && finding "project $name already registered"
     case "$issues" in off|label:*) ;; *) die "--issues must be off or label:<name>" ;; esac
-    [ -z "$base" ] && base="$(resolve_base "$path")"
+    if [ -z "$base" ]; then base="$(resolve_base "$path")" || exit $?; fi
     wt="$(detect_worktree "$path")"
     printf -- '- %s path=%s base=%s worktree=%s issues=%s (added %s)\n' \
       "$name" "$path" "$base" "$wt" "$issues" "$(date -u +%Y-%m-%d)" >> "$registry"
@@ -676,11 +709,11 @@ Run: `chmod +x bin/dux-project`
 - [ ] **Step 5: Run to verify it passes**
 
 Run: `bats tests/dux-project.bats`
-Expected: 8 pass. If "resolve-base" fails because a real `gh` on `PATH` answers for the temp repo, confirm the test's restricted `PATH` excludes it; the test pins `PATH` to `/usr/bin:/bin` plus `bin/`.
+Expected: 10 pass. If "resolve-base" fails because a real `gh` on `PATH` answers for the temp repo, confirm the test's restricted `PATH` excludes it; the test pins `PATH` to `/usr/bin:/bin` plus `bin/`.
 
 - [ ] **Step 6: Break-verify**
 
-Delete the `grep -q "^- $name " ... && finding` line. Run. Expected: "add refuses a duplicate name" fails with status 0. Restore. Paste into commit.
+Change `|| exit $?` after `resolve_base` to `|| true`. Run. Expected: "add stops with a finding when base signals disagree" fails because a registry line was written. Restore. Then delete the duplicate-name `finding` line. Expected: "add refuses a duplicate name" fails with status 0. Restore. Paste into commit.
 
 - [ ] **Step 7: Commit**
 
@@ -707,9 +740,9 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 
 **Interfaces:**
 - Consumes: `bin/dux-env`.
-- Produces: `dux-backend name` prints `tmux` or `herdr`; `dux-backend open <id> <cwd> <cmd>` prints an endpoint; `dux-backend alive <endpoint>` exit 0/1; `dux-backend tail <endpoint> <n>`; `dux-backend close <endpoint>` (finding if it is the focused pane); `dux-backend notify <title> <body>`.
+- Produces: `dux-backend name` prints `tmux` or `herdr`; `dux-backend open <id> <cwd> <cmd>` prints an endpoint; `dux-backend exists <endpoint>` exit 0/1 (container present; process liveness is milestone 2's pid file); `dux-backend tail <endpoint> <n>`; `dux-backend close <endpoint>` (finding if it is the focused pane); `dux-backend notify <title> <body>`.
 - Endpoint formats: `tmux:<session>:<window_id>` and `herdr:<pane_id>`.
-- Each adapter file defines `backend_open`, `backend_alive`, `backend_tail`, `backend_close`, `backend_notify` with the same arguments.
+- Each adapter file defines `backend_open`, `backend_exists`, `backend_tail`, `backend_close`, `backend_notify` with the same arguments. `<cmd>` is always one absolute path plus arguments; Dux never passes shell syntax.
 - Selection: `$DUX_BACKEND` env, else `$DUX_CONFIG/backend` file, else `herdr` when `HERDR_ENV=1` and `TMUX` unset, else `tmux`.
 - tmux socket: `$DUX_TMUX_SOCKET` if set (tests use `dux-test`), else the default server. tmux session: `$DUX_TMUX_SESSION` if set, else the current session from `$TMUX`, else a session named `dux` created on demand.
 
@@ -772,17 +805,24 @@ teardown_file() {
   echo "$output" > "$DUX_HOME/state/t1.endpoint"
 }
 
-@test "alive is true while the command runs" {
+@test "exists is true while the container is present" {
   [ -n "${DUX_BACKEND:-}" ] || skip
   ep="$(dux-backend open t2 "$DUX_HOME" "sleep 5")"
-  run dux-backend alive "$ep"; [ "$status" -eq 0 ]
+  run dux-backend exists "$ep"; [ "$status" -eq 0 ]
 }
 
-@test "alive is false after the command ends or the pane dies" {
+@test "tmux container survives command exit (remain-on-exit) so output can be read" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip "herdr panes always outlive their process"
+  ep="$(dux-backend open t3 "$DUX_HOME" "echo bye")"; sleep 1
+  run dux-backend exists "$ep"; [ "$status" -eq 0 ]
+  run dux-backend tail "$ep" 5; [[ "$output" == *bye* ]]
+}
+
+@test "exists is false after close or when the pane is gone" {
   [ -n "${DUX_BACKEND:-}" ] || skip
   if [ "$DUX_BACKEND" = herdr ]; then export FAKE_HERDR_DEAD="$DUX_HOME/state/dead"; touch "$FAKE_HERDR_DEAD"; ep="herdr:w1:p9"
-  else ep="$(dux-backend open t3 "$DUX_HOME" "true")"; sleep 1; fi
-  run dux-backend alive "$ep"; [ "$status" -eq 1 ]
+  else ep="$(dux-backend open t3b "$DUX_HOME" "sleep 5")"; dux-backend close "$ep"; fi
+  run dux-backend exists "$ep"; [ "$status" -eq 1 ]
 }
 
 @test "tail returns the last n lines" {
@@ -790,7 +830,8 @@ teardown_file() {
   if [ "$DUX_BACKEND" = herdr ]; then printf 'a\nb\nc\n' > "$FAKE_HERDR_OUTPUT"; ep="herdr:w1:p9"
   else ep="$(dux-backend open t4 "$DUX_HOME" "printf 'a\nb\nc\n'; sleep 5")"; sleep 1; fi
   run dux-backend tail "$ep" 2
-  [ "${lines[-2]}" = b ] && [ "${lines[-1]}" = c ]
+  n=${#lines[@]}
+  [ "${lines[$((n-2))]}" = b ] && [ "${lines[$((n-1))]}" = c ]
 }
 
 @test "close removes the container; alive then false" {
@@ -798,7 +839,15 @@ teardown_file() {
   ep="$(dux-backend open t5 "$DUX_HOME" "sleep 30")"
   run dux-backend close "$ep"; [ "$status" -eq 0 ]
   if [ "$DUX_BACKEND" = herdr ]; then grep -q "^pane close w1:p9" "$FAKE_HERDR_LOG"
-  else run dux-backend alive "$ep"; [ "$status" -eq 1 ]; fi
+  else run dux-backend exists "$ep"; [ "$status" -eq 1 ]; fi
+}
+
+@test "herdr close failure is a finding, never silent" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  export FAKE_HERDR_CLOSE_FAIL=1
+  run dux-backend close "herdr:w1:p9"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: herdr pane close failed"* ]]
 }
 
 @test "close refuses the focused pane with a finding" {
@@ -809,9 +858,10 @@ teardown_file() {
   [[ "$output" == "finding: refusing to close focused pane"* ]]
 }
 
-@test "notify does not fail" {
+@test "notify reaches the backend" {
   [ -n "${DUX_BACKEND:-}" ] || skip
   run dux-backend notify "Dux" "hello"; [ "$status" -eq 0 ]
+  if [ "$DUX_BACKEND" = herdr ]; then grep -q '^notification show Dux --body hello' "$FAKE_HERDR_LOG"; fi
 }
 ```
 
@@ -848,11 +898,11 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   name)   echo "$backend" ;;
   open)   backend_open "${1:?id}" "${2:?cwd}" "${3:?cmd}" ;;
-  alive)  backend_alive "${1:?endpoint}" ;;
+  exists) backend_exists "${1:?endpoint}" ;;
   tail)   backend_tail "${1:?endpoint}" "${2:-40}" ;;
   close)  backend_close "${1:?endpoint}" ;;
   notify) backend_notify "${1:?title}" "${2:-}" ;;
-  *) die "usage: dux-backend name|open|alive|tail|close|notify" ;;
+  *) die "usage: dux-backend name|open|exists|tail|close|notify" ;;
 esac
 ```
 
@@ -888,12 +938,13 @@ backend_open() {  # id cwd cmd
   ses="$(_session)"
   wid="$(_tmux new-window -d -t "$ses" -n "dux-$id" -c "$cwd" -P -F '#{window_id}' "$cmd")" \
     || finding "tmux could not open a window for $id"
+  _tmux set-option -w -t "$wid" remain-on-exit on >/dev/null
   echo "tmux:$ses:$wid"
 }
 
-backend_alive() {  # endpoint
+backend_exists() {  # endpoint
   local wid; wid="$(_win "$1")"
-  _tmux list-windows -a -F '#{window_id} #{pane_dead}' 2>/dev/null | grep -q "^$wid 0$"
+  _tmux list-windows -a -F '#{window_id}' 2>/dev/null | grep -q "^$wid$"
 }
 
 backend_tail() {  # endpoint n
@@ -933,11 +984,13 @@ backend_open() {  # id cwd cmd
     || finding "herdr tab create failed for $id"
   pane="$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty')"
   [ -n "$pane" ] || finding "herdr tab create returned no pane id for $id"
+  # pane run types into a live shell; wait for a prompt so the command is not lost.
+  herdr pane wait-output "$pane" --regex '[$%>#] ?$' --timeout 10000 >/dev/null 2>&1 || true
   herdr pane run "$pane" "$cmd" >/dev/null || finding "herdr pane run failed for $id on $pane"
   echo "herdr:$pane"
 }
 
-backend_alive() {  # endpoint
+backend_exists() {  # endpoint
   herdr pane get "$(_pane "$1")" >/dev/null 2>&1
 }
 
@@ -949,7 +1002,7 @@ backend_close() {  # endpoint
   local pane focused; pane="$(_pane "$1")"
   focused="$(herdr pane get "$pane" 2>/dev/null | jq -r '.result.pane.focused // false')"
   [ "$focused" = true ] && finding "refusing to close focused pane $pane"
-  herdr pane close "$pane" >/dev/null 2>&1 || true
+  herdr pane close "$pane" >/dev/null 2>&1 || finding "herdr pane close failed for $pane"
 }
 
 backend_notify() {  # title body
@@ -973,7 +1026,7 @@ Add `# bats file_tags=adapter` as the first line of `tests/backend-adapter.bats`
 - [ ] **Step 8: Run to verify they pass**
 
 Run: `make test`
-Expected: selection 4 pass; herdr adapter 7 pass; tmux adapter 6 pass, 1 skipped (focus refusal).
+Expected: selection 4 pass; herdr adapter 8 pass, 1 skipped (remain-on-exit); tmux adapter 7 pass, 2 skipped (focus refusal, close failure).
 
 - [ ] **Step 9: Break-verify**
 
@@ -1105,6 +1158,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 
 **Files:**
 - Create: `CLAUDE.md`
+- Create: `.claude/settings.json`
 - Create: `skills/dux-project/SKILL.md`
 - Create: `README.md`
 - Test: `tests/contract.bats`
@@ -1135,15 +1189,23 @@ load helpers/setup
 
 @test "every skill has frontmatter name and description" {
   for f in "$DUX_ROOT"/skills/*/SKILL.md; do
-    head -5 "$f" | grep -q '^name: ' && head -5 "$f" | grep -q '^description: '
+    head -5 "$f" | grep -q '^name: ' || { echo "missing name: $f"; return 1; }
+    head -5 "$f" | grep -q '^description: ' || { echo "missing description: $f"; return 1; }
   done
+}
+
+@test "session hooks acquire and release the lock" {
+  run jq -r '.hooks.SessionStart[0].hooks[0].command' "$DUX_ROOT/.claude/settings.json"
+  [[ "$output" == *"dux-lock acquire"* ]]
+  run jq -r '.hooks.SessionEnd[0].hooks[0].command' "$DUX_ROOT/.claude/settings.json"
+  [[ "$output" == *"dux-lock release"* ]]
 }
 ```
 
 - [ ] **Step 2: Run to verify it fails**
 
 Run: `bats tests/contract.bats`
-Expected: 3 fail (no CLAUDE.md, no skills).
+Expected: 4 fail (no CLAUDE.md, no skills, no settings).
 
 - [ ] **Step 3: Write CLAUDE.md**
 
@@ -1180,9 +1242,11 @@ verbatim and stop that action. Never work around a finding.
 
 ## Session start
 
-Run, in order: `bin/dux-lock acquire`, `bin/dux-doctor`, then `bin/dux-status`
-(when it exists). Fix anything doctor fails before dispatching. Show the digest.
-Then arm the Monitor (milestone 3).
+A SessionStart hook has already run `bin/dux-lock acquire`; its output is in
+your context. If it said `held by pid`, you are read-only. Then run
+`bin/dux-doctor` and `bin/dux-status` (when it exists). Fix anything doctor
+fails before dispatching. Show the digest. Then arm the Monitor (milestone 3).
+Restart this session daily or after 40 wakes; state is on disk.
 
 ## Task lifecycle
 
@@ -1213,7 +1277,27 @@ queued -> running -> (needs-decision | blocked)* -> done | failed
 - `skills/dux-recover` (milestone 3) for stuck, dead, or failed workers.
 ```
 
-- [ ] **Step 4: Write the dux-project skill**
+- [ ] **Step 4: Write the session hooks**
+
+`.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      { "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/bin/dux-lock acquire || true" } ] }
+    ],
+    "SessionEnd": [
+      { "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/bin/dux-lock release" } ] }
+    ]
+  }
+}
+```
+
+`dux-lock` reads `CLAUDE_PID` from the hook environment, so the recorded pid is
+the live `claude` process, not the hook's shell.
+
+- [ ] **Step 5: Write the dux-project skill**
 
 `skills/dux-project/SKILL.md`:
 
@@ -1248,7 +1332,7 @@ description: Register a repository with Dux so tasks can be dispatched to it. Us
 - Never guess a base branch. Disagreeing signals go to the operator.
 ```
 
-- [ ] **Step 5: Write README.md**
+- [ ] **Step 6: Write README.md**
 
 ```markdown
 # Dux
@@ -1270,25 +1354,25 @@ Plans: `docs/superpowers/plans/`.
     make check
 ```
 
-- [ ] **Step 6: Run to verify it passes**
+- [ ] **Step 7: Run to verify it passes**
 
 Run: `make check`
 Expected: lint clean; all tests pass.
 
-- [ ] **Step 7: Break-verify**
+- [ ] **Step 8: Break-verify**
 
 Append 200 blank lines to `CLAUDE.md`. Run `bats tests/contract.bats`. Expected: "CLAUDE.md is at most 150 lines" fails. Remove the lines. Paste into commit.
 
-- [ ] **Step 8: Dry run the skill**
+- [ ] **Step 9: Dry run the skill**
 
 Open `claude` in the dux repo. Ask it to register `fitfights_ios`. Expected: it runs `resolve-base`, asks about issues, runs `add`, reports the line. Then remove the registry line before committing (registry is gitignored anyway; the dry run is about the skill).
 
-- [ ] **Step 9: Commit and update this plan's header**
+- [ ] **Step 10: Commit and update this plan's header**
 
 Tick all boxes above, set "Tasks done: 7 of 7" in the header, then:
 
 ```bash
-git add CLAUDE.md skills README.md tests/contract.bats docs/superpowers/plans
+git add CLAUDE.md .claude/settings.json skills README.md tests/contract.bats docs/superpowers/plans
 git commit -m "feat: add Dux operating contract, dux-project skill, README
 
 Break-verified: <paste>
