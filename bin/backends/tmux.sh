@@ -38,12 +38,11 @@ backend_tail() {  # endpoint n
 }
 
 backend_close() {  # endpoint. Closes only on a positive "not focused" reading.
-  local wid active attached; wid="$(_win "$1")"
+  local wid state active attached; wid="$(_win "$1")"
   backend_exists "$1" || finding "tmux window $wid not found; nothing to close"
-  active="$(_tmux display-message -p -t "$wid" '#{window_active}' 2>/dev/null)" \
+  state="$(_tmux display-message -p -t "$wid" '#{window_active} #{session_attached}' 2>/dev/null)" \
     || finding "cannot read tmux state for $wid; refusing to close"
-  attached="$(_tmux display-message -p -t "$wid" '#{session_attached}' 2>/dev/null)" \
-    || finding "cannot read tmux state for $wid; refusing to close"
+  active="${state%% *}"; attached="${state#* }"
   if [ "$active" = 1 ] && [ "$attached" != 0 ]; then finding "refusing to close focused pane $1"; fi
   _tmux kill-window -t "$wid" 2>/dev/null || finding "tmux kill-window failed for $wid"
 }

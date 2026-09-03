@@ -116,3 +116,37 @@ teardown_file() {
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: tmux window @9999 not found"* ]]
 }
+
+@test "herdr open with no prompt still refuses to close a focused pane" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  export FAKE_HERDR_NO_PROMPT=1 FAKE_HERDR_FOCUSED="$DUX_HOME/state/focused"; touch "$FAKE_HERDR_FOCUSED"
+  run dux-backend open t8 "$DUX_HOME" "sleep 5"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: refusing to close focused pane w1:p9"* ]]
+  ! grep -q '^pane close ' "$FAKE_HERDR_LOG"
+}
+
+@test "herdr open with no prompt reports a failed cleanup close" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  export FAKE_HERDR_NO_PROMPT=1 FAKE_HERDR_CLOSE_FAIL=1
+  run dux-backend open t9 "$DUX_HOME" "sleep 5"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: herdr pane close failed for w1:p9"* ]]
+}
+
+@test "tmux close is a finding when window state cannot be read, and the window stays" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  ep="$(dux-backend open t10 "$DUX_HOME" "sleep 30")"
+  FAKE_TMUX_FAIL=display-message run dux-backend close "$ep"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: cannot read tmux state for"* ]]
+  run dux-backend exists "$ep"; [ "$status" -eq 0 ]
+}
+
+@test "tmux close is a finding when kill-window fails" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  ep="$(dux-backend open t11 "$DUX_HOME" "sleep 30")"
+  FAKE_TMUX_FAIL=kill-window run dux-backend close "$ep"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: tmux kill-window failed for"* ]]
+}
