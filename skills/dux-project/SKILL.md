@@ -1,0 +1,28 @@
+---
+name: dux-project
+description: Register a repository with Dux so tasks can be dispatched to it. Use when the operator names a repo Dux does not know, or asks to add, list, or inspect projects.
+---
+
+# dux-project
+
+## Register
+
+1. Confirm the absolute path exists and is a git clone with an `origin` remote.
+2. Run `bin/dux-project resolve-base <path>`. If it prints a finding, show the
+   operator each signal and ask which branch is correct. Pass the answer as
+   `--base`.
+3. Ask whether GitHub issues should feed the backlog. If yes, ask for the label
+   and pass `--issues label:<name>`; otherwise `--issues off`.
+4. Run `bin/dux-project add <name> <path> [--base X] [--issues Y]`.
+5. Report the registry line in plain words: base branch, worktree mechanism,
+   issue intake, and whether a PR template was installed or left alone.
+
+## Inspect
+
+- `bin/dux-project list` for names.
+- `bin/dux-project get <name> <key>` for `path`, `base`, `worktree`, `issues`.
+
+## Never
+
+- Never edit `data/projects.md` by hand. The script owns the format.
+- Never guess a base branch. Disagreeing signals go to the operator.

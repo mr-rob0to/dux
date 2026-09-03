@@ -1,0 +1,40 @@
+load helpers/setup
+
+@test "AGENTS.md is at most 150 lines" {
+  [ "$(wc -l < "$DUX_ROOT/AGENTS.md")" -le 150 ]
+}
+
+@test "CLAUDE.md is only an import of AGENTS.md" {
+  [ "$(wc -l < "$DUX_ROOT/CLAUDE.md")" -le 2 ]
+  grep -qx '@AGENTS.md' "$DUX_ROOT/CLAUDE.md"
+}
+
+@test "AGENTS.md carries the fixed section headers in order" {
+  run grep -E '^## ' "$DUX_ROOT/AGENTS.md"
+  [ "${lines[0]}" = "## Identity" ]
+  [ "${lines[1]}" = "## Hard rules" ]
+  [ "${lines[2]}" = "## Session start" ]
+  [ "${lines[3]}" = "## Task lifecycle" ]
+  [ "${lines[4]}" = "## Talking to the operator" ]
+  [ "${lines[5]}" = "## Skills" ]
+  [ "${lines[6]}" = "## Project Constitution" ]
+}
+
+@test "ARCHITECTURE.md exists and names the two flows" {
+  grep -q -i 'dispatch' "$DUX_ROOT/docs/ARCHITECTURE.md"
+  grep -q -i 'wake' "$DUX_ROOT/docs/ARCHITECTURE.md"
+}
+
+@test "every skill has frontmatter name and description" {
+  for f in "$DUX_ROOT"/skills/*/SKILL.md; do
+    head -5 "$f" | grep -q '^name: ' || { echo "missing name: $f"; return 1; }
+    head -5 "$f" | grep -q '^description: ' || { echo "missing description: $f"; return 1; }
+  done
+}
+
+@test "session hooks acquire and release the lock" {
+  run jq -r '.hooks.SessionStart[0].hooks[0].command' "$DUX_ROOT/.claude/settings.json"
+  [[ "$output" == *"dux-lock acquire"* ]]
+  run jq -r '.hooks.SessionEnd[0].hooks[0].command' "$DUX_ROOT/.claude/settings.json"
+  [[ "$output" == *"dux-lock release"* ]]
+}
