@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Single live Dux session per DUX_HOME. See spec section 7.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+lock="$DUX_STATE/dux.lock"
+me="${DUX_SESSION_PID:-${CLAUDE_PID:-$PPID}}"
+
+alive() { kill -0 "$1" 2>/dev/null; }
+
+holder() { [ -f "$lock" ] && cat "$lock"; }
+
+case "${1:-}" in
+  acquire)
+    h="$(holder || true)"
+    if [ -n "$h" ] && [ "$h" != "$me" ] && alive "$h"; then
+      echo "held by pid $h"; exit 3
+    fi
+    echo "$me" > "$lock" ;;
+  release)
+    h="$(holder || true)"
+    [ "$h" = "$me" ] && rm -f "$lock"; exit 0 ;;
+  status)
+    h="$(holder || true)"
+    if [ -z "$h" ]; then echo free
+    elif alive "$h"; then echo "held by pid $h (alive)"
+    else echo "held by pid $h (dead)"; fi ;;
+  holder) holder || true ;;
+  *) die "usage: dux-lock acquire|release|status|holder" ;;
+esac
