@@ -3,7 +3,7 @@
 set -u
 script="${FAKE_CLAUDE_SCRIPT:-}"
 log="${DUX_STATUS_LOG:-/dev/null}"
-[ -n "$script" ] && [ -f "$script" ] || { echo '{"type":"result","subtype":"success"}'; exit 0; }
+if [ -z "$script" ] || [ ! -f "$script" ]; then echo '{"type":"result","subtype":"success"}'; exit 0; fi
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
     status\ *)  printf '%s\n' "${line#status }" >> "$log"
