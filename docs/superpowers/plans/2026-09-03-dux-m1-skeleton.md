@@ -1158,8 +1158,9 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 ### Task 7: Operating contract `AGENTS.md`, `dux-project` skill, README
 
 **Files:**
-- Create: `AGENTS.md`
-- Create: `CLAUDE.md` (two lines: a comment and `@AGENTS.md`)
+- Modify: `AGENTS.md` (exists with only the `## Project Constitution` pointer block; keep that block as the last section)
+- Modify: `CLAUDE.md` (already the two-line import; leave as is)
+- Create: `docs/ARCHITECTURE.md` (component diagram and the dispatch and wake flows, derived from spec sections 3, 5, 6; the constitution requires it)
 - Create: `.claude/settings.json`
 - Create: `skills/dux-project/SKILL.md`
 - Create: `README.md`
@@ -1192,6 +1193,12 @@ load helpers/setup
   [ "${lines[3]}" = "## Task lifecycle" ]
   [ "${lines[4]}" = "## Talking to the operator" ]
   [ "${lines[5]}" = "## Skills" ]
+  [ "${lines[6]}" = "## Project Constitution" ]
+}
+
+@test "ARCHITECTURE.md exists and names the two flows" {
+  grep -q -i 'dispatch' "$DUX_ROOT/docs/ARCHITECTURE.md"
+  grep -q -i 'wake' "$DUX_ROOT/docs/ARCHITECTURE.md"
 }
 
 @test "every skill has frontmatter name and description" {
@@ -1289,6 +1296,14 @@ queued -> running -> (needs-decision | blocked)* -> done | failed
 - `skills/dux-dispatch` (milestone 2) to turn a goal into a running task.
 - `skills/dux-status` (milestone 3) for the fleet digest.
 - `skills/dux-recover` (milestone 3) for stuck, dead, or failed workers.
+
+## Project Constitution
+
+Engineering standards for this project live in `docs/constitution.md` (v1.0.0).
+Read it before planning or implementing changes; all work must comply.
+Key gates: TDD with break-verified guards, bash 3.2 and shellcheck clean, no
+personal identifiers in tracked files, findings on stderr with exit 2,
+ARCHITECTURE.md updated in the same PR as material changes, `/ship` is the only gate.
 ```
 
 - [ ] **Step 4: Write the session hooks**
@@ -1388,7 +1403,7 @@ Open `claude` in the dux repo. Ask it to register `fitfights_ios`. Expected: it 
 Tick all boxes above, set "Tasks done: 7 of 8" in the header, then:
 
 ```bash
-git add AGENTS.md CLAUDE.md .claude/settings.json skills README.md tests/contract.bats docs/superpowers/plans
+git add AGENTS.md CLAUDE.md .claude/settings.json skills README.md docs/ARCHITECTURE.md tests/contract.bats docs/superpowers/plans
 git commit -m "feat: add Dux operating contract, dux-project skill, README
 
 Break-verified: <paste>
