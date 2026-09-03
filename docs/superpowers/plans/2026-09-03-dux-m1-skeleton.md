@@ -3,9 +3,9 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 1 of 6 (see `2026-09-03-dux-roadmap.md`). Tasks done: 7 of 8.
+- Milestone: 1 of 6 (see `2026-09-03-dux-roadmap.md`). Tasks done: 8 of 8.
 - reviewed_sha: none yet. Fix rounds used: 0 of 3.
-- Next action: Task 8.
+- Next action: /ship the branch; operator merges.
 
 **Goal:** Stand up the Dux repo with its shared shell library, single-session lock, project registry, backend adapters for tmux and Herdr, doctor, operating contract, installer, bundled ship skill, MIT license, and a test harness with fake `claude` and fake `herdr`.
 
@@ -1400,7 +1400,7 @@ Open `claude` in the dux repo. Ask it to register `fitfights_ios`. Expected: it 
 
 - [x] **Step 10: Commit and update this plan's header**
 
-Tick all boxes above, set "Tasks done: 7 of 8" in the header, then:
+Tick all boxes above, set "Tasks done: 8 of 8" in the header, then:
 
 ```bash
 git add AGENTS.md CLAUDE.md .claude/settings.json skills README.md docs/ARCHITECTURE.md tests/contract.bats docs/superpowers/plans
@@ -1444,7 +1444,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 - Produces: `dux-install [--yes]` symlinks `skills/*` into `$DUX_SKILLS_DIR` (default `~/.claude/skills`), copies `templates/config/*` into `$DUX_CONFIG` when absent, and writes `tests/personal-identifiers.txt` from `$(whoami)`, `$HOME`, and registry project names. A real directory at a target is a finding unless `--yes`, which moves it to `<name>.bak`. `dux-uninstall` removes only symlinks whose target is inside `$DUX_ROOT/skills`.
 - Produces: `make lint` fails when any tracked file contains a line from `tests/personal-identifiers.txt`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `tests/dux-install.bats`:
 
@@ -1523,12 +1523,12 @@ load helpers/setup
 }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `bats tests/dux-install.bats tests/identifiers.bats`
 Expected: all fail (no `dux-install`, no `lint-identifiers` target).
 
-- [ ] **Step 3: Copy the ship skill and write license and contributing**
+- [x] **Step 3: Copy the ship skill and write license and contributing**
 
 ```bash
 mkdir -p skills/ship && cp ~/.agents/skills/ship/SKILL.md skills/ship/SKILL.md
@@ -1548,7 +1548,7 @@ mkdir -p skills/ship && cp ~/.agents/skills/ship/SKILL.md skills/ship/SKILL.md
 - Changes to the design go through `docs/superpowers/specs/` first.
 ```
 
-- [ ] **Step 4: Write the default config templates**
+- [x] **Step 4: Write the default config templates**
 
 ```
 templates/config/reviewer            codex exec -m gpt-5.6-sol --sandbox read-only
@@ -1559,7 +1559,7 @@ templates/config/backend             (empty file; empty means auto-detect)
 
 Milestone 5 makes `/ship` read the first two; milestone 2 makes the wrapper read `models`.
 
-- [ ] **Step 5: Write the installer and uninstaller**
+- [x] **Step 5: Write the installer and uninstaller**
 
 `bin/dux-install`:
 
@@ -1614,7 +1614,7 @@ done
 
 Run: `chmod +x bin/dux-install bin/dux-uninstall`
 
-- [ ] **Step 6: Add the identifier lint**
+- [x] **Step 6: Add the identifier lint**
 
 In `Makefile`, add and wire:
 
@@ -1633,16 +1633,16 @@ lint-identifiers:
 
 Append `tests/personal-identifiers.txt` to `.gitignore`.
 
-- [ ] **Step 7: Run to verify they pass**
+- [x] **Step 7: Run to verify they pass**
 
 Run: `bin/dux-install --yes` once on your machine (this replaces `~/.claude/skills/ship` with a symlink; the old directory is kept as `ship.bak`), then `make check`.
 Expected: all tests pass; lint clean. Confirm `/ship` still loads in a fresh `claude` session in any repo.
 
-- [ ] **Step 8: Break-verify**
+- [x] **Step 8: Break-verify**
 
 Set `yes=1` unconditionally. Run `bats tests/dux-install.bats`. Expected: "refuses an existing real directory without --yes" fails. Restore. Then remove the `exit 1` from `lint-identifiers`. Run `bats tests/identifiers.bats`. Expected: "lint fails when a tracked file contains a personal identifier" fails. Restore. Paste both.
 
-- [ ] **Step 9: Commit and update this plan's header**
+- [x] **Step 9: Commit and update this plan's header**
 
 Set "Tasks done: 8 of 8".
 

@@ -1,0 +1,51 @@
+load helpers/setup
+
+setup() {
+  DUX_HOME="$(mktemp -d "${BATS_TMPDIR:-/tmp}/dux-home.XXXXXX")"; export DUX_HOME
+  mkdir -p "$DUX_HOME/data" "$DUX_HOME/state" "$DUX_HOME/config"
+  export DUX_SKILLS_DIR="$DUX_HOME/skills-target"; mkdir -p "$DUX_SKILLS_DIR"
+  export PATH="$DUX_ROOT/tests/fakes:$DUX_ROOT/bin:$PATH"
+}
+
+@test "install symlinks every bundled skill and copies default config" {
+  run dux-install
+  [ "$status" -eq 0 ]
+  for d in "$DUX_ROOT"/skills/*/; do
+    n="$(basename "$d")"
+    [ -L "$DUX_SKILLS_DIR/$n" ]
+    [ "$(readlink "$DUX_SKILLS_DIR/$n")" = "$DUX_ROOT/skills/$n" ]
+  done
+  [ -f "$DUX_HOME/config/reviewer" ]
+  grep -q 'codex exec' "$DUX_HOME/config/reviewer"
+}
+
+@test "install refuses an existing real directory without --yes" {
+  mkdir -p "$DUX_SKILLS_DIR/ship"; echo old > "$DUX_SKILLS_DIR/ship/SKILL.md"
+  run dux-install
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: $DUX_SKILLS_DIR/ship exists and is not a symlink"* ]]
+  [ -f "$DUX_SKILLS_DIR/ship/SKILL.md" ]
+}
+
+@test "install --yes moves an existing directory to .bak" {
+  mkdir -p "$DUX_SKILLS_DIR/ship"; echo old > "$DUX_SKILLS_DIR/ship/SKILL.md"
+  run dux-install --yes
+  [ "$status" -eq 0 ]
+  [ -L "$DUX_SKILLS_DIR/ship" ]
+  [ "$(cat "$DUX_SKILLS_DIR/ship.bak/SKILL.md")" = old ]
+}
+
+@test "install does not overwrite existing config" {
+  echo mine > "$DUX_HOME/config/reviewer"
+  dux-install
+  [ "$(cat "$DUX_HOME/config/reviewer")" = mine ]
+}
+
+@test "uninstall removes only symlinks into this repo" {
+  dux-install
+  ln -s /tmp "$DUX_SKILLS_DIR/other"
+  run dux-uninstall
+  [ "$status" -eq 0 ]
+  [ ! -e "$DUX_SKILLS_DIR/ship" ]
+  [ -L "$DUX_SKILLS_DIR/other" ]
+}
