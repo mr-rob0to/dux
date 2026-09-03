@@ -49,11 +49,15 @@ load helpers/setup
 @test "simultaneous acquires by six live pids let exactly one win" {
   pids=""; for i in 1 2 3 4 5 6; do sleep 30 3>&- & pids="$pids $!"; done
   wins=0
-  jobs=""; for p in $pids; do DUX_SESSION_PID=$p dux-lock acquire >/dev/null 2>&1 & jobs="$jobs $!"; done; wait $jobs || true
+  jobs=""; for p in $pids; do
+    ( DUX_SESSION_PID=$p dux-lock acquire >/dev/null 2>&1; echo $? > "$DUX_HOME/state/rc.$p" ) & jobs="$jobs $!"
+  done; wait $jobs || true
+  first_round_zero="$(cat "$DUX_HOME"/state/rc.* | grep -c '^0$')"
   for p in $pids; do [ "$(cat "$DUX_HOME/state/dux.lock")" = "$p" ] && wins=$((wins+1)); done
   # every racer re-runs acquire: the holder exits 0, everyone else exits 3
   zero=0; for p in $pids; do DUX_SESSION_PID=$p dux-lock acquire >/dev/null && zero=$((zero+1)); done
   kill $pids
+  [ "$first_round_zero" -eq 1 ]
   [ "$wins" -eq 1 ]
   [ "$zero" -eq 1 ]
 }
@@ -76,4 +80,12 @@ load helpers/setup
   DUX_SESSION_PID=$$ run dux-lock acquire
   [ "$status" -eq 0 ]
   [ "$(cat "$DUX_HOME/state/dux.lock")" = "$$" ]
+}
+
+@test "acquire on an unwritable state dir is a finding, not a held lock" {
+  chmod 555 "$DUX_HOME/state"
+  DUX_SESSION_PID=$$ run dux-lock acquire
+  chmod 755 "$DUX_HOME/state"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: cannot write to $DUX_HOME/state"* ]]
 }

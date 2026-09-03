@@ -12,7 +12,14 @@ me="${DUX_SESSION_PID:-${CLAUDE_PID:-$PPID}}"
 is_pid() { case "$1" in ''|*[!0-9]*) return 1 ;; *) [ "$1" -gt 0 ] ;; esac; }
 alive()  { is_pid "$1" && kill -0 "$1" 2>/dev/null; }
 holder() { [ -f "$lock" ] && cat "$lock"; }
-claim()  { ( set -o noclobber; echo "$me" > "$lock" ) 2>/dev/null; }
+# Publish the pid atomically: write it to a private file, then hard-link that
+# file into place. ln fails when the lock exists, and the lock is never empty.
+claim() {
+  local tmp="$lock.$me.tmp"
+  { echo "$me" > "$tmp"; } 2>/dev/null || finding "cannot write to $DUX_STATE"
+  if ln "$tmp" "$lock" 2>/dev/null; then rm -f "$tmp"; return 0; fi
+  rm -f "$tmp"; return 1
+}
 
 # Only one session may remove a stale lock; a reclaim marker older than a
 # minute belongs to a session that died mid-reclaim and is cleared.
@@ -34,7 +41,8 @@ case "${1:-}" in
     retire_stale_lock
     claim && exit 0
     h="$(holder || true)"
-    echo "held by pid ${h:-unknown}"; exit 3 ;;
+    [ -n "$h" ] || finding "cannot create $lock and no session holds it"
+    echo "held by pid $h"; exit 3 ;;
   release)
     h="$(holder || true)"
     [ "$h" = "$me" ] && rm -f "$lock"; exit 0 ;;
