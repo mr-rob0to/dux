@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Sourced by every dux script. Never executed directly.
+# shellcheck disable=SC2034
+set -u
+
+DUX_ROOT="${DUX_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+DUX_HOME="${DUX_HOME:-$DUX_ROOT}"
+DUX_DATA="$DUX_HOME/data"
+DUX_STATE="$DUX_HOME/state"
+DUX_CONFIG="$DUX_HOME/config"
+DUX_TASKS="$DUX_DATA/tasks"
+mkdir -p "$DUX_DATA" "$DUX_STATE" "$DUX_CONFIG" "$DUX_TASKS"
+export DUX_ROOT DUX_HOME DUX_DATA DUX_STATE DUX_CONFIG DUX_TASKS
+
+log()     { printf 'dux: %s\n' "$*" >&2; }
+die()     { printf 'dux: %s\n' "$*" >&2; exit 1; }
+finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
+now()     { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+require_cmd() {
+  local c
+  for c in "$@"; do
+    command -v "$c" >/dev/null 2>&1 || die "required command not found: $c"
+  done
+}
