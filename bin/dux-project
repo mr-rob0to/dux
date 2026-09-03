@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Project registry. See spec section 4.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+registry="$DUX_DATA/projects.md"
+touch "$registry"
+
+field() {  # $1 name, $2 key
+  grep "^- $1 " "$registry" | sed -n "s/.* $2=\([^ ]*\).*/\1/p"
+}
+
+detect_worktree() {  # $1 path
+  if [ -f "$1/Makefile" ] && grep -qE '^worktree:' "$1/Makefile"; then echo make
+  elif ls "$1"/scripts/*worktree* >/dev/null 2>&1; then echo script
+  else echo git; fi
+}
+
+resolve_base() {  # $1 path. Spec section 4 and /ship step 0.
+  local p="$1" forge="" head="" docs=""
+  if command -v gh >/dev/null 2>&1; then
+    forge="$(cd "$p" && gh repo view --json defaultBranchRef -q .defaultBranchRef.name 2>/dev/null || true)"
+  fi
+  head="$(cd "$p" && git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's#^origin/##' || true)"
+  for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
+    [ -f "$p/$f" ] || continue
+    # shellcheck disable=SC2016
+    docs="$(grep -oiE '(base|default|trunk) branch[^`]{0,12}`[a-z0-9_./-]+`' "$p/$f" | head -1 | grep -oE '`[^`]+`' | tr -d '`' || true)"
+    [ -n "$docs" ] && break
+  done
+  local candidates
+  candidates="$(printf '%s\n%s\n%s\n' "$docs" "$forge" "$head" | grep -v '^$' | sort -u)"
+  [ -z "$candidates" ] && finding "base branch cannot be determined for $p (no gh, no origin/HEAD, no docs)"
+  if [ "$(printf '%s\n' "$candidates" | wc -l | tr -d ' ')" -gt 1 ]; then
+    finding "base branch signals disagree for $p: docs=${docs:-none} forge=${forge:-none} origin/HEAD=${head:-none}"
+  fi
+  echo "$candidates"
+}
+
+install_template() {  # $1 path
+  local t="$1/.github/PULL_REQUEST_TEMPLATE.md"
+  if [ -f "$t" ]; then log "existing PR template left alone: $t"; echo "existing PR template left alone"; return; fi
+  mkdir -p "$1/.github" && cp "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md" "$t"
+  echo "installed PR template; commit it in $1 before dispatching ship tasks"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  add)
+    name="${1:?name}"; path="${2:?path}"; given="$2"; shift 2
+    base=""; issues="off"
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --base) base="$2"; shift 2 ;;
+        --issues) issues="$2"; shift 2 ;;
+        *) die "unknown flag $1" ;;
+      esac
+    done
+    path="$(cd "$path" 2>/dev/null && pwd)" || finding "not a git repository: $given"
+    git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 || finding "not a git repository: $path"
+    grep -q "^- $name " "$registry" && finding "project $name already registered"
+    case "$issues" in off|label:*) ;; *) die "--issues must be off or label:<name>" ;; esac
+    if [ -z "$base" ]; then base="$(resolve_base "$path")" || exit $?; fi
+    wt="$(detect_worktree "$path")"
+    printf -- '- %s path=%s base=%s worktree=%s issues=%s (added %s)\n' \
+      "$name" "$path" "$base" "$wt" "$issues" "$(date -u +%Y-%m-%d)" >> "$registry"
+    install_template "$path"
+    log "registered $name base=$base worktree=$wt issues=$issues" ;;
+  list) sed -n 's/^- \([^ ]*\) .*/\1/p' "$registry" ;;
+  get)
+    name="${1:?name}"; key="${2:?key}"
+    grep -q "^- $name " "$registry" || finding "project $name not registered"
+    field "$name" "$key" ;;
+  resolve-base) resolve_base "${1:?path}" ;;
+  *) die "usage: dux-project add|list|get|resolve-base" ;;
+esac
