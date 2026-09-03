@@ -3,9 +3,9 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 1 of 6 (see `2026-09-03-dux-roadmap.md`). Tasks done: 0 of 8.
+- Milestone: 1 of 6 (see `2026-09-03-dux-roadmap.md`). Tasks done: 7 of 8.
 - reviewed_sha: none yet. Fix rounds used: 0 of 3.
-- Next action: Task 1.
+- Next action: Task 8.
 
 **Goal:** Stand up the Dux repo with its shared shell library, single-session lock, project registry, backend adapters for tmux and Herdr, doctor, operating contract, installer, bundled ship skill, MIT license, and a test harness with fake `claude` and fake `herdr`.
 
@@ -52,12 +52,12 @@
 - Produces: fake `claude` reads `$FAKE_CLAUDE_SCRIPT` (one directive per line: `status <state>: <text>`, `sleep <seconds>`, `exit <code>`), appends status lines to `$DUX_STATUS_LOG`, prints one stream-json-shaped line per directive to stdout.
 - Produces: fake `herdr` appends every invocation to `$FAKE_HERDR_LOG`, answers `tab create` with pane `w1:p9`, `pane get` with exit 1 when `$FAKE_HERDR_DEAD` exists, `pane read` with the last N lines of `$FAKE_HERDR_OUTPUT`, and exit 0 for `pane run`, `pane close`, `pane report-agent`, `pane report-metadata`, `notification show`, `status`.
 
-- [ ] **Step 1: Install tools**
+- [x] **Step 1: Install tools**
 
 Run: `brew install bats-core shellcheck`
 Expected: `bats --version` prints `Bats 1.x`; `shellcheck --version` prints a version.
 
-- [ ] **Step 2: Write the Makefile**
+- [x] **Step 2: Write the Makefile**
 
 ```makefile
 SHELL := /bin/bash
@@ -74,7 +74,7 @@ lint:
 check: lint test
 ```
 
-- [ ] **Step 3: Write the helper**
+- [x] **Step 3: Write the helper**
 
 `tests/helpers/setup.bash`:
 
@@ -99,7 +99,7 @@ teardown() {
 }
 ```
 
-- [ ] **Step 4: Write fake claude**
+- [x] **Step 4: Write fake claude**
 
 `tests/fakes/claude`:
 
@@ -124,7 +124,7 @@ echo '{"type":"result","subtype":"success"}'
 
 Run: `chmod +x tests/fakes/claude`
 
-- [ ] **Step 5: Write fake herdr**
+- [x] **Step 5: Write fake herdr**
 
 `tests/fakes/herdr`:
 
@@ -159,7 +159,7 @@ esac
 
 Run: `chmod +x tests/fakes/herdr`
 
-- [ ] **Step 6: Write the harness test**
+- [x] **Step 6: Write the harness test**
 
 `tests/harness.bats`:
 
@@ -201,16 +201,16 @@ load helpers/setup
 }
 ```
 
-- [ ] **Step 7: Run the tests**
+- [x] **Step 7: Run the tests**
 
 Run: `make test`
 Expected: 5 tests, all pass.
 
-- [ ] **Step 8: Break-verify one guard**
+- [x] **Step 8: Break-verify one guard**
 
 Edit `tests/fakes/claude` so the `status` branch writes to `/dev/null` instead of `$log`. Run `make test`. Expected: "fake claude replays a script" fails on the `sed -n 1p` comparison. Restore the line. Run `make test` again, expected 5 pass. Paste the failure output into the commit body in Step 9.
 
-- [ ] **Step 9: Add ignores and commit**
+- [x] **Step 9: Add ignores and commit**
 
 Append to `.gitignore`:
 
@@ -239,7 +239,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 **Interfaces:**
 - Produces (sourced, never executed): variables `DUX_ROOT`, `DUX_HOME` (defaults to `DUX_ROOT`), `DUX_DATA`, `DUX_STATE`, `DUX_CONFIG`, `DUX_TASKS`; functions `die <msg>` (stderr, exit 1), `finding <msg>` (stderr `finding: <msg>`, exit 2), `log <msg>` (stderr, prefixed `dux:`), `now` (UTC ISO-8601 seconds), `require_cmd <name>...` (dies naming the first missing command).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/dux-env.bats`:
 
@@ -289,12 +289,12 @@ load helpers/setup
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `bats tests/dux-env.bats`
 Expected: all 7 fail, "No such file or directory" for `bin/dux-env`.
 
-- [ ] **Step 3: Write the library**
+- [x] **Step 3: Write the library**
 
 `bin/dux-env`:
 
@@ -326,16 +326,16 @@ require_cmd() {
 }
 ```
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `bats tests/dux-env.bats`
 Expected: 7 pass.
 
-- [ ] **Step 5: Break-verify**
+- [x] **Step 5: Break-verify**
 
 Change `finding` to print to stdout (drop `>&2`). Run the file. Expected: "finding is not swallowed by command substitution" fails because `reached` is printed. Restore. Paste into commit.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add bin/dux-env tests/dux-env.bats
@@ -359,7 +359,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 - Consumes: `bin/dux-env`.
 - Produces: `dux-lock acquire` (writes `$DUX_STATE/dux.lock` with the session pid: `$DUX_SESSION_PID`, else `$CLAUDE_PID` which Claude Code sets in every Bash tool environment to the live `claude` process, else `$PPID`; exit 0, or exit 3 printing `held by pid <n>` if that pid is alive; reclaims a dead pid's lock), `dux-lock release` (removes the lock only if it holds our pid), `dux-lock status` (prints `free`, or `held by pid <n> (alive|dead)`), `dux-lock holder` (prints the pid or nothing).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/dux-lock.bats`:
 
@@ -413,12 +413,12 @@ load helpers/setup
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `bats tests/dux-lock.bats`
 Expected: 6 fail, `dux-lock: command not found`.
 
-- [ ] **Step 3: Write the script**
+- [x] **Step 3: Write the script**
 
 `bin/dux-lock`:
 
@@ -458,16 +458,16 @@ esac
 
 Run: `chmod +x bin/dux-lock`
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `bats tests/dux-lock.bats`
 Expected: 6 pass.
 
-- [ ] **Step 5: Break-verify**
+- [x] **Step 5: Break-verify**
 
 Remove the `alive "$h"` condition in `acquire` so any existing lock refuses. Run. Expected: "acquire reclaims a lock left by a dead pid" fails with status 3. Restore. Paste into commit.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add bin/dux-lock tests/dux-lock.bats
@@ -494,7 +494,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 - Produces: `dux-project add <name> <path> [--base <branch>] [--issues off|label:<x>]` appends one line to `$DUX_DATA/projects.md` and installs the PR template if the project lacks one, printing `installed PR template; commit it in <path> before dispatching ship tasks` because an untracked file is invisible to worktrees; `dux-project list` prints names; `dux-project get <name> <key>` prints one field (`path`, `base`, `worktree`, `issues`); `dux-project resolve-base <path>` prints the base branch or a finding when signals disagree.
 - Registry line format, exactly: `- <name> path=<abs> base=<branch> worktree=<make|script|git> issues=<off|label:x> (added <YYYY-MM-DD>)`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/dux-project.bats`:
 
@@ -587,12 +587,12 @@ make_repo() {  # $1 dir, $2 default branch; creates a bare origin and a clone
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `bats tests/dux-project.bats`
 Expected: 10 fail, `dux-project: command not found`.
 
-- [ ] **Step 3: Write the PR template**
+- [x] **Step 3: Write the PR template**
 
 `templates/PULL_REQUEST_TEMPLATE.md` (and copy the same content to `.github/PULL_REQUEST_TEMPLATE.md` for this repo):
 
@@ -622,7 +622,7 @@ Suggested file order. What needs thought, what is mechanical.
 Low | Medium | High, one-line rationale. Backwards compatibility, deploy ordering, deferred follow-ups.
 ```
 
-- [ ] **Step 4: Write the script**
+- [x] **Step 4: Write the script**
 
 `bin/dux-project`:
 
@@ -707,16 +707,16 @@ esac
 
 Run: `chmod +x bin/dux-project`
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 Run: `bats tests/dux-project.bats`
 Expected: 10 pass. If "resolve-base" fails because a real `gh` on `PATH` answers for the temp repo, confirm the test's restricted `PATH` excludes it; the test pins `PATH` to `/usr/bin:/bin` plus `bin/`.
 
-- [ ] **Step 6: Break-verify**
+- [x] **Step 6: Break-verify**
 
 Change `|| exit $?` after `resolve_base` to `|| true`. Run. Expected: "add stops with a finding when base signals disagree" fails because a registry line was written. Restore. Then delete the duplicate-name `finding` line. Expected: "add refuses a duplicate name" fails with status 0. Restore. Paste into commit.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add bin/dux-project templates .github tests/dux-project.bats
@@ -747,7 +747,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 - Selection: `$DUX_BACKEND` env, else `$DUX_CONFIG/backend` file, else `herdr` when `HERDR_ENV=1` and `TMUX` unset, else `tmux`.
 - tmux socket: `$DUX_TMUX_SOCKET` if set (tests use `dux-test`), else the default server. tmux session: `$DUX_TMUX_SESSION` if set, else the current session from `$TMUX`, else a session named `dux` created on demand.
 
-- [ ] **Step 1: Write the selection test**
+- [x] **Step 1: Write the selection test**
 
 `tests/dux-backend-select.bats`:
 
@@ -779,7 +779,7 @@ load helpers/setup
 }
 ```
 
-- [ ] **Step 2: Write the shared adapter test**
+- [x] **Step 2: Write the shared adapter test**
 
 `tests/backend-adapter.bats`:
 
@@ -866,12 +866,12 @@ teardown_file() {
 }
 ```
 
-- [ ] **Step 3: Run to verify they fail**
+- [x] **Step 3: Run to verify they fail**
 
 Run: `DUX_BACKEND=herdr bats tests/backend-adapter.bats tests/dux-backend-select.bats`
 Expected: all fail, `dux-backend: command not found`.
 
-- [ ] **Step 4: Write the dispatcher**
+- [x] **Step 4: Write the dispatcher**
 
 `bin/dux-backend`:
 
@@ -909,7 +909,7 @@ esac
 
 Run: `chmod +x bin/dux-backend`
 
-- [ ] **Step 5: Write the tmux adapter**
+- [x] **Step 5: Write the tmux adapter**
 
 `bin/backends/tmux.sh`:
 
@@ -966,7 +966,7 @@ backend_notify() {  # title body
 }
 ```
 
-- [ ] **Step 6: Write the Herdr adapter**
+- [x] **Step 6: Write the Herdr adapter**
 
 `bin/backends/herdr.sh`:
 
@@ -1011,7 +1011,7 @@ backend_notify() {  # title body
 }
 ```
 
-- [ ] **Step 7: Make the Makefile run the adapter test per backend**
+- [x] **Step 7: Make the Makefile run the adapter test per backend**
 
 Replace the `test` target in `Makefile`:
 
@@ -1024,16 +1024,16 @@ test:
 
 Add `# bats file_tags=adapter` as the first line of `tests/backend-adapter.bats` so the recursive run skips it.
 
-- [ ] **Step 8: Run to verify they pass**
+- [x] **Step 8: Run to verify they pass**
 
 Run: `make test`
 Expected: selection 4 pass; herdr adapter 8 pass, 1 skipped (remain-on-exit); tmux adapter 7 pass, 2 skipped (focus refusal, close failure).
 
-- [ ] **Step 9: Break-verify**
+- [x] **Step 9: Break-verify**
 
 In `bin/backends/herdr.sh`, change `backend_close` to skip the focused check. Run `DUX_BACKEND=herdr bats tests/backend-adapter.bats`. Expected: "close refuses the focused pane" fails with status 0. Restore. Paste into commit.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add bin/dux-backend bin/backends tests/backend-adapter.bats tests/dux-backend-select.bats Makefile
@@ -1057,7 +1057,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 - Consumes: `dux-env`, `dux-backend name`, `dux-lock status`.
 - Produces: `dux-doctor` prints one line per check (`ok <check>` or `FAIL <check>: <why>`), then `backend: <name>` and `lock: <status>`; exit 0 when all ok, 1 otherwise. Checks: `claude`, `codex`, `gh`, `jq`, `git`, `gh auth status`, backend CLI present, registry file exists with at least one project.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/dux-doctor.bats`:
 
@@ -1088,12 +1088,12 @@ load helpers/setup
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `bats tests/dux-doctor.bats`
 Expected: 3 fail, command not found.
 
-- [ ] **Step 3: Write the script**
+- [x] **Step 3: Write the script**
 
 `bin/dux-doctor`:
 
@@ -1132,16 +1132,16 @@ exit $rc
 
 Run: `chmod +x bin/dux-doctor`
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `bats tests/dux-doctor.bats`
 Expected: 3 pass.
 
-- [ ] **Step 5: Break-verify**
+- [x] **Step 5: Break-verify**
 
 Change the registry check to `ok "registry"` unconditionally. Run. Expected: "doctor fails on empty registry" fails with status 0. Restore. Paste into commit.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add bin/dux-doctor tests/dux-doctor.bats
@@ -1169,7 +1169,7 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 **Interfaces:**
 - Produces: the always-loaded contract every later milestone extends. Sections and their order are fixed here; later milestones add lines, never sections.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/contract.bats`:
 
@@ -1216,12 +1216,12 @@ load helpers/setup
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `bats tests/contract.bats`
 Expected: 5 fail (no AGENTS.md, no CLAUDE.md, no skills, no settings).
 
-- [ ] **Step 3: Write AGENTS.md and the CLAUDE.md import**
+- [x] **Step 3: Write AGENTS.md and the CLAUDE.md import**
 
 `CLAUDE.md`:
 
@@ -1306,7 +1306,7 @@ personal identifiers in tracked files, findings on stderr with exit 2,
 ARCHITECTURE.md updated in the same PR as material changes, `/ship` is the only gate.
 ```
 
-- [ ] **Step 4: Write the session hooks**
+- [x] **Step 4: Write the session hooks**
 
 `.claude/settings.json`:
 
@@ -1326,7 +1326,7 @@ ARCHITECTURE.md updated in the same PR as material changes, `/ship` is the only 
 `dux-lock` reads `CLAUDE_PID` from the hook environment, so the recorded pid is
 the live `claude` process, not the hook's shell.
 
-- [ ] **Step 5: Write the dux-project skill**
+- [x] **Step 5: Write the dux-project skill**
 
 `skills/dux-project/SKILL.md`:
 
@@ -1361,7 +1361,7 @@ description: Register a repository with Dux so tasks can be dispatched to it. Us
 - Never guess a base branch. Disagreeing signals go to the operator.
 ```
 
-- [ ] **Step 6: Write README.md**
+- [x] **Step 6: Write README.md**
 
 ```markdown
 # Dux
@@ -1385,20 +1385,20 @@ Verified orchestrator harness: Claude Code. Worker harnesses: Claude Code and Co
     make check
 ```
 
-- [ ] **Step 7: Run to verify it passes**
+- [x] **Step 7: Run to verify it passes**
 
 Run: `make check`
 Expected: lint clean; all tests pass.
 
-- [ ] **Step 8: Break-verify**
+- [x] **Step 8: Break-verify**
 
 Append 200 blank lines to `AGENTS.md`. Run `bats tests/contract.bats`. Expected: "AGENTS.md is at most 150 lines" fails. Remove the lines. Paste into commit.
 
-- [ ] **Step 9: Dry run the skill**
+- [x] **Step 9: Dry run the skill**
 
 Open `claude` in the dux repo. Ask it to register `fitfights_ios`. Expected: it runs `resolve-base`, asks about issues, runs `add`, reports the line. Then remove the registry line before committing (registry is gitignored anyway; the dry run is about the skill).
 
-- [ ] **Step 10: Commit and update this plan's header**
+- [x] **Step 10: Commit and update this plan's header**
 
 Tick all boxes above, set "Tasks done: 7 of 8" in the header, then:
 
