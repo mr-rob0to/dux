@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# Backend selection and dispatch. See spec section 9.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+select_backend() {
+  local b="${DUX_BACKEND:-}"
+  [ -z "$b" ] && [ -f "$DUX_CONFIG/backend" ] && b="$(tr -d '[:space:]' < "$DUX_CONFIG/backend")"
+  if [ -z "$b" ]; then
+    if [ "${HERDR_ENV:-}" = 1 ] && [ -z "${TMUX:-}" ]; then b=herdr; else b=tmux; fi
+  fi
+  case "$b" in tmux|herdr) echo "$b" ;; *) finding "unknown backend $b (expected tmux or herdr)" ;; esac
+}
+
+backend="$(select_backend)" || exit $?
+# shellcheck source=/dev/null
+source "$DUX_ROOT/bin/backends/$backend.sh"
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  name)   echo "$backend" ;;
+  open)   backend_open "${1:?id}" "${2:?cwd}" "${3:?cmd}" ;;
+  exists) backend_exists "${1:?endpoint}" ;;
+  tail)   backend_tail "${1:?endpoint}" "${2:-40}" ;;
+  close)  backend_close "${1:?endpoint}" ;;
+  notify) backend_notify "${1:?title}" "${2:-}" ;;
+  *) die "usage: dux-backend name|open|exists|tail|close|notify" ;;
+esac

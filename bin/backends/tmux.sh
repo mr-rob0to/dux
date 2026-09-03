@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# tmux adapter. Sourced by dux-backend. Endpoint: tmux:<session>:<window_id>
+set -u
+
+_tmux() {
+  if [ -n "${DUX_TMUX_SOCKET:-}" ]; then tmux -L "$DUX_TMUX_SOCKET" "$@"; else tmux "$@"; fi
+}
+
+_session() {
+  if [ -n "${DUX_TMUX_SESSION:-}" ]; then echo "$DUX_TMUX_SESSION"
+  elif [ -n "${TMUX:-}" ]; then _tmux display-message -p '#{session_name}'
+  else
+    _tmux has-session -t dux 2>/dev/null || _tmux new-session -d -s dux -x 120 -y 40
+    echo dux
+  fi
+}
+
+_win() { local ep="$1"; echo "${ep##*:}"; }          # window id (@N)
+_ses() { local ep="${1#tmux:}"; echo "${ep%%:*}"; }  # session name
+
+backend_open() {  # id cwd cmd
+  local id="$1" cwd="$2" cmd="$3" ses wid
+  ses="$(_session)"
+  wid="$(_tmux new-window -d -t "$ses" -n "dux-$id" -c "$cwd" -P -F '#{window_id}' "$cmd")" \
+    || finding "tmux could not open a window for $id"
+  _tmux set-option -w -t "$wid" remain-on-exit on >/dev/null
+  echo "tmux:$ses:$wid"
+}
+
+backend_exists() {  # endpoint
+  local wid; wid="$(_win "$1")"
+  _tmux list-windows -a -F '#{window_id}' 2>/dev/null | grep -q "^$wid$"
+}
+
+backend_tail() {  # endpoint n
+  local wid; wid="$(_win "$1")"
+  _tmux capture-pane -p -t "$wid" -S "-$2" 2>/dev/null | sed '/^$/d' | tail -n "$2"
+}
+
+backend_close() {  # endpoint
+  local wid active attached; wid="$(_win "$1")"
+  active="$(_tmux display-message -p -t "$wid" '#{window_active}' 2>/dev/null || echo 0)"
+  attached="$(_tmux display-message -p -t "$wid" '#{session_attached}' 2>/dev/null || echo 0)"
+  if [ "$active" = 1 ] && [ "$attached" != 0 ]; then finding "refusing to close focused pane $1"; fi
+  _tmux kill-window -t "$wid" 2>/dev/null || true
+}
+
+backend_notify() {  # title body
+  _tmux display-message "$1: $2" 2>/dev/null || true
+}
