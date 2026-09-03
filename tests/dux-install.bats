@@ -49,3 +49,32 @@ setup() {
   [ ! -e "$DUX_SKILLS_DIR/ship" ]
   [ -L "$DUX_SKILLS_DIR/other" ]
 }
+
+@test "install --yes refuses to destroy an existing .bak" {
+  mkdir -p "$DUX_SKILLS_DIR/ship" "$DUX_SKILLS_DIR/ship.bak"
+  echo old > "$DUX_SKILLS_DIR/ship/SKILL.md"; echo older > "$DUX_SKILLS_DIR/ship.bak/SKILL.md"
+  run dux-install --yes
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: $DUX_SKILLS_DIR/ship.bak already exists"* ]]
+  [ "$(cat "$DUX_SKILLS_DIR/ship.bak/SKILL.md")" = older ]
+  [ "$(cat "$DUX_SKILLS_DIR/ship/SKILL.md")" = old ]
+}
+
+@test "install refuses to replace a symlink into another place without --yes" {
+  ln -s /tmp "$DUX_SKILLS_DIR/ship"
+  run dux-install
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: $DUX_SKILLS_DIR/ship is a symlink to /tmp"* ]]
+  [ "$(readlink "$DUX_SKILLS_DIR/ship")" = /tmp ]
+  run dux-install --yes
+  [ "$status" -eq 0 ]
+  [ "$(readlink "$DUX_SKILLS_DIR/ship")" = "$DUX_ROOT/skills/ship" ]
+}
+
+@test "install leaves a dangling config symlink alone" {
+  ln -s "$DUX_HOME/nowhere" "$DUX_HOME/config/reviewer"
+  run dux-install
+  [ "$status" -eq 0 ]
+  [ -L "$DUX_HOME/config/reviewer" ]
+  [ ! -e "$DUX_HOME/nowhere" ]
+}
