@@ -9,6 +9,7 @@ case "$1 ${2:-}" in
     if [ -e "${FAKE_HERDR_DEAD:-/nonexistent}" ]; then
       echo '{"error":{"code":"pane_not_found"}}' >&2; exit 1
     fi
+    [ -n "${FAKE_HERDR_BAD_JSON:-}" ] && { echo '{"result":{}}'; exit 0; }
     focused=false; [ -e "${FAKE_HERDR_FOCUSED:-/nonexistent}" ] && focused=true
     echo "{\"result\":{\"pane\":{\"pane_id\":\"$3\",\"focused\":$focused}}}" ;;
   "pane read")
@@ -17,7 +18,10 @@ case "$1 ${2:-}" in
   "pane close")
     [ -n "${FAKE_HERDR_CLOSE_FAIL:-}" ] && { echo '{"error":{"code":"close_failed"}}' >&2; exit 1; }
     echo '{"result":{}}' ;;
-  "pane run"|"pane wait-output"|"pane report-agent"|"pane report-metadata"|"notification show")
+  "pane wait-output")
+    [ -n "${FAKE_HERDR_NO_PROMPT:-}" ] && { echo '{"error":{"code":"timeout"}}' >&2; exit 1; }
+    echo '{"result":{}}' ;;
+  "pane run"|"pane report-agent"|"pane report-metadata"|"notification show")
     echo '{"result":{}}' ;;
   "status ")
     printf 'server:\n  status: running\n' ;;

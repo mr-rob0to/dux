@@ -17,13 +17,18 @@ backend="$(select_backend)" || exit $?
 # shellcheck source=/dev/null
 source "$DUX_ROOT/bin/backends/$backend.sh"
 
+# An endpoint recorded under one backend must never be handed to another.
+own_endpoint() {
+  case "$1" in "$backend:"*) ;; *) finding "endpoint $1 does not belong to backend $backend" ;; esac
+}
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   name)   echo "$backend" ;;
   open)   backend_open "${1:?id}" "${2:?cwd}" "${3:?cmd}" ;;
-  exists) backend_exists "${1:?endpoint}" ;;
-  tail)   backend_tail "${1:?endpoint}" "${2:-40}" ;;
-  close)  backend_close "${1:?endpoint}" ;;
+  exists) own_endpoint "${1:?endpoint}"; backend_exists "$1" ;;
+  tail)   own_endpoint "${1:?endpoint}"; backend_tail "$1" "${2:-40}" ;;
+  close)  own_endpoint "${1:?endpoint}"; backend_close "$1" ;;
   notify) backend_notify "${1:?title}" "${2:-}" ;;
   *) die "usage: dux-backend name|open|exists|tail|close|notify" ;;
 esac
