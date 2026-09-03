@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Fake herdr CLI for tests. Records calls; returns canned JSON.
+set -u
+printf '%s\n' "$*" >> "${FAKE_HERDR_LOG:-/dev/null}"
+case "$1 ${2:-}" in
+  "tab create")
+    echo '{"result":{"tab":{"tab_id":"w1:t9"},"root_pane":{"pane_id":"w1:p9"}}}' ;;
+  "pane get")
+    if [ -e "${FAKE_HERDR_DEAD:-/nonexistent}" ]; then
+      echo '{"error":{"code":"pane_not_found"}}' >&2; exit 1
+    fi
+    focused=false; [ -e "${FAKE_HERDR_FOCUSED:-/nonexistent}" ] && focused=true
+    echo "{\"result\":{\"pane\":{\"pane_id\":\"$3\",\"focused\":$focused}}}" ;;
+  "pane read")
+    n=120; while [ $# -gt 0 ]; do [ "$1" = "--lines" ] && n="$2"; shift; done
+    tail -n "$n" "${FAKE_HERDR_OUTPUT:-/dev/null}" ;;
+  "pane close")
+    [ -n "${FAKE_HERDR_CLOSE_FAIL:-}" ] && { echo '{"error":{"code":"close_failed"}}' >&2; exit 1; }
+    echo '{"result":{}}' ;;
+  "pane run"|"pane wait-output"|"pane report-agent"|"pane report-metadata"|"notification show")
+    echo '{"result":{}}' ;;
+  "status ")
+    printf 'server:\n  status: running\n' ;;
+  *)
+    echo "fake herdr: unhandled: $*" >&2; exit 2 ;;
+esac

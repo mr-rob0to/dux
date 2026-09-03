@@ -1,3 +1,4 @@
 data/
 state/
 .worktrees/
+tests/tmp/

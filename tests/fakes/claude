@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Fake Claude Code for tests. Ignores real flags; replays $FAKE_CLAUDE_SCRIPT.
+set -u
+script="${FAKE_CLAUDE_SCRIPT:-}"
+log="${DUX_STATUS_LOG:-/dev/null}"
+[ -n "$script" ] && [ -f "$script" ] || { echo '{"type":"result","subtype":"success"}'; exit 0; }
+while IFS= read -r line || [ -n "$line" ]; do
+  case "$line" in
+    status\ *)  printf '%s\n' "${line#status }" >> "$log"
+                printf '{"type":"assistant","text":%s}\n' "$(printf '%s' "${line#status }" | jq -Rs .)" ;;
+    sleep\ *)   sleep "${line#sleep }" ;;
+    exit\ *)    exit "${line#exit }" ;;
+    *)          echo "fake claude: bad directive: $line" >&2; exit 99 ;;
+  esac
+done < "$script"
+echo '{"type":"result","subtype":"success"}'
