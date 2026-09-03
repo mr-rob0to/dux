@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tmux adapter. Sourced by dux-backend. Endpoint: tmux:<session>:<window_id>
+# tmux adapter. Sourced by dux-backend after dux-env. Endpoint: tmux:<session>:<window_id>
 set -u
 
 _tmux() {
@@ -37,12 +37,15 @@ backend_tail() {  # endpoint n
   _tmux capture-pane -p -t "$wid" -S "-$2" 2>/dev/null | sed '/^$/d' | tail -n "$2"
 }
 
-backend_close() {  # endpoint
+backend_close() {  # endpoint. Closes only on a positive "not focused" reading.
   local wid active attached; wid="$(_win "$1")"
-  active="$(_tmux display-message -p -t "$wid" '#{window_active}' 2>/dev/null || echo 0)"
-  attached="$(_tmux display-message -p -t "$wid" '#{session_attached}' 2>/dev/null || echo 0)"
+  backend_exists "$1" || finding "tmux window $wid not found; nothing to close"
+  active="$(_tmux display-message -p -t "$wid" '#{window_active}' 2>/dev/null)" \
+    || finding "cannot read tmux state for $wid; refusing to close"
+  attached="$(_tmux display-message -p -t "$wid" '#{session_attached}' 2>/dev/null)" \
+    || finding "cannot read tmux state for $wid; refusing to close"
   if [ "$active" = 1 ] && [ "$attached" != 0 ]; then finding "refusing to close focused pane $1"; fi
-  _tmux kill-window -t "$wid" 2>/dev/null || true
+  _tmux kill-window -t "$wid" 2>/dev/null || finding "tmux kill-window failed for $wid"
 }
 
 backend_notify() {  # title body

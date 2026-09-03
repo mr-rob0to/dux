@@ -82,3 +82,37 @@ teardown_file() {
   run dux-backend notify "Dux" "hello"; [ "$status" -eq 0 ]
   if [ "$DUX_BACKEND" = herdr ]; then grep -q '^notification show Dux --body hello' "$FAKE_HERDR_LOG"; fi
 }
+
+@test "herdr open is a finding when no shell prompt appears, and the command is never sent" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  export FAKE_HERDR_NO_PROMPT=1
+  run dux-backend open t6 "$DUX_HOME" "sleep 5"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: no shell prompt in pane w1:p9"* ]]
+  ! grep -q '^pane run ' "$FAKE_HERDR_LOG"
+  grep -q '^pane close w1:p9' "$FAKE_HERDR_LOG"
+}
+
+@test "herdr close refuses when the focus state cannot be read" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  export FAKE_HERDR_BAD_JSON=1
+  run dux-backend close "herdr:w1:p9"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: herdr pane get returned no focus state"* ]]
+  ! grep -q '^pane close ' "$FAKE_HERDR_LOG"
+}
+
+@test "herdr close refuses when pane get fails" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  export FAKE_HERDR_DEAD="$DUX_HOME/state/dead"; touch "$FAKE_HERDR_DEAD"
+  run dux-backend close "herdr:w1:p9"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: herdr pane get failed for w1:p9"* ]]
+}
+
+@test "tmux close of a missing window is a finding" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  run dux-backend close "tmux:duxtest:@9999"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: tmux window @9999 not found"* ]]
+}

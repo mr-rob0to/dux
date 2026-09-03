@@ -23,3 +23,11 @@ load helpers/setup
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: unknown backend zellij"* ]]
 }
+
+@test "an endpoint from another backend is a finding, never a silent no-op" {
+  DUX_BACKEND=tmux run dux-backend close "herdr:w1:p9"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: endpoint herdr:w1:p9 does not belong to backend tmux"* ]]
+  DUX_BACKEND=herdr run dux-backend exists "tmux:duxtest:@1"
+  [ "$status" -eq 2 ]
+}
