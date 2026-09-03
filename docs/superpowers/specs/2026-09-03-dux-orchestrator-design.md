@@ -52,7 +52,7 @@ Non-goals for v1
     dux-project/SKILL.md    register a repo, drop PR template if absent
     dux-recover/SKILL.md    stuck, dead, or failed worker
   bin/
-    dux-spawn               create worktree + tmux window, launch worker
+    dux-spawn               create worktree + backend container, launch worker
     dux-brief               render tasks/<id>/brief.md from arguments
     dux-worktree            create/find worktree per project's own mechanism
     dux-watch               tail all status logs, emit state changes to events.log
