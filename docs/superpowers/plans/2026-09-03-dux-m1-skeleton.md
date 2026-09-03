@@ -24,7 +24,7 @@
 - Herdr `close` is `herdr pane close` on the exact recorded pane, never `workspace close`; refuse when it is the operator's focused pane (spec section 9).
 - `data/`, `state/`, `.worktrees/` are gitignored (spec section 3).
 - Every test is break-verified once: break the guarded condition, paste the failure into the commit, restore (spec section 15).
-- Commit messages end with the Co-Authored-By and Claude-Session trailers used in this repo's history.
+- Commit messages, PR titles, and PR bodies carry no AI attribution: no Co-Authored-By for a model, no Claude-Session trailer, no session URL, no "Generated with" line.
 - Open source under MIT (spec section 18). No personal identifiers in tracked files: no operator home path, username, project names, or accounts. `make lint` enforces it from Task 8 on.
 
 ## Conventions used by every task
@@ -222,10 +222,7 @@ tests/tmp/
 git add Makefile tests .gitignore
 git commit -m "test: add bats harness with fake claude and fake herdr
 
-Break-verified: <paste the failing assertion line from Step 8>
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
+Break-verified: <paste the failing assertion line from Step 8>"
 ```
 
 ---
@@ -341,10 +338,7 @@ Change `finding` to print to stdout (drop `>&2`). Run the file. Expected: "findi
 git add bin/dux-env tests/dux-env.bats
 git commit -m "feat: add dux-env shared library
 
-Break-verified: <paste>
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
+Break-verified: <paste>"
 ```
 
 ---
@@ -473,10 +467,7 @@ Remove the `alive "$h"` condition in `acquire` so any existing lock refuses. Run
 git add bin/dux-lock tests/dux-lock.bats
 git commit -m "feat: add dux-lock single-session lock
 
-Break-verified: <paste>
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
+Break-verified: <paste>"
 ```
 
 ---
@@ -722,10 +713,7 @@ Change `|| exit $?` after `resolve_base` to `|| true`. Run. Expected: "add stops
 git add bin/dux-project templates .github tests/dux-project.bats
 git commit -m "feat: add dux-project registry and PR template install
 
-Break-verified: <paste>
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
+Break-verified: <paste>"
 ```
 
 ---
@@ -1039,10 +1027,7 @@ In `bin/backends/herdr.sh`, change `backend_close` to skip the focused check. Ru
 git add bin/dux-backend bin/backends tests/backend-adapter.bats tests/dux-backend-select.bats Makefile
 git commit -m "feat: add tmux and herdr backend adapters behind dux-backend
 
-Break-verified: <paste>
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
+Break-verified: <paste>"
 ```
 
 ---
@@ -1147,10 +1132,7 @@ Change the registry check to `ok "registry"` unconditionally. Run. Expected: "do
 git add bin/dux-doctor tests/dux-doctor.bats
 git commit -m "feat: add dux-doctor preflight
 
-Break-verified: <paste>
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
+Break-verified: <paste>"
 ```
 
 ---
@@ -1406,10 +1388,7 @@ Tick all boxes above, set "Tasks done: 8 of 8" in the header, then:
 git add AGENTS.md CLAUDE.md .claude/settings.json skills README.md docs/ARCHITECTURE.md tests/contract.bats docs/superpowers/plans
 git commit -m "feat: add Dux operating contract, dux-project skill, README
 
-Break-verified: <paste>
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
+Break-verified: <paste>"
 ```
 
 ---
@@ -1650,8 +1629,5 @@ Set "Tasks done: 8 of 8".
 git add LICENSE CONTRIBUTING.md skills/ship bin/dux-install bin/dux-uninstall templates/config Makefile .gitignore tests/dux-install.bats tests/identifiers.bats docs/superpowers/plans
 git commit -m "feat: MIT license, bundled ship skill, dux-install, identifier lint
 
-Break-verified: <paste both>
-
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
-Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
+Break-verified: <paste both>"
 ```
