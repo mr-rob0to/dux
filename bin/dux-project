@@ -11,6 +11,8 @@ field() {  # $1 name, $2 key
   grep "^- $1 " "$registry" | sed -n "s/.* $2=\([^ ]*\).*/\1/p"
 }
 
+valid_branch() { git check-ref-format --branch "$1" >/dev/null 2>&1; }
+
 detect_worktree() {  # $1 path
   if [ -f "$1/Makefile" ] && grep -qE '^worktree:' "$1/Makefile"; then echo make
   elif ls "$1"/scripts/*worktree* >/dev/null 2>&1; then echo script
@@ -35,13 +37,16 @@ resolve_base() {  # $1 path. Spec section 4 and /ship step 0.
   if [ "$(printf '%s\n' "$candidates" | wc -l | tr -d ' ')" -gt 1 ]; then
     finding "base branch signals disagree for $p: docs=${docs:-none} forge=${forge:-none} origin/HEAD=${head:-none}"
   fi
+  valid_branch "$candidates" || finding "base branch signal is not a valid branch name: $candidates"
   echo "$candidates"
 }
 
-install_template() {  # $1 path
-  local t="$1/.github/PULL_REQUEST_TEMPLATE.md"
-  if [ -f "$t" ]; then log "existing PR template left alone: $t"; echo "existing PR template left alone"; return; fi
-  mkdir -p "$1/.github" && cp "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md" "$t"
+install_template() {  # $1 path. Prints one line for the caller to relay.
+  local gh="$1/.github" t="$1/.github/PULL_REQUEST_TEMPLATE.md"
+  if [ -e "$t" ]; then log "existing PR template left alone: $t"; echo "existing PR template left alone"; return; fi
+  if [ -L "$gh" ] || [ -L "$t" ]; then finding "refusing to write through a symlink at $gh"; fi
+  mkdir -p "$gh" || finding "cannot create $gh"
+  cp "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md" "$t" || finding "cannot write $t"
   echo "installed PR template; commit it in $1 before dispatching ship tasks"
 }
 
@@ -57,15 +62,21 @@ case "$cmd" in
         *) die "unknown flag $1" ;;
       esac
     done
+    case "$name" in ''|*[!A-Za-z0-9._-]*) finding "project name must match [A-Za-z0-9._-]+: $name" ;; esac
     path="$(cd "$path" 2>/dev/null && pwd)" || finding "not a git repository: $given"
+    case "$path" in *[[:space:]]*) finding "project path must not contain whitespace: $path" ;; esac
     git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 || finding "not a git repository: $path"
     grep -q "^- $name " "$registry" && finding "project $name already registered"
+    other="$(grep -F -- " path=$path " "$registry" | sed -n 's/^- \([^ ]*\) .*/\1/p')"
+    [ -z "$other" ] || finding "path $path already registered as $other"
     case "$issues" in off|label:*) ;; *) die "--issues must be off or label:<name>" ;; esac
     if [ -z "$base" ]; then base="$(resolve_base "$path")" || exit $?; fi
+    valid_branch "$base" || finding "base branch name is not valid: $base"
     wt="$(detect_worktree "$path")"
+    template_msg="$(install_template "$path")" || exit $?
     printf -- '- %s path=%s base=%s worktree=%s issues=%s (added %s)\n' \
       "$name" "$path" "$base" "$wt" "$issues" "$(date -u +%Y-%m-%d)" >> "$registry"
-    install_template "$path"
+    echo "$template_msg"
     log "registered $name base=$base worktree=$wt issues=$issues" ;;
   list) sed -n 's/^- \([^ ]*\) .*/\1/p' "$registry" ;;
   get)

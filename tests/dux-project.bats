@@ -84,3 +84,59 @@ make_repo() {  # $1 dir, $2 default branch; creates a bare origin and a clone
   run dux-project list
   [ "$output" = $'r1\nr2' ]
 }
+
+@test "add refuses a symlinked .github and writes nothing anywhere" {
+  make_repo "$DUX_HOME/repoI" main
+  mkdir -p "$DUX_HOME/outside"; ln -s "$DUX_HOME/outside" "$DUX_HOME/repoI/.github"
+  run dux-project add repoI "$DUX_HOME/repoI"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: refusing to write through a symlink"* ]]
+  [ -z "$(ls -A "$DUX_HOME/outside")" ]
+  ! grep -q '^- repoI ' "$DUX_HOME/data/projects.md"
+}
+
+@test "add refuses a dangling template symlink instead of writing through it" {
+  make_repo "$DUX_HOME/repoJ" main
+  mkdir -p "$DUX_HOME/repoJ/.github"; ln -s "$DUX_HOME/victim.md" "$DUX_HOME/repoJ/.github/PULL_REQUEST_TEMPLATE.md"
+  run dux-project add repoJ "$DUX_HOME/repoJ"
+  [ "$status" -eq 2 ]
+  [ ! -e "$DUX_HOME/victim.md" ]
+}
+
+@test "add refuses a name with characters outside [A-Za-z0-9._-]" {
+  make_repo "$DUX_HOME/repoK" main
+  run dux-project add '.*' "$DUX_HOME/repoK"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: project name must match"* ]]
+}
+
+@test "add refuses a path containing whitespace" {
+  make_repo "$DUX_HOME/re po" main
+  run dux-project add repo "$DUX_HOME/re po"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: project path must not contain whitespace"* ]]
+}
+
+@test "add refuses the same path under a second name" {
+  make_repo "$DUX_HOME/repoL" main
+  dux-project add repoL "$DUX_HOME/repoL"
+  run dux-project add repoL2 "$DUX_HOME/repoL"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: path $DUX_HOME/repoL already registered as repoL"* ]]
+}
+
+@test "add refuses a flag-shaped --base" {
+  make_repo "$DUX_HOME/repoM" main
+  run dux-project add repoM "$DUX_HOME/repoM" --base --force
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: base branch name is not valid: --force"* ]]
+}
+
+@test "resolve-base refuses a flag-shaped docs signal when it is the only one" {
+  make_repo "$DUX_HOME/repoN" main
+  (cd "$DUX_HOME/repoN" && git remote set-head origin --delete)
+  printf 'The base branch is `--prune`.\n' > "$DUX_HOME/repoN/CLAUDE.md"
+  PATH="$DUX_ROOT/bin:/usr/bin:/bin" run dux-project resolve-base "$DUX_HOME/repoN"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: base branch signal is not a valid branch name: --prune"* ]]
+}
