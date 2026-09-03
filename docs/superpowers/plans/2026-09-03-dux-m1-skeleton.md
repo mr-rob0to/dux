@@ -3,11 +3,11 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 1 of 6 (see `2026-09-03-dux-roadmap.md`). Tasks done: 0 of 7.
+- Milestone: 1 of 6 (see `2026-09-03-dux-roadmap.md`). Tasks done: 0 of 8.
 - reviewed_sha: none yet. Fix rounds used: 0 of 3.
 - Next action: Task 1.
 
-**Goal:** Stand up the Dux repo with its shared shell library, single-session lock, project registry, backend adapters for tmux and Herdr, doctor, operating contract, and a test harness with fake `claude` and fake `herdr`.
+**Goal:** Stand up the Dux repo with its shared shell library, single-session lock, project registry, backend adapters for tmux and Herdr, doctor, operating contract, installer, bundled ship skill, MIT license, and a test harness with fake `claude` and fake `herdr`.
 
 **Architecture:** Dux is an agent distro: a repo that an interactive Claude Code session inhabits. Bash scripts under `bin/` own mechanics and refuse loudly on surprises; `CLAUDE.md` and skills own judgment. Every script sources `bin/dux-env` for paths and helpers. Backends are selected once and called only through `bin/dux-backend`.
 
@@ -25,6 +25,7 @@
 - `data/`, `state/`, `.worktrees/` are gitignored (spec section 3).
 - Every test is break-verified once: break the guarded condition, paste the failure into the commit, restore (spec section 15).
 - Commit messages end with the Co-Authored-By and Claude-Session trailers used in this repo's history.
+- Open source under MIT (spec section 18). No personal identifiers in tracked files: no operator home path, username, project names, or accounts. `make lint` enforces it from Task 8 on.
 
 ## Conventions used by every task
 
@@ -1369,7 +1370,7 @@ Open `claude` in the dux repo. Ask it to register `fitfights_ios`. Expected: it 
 
 - [ ] **Step 10: Commit and update this plan's header**
 
-Tick all boxes above, set "Tasks done: 7 of 7" in the header, then:
+Tick all boxes above, set "Tasks done: 7 of 8" in the header, then:
 
 ```bash
 git add CLAUDE.md .claude/settings.json skills README.md tests/contract.bats docs/superpowers/plans
@@ -1390,3 +1391,237 @@ Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
 - `dux-project add fitfights_api` resolves `staging` and `fitfights_ios` resolves `main` without a disagreement finding, or the finding lists the disagreeing signals.
 - The Herdr adapter opens a visible `dux-<id>` tab in the Dux workspace, with the operator's focus unchanged.
 - Every commit body carries a pasted break-verification failure.
+- `dux-install --yes` has run on the operator's machine; `~/.claude/skills/ship` resolves into this repo and `/ship` loads in another repo.
+- `make lint-identifiers` passes with the operator's real denylist.
+
+---
+
+### Task 8: License, contributing, bundled ship skill, installer, identifier lint
+
+**Files:**
+- Create: `LICENSE` (MIT, copyright holder "Dux contributors")
+- Create: `CONTRIBUTING.md`
+- Create: `skills/ship/SKILL.md` (byte-for-byte copy of `~/.agents/skills/ship/SKILL.md`)
+- Create: `bin/dux-install`
+- Create: `bin/dux-uninstall`
+- Create: `templates/config/reviewer`, `templates/config/security-reviewer`, `templates/config/models`, `templates/config/backend`
+- Modify: `Makefile` (lint target)
+- Modify: `.gitignore` (add `tests/personal-identifiers.txt`)
+- Test: `tests/dux-install.bats`, `tests/identifiers.bats`
+
+**Interfaces:**
+- Consumes: `bin/dux-env`.
+- Produces: `dux-install [--yes]` symlinks `skills/*` into `$DUX_SKILLS_DIR` (default `~/.claude/skills`), copies `templates/config/*` into `$DUX_CONFIG` when absent, and writes `tests/personal-identifiers.txt` from `$(whoami)`, `$HOME`, and registry project names. A real directory at a target is a finding unless `--yes`, which moves it to `<name>.bak`. `dux-uninstall` removes only symlinks whose target is inside `$DUX_ROOT/skills`.
+- Produces: `make lint` fails when any tracked file contains a line from `tests/personal-identifiers.txt`.
+
+- [ ] **Step 1: Write the failing tests**
+
+`tests/dux-install.bats`:
+
+```bash
+load helpers/setup
+
+setup() {
+  DUX_HOME="$(mktemp -d "${BATS_TMPDIR:-/tmp}/dux-home.XXXXXX")"; export DUX_HOME
+  mkdir -p "$DUX_HOME/data" "$DUX_HOME/state" "$DUX_HOME/config"
+  export DUX_SKILLS_DIR="$DUX_HOME/skills-target"; mkdir -p "$DUX_SKILLS_DIR"
+  export PATH="$DUX_ROOT/tests/fakes:$DUX_ROOT/bin:$PATH"
+}
+
+@test "install symlinks every bundled skill and copies default config" {
+  run dux-install
+  [ "$status" -eq 0 ]
+  for d in "$DUX_ROOT"/skills/*/; do
+    n="$(basename "$d")"
+    [ -L "$DUX_SKILLS_DIR/$n" ]
+    [ "$(readlink "$DUX_SKILLS_DIR/$n")" = "$DUX_ROOT/skills/$n" ]
+  done
+  [ -f "$DUX_HOME/config/reviewer" ]
+  grep -q 'codex exec' "$DUX_HOME/config/reviewer"
+}
+
+@test "install refuses an existing real directory without --yes" {
+  mkdir -p "$DUX_SKILLS_DIR/ship"; echo old > "$DUX_SKILLS_DIR/ship/SKILL.md"
+  run dux-install
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: $DUX_SKILLS_DIR/ship exists and is not a symlink"* ]]
+  [ -f "$DUX_SKILLS_DIR/ship/SKILL.md" ]
+}
+
+@test "install --yes moves an existing directory to .bak" {
+  mkdir -p "$DUX_SKILLS_DIR/ship"; echo old > "$DUX_SKILLS_DIR/ship/SKILL.md"
+  run dux-install --yes
+  [ "$status" -eq 0 ]
+  [ -L "$DUX_SKILLS_DIR/ship" ]
+  [ "$(cat "$DUX_SKILLS_DIR/ship.bak/SKILL.md")" = old ]
+}
+
+@test "install does not overwrite existing config" {
+  echo mine > "$DUX_HOME/config/reviewer"
+  dux-install
+  [ "$(cat "$DUX_HOME/config/reviewer")" = mine ]
+}
+
+@test "uninstall removes only symlinks into this repo" {
+  dux-install
+  ln -s /tmp "$DUX_SKILLS_DIR/other"
+  run dux-uninstall
+  [ "$status" -eq 0 ]
+  [ ! -e "$DUX_SKILLS_DIR/ship" ]
+  [ -L "$DUX_SKILLS_DIR/other" ]
+}
+```
+
+`tests/identifiers.bats`:
+
+```bash
+load helpers/setup
+
+@test "lint fails when a tracked file contains a personal identifier" {
+  tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"
+  echo 'leak-me-please' > "$tmp/repo/tests/personal-identifiers.txt"
+  echo 'this line says leak-me-please' >> "$tmp/repo/README.md"
+  (cd "$tmp/repo" && git add README.md)
+  run make -C "$tmp/repo" lint-identifiers
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"README.md"* ]]
+}
+
+@test "lint passes on the clean repo" {
+  run make -C "$DUX_ROOT" lint-identifiers
+  [ "$status" -eq 0 ]
+}
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `bats tests/dux-install.bats tests/identifiers.bats`
+Expected: all fail (no `dux-install`, no `lint-identifiers` target).
+
+- [ ] **Step 3: Copy the ship skill and write license and contributing**
+
+```bash
+mkdir -p skills/ship && cp ~/.agents/skills/ship/SKILL.md skills/ship/SKILL.md
+```
+
+`LICENSE`: the MIT text with `Copyright (c) 2026 Dux contributors`.
+
+`CONTRIBUTING.md`:
+
+```markdown
+# Contributing
+
+- Scripts own mechanics; skills own judgment. A script that meets a surprise stops with `finding: ...`.
+- Every script has a bats file. Every guard is break-verified once and the failure is pasted into the commit.
+- `make check` must be green. `make lint` also refuses personal identifiers in tracked files.
+- No personal paths, usernames, or project names in tracked files. Personal state lives in `data/`, `state/`, `config/`.
+- Changes to the design go through `docs/superpowers/specs/` first.
+```
+
+- [ ] **Step 4: Write the default config templates**
+
+```
+templates/config/reviewer            codex exec -m gpt-5.6-sol --sandbox read-only
+templates/config/security-reviewer   agent:security-reviewer
+templates/config/models              plan=claude-fable-5-1:high ship=claude-opus-5:max scout=claude-sonnet-5:medium
+templates/config/backend             (empty file; empty means auto-detect)
+```
+
+Milestone 5 makes `/ship` read the first two; milestone 2 makes the wrapper read `models`.
+
+- [ ] **Step 5: Write the installer and uninstaller**
+
+`bin/dux-install`:
+
+```bash
+#!/usr/bin/env bash
+# Symlink bundled skills into the user's skills dir; seed config. Spec section 18.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+yes=0; [ "${1:-}" = "--yes" ] && yes=1
+target="${DUX_SKILLS_DIR:-$HOME/.claude/skills}"
+mkdir -p "$target"
+
+for d in "$DUX_ROOT"/skills/*/; do
+  n="$(basename "$d")"; dst="$target/$n"; src="$DUX_ROOT/skills/$n"
+  if [ -L "$dst" ]; then
+    [ "$(readlink "$dst")" = "$src" ] && { log "ok $n"; continue; }
+    rm -f "$dst"
+  elif [ -e "$dst" ]; then
+    [ "$yes" = 1 ] || finding "$dst exists and is not a symlink; rerun with --yes to move it to $n.bak"
+    rm -rf "$dst.bak"; mv "$dst" "$dst.bak"; log "moved $dst to $dst.bak"
+  fi
+  ln -s "$src" "$dst"; log "linked $n"
+done
+
+for f in "$DUX_ROOT"/templates/config/*; do
+  n="$(basename "$f")"
+  [ -e "$DUX_CONFIG/$n" ] || { cp "$f" "$DUX_CONFIG/$n"; log "config $n seeded"; }
+done
+
+{
+  whoami; basename "$HOME"; echo "$HOME"
+  [ -f "$DUX_DATA/projects.md" ] && sed -n 's/^- \([^ ]*\) .*/\1/p' "$DUX_DATA/projects.md"
+} | grep -v '^$' | sort -u > "$DUX_ROOT/tests/personal-identifiers.txt"
+log "identifier denylist written"
+```
+
+`bin/dux-uninstall`:
+
+```bash
+#!/usr/bin/env bash
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+target="${DUX_SKILLS_DIR:-$HOME/.claude/skills}"
+for l in "$target"/*; do
+  [ -L "$l" ] || continue
+  case "$(readlink "$l")" in "$DUX_ROOT/skills/"*) rm -f "$l"; log "removed $(basename "$l")" ;; esac
+done
+```
+
+Run: `chmod +x bin/dux-install bin/dux-uninstall`
+
+- [ ] **Step 6: Add the identifier lint**
+
+In `Makefile`, add and wire:
+
+```makefile
+lint: lint-shell lint-identifiers
+
+lint-shell:
+	shellcheck -s bash bin/dux-* bin/backends/*.sh tests/fakes/* tests/helpers/*.bash
+
+lint-identifiers:
+	@if [ -s tests/personal-identifiers.txt ]; then \
+	  git ls-files -z | xargs -0 grep -nF -f tests/personal-identifiers.txt -- 2>/dev/null \
+	    | grep -v '^tests/personal-identifiers.txt' && { echo "personal identifiers found"; exit 1; } || true; \
+	fi
+```
+
+Append `tests/personal-identifiers.txt` to `.gitignore`.
+
+- [ ] **Step 7: Run to verify they pass**
+
+Run: `bin/dux-install --yes` once on your machine (this replaces `~/.claude/skills/ship` with a symlink; the old directory is kept as `ship.bak`), then `make check`.
+Expected: all tests pass; lint clean. Confirm `/ship` still loads in a fresh `claude` session in any repo.
+
+- [ ] **Step 8: Break-verify**
+
+Set `yes=1` unconditionally. Run `bats tests/dux-install.bats`. Expected: "refuses an existing real directory without --yes" fails. Restore. Then remove the `exit 1` from `lint-identifiers`. Run `bats tests/identifiers.bats`. Expected: "lint fails when a tracked file contains a personal identifier" fails. Restore. Paste both.
+
+- [ ] **Step 9: Commit and update this plan's header**
+
+Set "Tasks done: 8 of 8".
+
+```bash
+git add LICENSE CONTRIBUTING.md skills/ship bin/dux-install bin/dux-uninstall templates/config Makefile .gitignore tests/dux-install.bats tests/identifiers.bats docs/superpowers/plans
+git commit -m "feat: MIT license, bundled ship skill, dux-install, identifier lint
+
+Break-verified: <paste both>
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01K5NHrLFHm1msoHGdGyDbvT"
+```
