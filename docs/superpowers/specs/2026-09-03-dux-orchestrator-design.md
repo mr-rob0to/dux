@@ -123,7 +123,8 @@ Under 60 lines. Sections, all required:
 3. Project: path, base branch, worktree path, plan path and task range for ship.
 4. Rules: work alone, never address the operator, stay inside the worktree,
    never push to base, never merge, same obstacle twice means `blocked` and stop,
-   report through the status protocol only.
+   report through the status protocol only, read `tasks/<id>/inbox.md` after
+   writing `blocked` or `needs-decision` and before exiting.
 5. Definition of done, per shape.
 
 The brief never includes Dux conversation history or other tasks.
@@ -160,9 +161,13 @@ open tmux window `dux-<id>`, run `dux-worker-wrap`, record window id and
 
 The worker command is `claude -p` with the brief as the prompt, the project's
 `CLAUDE.md` loading normally, the operator's global `CLAUDE.md` loading normally,
-`--output-format stream-json` to `state/<id>.out`, permission mode per shape
-(plan and scout: default; ship: the operator's usual mode for autonomous work).
-Model and effort flags per shape.
+`--output-format stream-json` to `state/<id>.out`, and
+`--dangerously-skip-permissions` for every shape, because a headless worker
+cannot answer prompts and a denied tool call stalls the task. The blast radius is
+the worktree plus `gh` and `codex` with the operator's credentials; `/ship`'s
+refusal rules and the brief's never-push-to-base rule are the guards. Model via
+`--model` per shape; effort via the CLI flag if this version exposes one,
+otherwise a one-line system-prompt instruction in the brief.
 
 ### 5.6 Teardown (`dux-teardown <id>`)
 
