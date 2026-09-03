@@ -3,6 +3,9 @@ load helpers/setup
 
 # Runs for whichever backend $DUX_BACKEND names. The Makefile runs it twice.
 setup_file() {
+  if [ "${DUX_BACKEND:-}" = herdr ]; then
+    export HERDR_WORKSPACE_ID=w1
+  fi
   if [ "${DUX_BACKEND:-}" = tmux ]; then
     export DUX_TMUX_SOCKET=dux-test DUX_TMUX_SESSION=duxtest
     tmux -L dux-test kill-server 2>/dev/null || true
