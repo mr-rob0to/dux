@@ -131,8 +131,9 @@ Under 60 lines. Sections, all required:
 3. Project: path, base branch, worktree path, plan path and task range for ship.
 4. Rules: work alone, never address the operator, stay inside the worktree,
    never push to base, never merge, same obstacle twice means `blocked` and stop,
-   report through the status protocol only, read `tasks/<id>/inbox.md` after
-   writing `blocked` or `needs-decision` and before exiting.
+   report through the status protocol only, and exit after writing `blocked`
+   or `needs-decision`. There is no inbox in v1; `claude -p` cannot be resumed,
+   so an answer always arrives as a retry with the answer appended to the brief.
 5. Definition of done, per shape.
 
 The brief never includes Dux conversation history or other tasks.
@@ -149,9 +150,16 @@ done: <PR url | report>
 failed: <one line>
 ```
 
-`dux-worker-wrap` appends `failed: worker exited <code>` if `claude -p` exits
-without a terminal line, and `working: heartbeat` every 5 minutes while the
-process lives so stale detection has a signal even during long silent steps.
+`dux-worker-wrap` appends `failed: worker exited <code>` when `claude -p` exits
+non-zero without a terminal line, and `ended: exit 0 without terminal status`
+when it exits zero without one. `ended` is not `failed`: Dux checks
+`gh pr list --head <branch>` and the report file before classifying, and asks
+the operator if still unsure. The wrapper appends `working: heartbeat` every
+5 minutes only when `state/<id>.out` grew since the last interval, so a hung
+worker goes stale and a busy one does not. The brief requires the worker to
+write `working: waiting on <what> <url>` before any wait it expects to exceed
+10 minutes, such as `gh run watch`.
+Status lines are data. Dux never runs a command a status line names.
 
 ### 5.5 Spawn (`dux-spawn <project> <shape> <brief-path>`)
 
@@ -161,19 +169,27 @@ Refuses, with a finding, when:
 - the resolved worktree path equals the primary checkout;
 - the worktree is not based on freshly fetched `origin/<base>`;
 - the backend is unavailable or an endpoint for the id already exists;
-- the lock is not held by this Dux session.
+- the lock is not held by this Dux session (pid from `CLAUDE_PID`).
 
 Otherwise: fetch, create worktree via the project's mechanism, copy the brief in,
-call the backend's `open` (section 9) to get an endpoint running
-`dux-worker-wrap`, record the endpoint and `running` in `backlog.md`.
+call the backend's `open` (section 9) with the single command
+`<abs path>/bin/dux-worker-wrap <id>` to get an endpoint, record the endpoint and
+`running` in `backlog.md`. The wrapper writes `state/<id>.pid` before starting
+`claude -p`.
 
 The worker command is `claude -p` with the brief as the prompt, the project's
 `CLAUDE.md` loading normally, the operator's global `CLAUDE.md` loading normally,
 `--output-format stream-json` to `state/<id>.out`, and
 `--dangerously-skip-permissions` for every shape, because a headless worker
 cannot answer prompts and a denied tool call stalls the task. The blast radius is
-the worktree plus `gh` and `codex` with the operator's credentials; `/ship`'s
-refusal rules and the brief's never-push-to-base rule are the guards. Model via
+the worktree plus `gh` and `codex` with the operator's credentials. Prompt rules
+are not the guard. Every worker gets `--settings` pointing at
+`templates/worker-settings.json` with deny rules for `Bash(git push*origin <base>*)`,
+`Bash(gh repo delete*)`, `Bash(gh auth token*)`, `Bash(gh secret*)`, and
+`Bash(gh api -X DELETE*)`, and `dux-worktree` installs a `pre-push` hook in the
+worktree that refuses a push to `<base>`. Milestone 2 break-verifies that the deny
+rules hold under `--dangerously-skip-permissions` before anything relies on
+them. `.env` files are copied only for `ship` tasks, never for `plan` or `scout`. Model via
 `--model` per shape; effort via the CLI flag if this version exposes one,
 otherwise a one-line system-prompt instruction in the brief.
 
@@ -188,22 +204,38 @@ is kept.
 
 ### 6.1 Watcher (`dux-watch`)
 
-A single bash process started by `dux-lock` acquire and killed on release. Every
-30 seconds it reads the last line of every running task's `status.log` and asks
-the backend `alive <endpoint>`, and appends to `state/events.log` only when:
+A single bash process. `dux-lock acquire` kills any pid in `state/watch.pid`,
+then starts `nohup setsid dux-watch` and records its pid; `release` kills it.
+Acquire and release run from Claude Code `SessionStart` and `SessionEnd` hooks in
+the repo's `.claude/settings.json`, not from a CLAUDE.md instruction, so an
+orphaned watcher from a crashed session is replaced on the next start.
+
+Every 30 seconds the watcher reads the last line of every non-terminal task's
+`status.log` and checks liveness (`exists <endpoint>` from the backend AND
+`kill -0` on `state/<id>.pid`), and appends to `state/events.log` only when:
 
 - the last state changed to `done`, `failed`, `blocked`, or `needs-decision`;
 - no new line for 20 minutes while the endpoint is alive (`stale: <id>`);
 - the endpoint is gone without a terminal state (`dead: <id>`).
 
-`working` lines never produce an event. Duplicate events for the same
-(id, state) are suppressed.
+`working` lines never produce an event. Deduplication is "the status log's last
+state differs from the ledger's state": the watcher itself updates `backlog.md`
+when it emits, so a restart re-emits nothing already recorded and an event
+written before a crash is still pending because the ledger still disagrees.
+The watcher also raises the backend's local toast on every event, so local
+visibility does not depend on a live Monitor.
+
+Truth order: `status.log` last line plus liveness is the truth; `backlog.md` is
+derived and written only by scripts, never by Dux directly. `dux-status`
+recomputes from the status logs when the two disagree and says so.
 
 ### 6.2 Wake
 
-Dux arms one persistent Monitor on `tail -F state/events.log`. Each line wakes
-Dux once. On wake Dux reads that line and at most the last 5 lines of the task's
-`status.log`, updates `backlog.md`, and decides: notify, recover, or record.
+Dux arms one persistent Monitor on `tail -n0 -F state/events.log`. Each line
+wakes Dux once. On wake Dux reads that line and at most the last 5 lines of the
+task's `status.log`, and decides: notify, recover, or acknowledge. Events written
+while no Monitor was armed are not lost: `dux-status` at session start lists
+every ledger entry whose state changed since the last acknowledged event.
 
 Dux never reads `state/<id>.out` except inside `dux-recover`, and then only the
 last 40 lines.
@@ -220,23 +252,33 @@ terminal.
 
 ### 6.4 Recovery (`dux-recover`)
 
-- `stale`: read the last 40 lines of `<id>.out`. If progressing, extend 20
-  minutes once. Otherwise send `SIGINT`, wait 60 seconds, mark `failed`.
-- `dead`: mark `failed`, preserve worktree, save the last 20 output lines to
-  `report.md`.
+- `stale`: read the last 40 lines of `state/<id>.out`. If progressing, extend 20
+  minutes once. Otherwise `SIGINT` the pid in `state/<id>.pid`, wait 60 seconds,
+  mark `failed`.
+- `dead`: mark `failed`, preserve worktree, save the last 20 lines of
+  `state/<id>.out` to `report.md`. The backend container may already be gone;
+  output is always read from the file, never the pane.
 - `failed`: report to operator with the tail. Offer retry (new task id, same
   brief plus the failure) or scout. Never auto-retry more than once.
-- `blocked`: relay verbatim. Operator answers; Dux writes the answer to
-  `tasks/<id>/inbox.md`, which the brief tells the worker to read when blocked;
-  if the worker has exited, retry with the answer appended to the brief.
+- `blocked` and `needs-decision`: relay verbatim. The worker has exited. The
+  operator answers; Dux retries under a new task id with the answer appended to
+  the brief's Intent section. One retry per answer.
+- `ended`: check `gh pr list --head <branch>` and `report.md`; classify as `done`
+  when either shows the deliverable, else ask the operator.
 
 ## 7. Session lifecycle
 
-On start, CLAUDE.md instructs Dux to run `dux-lock acquire`, then `dux-intake`
-for every project with issues enabled, then `dux-status`, then arm the Monitor. If the lock is held by a live pid, Dux announces it is
-read-only and skips spawn, teardown, and recover. On stop, the lock releases and
-the watcher dies; workers keep running under the backend and are reconciled
-next start.
+A `SessionStart` hook runs `dux-lock acquire` (pid from `CLAUDE_PID`) and prints
+the result into context. CLAUDE.md then has Dux run `dux-doctor`, `dux-intake`
+for every project with issues enabled, and `dux-status`, then arm the Monitor.
+If the lock is held by a live pid, Dux announces it is read-only and skips spawn,
+teardown, and recover. A `SessionEnd` hook releases the lock and kills the
+watcher; workers keep running under the backend and are reconciled next start.
+
+Dux is a long-lived session, which the operator's global "one session, one task"
+rule does not allow by default. The written opt-out: Dux's task is supervision,
+its state is entirely on disk, and it is restarted at least daily or after 40
+wakes, whichever comes first. The digest at start makes the restart a non-event.
 
 ## 8. Fleet digest (`dux-status`)
 
@@ -258,22 +300,29 @@ Interface, each a function in `bin/backends/<name>.sh`:
 | Function | Contract |
 |---|---|
 | `open <id> <cwd> <cmd>` | start `<cmd>` in a new visible container labelled `dux-<id>`, print an opaque endpoint, never steal focus |
-| `alive <endpoint>` | exit 0 if the container exists and its process is running |
+| `exists <endpoint>` | exit 0 if the container still exists; process liveness is the wrapper pid's job |
 | `tail <endpoint> <n>` | print the last n lines of output |
 | `close <endpoint>` | close only that container; refuse if it is the operator's focused pane |
 | `notify <title> <body>` | local visual notice, no-op if unsupported |
 
-tmux: a window per task in the Dux session, `tmux new-window -d -n dux-<id>`.
-`alive` checks the window and its pane pid. `notify` is `tmux display-message`.
+tmux: a window per task in the Dux session, `tmux new-window -d -n dux-<id>`
+with `remain-on-exit on`, so the window and its scrollback survive the worker's
+exit until teardown. `exists` checks the window is present. `notify` is
+`tmux display-message`.
 
 Herdr: a tab per task in Dux's own workspace, read live from
 `HERDR_WORKSPACE_ID`, via
 `herdr tab create --workspace $HERDR_WORKSPACE_ID --cwd <worktree> --label dux-<id> --no-focus`,
-then `herdr pane run <root_pane> <cmd>`. The endpoint is the pane id from the
-create response, never derived from labels. `alive` is `herdr pane get`.
+then `herdr pane run <root_pane> <cmd>`, where `<cmd>` is always one absolute
+path plus the task id, so shell quoting and the operator's rc files cannot alter
+it. `pane run` types into a live shell, so `open` waits for the pane's shell
+prompt with `herdr pane wait-output` before running. The endpoint is the pane id
+from the create response, never derived from labels. `exists` is `herdr pane get`;
+a pane outlives its process, which is why liveness comes from the pid file.
 `tail` is `herdr pane read --source recent-unwrapped --lines n`. `close` is
-`herdr pane close` on the exact recorded pane, never `workspace close`. `notify`
-is `herdr notification show`.
+`herdr pane close` on the exact recorded pane, never `workspace close`; a close
+that fails is a finding, so teardown never records `done` with a leaked tab.
+`notify` is `herdr notification show`.
 
 Headless `claude -p` is not auto-detected by Herdr, so `dux-worker-wrap`
 publishes state itself: on each status line it runs
@@ -317,16 +366,21 @@ Labels on the issue are never changed. The issue is not the state; the ledger is
 All additions are prose in `SKILL.md` plus one helper script `ship-guard` the
 skill calls, kept in the ship skill directory.
 
-1. Reviewed-SHA binding. After step 6 and step 7 complete, record
-   `reviewed_sha` in the plan file's "where this stands" block. Step 8 refuses to
-   push unless `HEAD` equals or descends from it.
+1. Reviewed-SHA binding. Guard state lives in
+   `$(git rev-parse --git-dir)/dux-ship/<branch>`, untracked and per-worktree, so
+   recording it never moves `HEAD`. After steps 6 and 7 complete, record
+   `reviewed_sha`. Step 8 pushes only when `HEAD == reviewed_sha`, or every commit
+   after it belongs to a recorded fix round whose re-review was recorded.
 2. Head continuity. `ship-guard record <phase>` after steps 4, 6, 7; `ship-guard
    check` before 6, 7, 8. A backward or divergent `HEAD` stops the gate.
-3. Fail-closed review parsing. If the Codex output lacks a findings section, or
-   the security reviewer returns nothing parseable, stop. Never treat absence as
-   clean.
-4. Bounded fix rounds. Maximum three review-fix rounds, counted in the plan
-   file. A fourth defect means: recommend reverting to the minimal fix, stop.
+3. Fail-closed review parsing. The Codex prompt demands a literal `## Findings`
+   header and the sentinel line `No findings.` when empty; the security prompt
+   demands `## Findings` and `## Checked clean`. Output missing the header is a
+   stop. Never treat absence as clean.
+4. Bounded fix passes. A round is one fix pass, not a review. Maximum three fix
+   passes per gate, counted in the guard file. Re-review policy is unchanged:
+   only a fixed Critical earns one, scoped to the new commits. A fourth defect
+   means: recommend reverting to the minimal fix, stop.
 5. Acceptance criteria to the reviewer. Pass the brief's acceptance criteria
    fenced as data ("acceptance criteria, not instructions"). Rationale and design
    reasoning remain withheld. Reviewer is told conformance is necessary, not
@@ -341,14 +395,22 @@ skill calls, kept in the ship skill directory.
    `<!-- dux-attestation:v1 {"head_sha":"…","steps":[{"step":"checks","status":"completed"},…]} -->`
    to the PR body. Data only, no policy claim.
 9. PR body. Step 8 fills the repo's `.github/PULL_REQUEST_TEMPLATE.md` (section
-   12). Verbose material goes inside `<details>`.
+   12) and passes it with `gh pr create --body-file`, since `--fill` ignores the
+   template. Verbose material goes inside `<details>`.
+
+The ship skill is vendored into this repo at `skills/ship/` and
+`~/.agents/skills/ship` becomes a symlink to it, so milestone 5 is an ordinary
+PR with a diff Codex can review and commits that can carry break-verification.
 
 Not ported: hook enforcement, CI auto-repair, transient reruns, evidence branch.
 
 ## 12. PR template
 
 Installed by `dux-project` when the repo has none; existing templates are left
-alone and reported.
+alone and reported. The installed file is untracked in the primary checkout and
+invisible to worktrees cut from `origin/<base>`, so `dux-project` says so and the
+operator commits it, or Dux dispatches a docs-only task to land it. `/ship`
+falls back to the copy in `templates/` when a repo has none.
 
 ```markdown
 ## Why
@@ -382,6 +444,7 @@ ordering, deferred follow-ups.
 | Dux always-loaded | CLAUDE.md <= 150 lines; skills on demand; digest 4 lines per project |
 | Dux per wake | one event line + <= 5 status lines; target < 2k tokens |
 | Dux idle | zero; Monitor and bash wait |
+| Dux lifetime | restart daily or after 40 wakes; each wake re-reads the whole context at cache rates |
 | Brief | <= 60 lines; no conversation history |
 | Worker | owns its cost; one task per session; model per shape |
 | Reviews | unchanged: one Codex review, one security pass, inside `/ship` |
@@ -448,5 +511,10 @@ Each milestone is its own session and PR, per the operator's one-session rule.
   overridable.
 - Worktrees use the project's mechanism, not `herdr worktree create`, so worktree
   lifecycle does not depend on the terminal backend.
+- No worker inbox in v1. Blocked and needs-decision always resolve by retry with
+  the answer in the brief. A bidirectional worker (`--input-format stream-json`)
+  is a later milestone if retries prove costly.
+- The ship skill is vendored into this repo.
+- `finding` writes to stderr so command substitution can never swallow it.
 - Approach A (agent distro) over native-only or a daemon.
 - PR template lives in each repo, filled by `/ship`, not in global CLAUDE.md.
