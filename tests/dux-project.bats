@@ -140,3 +140,23 @@ make_repo() {  # $1 dir, $2 default branch; creates a bare origin and a clone
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: base branch signal is not a valid branch name: --prune"* ]]
 }
+
+@test "add is a finding when .github cannot be created, and nothing is registered" {
+  make_repo "$DUX_HOME/repoO" main
+  chmod 555 "$DUX_HOME/repoO"
+  run dux-project add repoO "$DUX_HOME/repoO"
+  chmod 755 "$DUX_HOME/repoO"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: cannot create $DUX_HOME/repoO/.github"* ]]
+  ! grep -q '^- repoO ' "$DUX_HOME/data/projects.md"
+}
+
+@test "add is a finding when the template cannot be written" {
+  make_repo "$DUX_HOME/repoP" main
+  mkdir -p "$DUX_HOME/repoP/.github"; chmod 555 "$DUX_HOME/repoP/.github"
+  run dux-project add repoP "$DUX_HOME/repoP"
+  chmod 755 "$DUX_HOME/repoP/.github"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: cannot write $DUX_HOME/repoP/.github/PULL_REQUEST_TEMPLATE.md"* ]]
+  ! grep -q '^- repoP ' "$DUX_HOME/data/projects.md"
+}
