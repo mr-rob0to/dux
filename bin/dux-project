@@ -45,8 +45,8 @@ install_template() {  # $1 path. Prints one line for the caller to relay.
   local gh="$1/.github" t="$1/.github/PULL_REQUEST_TEMPLATE.md"
   if [ -e "$t" ]; then log "existing PR template left alone: $t"; echo "existing PR template left alone"; return; fi
   if [ -L "$gh" ] || [ -L "$t" ]; then finding "refusing to write through a symlink at $gh"; fi
-  mkdir -p "$gh" || finding "cannot create $gh"
-  cp "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md" "$t" || finding "cannot write $t"
+  mkdir -p "$gh" 2>/dev/null || finding "cannot create $gh"
+  cp "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md" "$t" 2>/dev/null || finding "cannot write $t"
   echo "installed PR template; commit it in $1 before dispatching ship tasks"
 }
 

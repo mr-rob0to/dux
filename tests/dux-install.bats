@@ -78,3 +78,38 @@ setup() {
   [ -L "$DUX_HOME/config/reviewer" ]
   [ ! -e "$DUX_HOME/nowhere" ]
 }
+
+@test "install is a finding when the skills dir cannot be created" {
+  mkdir -p "$DUX_HOME/ro"; chmod 555 "$DUX_HOME/ro"
+  DUX_SKILLS_DIR="$DUX_HOME/ro/skills" run dux-install
+  chmod 755 "$DUX_HOME/ro"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: cannot create $DUX_HOME/ro/skills"* ]]
+}
+
+@test "install is a finding when a skill cannot be linked" {
+  chmod 555 "$DUX_SKILLS_DIR"
+  run dux-install
+  chmod 755 "$DUX_SKILLS_DIR"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: cannot link $DUX_SKILLS_DIR/"* ]]
+}
+
+@test "install --yes is a finding when the backup move fails, and the skill dir stays" {
+  ln -s "$DUX_ROOT/skills/dux-project" "$DUX_SKILLS_DIR/dux-project"
+  mkdir -p "$DUX_SKILLS_DIR/ship"; echo old > "$DUX_SKILLS_DIR/ship/SKILL.md"
+  chmod 555 "$DUX_SKILLS_DIR"
+  run dux-install --yes
+  chmod 755 "$DUX_SKILLS_DIR"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: cannot move $DUX_SKILLS_DIR/ship"* ]]
+  [ "$(cat "$DUX_SKILLS_DIR/ship/SKILL.md")" = old ]
+}
+
+@test "install is a finding when config cannot be seeded" {
+  chmod 555 "$DUX_HOME/config"
+  run dux-install
+  chmod 755 "$DUX_HOME/config"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: cannot write $DUX_HOME/config/"* ]]
+}

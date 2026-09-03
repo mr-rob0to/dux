@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 yes=0; [ "${1:-}" = "--yes" ] && yes=1
 target="${DUX_SKILLS_DIR:-$HOME/.claude/skills}"
-mkdir -p "$target" || die "cannot create $target"
+mkdir -p "$target" 2>/dev/null || finding "cannot create $target"
 
 for d in "$DUX_ROOT"/skills/*/; do
   n="$(basename "$d")"; dst="$target/$n"; src="$DUX_ROOT/skills/$n"
@@ -17,17 +17,17 @@ for d in "$DUX_ROOT"/skills/*/; do
   elif [ -e "$dst" ]; then
     [ "$yes" = 1 ] || finding "$dst exists and is not a symlink; rerun with --yes to move it to $n.bak"
     if [ -e "$dst.bak" ] || [ -L "$dst.bak" ]; then finding "$dst.bak already exists; move it away before rerunning"; fi
-    mv "$dst" "$dst.bak" || finding "cannot move $dst to $dst.bak"
+    mv "$dst" "$dst.bak" 2>/dev/null || finding "cannot move $dst to $dst.bak"
     log "moved $dst to $dst.bak"
   fi
-  ln -s "$src" "$dst" || finding "cannot link $dst"
+  ln -s "$src" "$dst" 2>/dev/null || finding "cannot link $dst"
   log "linked $n"
 done
 
 for f in "$DUX_ROOT"/templates/config/*; do
   n="$(basename "$f")"
   if [ -e "$DUX_CONFIG/$n" ] || [ -L "$DUX_CONFIG/$n" ]; then continue; fi
-  cp "$f" "$DUX_CONFIG/$n" || finding "cannot write $DUX_CONFIG/$n"
+  cp "$f" "$DUX_CONFIG/$n" 2>/dev/null || finding "cannot write $DUX_CONFIG/$n"
   log "config $n seeded"
 done
 
