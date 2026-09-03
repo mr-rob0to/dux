@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+target="${DUX_SKILLS_DIR:-$HOME/.claude/skills}"
+for l in "$target"/*; do
+  [ -L "$l" ] || continue
+  case "$(readlink "$l")" in "$DUX_ROOT/skills/"*) rm -f "$l"; log "removed $(basename "$l")" ;; esac
+done

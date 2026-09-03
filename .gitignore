@@ -2,3 +2,4 @@ data/
 state/
 .worktrees/
 tests/tmp/
+tests/personal-identifiers.txt
