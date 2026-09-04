@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Fake gh for tests. Records calls; there is no forge behind it.
+set -u
+printf '%s\n' "$*" >> "${FAKE_GH_LOG:-/dev/null}"
+case "$1 ${2:-}" in
+  "auth status")   exit 0 ;;
+  "repo view")     echo "fake gh: no GitHub remote" >&2; exit 1 ;;
+  "issue comment")
+    if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: comment failed" >&2; exit 1; fi
+    echo "https://example.invalid/issues/comment/1" ;;
+  "pr list")       echo "[]" ;;
+  *) echo "fake gh: unhandled: $*" >&2; exit 2 ;;
+esac

@@ -1,0 +1,88 @@
+#!/usr/bin/env bash
+# Task ledger over data/backlog.md. Only scripts write it. See spec sections 6.1 and 10.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+ledger="$DUX_DATA/backlog.md"
+mutex="$ledger.lock"
+touch "$ledger" 2>/dev/null || finding "cannot write $ledger"
+
+valid_id()    { case "$1" in ''|*[!A-Za-z0-9._-]*) finding "task id must match [A-Za-z0-9._-]+: $1" ;; esac; }
+valid_key()   { case "$1" in state|source|endpoint|pr) ;; *) finding "unknown ledger key $1 (state, source, endpoint, pr)" ;; esac; }
+valid_state() { case "$1" in queued|running|needs-decision|blocked|done|failed|ended|stale|dead|dropped) ;; *) finding "unknown state $1" ;; esac; }
+valid_value() { case "$1" in ''|*[[:space:]]*) finding "ledger value must be one token without whitespace: '$1'" ;; esac; }
+
+line_of() { awk -v id="$1" '$1 == "-" && $2 == id { print; exit }' "$ledger"; }
+
+field_of() {  # $1 line, $2 key
+  printf '%s\n' "$1" | awk -v k="$2" '{
+    if (k == "updated") { print substr($NF, 1, length($NF) - 1); exit }
+    for (i = 3; i <= NF; i++) { eq = index($i, "="); if (eq && substr($i, 1, eq - 1) == k) { print substr($i, eq + 1); exit } }
+  }'
+}
+
+lock_ledger() {  # a mutex older than a minute belongs to a script that died mid-write and is cleared
+  local i=0 max="${DUX_LEDGER_WAIT_TENTHS:-50}"
+  until mkdir "$mutex" 2>/dev/null; do
+    if [ -n "$(find "$mutex" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$mutex" 2>/dev/null; continue; fi
+    i=$((i + 1))
+    [ "$i" -ge "$max" ] && finding "ledger busy: $mutex held for $((max / 10))s; remove it if no dux script is running"
+    sleep 0.1
+  done
+  trap 'rmdir "$mutex" 2>/dev/null' EXIT
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  add)
+    id="${1:?id}"; project="${2:?project}"; shape="${3:?shape}"; src="${4:?source}"
+    valid_id "$id"; valid_value "$project"; valid_value "$shape"; valid_value "$src"
+    lock_ledger
+    [ -z "$(line_of "$id")" ] || finding "task $id already in ledger"
+    printf -- '- %s project=%s shape=%s state=queued source=%s endpoint=- pr=- (updated %s)\n' \
+      "$id" "$project" "$shape" "$src" "$(now)" >> "$ledger" || finding "cannot append to $ledger" ;;
+  set)
+    id="${1:?id}"; key="${2:?key}"; val="${3:?value}"
+    valid_id "$id"; valid_key "$key"; valid_value "$val"
+    [ "$key" = state ] && valid_state "$val"
+    lock_ledger
+    [ -n "$(line_of "$id")" ] || finding "task $id not in ledger"
+    tmp="$ledger.$$.tmp"
+    awk -v id="$id" -v k="$key" -v v="$val" -v ts="$(now)" '
+      $1 == "-" && $2 == id {
+        out = "- " id
+        for (i = 3; i <= NF; i++) {
+          if ($i == "(updated") break
+          eq = index($i, "=")
+          if (eq && substr($i, 1, eq - 1) == k) out = out " " k "=" v; else out = out " " $i
+        }
+        print out " (updated " ts ")"; next
+      }
+      { print }' "$ledger" > "$tmp" || { rm -f "$tmp"; finding "cannot rewrite $ledger"; }
+    mv "$tmp" "$ledger" || { rm -f "$tmp"; finding "cannot replace $ledger"; } ;;
+  get)
+    id="${1:?id}"; key="${2:?key}"
+    case "$key" in project|shape|state|source|endpoint|pr|updated) ;; *) finding "unknown ledger key $key" ;; esac
+    line="$(line_of "$id")"; [ -n "$line" ] || finding "task $id not in ledger"
+    field_of "$line" "$key" ;;
+  line)
+    id="${1:?id}"; line="$(line_of "$id")"; [ -n "$line" ] || finding "task $id not in ledger"
+    printf '%s\n' "$line" ;;
+  list)
+    fstate=""; fproject=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --state) fstate="$2"; shift 2 ;;
+        --project) fproject="$2"; shift 2 ;;
+        *) die "unknown flag $1" ;;
+      esac
+    done
+    awk -v fs="$fstate" -v fp="$fproject" '
+      $1 == "-" {
+        s = ""; p = ""
+        for (i = 3; i <= NF; i++) { if (index($i, "state=") == 1) s = substr($i, 7); if (index($i, "project=") == 1) p = substr($i, 9) }
+        if ((fs == "" || s == fs) && (fp == "" || p == fp)) print $2
+      }' "$ledger" ;;
+  *) die "usage: dux-ledger add|set|get|line|list" ;;
+esac

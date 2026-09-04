@@ -10,7 +10,7 @@ load helpers/setup
 }
 
 @test "doctor fails and names a missing tool" {
-  PATH="$DUX_ROOT/tests/fakes:$DUX_ROOT/bin:/usr/bin:/bin" DUX_BACKEND=herdr run dux-doctor
+  PATH="$DUX_ROOT/bin:/usr/bin:/bin" DUX_BACKEND=herdr run dux-doctor
   [ "$status" -eq 1 ]
   [[ "$output" == *"FAIL codex"* ]]
 }
