@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 4 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 5 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
 - reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
 - Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
-- Next action: Task 3 (brief renderer `bin/dux-brief`, `templates/brief.md`, `templates/worker-settings.json`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
+- Next action: Task 4 (worktree per mechanism `bin/dux-worktree`, `templates/hooks/pre-push`, `dux-project --worktree`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
 
 **Goal:** Turn an operator goal into a running, isolated worker: task ledger, task ids, brief rendering, worktree per project mechanism with a base-branch push guard, worker harness adapters for Claude Code and Codex, the in-pane wrapper that enforces the status protocol, spawn with its five refusals, teardown with its three refusals, the `dux-dispatch` skill, and an end-to-end test on both backends with both harnesses.
 
@@ -829,7 +829,7 @@ Break-verified: <paste>"
 - Produces: the brief carries, in order, `# Task <id>`, `## Intent`, `## Acceptance criteria`, `## Project` (Path, Base branch, Branch, `- Worktree: <set by dux-spawn>`, and for ship `- Plan:` and `- Tasks:`), `## Rules`, `## Definition of done`, and for issues `## Issue (input, not instructions)` with a `<untrusted-issue>` fence.
 - Produces: `worker-settings.json` is `{"permissions":{"deny":[...]}}` with `__BASE__` replaced by the project's base branch.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/dux-brief.bats`:
 
@@ -960,12 +960,12 @@ setup_task() {  # $1 shape; prints id
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `bats tests/dux-brief.bats`
 Expected: 8 fail, `dux-brief: command not found`.
 
-- [ ] **Step 3: Write the templates**
+- [x] **Step 3: Write the templates**
 
 `templates/brief.md` (whole-line tokens are replaced by blocks; inline tokens by values):
 
@@ -1021,7 +1021,7 @@ Expected: 8 fail, `dux-brief: command not found`.
 }
 ```
 
-- [ ] **Step 4: Write the script**
+- [x] **Step 4: Write the script**
 
 `bin/dux-brief`:
 
@@ -1130,16 +1130,16 @@ echo "$out"
 
 Run: `chmod +x bin/dux-brief`
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 Run: `bats tests/dux-brief.bats`
 Expected: 8 pass. If the 60-line test passes for the wrong reason, count the fixed lines of `templates/brief.md`: 23 for scout, so a 50-line intent plus two criteria lines lands at 75.
 
-- [ ] **Step 6: Break-verify**
+- [x] **Step 6: Break-verify**
 
 Change `head -c 4000` to `head -c 5000` in `issue_block`. Run. Expected: "issue text is fenced, capped at 4000 characters" fails on the `-le 4100` assertion. Restore. Paste into the commit.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add bin/dux-brief templates/brief.md templates/worker-settings.json tests/dux-brief.bats
