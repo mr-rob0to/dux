@@ -32,6 +32,11 @@ declares_worktrees_section() {
   return 1
 }
 
+sq_body() {  # $1 value, escaped for the inside of a single-quoted shell string
+  local q="'" e="'\\''"
+  printf '%s' "${1//$q/$e}"
+}
+
 install_hooks() {  # builds $task/hooks: links to the project's hooks plus our pre-push
   local hooks="$task/hooks" src f body
   src="$(git_repo config --get core.hooksPath || true)"
@@ -44,7 +49,10 @@ install_hooks() {  # builds $task/hooks: links to the project's hooks plus our p
     ln -s "$f" "$hooks/$(basename "$f")" || finding "cannot link $f into $hooks"
   done
   body="$(cat "$DUX_ROOT/templates/hooks/pre-push")"
-  f='__BASE__'; body="${body//$f/$base}"; f='__UPSTREAM__'; body="${body//$f/$src/pre-push}"
+  # The template quotes both placeholders in single quotes, so the hook reads them
+  # as data: a base branch or hooks path holding $(...) is never re-evaluated.
+  f='__BASE__'; body="${body//$f/$(sq_body "$base")}"
+  f='__UPSTREAM__'; body="${body//$f/$(sq_body "$src/pre-push")}"
   printf '%s\n' "$body" > "$hooks/pre-push" || finding "cannot write $hooks/pre-push"
   chmod +x "$hooks/pre-push" || finding "cannot make $hooks/pre-push executable"
 }
