@@ -85,6 +85,31 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
   [ -d "$wt" ]
 }
 
+@test "a pidfile that cannot be read or holds no pid refuses; an absent one does not" {
+  spawned scout; status_is "done: report"
+  pf="$DUX_HOME/state/$id.pid"
+  # Spawn refuses both of these readings. Teardown pulls the worktree out from
+  # under whatever is running, so it must not read either one as "no worker".
+  printf 'not-a-pid\n' > "$pf"
+  run dux-teardown "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $pf does not hold a pid"* ]]
+  [ -d "$wt" ]; [ "$(dux-ledger get "$id" state)" = running ]
+  printf '999999\n' > "$pf"; chmod 000 "$pf"
+  run dux-teardown "$id"
+  # Best effort: a teardown that wrongly went ahead has already deleted the file,
+  # and the assertion below is what should report that, not the restore.
+  chmod 600 "$pf" 2>/dev/null || true
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: cannot read $pf; cannot tell whether a worker for $id is alive"* ]]
+  [ -d "$wt" ]; [ "$(dux-ledger get "$id" state)" = running ]
+  # No pidfile at all is an answer: nothing ever recorded a worker for this task.
+  rm -f "$pf"
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]; [[ "$output" == *"torn down $id state=done"* ]]
+  [ ! -d "$wt" ]
+}
+
 @test "a ledger already marked failed is terminal even with an empty status log" {
   spawned scout
   dux-ledger set "$id" state failed

@@ -6,6 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 id="${1:-}"; [ -n "$id" ] || die "usage: dux-teardown <id>"
 task="$DUX_TASKS/$id"; status_log="$task/status.log"; epfile="$DUX_STATE/$id.endpoint"
+pidfile="$DUX_STATE/$id.pid"
 ledger="$DUX_ROOT/bin/dux-ledger"; backend="$DUX_ROOT/bin/dux-backend"
 
 is_terminal() { case "$1" in done|failed) return 0 ;; *) return 1 ;; esac; }
@@ -17,8 +18,18 @@ final="${last%%:*}"
 if is_terminal "$final"; then :
 elif is_terminal "$lstate"; then final="$lstate"
 else finding "task $id is not terminal (ledger: $lstate; last status: ${last:-none})"; fi
-wpid="$(cat "$DUX_STATE/$id.pid" 2>/dev/null || true)"
-if [ -n "$wpid" ] && kill -0 "$wpid" 2>/dev/null; then finding "worker $wpid for $id is still running"; fi
+# Read the same file as strictly as dux-spawn does, or the two disagree about the
+# same worker. No pidfile is the only reading that means no worker: one that
+# cannot be read and one that does not hold a pid are both "could not tell", and
+# tearing a worktree out from under a live worker is what that would cost.
+if [ -e "$pidfile" ] || [ -L "$pidfile" ]; then
+  wpid="$(cat "$pidfile" 2>/dev/null)" \
+    || finding "cannot read $pidfile; cannot tell whether a worker for $id is alive"
+  case "$wpid" in
+    ''|*[!0-9]*) finding "$pidfile does not hold a pid ('$wpid'); cannot tell whether a worker for $id is alive" ;;
+    *) if kill -0 "$wpid" 2>/dev/null; then finding "worker $wpid for $id is still running"; fi ;;
+  esac
+fi
 
 "$DUX_ROOT/bin/dux-worktree" remove "$id" || exit $?
 
@@ -34,7 +45,7 @@ if [ -f "$epfile" ]; then
 else
   log "no endpoint recorded for $id"
 fi
-rm -f "$DUX_STATE/$id.pid"
+rm -f "$pidfile"
 
 pr="-"
 case "$last" in "done: PR "*) pr="${last#done: PR }"; pr="${pr%% *}" ;; esac

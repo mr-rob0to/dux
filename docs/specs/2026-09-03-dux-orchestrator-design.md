@@ -310,10 +310,13 @@ otherwise a one-line system-prompt instruction in the brief.
 
 Refuses when the lock is not held by this session, the task is not terminal
 (last status line `done` or `failed`, or ledger `done` or `failed`), or the
-worktree has uncommitted changes or unpushed commits. Otherwise removes the
-worktree (`git worktree remove`, branch kept), closes the container when it
-still exists, deletes `state/<id>.endpoint` and `state/<id>.pid`, records the
-PR url from `done: PR <url>`, and marks `done` or `failed` in `backlog.md`. A
+worktree has uncommitted changes or unpushed commits. It reads `state/<id>.pid`
+exactly as `dux-spawn` does, so the two agree about the same worker: absent is
+the only reading that means no worker, while a file that cannot be read, one that
+does not hold a pid, and one whose pid `kill -0` reaches all refuse. Otherwise
+removes the worktree (`git worktree remove`, branch kept), closes the container
+when it still exists, deletes `state/<id>.endpoint` and `state/<id>.pid`, records
+the PR url from `done: PR <url>`, and marks `done` or `failed` in `backlog.md`. A
 worktree or container that is already gone is logged, not refused, so an
 interrupted teardown completes on rerun. The task folder is kept.
 
@@ -429,12 +432,17 @@ tmux: a window per task in the Dux session, `tmux new-window -d -n dux-<id>`
 with `remain-on-exit on`, so the window and its scrollback survive the worker's
 exit until teardown. `exists` checks the window is present. `find` filters
 `tmux list-windows -a` on the window name and never touches `_session`, which
-would start a server to answer a question about it. Exactly one failure is
-positive evidence of no window: `no server running`, which tmux says after
-looking through a socket that is there. `error connecting` says the socket was
-not there to look through, which is equally what a live server holding the worker
-looks like once something removes its socket file, so it and every other listing
-failure are findings.
+would start a server to answer a question about it. Two failures are positive
+evidence of no window: `no server running`, which tmux says after looking through
+a socket that is there, and any failure while the socket file itself is absent,
+which is a path no server has ever been reachable at and is what every first
+spawn on a machine sees. The socket file is
+`${TMUX_TMPDIR:-/tmp}/tmux-<effective uid>/<name>`, where the name is the `-L`
+value or `default`. A failure while that file is there is a finding: tmux did not
+look, and a live server holding the worker reads the same way once its socket
+stops accepting. Every other listing failure is a finding too. The worker in a
+server whose socket was removed outright is caught by `dux-spawn`'s
+`state/<id>.pid` check, which does not depend on the backend.
 `notify` is `tmux display-message`.
 
 Herdr: a tab per task in Dux's own workspace, read live from

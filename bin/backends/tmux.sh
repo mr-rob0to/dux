@@ -15,6 +15,10 @@ _session() {
   fi
 }
 
+# The path tmux resolves this adapter's socket to: ${TMUX_TMPDIR:-/tmp}/tmux-<uid>/<name>,
+# where <name> is what -L is given, or "default" when it is not.
+_socket_path() { printf '%s/tmux-%s/%s\n' "${TMUX_TMPDIR:-/tmp}" "$(id -u)" "${DUX_TMUX_SOCKET:-default}"; }
+
 _win() { local ep="$1"; echo "${ep##*:}"; }          # window id (@N)
 _ses() { local ep="${1#tmux:}"; echo "${ep%%:*}"; }  # session name
 
@@ -39,22 +43,29 @@ backend_exists() {  # endpoint
 
 backend_find() {  # id: prints the endpoint of the window named dux-<id>, nothing when there is none
   # Never _session: that would start a server to answer a question about it.
-  local id="$1" errfile out rc err n
+  local id="$1" errfile out rc err n sock
   errfile="$(mktemp "${TMPDIR:-/tmp}/dux-tmux-find.XXXXXX")" || finding "cannot create a temp file to read tmux errors"
   out="$(_tmux list-windows -a -f "#{==:#{window_name},dux-$id}" -F '#{session_name}:#{window_id}' 2>"$errfile")"
   rc=$?
   err="$(cat "$errfile")"; rm -f "$errfile"
   if [ "$rc" -ne 0 ]; then
-    # "no server running" is tmux having looked: positive evidence of no window.
-    # "error connecting" is tmux not having looked, because the socket was not
-    # there to ask through, which is also what a live server holding the worker
-    # looks like once something removes its socket file. The two are not the same
-    # answer. Any failure but the first is an unanswered question and must never
-    # read as "nothing is running".
+    # Two readings are positive evidence of no window. "no server running" is
+    # tmux having looked through a socket that is there. A socket file that is
+    # not there at all is a path no server has ever been reachable at, which is
+    # every first spawn on a machine. Between them sits the case the strictness
+    # is for: the socket is there and the connection still failed, so tmux did
+    # not look and a live server holding the worker looks exactly the same. That
+    # and every other failure are unanswered questions and must never read as
+    # "nothing is running". A worker in a server whose socket was removed is
+    # caught by dux-spawn's own pidfile check, which this backs up.
     case "$err" in
       *"no server running"*) return 0 ;;
-      *) finding "tmux could not list windows while looking for dux-$id: ${err:-exit $rc}" ;;
     esac
+    sock="$(_socket_path)"
+    if [ -e "$sock" ] || [ -L "$sock" ]; then
+      finding "tmux could not list windows while looking for dux-$id: ${err:-exit $rc}"
+    fi
+    return 0
   fi
   [ -n "$out" ] || return 0
   n="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
