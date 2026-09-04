@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 2 of 11 (Task 0, Tasks 1 to 8, Task 8b, Task 9).
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 2 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
 - reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
 - Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
-- Next action: Task 2 (task id and folder `bin/dux-task-new`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
+- Next action: Task 0b (make the spec's worker command harness-neutral), then Task 2 (task id and folder `bin/dux-task-new`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
 
 **Goal:** Turn an operator goal into a running, isolated worker: task ledger, task ids, brief rendering, worktree per project mechanism with a base-branch push guard, worker harness adapters for Claude Code and Codex, the in-pane wrapper that enforces the status protocol, spawn with its five refusals, teardown with its three refusals, the `dux-dispatch` skill, and an end-to-end test on both backends with both harnesses.
 
@@ -256,6 +256,95 @@ Replace "The default worker harness is `claude`; `config/worker-harness` overrid
 ```bash
 git add docs/specs/2026-09-03-dux-orchestrator-design.md
 git commit -m "docs: amend the spec for milestone 2 dispatch mechanics"
+```
+
+---
+
+### Task 0b: Make the spec's worker command harness-neutral
+
+**Files:**
+- Modify: `docs/specs/2026-09-03-dux-orchestrator-design.md`
+
+**Interfaces:**
+- Consumes: the section 19 workers paragraph as amended by Task 0.
+- Produces: a spec in which only section 19 names a specific harness.
+
+**Why this task exists.** Found while implementing Task 0 on 2026-09-03, added by the operator's decision the same day. Three sentences outside section 19 still present `claude -p` as *the* worker command. That contradicts decision 7 of this plan (the wrapper reaches a harness only through `bin/workers/<name>.sh`, and both `claude` and `codex` are first class) and contradicts section 19 itself, which Task 0 amended to carry both command lines. Section 19 is the per-harness section and is correct as written; it is the only place a harness name belongs.
+
+- [ ] **Step 1: Section 3, the component list**
+
+Replace the `dux-worker-wrap` line:
+
+```
+    dux-worker-wrap         runs inside the worker pane: claude -p + status protocol
+```
+
+with:
+
+```
+    dux-worker-wrap         runs inside the worker pane: harness adapter + status protocol
+```
+
+Keep the existing column alignment of the description exactly.
+
+- [ ] **Step 2: Section 5.3, the brief's rules (the no-inbox sentence)**
+
+Replace:
+
+```
+   or `needs-decision`. There is no inbox in v1; `claude -p` cannot be resumed,
+   so an answer always arrives as a retry with the answer appended to the brief.
+```
+
+with:
+
+```
+   or `needs-decision`. There is no inbox in v1; a headless worker run cannot be
+   resumed under either harness, so an answer always arrives as a retry with the
+   answer appended to the brief.
+```
+
+Keep the numbered list's three-space continuation indent.
+
+- [ ] **Step 3: Section 5.5, the worker command paragraph**
+
+Replace:
+
+```
+The worker command is `claude -p` with the brief as the prompt, the project's
+`CLAUDE.md` loading normally, the operator's global `CLAUDE.md` loading normally,
+`--output-format stream-json` to `state/<id>.out`, and
+`--dangerously-skip-permissions` for every shape, because a headless worker
+cannot answer prompts and a denied tool call stalls the task.
+```
+
+with:
+
+```
+The worker command comes from the harness adapter `bin/workers/<harness>.sh`
+(section 19), never from this section. The brief is the prompt, the project's
+`CLAUDE.md` and the operator's global `CLAUDE.md` load normally under Claude, and
+the harness's output goes to `state/<id>.out`. Every shape runs unattended
+(`--dangerously-skip-permissions` under Claude, `--sandbox danger-full-access`
+under Codex) because a headless worker cannot answer prompts and a denied tool
+call stalls the task.
+```
+
+Leave the rest of the paragraph as it stands: the blast radius sentence, "Prompt rules are not the guard", and the `Every Claude worker gets --settings ...` sentence are already harness-correct.
+
+- [ ] **Step 4: Verify no stray mention survives**
+
+```bash
+grep -n 'claude -p' docs/specs/2026-09-03-dux-orchestrator-design.md
+```
+
+Exactly one line comes back, inside section 19's workers paragraph. Any other hit is unfinished work. Also re-read all of section 5.5 from its heading to the 5.6 heading and confirm the paragraph still reads as one argument.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/specs/2026-09-03-dux-orchestrator-design.md
+git commit -m "docs: make the spec's worker command harness-neutral"
 ```
 
 ---
