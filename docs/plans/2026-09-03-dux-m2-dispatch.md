@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 9 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 10 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
 - reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
 - Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
-- Next action: Task 8 (teardown `bin/dux-teardown`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
+- Next action: Task 8b (identifier denylist survives a foreign username), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
 
 **Goal:** Turn an operator goal into a running, isolated worker: task ledger, task ids, brief rendering, worktree per project mechanism with a base-branch push guard, worker harness adapters for Claude Code and Codex, the in-pane wrapper that enforces the status protocol, spawn with its five refusals, teardown with its three refusals, the `dux-dispatch` skill, and an end-to-end test on both backends with both harnesses.
 
@@ -2598,7 +2598,7 @@ Break-verified: <paste>"
 - Consumes: `dux-lock mine`, `dux-ledger get|set`, `dux-worktree remove`, `dux-backend exists|close`, `$DUX_TASKS/<id>/status.log`, `state/<id>.endpoint`.
 - Produces: `dux-teardown <id>` refuses when the lock is not this session's, the task is not terminal (last status line `done` or `failed`, else ledger `done` or `failed`), or `state/<id>.pid` names a live process (a worker may keep running after `done:` while it waits on CI), and propagates `dux-worktree remove` refusals (dirty, unpushed) and `dux-backend close` findings (focused pane, failed close). Otherwise: worktree removed, container closed when it still exists, `state/<id>.endpoint` and `state/<id>.pid` deleted, ledger `pr` set from `done: PR <url>` when the url starts with `https://`, ledger state set to `done` or `failed`. Prints `torn down <id> state=<s> pr=<url|->`. The task folder is kept.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/dux-teardown.bats`:
 
@@ -2727,12 +2727,12 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `bats tests/dux-teardown.bats`
 Expected: 10 fail, `dux-teardown: command not found`.
 
-- [ ] **Step 3: Write the script**
+- [x] **Step 3: Write the script**
 
 `bin/dux-teardown`:
 
@@ -2784,16 +2784,16 @@ echo "torn down $id state=$final pr=$pr"
 
 Run: `chmod +x bin/dux-teardown`
 
-- [ ] **Step 4: Run to verify it passes**
+- [x] **Step 4: Run to verify it passes**
 
 Run: `bats tests/dux-teardown.bats`
 Expected: 10 pass.
 
-- [ ] **Step 5: Break-verify**
+- [x] **Step 5: Break-verify**
 
 Replace the `else finding "task $id is not terminal ..."` branch with `else final=failed`. Run. Expected: "refuses a non-terminal task" fails with status 0 and the worktree gone. Restore. Paste into the commit.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add bin/dux-teardown tests/dux-teardown.bats

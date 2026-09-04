@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# Tear down a terminal task. Spec section 5.6.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+id="${1:-}"; [ -n "$id" ] || die "usage: dux-teardown <id>"
+task="$DUX_TASKS/$id"; status_log="$task/status.log"; epfile="$DUX_STATE/$id.endpoint"
+ledger="$DUX_ROOT/bin/dux-ledger"; backend="$DUX_ROOT/bin/dux-backend"
+
+is_terminal() { case "$1" in done|failed) return 0 ;; *) return 1 ;; esac; }
+
+"$DUX_ROOT/bin/dux-lock" mine || finding "the Dux lock is not held by this session; refusing to tear down"
+lstate="$("$ledger" get "$id" state)" || exit $?
+last="$(tail -n 1 "$status_log" 2>/dev/null || true)"
+final="${last%%:*}"
+if is_terminal "$final"; then :
+elif is_terminal "$lstate"; then final="$lstate"
+else finding "task $id is not terminal (ledger: $lstate; last status: ${last:-none})"; fi
+wpid="$(cat "$DUX_STATE/$id.pid" 2>/dev/null || true)"
+if [ -n "$wpid" ] && kill -0 "$wpid" 2>/dev/null; then finding "worker $wpid for $id is still running"; fi
+
+"$DUX_ROOT/bin/dux-worktree" remove "$id" || exit $?
+
+if [ -f "$epfile" ]; then
+  ep="$(cat "$epfile")"
+  "$backend" exists "$ep"; rc=$?
+  case "$rc" in
+    0) "$backend" close "$ep" || exit $? ;;
+    1) log "container $ep already gone" ;;
+    *) exit "$rc" ;;
+  esac
+  rm -f "$epfile"
+else
+  log "no endpoint recorded for $id"
+fi
+rm -f "$DUX_STATE/$id.pid"
+
+pr="-"
+case "$last" in "done: PR "*) pr="${last#done: PR }"; pr="${pr%% *}" ;; esac
+case "$pr" in https://*) "$ledger" set "$id" pr "$pr" || exit $? ;; *) pr="-" ;; esac
+"$ledger" set "$id" state "$final" || exit $?
+echo "torn down $id state=$final pr=$pr"
