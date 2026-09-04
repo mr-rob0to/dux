@@ -45,6 +45,11 @@ if [ "$harness" = claude ] && [ ! -s "$settings" ]; then refuse "no worker setti
 
 echo $$ > "$pidfile" || refuse "cannot write $pidfile"
 : >> "$status_log" || refuse "cannot write $status_log"
+# Installed before anything can start the harness: a signal in a gap between the
+# fork and the trap would kill the wrapper and leave the harness unsupervised.
+# bash starts background children with INT ignored, so INT here becomes TERM to it.
+wpid=""; signalled=0
+trap 'signalled=1; if [ -n "$wpid" ]; then kill -TERM "$wpid" 2>/dev/null || true; fi' INT TERM
 # The Dux session's own harness variables must not reach the worker.
 for v in $(env | sed -n 's/^\(CLAUDECODE\|CLAUDE_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
 export DUX_STATUS_LOG="$status_log"
@@ -74,10 +79,9 @@ mirror_new() {
 intent_line="$(awk '/^## Intent$/ { f = 1; next } f && NF { print substr($0, 1, 60); exit }' "$brief")"
 "$DUX_ROOT/bin/dux-backend" title "$project: $intent_line" 2>/dev/null || log "title not set on this backend"
 
+[ "$signalled" = 0 ] || refuse "signalled before the harness started"
 ( worker_run "$brief" "$model" "$effort" "$settings" ) < /dev/null > "$out" 2>&1 &
 wpid=$!
-# bash starts background children with INT ignored, so INT to the wrapper becomes TERM to the harness.
-trap 'kill -TERM "$wpid" 2>/dev/null' INT TERM
 
 is_exit_line() { case "${1%%:*}" in done|failed|blocked|needs-decision) return 0 ;; *) return 1 ;; esac; }
 last_status() { grep -v '^working: heartbeat$' "$status_log" 2>/dev/null | tail -n 1; }

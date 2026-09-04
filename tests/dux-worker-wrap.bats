@@ -156,6 +156,24 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   [ "$(grep -c 'status mirroring unavailable' <<< "$output")" -eq 1 ]
 }
 
+@test "a signal before the harness starts is caught, not fatal to the wrapper" {
+  prepare scout
+  printf 'status done: report\n' > "$FAKE_WORKER_SCRIPT"
+  # The title call is the last step before the harness is forked, so a slow one
+  # holds the wrapper in the window where the trap must already be installed.
+  export FAKE_HERDR_SLOW_METADATA=5
+  bash -c 'cd "$1" && DUX_BACKEND=herdr HERDR_PANE_ID=w1:p9 exec dux-worker-wrap "$2"' _ "$wt" "$id" & wp=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    grep -q '^pane report-metadata' "$FAKE_HERDR_LOG" && break
+    sleep 0.5
+  done
+  grep -q '^pane report-metadata' "$FAKE_HERDR_LOG"
+  kill -TERM "$wp"
+  wait "$wp" || true
+  [ "$(status_log | tail -n 1)" = "failed: wrapper: signalled before the harness started" ]
+  [ ! -s "$FAKE_WORKER_LOG" ]
+}
+
 @test "TERM to the wrapper reaches the harness and is recorded as failed" {
   prepare scout
   printf 'sleep 30\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
