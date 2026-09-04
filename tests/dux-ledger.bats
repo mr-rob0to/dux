@@ -52,6 +52,27 @@ load helpers/setup
   [ "$(dux-ledger get t1 state)" = queued ]
 }
 
+@test "an id that is nothing but dots is refused, and a normal id still works" {
+  run dux-ledger add .. proj scout local
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: task id must not be all dots"* ]]
+  run dux-ledger add . proj scout local
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: task id must not be all dots"* ]]
+  [ ! -s "$DUX_HOME/data/backlog.md" ]
+  run dux-ledger add proj-scout-20260904-a1b proj scout local
+  [ "$status" -eq 0 ]
+  [ "$(dux-ledger get proj-scout-20260904-a1b state)" = queued ]
+  run dux-ledger set .. state running
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: task id must not be all dots"* ]]
+}
+
+@test "a value carrying a backslash never becomes a second ledger line" {
+  dux-ledger add t1 proj scout local
+  run dux-ledger set t1 pr 'https://example.invalid/pr/1\n-\tt2\tproject=proj'
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: ledger value must not contain a backslash"* ]]
+  [ "$(wc -l < "$DUX_HOME/data/backlog.md" | tr -d ' ')" -eq 1 ]
+  [ "$(dux-ledger get t1 pr)" = "-" ]
+}
+
 @test "get refuses an unknown id and an unknown key" {
   dux-ledger add t1 proj scout local
   run dux-ledger get nope state; [ "$status" -eq 2 ]

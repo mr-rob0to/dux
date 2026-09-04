@@ -58,12 +58,21 @@ install_hooks() {  # builds $task/hooks: links to the project's hooks plus our p
 }
 
 copy_env() {  # $1 worktree; ship under the git mechanism only
-  local f n=0
-  for f in "$repo"/.env "$repo"/.env.*; do
-    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
-    case "$f" in *.example|*.sample) continue ;; esac
-    cp "$f" "$1/" || finding "cannot copy $(basename "$f") into $1"
-    n=$((n + 1))
+  local f n=0 pass
+  # Two passes: every file is checked before any is copied, so a project that
+  # ignores .env but not .env.production gets a finding and an untouched worktree.
+  for pass in check copy; do
+    for f in "$repo"/.env "$repo"/.env.*; do
+      { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
+      case "$f" in *.example|*.sample) continue ;; esac
+      if [ "$pass" = check ]; then
+        git_repo check-ignore -q -- "$f" \
+          || finding "$(basename "$f") is not ignored in $repo; refusing to copy it into a worktree"
+      else
+        cp "$f" "$1/" || finding "cannot copy $(basename "$f") into $1"
+        n=$((n + 1))
+      fi
+    done
   done
   log "copied $n env file(s) into the worktree"
 }

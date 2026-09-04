@@ -100,7 +100,8 @@ teardown_file() {
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: herdr tab create returned no pane id for t12"* ]]
   grep -qx 'tab close w1:t9' "$FAKE_HERDR_LOG"
-  ! grep -q '^pane run ' "$FAKE_HERDR_LOG"
+  # A bare "! grep" mid-test is ignored by bats, so count the lines instead.
+  [ "$(grep -c '^pane run ' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
 }
 
 @test "herdr open closes the pane it created when pane run fails" {

@@ -102,6 +102,17 @@ load helpers/setup
   [[ "$output" == "finding: project name must match"* ]]
 }
 
+@test "add refuses a name that is nothing but dots" {
+  make_repo "$DUX_HOME/repoL" main
+  run dux-project add .. "$DUX_HOME/repoL"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: project name must not be all dots"* ]]
+  run dux-project add . "$DUX_HOME/repoL"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: project name must not be all dots"* ]]
+  [ ! -s "$DUX_HOME/data/projects.md" ]
+}
+
 @test "add refuses a path containing whitespace" {
   make_repo "$DUX_HOME/re po" main
   run dux-project add repo "$DUX_HOME/re po"

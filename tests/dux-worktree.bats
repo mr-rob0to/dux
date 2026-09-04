@@ -38,14 +38,34 @@ custom_target='worktree:
   [ "$(dux-worktree path "$id")" = "$wt" ]
 }
 
+ignore_env() {  # $1 project name; the project ignores every .env variant
+  printf '.worktrees/\n.env\n.env.*\n' > "$DUX_HOME/$1/.gitignore"
+  (cd "$DUX_HOME/$1" && git add .gitignore && git commit -q -m "ignore env" && git push -q origin main)
+}
+
 @test "ship under git copies .env files but not examples or symlinks" {
   register proj
+  ignore_env proj
   echo A=1 > "$DUX_HOME/proj/.env"; echo B=2 > "$DUX_HOME/proj/.env.local"
   echo X=0 > "$DUX_HOME/proj/.env.example"; ln -s .env "$DUX_HOME/proj/.env.link"
   id="$(dux-task-new proj ship)"
   wt="$(dux-worktree create "$id")"
   [ "$(cat "$wt/.env")" = A=1 ]; [ "$(cat "$wt/.env.local")" = B=2 ]
   [ ! -e "$wt/.env.example" ]; [ ! -e "$wt/.env.link" ]
+}
+
+@test "an env file the project does not ignore is a finding and nothing is copied" {
+  register proj
+  printf '.worktrees/\n.env\n' > "$DUX_HOME/proj/.gitignore"
+  (cd "$DUX_HOME/proj" && git add .gitignore && git commit -q -m "ignore env" && git push -q origin main)
+  echo A=1 > "$DUX_HOME/proj/.env"; echo B=2 > "$DUX_HOME/proj/.env.production"
+  id="$(dux-task-new proj ship)"
+  run dux-worktree create "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: .env.production is not ignored in $DUX_HOME/proj"* ]]
+  wt="$DUX_HOME/proj/.worktrees/dux-$id"
+  [ ! -e "$wt/.env" ]
+  [ ! -e "$wt/.env.production" ]
 }
 
 @test "ship under make uses the project's target and discovers its path" {
