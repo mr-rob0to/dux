@@ -220,3 +220,35 @@ custom_target='worktree:
   run dux-worktree discard "$id"
   [ "$status" -eq 0 ]
 }
+
+run_hook() {  # $1 hook, $2 remote ref name; feeds one pre-push line on stdin
+  bash -c 'printf "refs/heads/local sha1 refs/heads/%s sha2\n" "$2" | "$1" origin url' _ "$1" "$2"
+}
+
+@test "the rendered hook never re-evaluates the base branch or the upstream path" {
+  base='evil$(touch$IFS'"$DUX_HOME"'/pwned-base)'
+  make_repo "$DUX_HOME/proj" "$base"
+  dux-project add proj "$DUX_HOME/proj" --base "$base" >/dev/null
+  git -C "$DUX_HOME/proj" config core.hooksPath 'hooks$(touch$IFS'"$DUX_HOME"'/pwned-upstream)'
+  id="$(dux-task-new proj scout)"
+  dux-worktree create "$id" >/dev/null
+  run run_hook "$DUX_HOME/data/tasks/$id/hooks/pre-push" "$base"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: refusing to push to $base from a Dux worktree"* ]]
+  [ ! -e "$DUX_HOME/pwned-base" ]
+  [ ! -e "$DUX_HOME/pwned-upstream" ]
+}
+
+@test "the rendered hook exits 2 on a refused push and survives a quote in the base branch" {
+  base="o'brien"
+  make_repo "$DUX_HOME/proj" "$base"
+  dux-project add proj "$DUX_HOME/proj" --base "$base" >/dev/null
+  id="$(dux-task-new proj scout)"
+  dux-worktree create "$id" >/dev/null
+  hook="$DUX_HOME/data/tasks/$id/hooks/pre-push"
+  run run_hook "$hook" "$base"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: refusing to push to $base from a Dux worktree"* ]]
+  run run_hook "$hook" "dux/$id"
+  [ "$status" -eq 0 ]
+}
