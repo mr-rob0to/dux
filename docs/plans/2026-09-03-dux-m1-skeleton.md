@@ -1,6 +1,6 @@
 # Dux Milestone 1: Skeleton Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
 - Milestone: 1 of 6 (see `2026-09-03-dux-roadmap.md`). Tasks done: 8 of 8.
@@ -13,7 +13,7 @@
 
 **Tech Stack:** bash 3.2-compatible scripts (macOS default), jq, bats-core for tests, shellcheck for lint, tmux, herdr 0.8.2 CLI, gh CLI, Claude Code 2.1.x.
 
-**Spec:** `docs/superpowers/specs/2026-09-03-dux-orchestrator-design.md`
+**Spec:** `docs/specs/2026-09-03-dux-orchestrator-design.md`
 
 ## Global Constraints
 
@@ -1352,8 +1352,8 @@ An orchestrator you talk to. Dux runs worker agents across your repos in isolate
 worktrees, supervises them without spending tokens, and brings back PR links and
 decisions. Delivery goes through `/ship`.
 
-Design: `docs/superpowers/specs/2026-09-03-dux-orchestrator-design.md`.
-Plans: `docs/superpowers/plans/`.
+Design: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
+Plans: `docs/plans/`.
 
 Verified orchestrator harness: Claude Code. Worker harnesses: Claude Code and Codex (milestone 2). Codex as orchestrator: milestone 7.
 
@@ -1385,7 +1385,7 @@ Open `claude` in the dux repo. Ask it to register `fitfights_ios`. Expected: it 
 Tick all boxes above, set "Tasks done: 8 of 8" in the header, then:
 
 ```bash
-git add AGENTS.md CLAUDE.md .claude/settings.json skills README.md docs/ARCHITECTURE.md tests/contract.bats docs/superpowers/plans
+git add AGENTS.md CLAUDE.md .claude/settings.json skills README.md docs/ARCHITECTURE.md tests/contract.bats docs/plans
 git commit -m "feat: add Dux operating contract, dux-project skill, README
 
 Break-verified: <paste>"
@@ -1524,7 +1524,7 @@ mkdir -p skills/ship && cp ~/.agents/skills/ship/SKILL.md skills/ship/SKILL.md
 - Every script has a bats file. Every guard is break-verified once and the failure is pasted into the commit.
 - `make check` must be green. `make lint` also refuses personal identifiers in tracked files.
 - No personal paths, usernames, or project names in tracked files. Personal state lives in `data/`, `state/`, `config/`.
-- Changes to the design go through `docs/superpowers/specs/` first.
+- Changes to the design go through `docs/specs/` first.
 ```
 
 - [x] **Step 4: Write the default config templates**
@@ -1626,7 +1626,7 @@ Set `yes=1` unconditionally. Run `bats tests/dux-install.bats`. Expected: "refus
 Set "Tasks done: 8 of 8".
 
 ```bash
-git add LICENSE CONTRIBUTING.md skills/ship bin/dux-install bin/dux-uninstall templates/config Makefile .gitignore tests/dux-install.bats tests/identifiers.bats docs/superpowers/plans
+git add LICENSE CONTRIBUTING.md skills/ship bin/dux-install bin/dux-uninstall templates/config Makefile .gitignore tests/dux-install.bats tests/identifiers.bats docs/plans
 git commit -m "feat: MIT license, bundled ship skill, dux-install, identifier lint
 
 Break-verified: <paste both>"

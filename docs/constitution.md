@@ -71,7 +71,7 @@ behavior is wrong.
 
 Architecture MUST stay small, file-based, and restart-proof.
 
-- The design authority is `docs/superpowers/specs/2026-09-03-dux-orchestrator-design.md`.
+- The design authority is `docs/specs/2026-09-03-dux-orchestrator-design.md`.
   `docs/ARCHITECTURE.md` carries the current component diagram and the two main flows
   (dispatch, wake) and MUST be updated in the same pull request as any change that adds,
   removes, or renames a script, adapter, state file, or step in those flows.

@@ -108,7 +108,7 @@ mechanism in the operator's precedence order: `make` (a `make worktree` target),
 
 | Shape | Worker model | Output | Definition of done |
 |---|---|---|---|
-| plan | Fable, high effort | spec + plan in `docs/superpowers/` of the project, docs-only PR | `done: PR <url>` |
+| plan | Fable, high effort | spec + plan in `docs/specs/` and `docs/plans/` of the project, docs-only PR | `done: PR <url>` |
 | ship | Opus, effort per the operator's rule | one milestone implemented, `/ship` run | `done: PR <url>` after CI green |
 | scout | Sonnet | `tasks/<id>/report.md` | `done: report` |
 

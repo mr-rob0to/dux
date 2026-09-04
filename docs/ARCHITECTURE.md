@@ -1,7 +1,7 @@
 # Dux architecture
 
 Current component map and the two main flows. The design authority is
-`docs/superpowers/specs/2026-09-03-dux-orchestrator-design.md`; this file tracks
+`docs/specs/2026-09-03-dux-orchestrator-design.md`; this file tracks
 what exists. Update it in the same pull request as any change that adds,
 removes, or renames a script, adapter, state file, or step in a flow.
 
