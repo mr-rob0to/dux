@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 1 of 11 (Task 0, Tasks 1 to 8, Task 8b, Task 9).
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 2 of 11 (Task 0, Tasks 1 to 8, Task 8b, Task 9).
 - reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
 - Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
-- Next action: Task 1 (ledger, test helpers, fake `gh`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
+- Next action: Task 2 (task id and folder `bin/dux-task-new`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
 
 **Goal:** Turn an operator goal into a running, isolated worker: task ledger, task ids, brief rendering, worktree per project mechanism with a base-branch push guard, worker harness adapters for Claude Code and Codex, the in-pane wrapper that enforces the status protocol, spawn with its five refusals, teardown with its three refusals, the `dux-dispatch` skill, and an end-to-end test on both backends with both harnesses.
 
@@ -276,7 +276,7 @@ git commit -m "docs: amend the spec for milestone 2 dispatch mechanics"
 - Produces (helper): `make_repo <dir> <branch>` creates a bare origin at `<dir>.origin` and a clone at `<dir>` with `origin/HEAD` set; `fixture_task <project> <shape>` registers `$DUX_HOME/<project>` with `--base main`, allocates a task, renders a brief from a two-line intent and criteria, and prints the id (usable from Task 3 on).
 - Produces (fake): `gh` records every call to `$FAKE_GH_LOG`; `auth status` exits 0; `repo view` exits 1 (no forge); `issue comment` prints a url, or fails when `FAKE_GH_FAIL` is set; `pr list` prints `[]`; anything else exits 2.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/dux-ledger.bats`:
 
@@ -379,12 +379,12 @@ load helpers/setup
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `bats tests/dux-ledger.bats`
 Expected: 11 fail, `dux-ledger: command not found`.
 
-- [ ] **Step 3: Write the script**
+- [x] **Step 3: Write the script**
 
 `bin/dux-ledger`:
 
@@ -481,7 +481,7 @@ esac
 
 Run: `chmod +x bin/dux-ledger`
 
-- [ ] **Step 4: Write the fake `gh` and extend the helper**
+- [x] **Step 4: Write the fake `gh` and extend the helper**
 
 `tests/fakes/gh`:
 
@@ -563,16 +563,16 @@ In `tests/dux-project.bats` delete the seven-line `make_repo` function at the to
 
 In `tests/dux-doctor.bats` change the "doctor fails and names a missing tool" test's PATH from `"$DUX_ROOT/tests/fakes:$DUX_ROOT/bin:/usr/bin:/bin"` to `"$DUX_ROOT/bin:/usr/bin:/bin"`; the assertion `FAIL codex` stays.
 
-- [ ] **Step 5: Run to verify it passes**
+- [x] **Step 5: Run to verify it passes**
 
 Run: `make check`
 Expected: lint clean (the new fake is covered by `tests/fakes/*`); `tests/dux-ledger.bats` 11 pass; every M1 file still passes.
 
-- [ ] **Step 6: Break-verify**
+- [x] **Step 6: Break-verify**
 
 In `add`, delete the line `[ -z "$(line_of "$id")" ] || finding "task $id already in ledger"`. Run `bats tests/dux-ledger.bats`. Expected: "add refuses a duplicate id" fails with status 0 and two lines. Restore. Paste into the commit.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add bin/dux-ledger tests/dux-ledger.bats tests/fakes/gh tests/helpers/setup.bash tests/dux-project.bats tests/dux-doctor.bats

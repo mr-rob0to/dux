@@ -1,13 +1,5 @@
 load helpers/setup
 
-make_repo() {  # $1 dir, $2 default branch; creates a bare origin and a clone
-  local d="$1" b="$2"
-  git init -q -b "$b" "$d.origin.tmp" && (cd "$d.origin.tmp" && git commit -q --allow-empty -m init)
-  git clone -q --bare "$d.origin.tmp" "$d.origin" && rm -rf "$d.origin.tmp"
-  git clone -q "$d.origin" "$d"
-  (cd "$d" && git remote set-head origin "$b")
-}
-
 @test "add writes a registry line with detected git worktree mechanism" {
   make_repo "$DUX_HOME/repoA" main
   run dux-project add repoA "$DUX_HOME/repoA"
