@@ -84,7 +84,7 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   run git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$id"; [ "$status" -ne 0 ]
   grep -qxF -- '- Worktree: <set by dux-spawn>' "$DUX_HOME/data/tasks/$id/brief.md"
   [ ! -e "$DUX_HOME/state/$id.endpoint" ]
-  [ ! -e "$DUX_HOME/state/$id.launched" ]
+  [ -z "$(dux-backend find "$id")" ]
   run dux-spawn "$id"
   [ "$status" -eq 0 ]
 }
@@ -94,24 +94,63 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   run dux-spawn "$id"
   [ "$status" -eq 0 ]
   # Exactly the disk state a spawn killed between backend open and the endpoint
-  # write leaves: a live worker, no endpoint file, the ledger still queued.
-  [ -s "$DUX_HOME/state/$id.launched" ]
+  # write leaves: a live container, no endpoint file, the ledger still queued.
   rm -f "$DUX_HOME/state/$id.endpoint"
   dux-ledger set "$id" state queued
   run dux-spawn "$id"
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: a worker for $id may still be alive"* ]]
-  # Today the only thing stopping the retry is the filled-in worktree line in the
-  # brief, and its finding invites the operator to put the placeholder back. That
-  # workaround reuses the worktree and starts a second worker, so it must be refused too.
+  [[ "$output" == "finding: a container for $id already exists at herdr:w1:p9"* ]]
+  # Putting the placeholder back was the workaround the old refusal invited. The
+  # container is what is asked, so the brief cannot talk a second worker into life.
   b="$DUX_HOME/data/tasks/$id/brief.md"
   sed 's#^- Worktree: /.*#- Worktree: <set by dux-spawn>#' "$b" > "$b.tmp" && mv "$b.tmp" "$b"
   grep -qxF -- '- Worktree: <set by dux-spawn>' "$b"
   run dux-spawn "$id"
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: a worker for $id may still be alive"* ]]
+  [[ "$output" == "finding: a container for $id already exists at herdr:w1:p9"* ]]
   [ "$(grep -c '^tab create' "$FAKE_HERDR_LOG")" -eq 1 ]
   [ "$(grep -c '^pane run' "$FAKE_HERDR_LOG")" -eq 1 ]
+  # And once the container is gone the same task spawns, with no file to delete.
+  dux-backend close herdr:w1:p9
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+}
+
+@test "a spawn that died after the worktree and before the container is spawnable again" {
+  id="$(fixture_task proj scout)"
+  b="$DUX_HOME/data/tasks/$id/brief.md"
+  # Exactly the disk state a spawn killed between dux-worktree create and backend
+  # open leaves: the worktree made, the brief's line filled, no container, queued.
+  wt="$(dux-worktree create "$id")"
+  awk -v to="- Worktree: $wt" '/^- Worktree: / { print to; next } { print }' "$b" > "$b.tmp" && mv "$b.tmp" "$b"
+  grep -qxF -- "- Worktree: $wt" "$b"
+  [ -z "$(dux-backend find "$id")" ]
+  # No file to delete, no status line to fake, no placeholder to restore.
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  # dux-worktree logs that it reused the worktree, so the report is the last line.
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "spawned $id endpoint=herdr:w1:p9 worktree=$wt" ]
+  [ "$(dux-ledger get "$id" state)" = running ]
+  grep -qxF -- "- Worktree: $wt" "$b"
+  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+}
+
+@test "an open that fails with the container alive refuses to discard the worktree" {
+  id="$(fixture_task proj scout)"
+  # herdr types into a live shell: pane run can fail after the command went out,
+  # and here the cleanup close is refused too, so the pane outlives the failure.
+  export FAKE_HERDR_RUN_FAIL=1 FAKE_HERDR_CLOSE_FAIL=1
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: backend open failed for $id but a container for it is alive at herdr:w1:p9"* ]]
+  wt="$DUX_HOME/proj/.worktrees/dux-$id"
+  [ -d "$wt" ]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  # The brief is back to the placeholder, so the operator is never blocked by it.
+  grep -qxF -- '- Worktree: <set by dux-spawn>' "$DUX_HOME/data/tasks/$id/brief.md"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a container for $id already exists at herdr:w1:p9"* ]]
 }
 
 @test "a DUX_ROOT containing a space still starts the worker" {

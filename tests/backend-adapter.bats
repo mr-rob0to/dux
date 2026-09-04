@@ -44,6 +44,58 @@ teardown_file() {
   run dux-backend exists "$ep"; [ "$status" -eq 1 ]
 }
 
+@test "find names the task's container while it exists and prints nothing before and after" {
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  run dux-backend find t20
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  ep="$(dux-backend open t20 "$DUX_HOME" "sleep 30")"
+  run dux-backend find t20
+  [ "$status" -eq 0 ]; [ "$output" = "$ep" ]
+  # A different task's container is not this task's answer.
+  run dux-backend find t20b
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  dux-backend close "$ep"
+  run dux-backend find t20
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+
+@test "find is a finding when the backend cannot answer, never an empty answer" {
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  if [ "$DUX_BACKEND" = tmux ]; then
+    # The backend CLI's own error text reaches $output first, so match anywhere.
+    FAKE_TMUX_FAIL=list-windows run dux-backend find t21
+    [[ "$output" == *"finding: tmux could not list windows while looking for dux-t21"* ]]
+  else
+    FAKE_HERDR_LIST_FAIL=1 run dux-backend find t21
+    [[ "$output" == *"finding: herdr tab list failed while looking for dux-t21"* ]]
+  fi
+  [ "$status" -eq 2 ]
+}
+
+@test "tmux find reads a server that is not running as no container, not as a failure" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  DUX_TMUX_SOCKET=dux-test-absent run dux-backend find t23
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+
+@test "herdr find refuses a labelled tab it cannot resolve to a pane" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  # A create that returned no pane id and could not be closed: the tab is real and
+  # may hold a worker, and no pane names it. That must not read as "nothing there".
+  FAKE_HERDR_NO_PANE_ID=1 FAKE_HERDR_TAB_CLOSE_FAIL=1 run dux-backend open t22 "$DUX_HOME" "sleep 5"
+  [ "$status" -eq 2 ]
+  run dux-backend find t22
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: herdr tab w1:t9 is labelled dux-t22 but has no pane"* ]]
+}
+
+@test "herdr find refuses a tab listing without a tab array" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  FAKE_HERDR_LIST_JUNK=1 run dux-backend find t24
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: herdr tab list returned no tab array while looking for dux-t24"* ]]
+}
+
 @test "tail returns the last n lines" {
   [ -n "${DUX_BACKEND:-}" ] || skip
   if [ "$DUX_BACKEND" = herdr ]; then printf 'a\nb\nc\n' > "$FAKE_HERDR_OUTPUT"; ep="herdr:w1:p9"

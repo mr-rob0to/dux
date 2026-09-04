@@ -96,7 +96,6 @@ container_gone() {  # $1 endpoint
   [ "$(dux-ledger get "$id" state)" = queued ]
   [ ! -d "$DUX_HOME/proj/.worktrees" ]
   [ ! -e "$DUX_HOME/state/$id.endpoint" ]
-  [ ! -e "$DUX_HOME/state/$id.launched" ]
   [ ! -s "$FAKE_WORKER_LOG" ]
 }
 

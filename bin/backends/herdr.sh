@@ -35,6 +35,28 @@ backend_exists() {  # endpoint
   herdr pane get "$(_pane "$1")" >/dev/null 2>&1
 }
 
+backend_find() {  # id: prints the endpoint of the tab labelled dux-<id>, nothing when there is none
+  # Not scoped to HERDR_WORKSPACE_ID: a tab the operator moved elsewhere still
+  # holds a live worker, and "I looked in the wrong workspace" would read as "no".
+  local id="$1" out tab n pane
+  out="$(herdr tab list)" || finding "herdr tab list failed while looking for dux-$id"
+  printf '%s' "$out" | jq -e '.result.tabs | type == "array"' >/dev/null 2>&1 \
+    || finding "herdr tab list returned no tab array while looking for dux-$id"
+  tab="$(printf '%s' "$out" | jq -r --arg l "dux-$id" '.result.tabs[] | select(.label == $l) | .tab_id')" \
+    || finding "herdr tab list is unreadable while looking for dux-$id"
+  [ -n "$tab" ] || return 0
+  n="$(printf '%s\n' "$tab" | wc -l | tr -d ' ')"
+  [ "$n" = 1 ] || finding "$n herdr tabs are labelled dux-$id; close all but one before spawning $id"
+  # The listing carries no pane, and the endpoint is a pane, so ask for the panes.
+  out="$(herdr pane list)" || finding "herdr pane list failed while looking for the pane of tab $tab"
+  printf '%s' "$out" | jq -e '.result.panes | type == "array"' >/dev/null 2>&1 \
+    || finding "herdr pane list returned no pane array while looking for the pane of tab $tab"
+  pane="$(printf '%s' "$out" | jq -r --arg t "$tab" '[.result.panes[] | select(.tab_id == $t) | .pane_id] | sort | .[0] // empty')" \
+    || finding "herdr pane list is unreadable while looking for the pane of tab $tab"
+  [ -n "$pane" ] || finding "herdr tab $tab is labelled dux-$id but has no pane; close the tab before spawning $id"
+  printf 'herdr:%s\n' "$pane"
+}
+
 backend_tail() {  # endpoint n
   herdr pane read "$(_pane "$1")" --source recent-unwrapped --lines "$2" 2>/dev/null
 }

@@ -37,6 +37,27 @@ backend_exists() {  # endpoint
   _tmux list-windows -a -F '#{window_id}' 2>/dev/null | grep -q "^$wid$"
 }
 
+backend_find() {  # id: prints the endpoint of the window named dux-<id>, nothing when there is none
+  # Never _session: that would start a server to answer a question about it.
+  local id="$1" errfile out rc err n
+  errfile="$(mktemp "${TMPDIR:-/tmp}/dux-tmux-find.XXXXXX")" || finding "cannot create a temp file to read tmux errors"
+  out="$(_tmux list-windows -a -f "#{==:#{window_name},dux-$id}" -F '#{session_name}:#{window_id}' 2>"$errfile")"
+  rc=$?
+  err="$(cat "$errfile")"; rm -f "$errfile"
+  if [ "$rc" -ne 0 ]; then
+    # A server that is not there is positive evidence of no window. Any other
+    # failure is an unanswered question and must never read as "nothing is running".
+    case "$err" in
+      *"no server running"*|*"error connecting"*) return 0 ;;
+      *) finding "tmux could not list windows while looking for dux-$id: ${err:-exit $rc}" ;;
+    esac
+  fi
+  [ -n "$out" ] || return 0
+  n="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
+  [ "$n" = 1 ] || finding "$n tmux windows are named dux-$id; close all but one before spawning $id"
+  printf 'tmux:%s\n' "$out"
+}
+
 backend_tail() {  # endpoint n
   local wid; wid="$(_win "$1")"
   _tmux capture-pane -p -t "$wid" -S "-$2" 2>/dev/null | sed '/^$/d' | tail -n "$2"

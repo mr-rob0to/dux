@@ -45,7 +45,7 @@ templates/
 data/         (gitignored) projects.md registry; backlog.md ledger;
                            tasks/<id>/{brief.md,status.log,report.md,worker-settings.json,
                            harness,hooks/,worktree.log}
-state/        (gitignored) dux.lock; <id>.launched; <id>.endpoint; <id>.pid;
+state/        (gitignored) dux.lock; <id>.endpoint; <id>.pid;
                            <id>.out; events.log
 config/       (gitignored) backend override, reviewer defaults, models, models-codex,
                            worker-harness
@@ -69,12 +69,21 @@ Rules that shape every component:
 
 `dux-backend` picks the backend once per invocation: `$DUX_BACKEND`, else
 `config/backend`, else `herdr` when `HERDR_ENV=1` and `$TMUX` is unset, else
-`tmux`. Adapters implement `backend_open`, `backend_exists`, `backend_tail`,
-`backend_close`, `backend_notify`, `backend_report`, and `backend_title` with
-identical arguments; `report` and `title` mirror a worker's status into the
-container's own chrome and are no-ops under tmux. Endpoints are opaque
-strings recorded from creation responses, never derived from labels. `close`
+`tmux`. Adapters implement `backend_open`, `backend_find`, `backend_exists`,
+`backend_tail`, `backend_close`, `backend_notify`, `backend_report`, and
+`backend_title` with identical arguments; `report` and `title` mirror a worker's
+status into the container's own chrome and are no-ops under tmux. Endpoints are
+opaque strings recorded from creation responses, never derived from labels. `close`
 refuses the operator's focused pane and treats a failed Herdr close as a finding.
+
+`find <id>` is the one operation that reads a container back from the label both
+backends already set (`dux-<id>`): it prints that container's endpoint, or nothing
+when there is none. tmux filters `list-windows -a` on the window name; Herdr
+matches `herdr tab list` on `label` and then resolves the tab to a pane through
+`herdr pane list`, because the tab listing carries no pane. It never answers
+"nothing" when it could not tell: a listing that fails, a listing without the
+array it should have, more than one container for the id, or a labelled tab with
+no pane is a finding. `find` is how spawn knows a worker may still be alive.
 
 ## Dispatch flow (exists today)
 
@@ -85,9 +94,9 @@ refuses the operator's focused pane and treats a failed Herdr close as a finding
    fenced issue block) and `tasks/<id>/worker-settings.json`.
 3. `dux-spawn <id>` refuses with a finding unless: the lock is this session's
    (`dux-lock mine`), the task is `queued`, the project is registered, the
-   brief has its worktree line to fill, the chosen worker harness is
+   brief has a `- Worktree: ` line to fill, the chosen worker harness is
    dispatchable, the backend selects, no endpoint is recorded for the id, and
-   no `state/<id>.launched` marks a worker that may still be alive.
+   `dux-backend find <id>` reports no container for the task.
    Milestone 2 dispatches `claude` workers only. `codex` is refused by
    `harness_refusal` in `dux-env`, which `dux-spawn` and `dux-worker-wrap` both
    call, so the `--harness` flag, `config/worker-harness` and
@@ -102,13 +111,14 @@ refuses the operator's focused pane and treats a failed Herdr close as a finding
    files, renamed to the name the project expects. A real ignored `.env` is
    never copied. An uncommitted example, or a destination name the project does
    not ignore, is a finding; no example at all is a log line.
-5. Spawn writes `state/<id>.launched` and only then calls `dux-backend open
-   <id> <wt> <abs>/bin/dux-worker-wrap <id>`, which starts the wrapper in a new
-   container; the command is composed as shell words because both backends hand
-   it to a shell. Spawn records the endpoint in `state/<id>.endpoint` and the
-   ledger, marks `running`, and comments on a `gh:` issue. A failed `open`
-   removes the worktree and the marker and leaves the task `queued`; teardown
-   removes the marker once the worker is proven gone.
+5. Spawn calls `dux-backend open <id> <wt> <abs>/bin/dux-worker-wrap <id>`, which
+   starts the wrapper in a new container; the command is composed as shell words
+   because both backends hand it to a shell. Spawn records the endpoint in
+   `state/<id>.endpoint` and the ledger, marks `running`, and comments on a `gh:`
+   issue. After a failed `open` the brief's worktree line goes back to its
+   placeholder either way, and the worktree is discarded only when `find` shows
+   no container; a container that outlived the failed `open` is a finding naming
+   it, never a silent cleanup around a live worker.
 6. `dux-worker-wrap <id>` writes `state/<id>.pid`, exports `DUX_STATUS_LOG` and
    the hooks-dir git config, runs `worker_run` from `bin/workers/<harness>.sh`
    with output to `state/<id>.out`, mirrors each status line through
