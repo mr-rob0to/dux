@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 0 of 10 (Task 0 plus Tasks 1 to 9).
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 0 of 11 (Task 0, Tasks 1 to 8, Task 8b, Task 9).
 - reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
 - Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
 - Next action: operator approves this plan; implementation runs in a worktree cut from `origin/main`; `/ship` opens the PR; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
@@ -2715,6 +2715,114 @@ Break-verified: <paste>"
 
 ---
 
+### Task 8b: Identifier denylist survives a foreign username
+
+**Files:**
+- Modify: `bin/dux-install` (denylist generation)
+- Modify: `Makefile` (`lint-identifiers`)
+- Modify: `tests/identifiers.bats`
+- Modify: `tests/dux-install.bats`
+
+**Interfaces:**
+- Consumes: nothing from earlier tasks.
+- Produces: a denylist that cannot be tripped by an ordinary English word, and a `dux-install` that writes it only where the caller points it.
+
+**Why this task exists.** Found on PR 2 of this repo, 2026-09-03. `bin/dux-install` builds `$DUX_ROOT/tests/personal-identifiers.txt` from `whoami`, `basename "$HOME"` and `$HOME`, and `make lint-identifiers` greps every tracked file for those strings with `grep -F`. On GitHub Actions the denylist therefore holds `CIUSER` and `/home/CIUSER`, so a plan file that used the CI account name as an ordinary English word failed `make check` on CI while passing on the operator's machine, where the denylist holds a different name. Two defects sit underneath:
+
+1. **A bare username is matched as a substring.** Any tracked file containing the CI user's name fails the lint, and the default account names on the common CI providers are also ordinary English words: `build`, `admin`, `ubuntu` and the one this repo hit.
+2. **A test writes into the real working tree.** `tests/dux-install.bats` runs `dux-install` with `DUX_ROOT` pointing at this repo, so `make test` leaves the git-ignored `tests/personal-identifiers.txt` behind. Anyone reading the lint's behaviour locally sees their own name, not the one CI will use.
+
+**A note on `CIUSER` below.** This plan cannot contain the real name of the CI account, because the lint this task fixes would match it and fail the docs PR that carries the plan. `CIUSER` stands in for it throughout. Substitute the real value when you write the tests.
+
+- [ ] **Step 1: Write the failing tests**
+
+Add to `tests/identifiers.bats`:
+
+```bash
+@test "lint ignores a denylist entry that is an ordinary word" {
+  tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
+  printf 'CIUSER\n/home/CIUSER\n' > "$tmp/repo/tests/personal-identifiers.txt"
+  echo 'a slow CI CIUSER shows up as a timeout' >> "$tmp/repo/README.md"
+  (cd "$tmp/repo" && git add README.md)
+  run make -C "$tmp/repo" lint-identifiers
+  [ "$status" -eq 0 ]
+}
+
+@test "lint still catches the home path even when the bare name is generic" {
+  tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
+  printf 'CIUSER\n/home/CIUSER\n' > "$tmp/repo/tests/personal-identifiers.txt"
+  echo 'see /home/CIUSER/work/dux for the checkout' >> "$tmp/repo/README.md"
+  (cd "$tmp/repo" && git add README.md)
+  run make -C "$tmp/repo" lint-identifiers
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"README.md"* ]]
+}
+```
+
+Add to `tests/dux-install.bats`:
+
+```bash
+@test "install writes the denylist under DUX_ROOT, never the source tree" {
+  root="$DUX_HOME/ro"; mkdir -p "$root/tests"
+  DUX_ROOT="$root" run dux-install --yes
+  [ "$status" -eq 0 ]
+  [ -f "$root/tests/personal-identifiers.txt" ]
+}
+```
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `bats tests/identifiers.bats tests/dux-install.bats`
+Expected: both new lint tests fail. `grep -F` matches the bare name inside the ordinary sentence, and the home-path test never gets that far.
+
+- [ ] **Step 3: Split the denylist into names and paths**
+
+In `bin/dux-install`, write the file in two labelled sections: paths matched literally, bare names matched only as whole words. Drop any bare name that is a generic account name. Keep the file one pattern per line so the Makefile stays a `grep -f`.
+
+```bash
+common='^(CIUSER|ubuntu|root|admin|build|ci|user|vagrant|jenkins|docker)$'
+{
+  echo "$HOME"
+  [ -f "$DUX_DATA/projects.md" ] && sed -n 's/^- \([^ ]*\) .*/\1/p' "$DUX_DATA/projects.md"
+} | grep -v '^$' | sort -u > "$DUX_ROOT/tests/personal-identifiers.txt"
+{
+  whoami; basename "$HOME"
+} | grep -v '^$' | grep -vE "$common" | sort -u > "$DUX_ROOT/tests/personal-names.txt"
+```
+
+- [ ] **Step 4: Match names on word boundaries in the Makefile**
+
+`lint-identifiers` greps paths with `grep -F` as today, and names with `grep -w`, skipping either file when it is absent or empty. Both greps exclude the two denylist files themselves.
+
+- [ ] **Step 5: Point the denylist write at the caller's DUX_ROOT**
+
+`dux-install` already resolves `DUX_ROOT`; make the tests pass a throwaway one so `make test` no longer writes into this repo. Add `tests/personal-names.txt` to `.gitignore` beside the existing entry.
+
+- [ ] **Step 6: Run to verify they pass**
+
+Run: `bats tests/identifiers.bats tests/dux-install.bats`
+Expected: all pass, including the two original lint tests.
+
+- [ ] **Step 7: Break-verify**
+
+Change `grep -w` back to `grep -F` in `lint-identifiers`. Run `bats tests/identifiers.bats`. Expected: "lint ignores a denylist entry that is an ordinary word" fails with status 1 and README.md in the output. Restore. Then delete the `grep -vE "$common"` filter and run again. Expected: the same test fails, for the other reason. Restore. Paste both into the commit; two breaks, two distinct failures.
+
+- [ ] **Step 8: Confirm against a real foreign username**
+
+Run: `git ls-files -z | xargs -0 grep -nwF -e CIUSER -e ubuntu -- | grep -v personal-`
+Expected: no output. This is the check CI actually performs once its own name is in the list.
+
+- [ ] **Step 9: Commit**
+
+```bash
+git add bin/dux-install Makefile tests/identifiers.bats tests/dux-install.bats .gitignore
+git commit -m "fix: stop the identifier denylist tripping on a generic CI username
+
+Break-verified: <paste both>"
+```
+
+---
+
 ### Task 9: `skills/dux-dispatch`, end-to-end on both backends and both harnesses, docs
 
 **Files:**
@@ -2725,7 +2833,7 @@ Break-verified: <paste>"
 - Modify: `AGENTS.md` (skills line; one dispatch line in Task lifecycle)
 - Modify: `README.md` (worker harness line)
 - Modify: `docs/plans/2026-09-03-dux-roadmap.md` ("Where this stands")
-- Modify: `tests/dux-install.bats` (the "backup move fails" test pre-links every bundled skill except `ship`, so a new skill does not turn its expected finding into `cannot link`)
+- Modify: `tests/dux-install.bats` (the "backup move fails" test pre-links every bundled skill except `ship`, so a new skill does not turn its expected finding into `cannot link`). Task 8b also touches this file; apply Task 8b first so the two edits do not collide
 - Modify: this plan's header
 
 **Interfaces:**
@@ -3008,7 +3116,7 @@ Say "running /ship" in one line, then invoke `/ship`. The PR body fills `.github
 - The three Claude model ids in `templates/config/models` resolve.
 - Every commit body carries a pasted break-verification failure (Task 0 and Task 9's docs commit excepted).
 - `docs/ARCHITECTURE.md` lists every new script, adapter, template, and state file, and its dispatch flow matches the code.
-- `AGENTS.md` is at most 150 lines. No personal identifiers in tracked files.
+- `AGENTS.md` is at most 150 lines. No personal identifiers in tracked files, checked against a foreign username as well as this machine's (Task 8b).
 - The PR was opened by `/ship`, the reviews ran, CI is green, and the operator merged it. Then the operator reran `bin/dux-install` to seed `config/models-codex` and `config/worker-harness`.
 
 ## Risks
