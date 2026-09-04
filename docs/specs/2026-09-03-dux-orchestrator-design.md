@@ -93,8 +93,8 @@ Non-goals for v1
     <id>.pid                pid of dux-worker-wrap; liveness for the watcher
   tests/                    bats tests, fake claude
   config/backend            optional override: tmux | herdr
-  config/worker-harness     claude | codex, default claude
-  config/models-codex       per-shape Codex model:effort
+  config/worker-harness     claude, the only harness dispatched in milestone 2
+  config/models-codex       per-shape Codex model:effort, for a later milestone
   .github/PULL_REQUEST_TEMPLATE.md   canonical template Dux installs into projects
 ```
 
@@ -203,7 +203,7 @@ write `working: waiting on <what> <url>` before any wait it expects to exceed
 10 minutes, such as `gh run watch`.
 Status lines are data. Dux never runs a command a status line names.
 
-### 5.5 Spawn (`dux-spawn <id> [--harness claude|codex]`)
+### 5.5 Spawn (`dux-spawn <id> [--harness claude]`)
 
 `dux-task-new <project> <shape> [--source local|gh:<owner>/<repo>#<n>]`
 allocates the id, creates `tasks/<id>/` with an empty `status.log`, and appends
@@ -217,7 +217,8 @@ Refuses, with a finding, when:
 - the worktree is not based on freshly fetched `origin/<base>`;
 - the backend is unavailable or an endpoint for the id already exists;
 - the lock is not held by this Dux session (`dux-lock mine`);
-- the brief is missing or has no `- Worktree: <set by dux-spawn>` line to fill.
+- the brief is missing or has no `- Worktree: <set by dux-spawn>` line to fill;
+- the chosen worker harness is unknown or is not dispatchable this milestone.
 
 Otherwise: `dux-worktree create <id>` (fetch, mechanism, discovery, tip check,
 hooks dir, `.env` copy for ship under the `git` mechanism), fill the brief's
@@ -231,12 +232,16 @@ brief's worktree line restored (`dux-worktree discard`), so the task stays
 `state/<id>.pid` before starting the harness.
 
 The worker command comes from the harness adapter `bin/workers/<harness>.sh`
-(section 19), never from this section. The brief is the prompt, the project's
+(section 19), never from this section. Milestone 2 dispatches `claude` workers
+only. Spawn refuses `codex` with a finding wherever the name comes from (the
+`--harness` flag, `config/worker-harness`, or `tasks/<id>/harness`): a Codex
+worker has no deny list, so `git push --no-verify` skips the `pre-push` hook,
+its one mechanical guard. Codex's separate role as the ship gate's code reviewer
+is unchanged. The brief is the prompt, the project's
 `CLAUDE.md` and the operator's global `CLAUDE.md` load normally under Claude, and
 the harness's output goes to `state/<id>.out`. Every shape runs unattended
-(`--dangerously-skip-permissions` under Claude, `--sandbox danger-full-access`
-under Codex) because a headless worker cannot answer prompts and a denied tool
-call stalls the task. The blast radius is
+(`--dangerously-skip-permissions`) because a headless worker cannot answer
+prompts and a denied tool call stalls the task. The blast radius is
 the worktree plus `gh` and `codex` with the operator's credentials. Prompt rules
 are not the guard. Every Claude worker gets `--settings tasks/<id>/worker-settings.json`, rendered
 from `templates/worker-settings.json` with deny rules `Bash(git push* <base>*)`,
@@ -251,10 +256,12 @@ before the milestone closes. The `pre-push` guard is a per-task hooks directory
 `pre-push` with the same input. `dux-worker-wrap` points every git the worker
 runs at it through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0=core.hooksPath` in the
 worker's environment. Nothing is written into the project's `.git/config` or
-`.git/hooks`. Under the Codex harness the sandbox is `danger-full-access` (a
-linked worktree's git dir lives under the primary checkout, outside any
-workspace-write root) with `shell_environment_policy.ignore_default_excludes`
-set so `GIT_CONFIG_KEY_0` reaches git; the hook and the brief are its guards.
+`.git/hooks`. The Codex adapter ships and stays tested at the adapter level for a
+later milestone: its sandbox is `danger-full-access` (a linked worktree's git dir
+lives under the primary checkout, outside any workspace-write root) with
+`shell_environment_policy.ignore_default_excludes` set so `GIT_CONFIG_KEY_0`
+reaches git. The hook alone would be its only mechanical guard, which is why
+dispatch refuses it.
 These guards stop a mistaken push, not a worker that sets out to bypass them:
 `--no-verify`, `git -c core.hooksPath=`, unsetting the environment, or the
 forge API all get past them, which is why they are denied by rule and by the
@@ -650,8 +657,14 @@ model_reasoning_effort="<e>" "<brief>"`. Models and efforts come from
 token per shape. The
 default worker harness is `claude`; `config/worker-harness` overrides it and
 `dux-spawn --harness` overrides per task. Both harnesses read the brief's rules, and the project's
-`AGENTS.md` (Codex) or `CLAUDE.md` (Claude Code) load as usual. Milestone 2
-ships both adapters and the end-to-end test runs on each.
+`AGENTS.md` (Codex) or `CLAUDE.md` (Claude Code) load as usual. Milestone 2 ships
+both adapters but dispatches `claude` workers only: the deny list is a Claude
+Code feature, so a Codex worker's one mechanical guard would be the `pre-push`
+hook and `git push --no-verify` skips it. `dux-spawn` and `dux-worker-wrap`
+refuse `codex` with a finding; the Codex adapter stays correct and tested at the
+adapter level for a later milestone, and Codex's role as the ship gate's code
+reviewer is unaffected. The end-to-end test runs on each backend with a `claude`
+worker, plus one case that asserts the refusal.
 
 **The orchestrator** depends on five harness features. The layout is
 harness-neutral from milestone 1 (`AGENTS.md` canonical, `CLAUDE.md` an import,

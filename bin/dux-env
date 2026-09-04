@@ -17,6 +17,26 @@ die()     { printf 'dux: %s\n' "$*" >&2; exit 1; }
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 now()     { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
+task_harness() {  # $1 task dir; prints the harness that task would run under
+  local h=""
+  [ -f "$1/harness" ] && h="$(tr -d '[:space:]' < "$1/harness")"
+  if [ -z "$h" ] && [ -f "$DUX_CONFIG/worker-harness" ]; then
+    h="$(tr -d '[:space:]' < "$DUX_CONFIG/worker-harness")"
+  fi
+  printf '%s' "${h:-claude}"
+}
+
+# The one place a worker harness is accepted or refused, so the task file, the
+# config file and dux-spawn --harness all reach the same answer.
+harness_refusal() {  # $1 harness; prints why it cannot run a worker and returns 1
+  case "$1" in
+    claude) return 0 ;;
+    codex) printf 'codex workers are not available: no deny list, so git push --no-verify skips the only guard (milestone 2)' ;;
+    *) printf 'unknown worker harness %s (claude)' "$1" ;;
+  esac
+  return 1
+}
+
 require_cmd() {
   local c
   for c in "$@"; do

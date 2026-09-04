@@ -1,7 +1,8 @@
 # bats file_tags=e2e
 load helpers/setup
 
-# Runs once per (DUX_BACKEND, DUX_WORKER_HARNESS) pair; the Makefile runs it four times.
+# Runs once per (DUX_BACKEND, DUX_WORKER_HARNESS) pair. Milestone 2 dispatches only
+# claude workers, so the Makefile runs it twice: one line per backend.
 setup_file() {
   if [ "${DUX_BACKEND:-}" = tmux ]; then
     export DUX_TMUX_SOCKET=dux-e2e DUX_TMUX_SESSION=duxe2e
@@ -82,6 +83,21 @@ container_gone() {  # $1 endpoint
   run dux-teardown "$id"
   [ "$status" -eq 0 ]
   [ "$(dux-ledger get "$id" state)" = failed ]
+}
+
+@test "a codex worker is refused end to end and nothing is created" {
+  ready || skip
+  worker_env
+  echo codex > "$DUX_HOME/config/worker-harness"
+  id="$(fixture_task proj scout)"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: codex workers are not available: no deny list, so git push --no-verify skips the only guard (milestone 2)"* ]]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+  [ ! -e "$DUX_HOME/state/$id.endpoint" ]
+  [ ! -e "$DUX_HOME/state/$id.launched" ]
+  [ ! -s "$FAKE_WORKER_LOG" ]
 }
 
 @test "on herdr the worker's status is mirrored to the pane" {

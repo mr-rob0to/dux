@@ -88,15 +88,20 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   echo gemini > "$DUX_HOME/data/tasks/$id/harness"
   run wrap
   [ "$status" -eq 2 ]; [[ "$output" == "finding: unknown worker harness gemini"* ]]
-  [ "$(status_log | tail -n 1)" = "failed: wrapper: unknown worker harness gemini (claude or codex)" ]
+  [ "$(status_log | tail -n 1)" = "failed: wrapper: unknown worker harness gemini (claude)" ]
   echo codex > "$DUX_HOME/data/tasks/$id/harness"
-  echo 'plan=m:high ship=m:xhigh scout=m:max' > "$DUX_HOME/config/models-codex"
   run wrap
-  [ "$status" -eq 2 ]; [[ "$output" == "finding: effort max is not valid for codex"* ]]
-  [ "$(status_log | tail -n 1)" = "failed: wrapper: effort max is not valid for codex" ]
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: codex workers are not available"* ]]
+  [ "$(status_log | tail -n 1)" = "failed: wrapper: codex workers are not available: no deny list, so git push --no-verify skips the only guard (milestone 2)" ]
+  rm "$DUX_HOME/data/tasks/$id/harness"
+  echo 'plan=m:high ship=m:xhigh scout=m:bogus' > "$DUX_HOME/config/models"
+  run wrap
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: effort bogus is not valid for claude"* ]]
+  [ "$(status_log | tail -n 1)" = "failed: wrapper: effort bogus is not valid for claude" ]
   grep -q '^## Failure$' "$DUX_HOME/data/tasks/$id/report.md"
+  cp "$DUX_ROOT/templates/config/models" "$DUX_HOME/config/models"
   run bash -c 'cd "$1" && PATH="$DUX_ROOT/bin:/usr/bin:/bin" DUX_BACKEND=tmux dux-worker-wrap "$2"' _ "$wt" "$id"
-  [ "$status" -eq 2 ]; [[ "$output" == "finding: codex is not on PATH inside the worker container"* ]]
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: claude is not on PATH inside the worker container"* ]]
   [ ! -e "$DUX_HOME/state/$id.pid" ]
 }
 
@@ -119,16 +124,17 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   git -C "$DUX_HOME/proj.origin" show-ref --verify --quiet "refs/heads/dux/$id"
 }
 
-@test "the codex harness runs codex with its own model file" {
+@test "config/worker-harness selects the harness and a codex value never reaches the adapter" {
   prepare scout
-  echo codex > "$DUX_HOME/data/tasks/$id/harness"
   printf 'status done: report\n' > "$FAKE_WORKER_SCRIPT"
+  echo claude > "$DUX_HOME/config/worker-harness"
   run wrap
   [ "$status" -eq 0 ]
-  grep -q '^codex ' "$FAKE_WORKER_LOG"
-  grep -q -- '-m gpt-5.6-sol' "$FAKE_WORKER_LOG"
-  grep -q -- '--sandbox danger-full-access' "$FAKE_WORKER_LOG"
-  [ "$(grep -c '^claude ' "$FAKE_WORKER_LOG" || true)" -eq 0 ]
+  grep -q '^claude ' "$FAKE_WORKER_LOG"
+  echo codex > "$DUX_HOME/config/worker-harness"
+  run wrap
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: codex workers are not available"* ]]
+  [ "$(grep -c '^codex ' "$FAKE_WORKER_LOG" || true)" -eq 0 ]
 }
 
 @test "on herdr every status line is mirrored and the title is set; on tmux nothing is" {
