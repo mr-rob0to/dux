@@ -1,10 +1,17 @@
 load helpers/setup
 
 setup() {
+  REPO_ROOT="$DUX_ROOT"
   DUX_HOME="$(mktemp -d "${BATS_TMPDIR:-/tmp}/dux-home.XXXXXX")"; export DUX_HOME
   mkdir -p "$DUX_HOME/data" "$DUX_HOME/state" "$DUX_HOME/config"
+  # A throwaway DUX_ROOT: dux-install writes the identifier denylist under it, and
+  # must not leave one behind in the checkout the suite is running from.
+  mkdir -p "$DUX_HOME/root/tests"
+  ln -s "$REPO_ROOT/skills" "$DUX_HOME/root/skills"
+  ln -s "$REPO_ROOT/templates" "$DUX_HOME/root/templates"
+  DUX_ROOT="$DUX_HOME/root"; export DUX_ROOT
   export DUX_SKILLS_DIR="$DUX_HOME/skills-target"; mkdir -p "$DUX_SKILLS_DIR"
-  export PATH="$DUX_ROOT/tests/fakes:$DUX_ROOT/bin:$PATH"
+  export PATH="$REPO_ROOT/tests/fakes:$REPO_ROOT/bin:$PATH"
 }
 
 @test "install symlinks every bundled skill and copies default config" {
@@ -17,6 +24,13 @@ setup() {
   done
   [ -f "$DUX_HOME/config/reviewer" ]
   grep -q 'codex exec' "$DUX_HOME/config/reviewer"
+}
+
+@test "install writes the denylist under DUX_ROOT, never the source tree" {
+  root="$DUX_HOME/ro"; mkdir -p "$root/tests"
+  DUX_ROOT="$root" run dux-install --yes
+  [ "$status" -eq 0 ]
+  [ -f "$root/tests/personal-identifiers.txt" ]
 }
 
 @test "install refuses an existing real directory without --yes" {
