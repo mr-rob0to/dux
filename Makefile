@@ -4,14 +4,16 @@ BATS  ?= bats
 .PHONY: test lint lint-shell lint-identifiers check
 
 test:
-	$(BATS) --recursive tests --filter-tags '!adapter'
+	$(BATS) --recursive tests --filter-tags '!adapter,!worker,!e2e'
 	DUX_BACKEND=herdr $(BATS) tests/backend-adapter.bats
 	DUX_BACKEND=tmux  $(BATS) tests/backend-adapter.bats
+	DUX_WORKER_HARNESS=claude $(BATS) tests/worker-adapter.bats
+	DUX_WORKER_HARNESS=codex  $(BATS) tests/worker-adapter.bats
 
 lint: lint-shell lint-identifiers
 
 lint-shell:
-	shellcheck -s bash bin/dux-* bin/backends/*.sh templates/hooks/pre-push tests/fakes/* tests/helpers/*.bash
+	shellcheck -s bash bin/dux-* bin/backends/*.sh bin/workers/*.sh templates/hooks/pre-push tests/fakes/* tests/helpers/*.bash
 
 lint-identifiers:
 	@if [ -s tests/personal-identifiers.txt ]; then \
