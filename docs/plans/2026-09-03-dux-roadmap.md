@@ -3,7 +3,7 @@
 **Where this stands**
 - Current milestone: 1 (skeleton), plan `2026-09-03-dux-m1-skeleton.md`, not started.
 - Milestones 2 to 6 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
-- Spec: `docs/superpowers/specs/2026-09-03-dux-orchestrator-design.md`.
+- Spec: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
 
 One milestone is one session and one PR. After a milestone's PR merges, the next session starts from its plan file.
 
