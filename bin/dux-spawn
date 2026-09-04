@@ -16,12 +16,16 @@ while [ $# -gt 0 ]; do
 done
 
 task="$DUX_TASKS/$id"; brief="$task/brief.md"; epfile="$DUX_STATE/$id.endpoint"; branch="dux/$id"
+launchfile="$DUX_STATE/$id.launched"
 ledger="$DUX_ROOT/bin/dux-ledger"; worktree="$DUX_ROOT/bin/dux-worktree"; backend="$DUX_ROOT/bin/dux-backend"
 placeholder='- Worktree: <set by dux-spawn>'
 
 "$DUX_ROOT/bin/dux-lock" mine || finding "the Dux lock is not held by this session; refusing to spawn"
 state="$("$ledger" get "$id" state)" || exit $?
 [ "$state" = queued ] || finding "task $id is $state, not queued"
+# Checked before every other refusal: while this file exists a worker for the task
+# may be alive, whatever the ledger and the brief say. Only teardown clears it.
+[ ! -e "$launchfile" ] || finding "a worker for $id may still be alive ($launchfile); tear the task down before spawning it again"
 project="$("$ledger" get "$id" project)" || exit $?
 source_key="$("$ledger" get "$id" source)" || exit $?
 "$DUX_ROOT/bin/dux-project" get "$project" path >/dev/null || exit $?
@@ -39,6 +43,7 @@ swap_line() {  # $1 from, $2 to: replace the first exact line
     && mv "$brief.tmp" "$brief"
 }
 undo() {  # after a failed open: nothing ran, so the worktree and branch go and the task stays queued
+  rm -f "$launchfile"
   swap_line "- Worktree: $wt" "$placeholder" || log "could not restore the worktree line in $brief"
   "$worktree" discard "$id" >/dev/null 2>&1 || log "worktree $wt left in place; run dux-worktree discard $id by hand"
 }
@@ -47,7 +52,12 @@ if ! swap_line "$placeholder" "- Worktree: $wt"; then
   "$worktree" discard "$id" >/dev/null 2>&1 || true
   finding "cannot fill the worktree line in $brief"
 fi
-ep="$("$backend" open "$id" "$wt" "$DUX_ROOT/bin/dux-worker-wrap $id")" || { rc=$?; undo; exit $rc; }
+# Both backends hand this string to a shell, so it is composed as shell words.
+wrapcmd="$(printf '%q %q' "$DUX_ROOT/bin/dux-worker-wrap" "$id")"
+# Written before open, so a spawn killed before it records the endpoint still
+# leaves the mark the refusal above reads. Only undo and teardown clear it.
+printf 'pid=%s at=%s\n' "$$" "$(now)" > "$launchfile" || finding "cannot write $launchfile"
+ep="$("$backend" open "$id" "$wt" "$wrapcmd")" || { rc=$?; undo; exit $rc; }
 
 echo "$ep" > "$epfile" || finding "cannot write $epfile; the worker is running at $ep"
 "$ledger" set "$id" endpoint "$ep" || exit $?

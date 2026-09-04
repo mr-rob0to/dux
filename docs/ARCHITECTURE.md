@@ -44,7 +44,8 @@ templates/
 data/         (gitignored) projects.md registry; backlog.md ledger;
                            tasks/<id>/{brief.md,status.log,report.md,worker-settings.json,
                            harness,hooks/,worktree.log}
-state/        (gitignored) dux.lock; <id>.endpoint; <id>.pid; <id>.out; events.log
+state/        (gitignored) dux.lock; <id>.launched; <id>.endpoint; <id>.pid;
+                           <id>.out; events.log
 config/       (gitignored) backend override, reviewer defaults, models, models-codex,
                            worker-harness
 tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash
@@ -83,17 +84,21 @@ refuses the operator's focused pane and treats a failed Herdr close as a finding
    fenced issue block) and `tasks/<id>/worker-settings.json`.
 3. `dux-spawn <id>` refuses with a finding unless: the lock is this session's
    (`dux-lock mine`), the task is `queued`, the project is registered, the
-   brief has its worktree line to fill, the backend selects, and no endpoint
-   is recorded for the id.
+   brief has its worktree line to fill, the backend selects, no endpoint
+   is recorded for the id, and no `state/<id>.launched` marks a worker that
+   may still be alive.
 4. `dux-worktree create <id>`: fetch `origin/<base>`, create the worktree
    (project mechanism for `ship`, `git worktree add` otherwise), discover the
    path, refuse the primary checkout or a stale tip, build
    `tasks/<id>/hooks/` with the base-branch `pre-push` guard, copy `.env*` for
    `ship` under `git`.
-5. `dux-backend open <id> <wt> <abs>/bin/dux-worker-wrap <id>` starts the
-   wrapper in a new container; spawn records the endpoint in
-   `state/<id>.endpoint` and the ledger, marks `running`, and comments on a
-   `gh:` issue. A failed `open` removes the worktree and leaves the task `queued`.
+5. Spawn writes `state/<id>.launched` and only then calls `dux-backend open
+   <id> <wt> <abs>/bin/dux-worker-wrap <id>`, which starts the wrapper in a new
+   container; the command is composed as shell words because both backends hand
+   it to a shell. Spawn records the endpoint in `state/<id>.endpoint` and the
+   ledger, marks `running`, and comments on a `gh:` issue. A failed `open`
+   removes the worktree and the marker and leaves the task `queued`; teardown
+   removes the marker once the worker is proven gone.
 6. `dux-worker-wrap <id>` writes `state/<id>.pid`, exports `DUX_STATUS_LOG` and
    the hooks-dir git config, runs `worker_run` from `bin/workers/<harness>.sh`
    with output to `state/<id>.out`, mirrors each status line through
