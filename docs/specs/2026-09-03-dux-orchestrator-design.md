@@ -62,7 +62,7 @@ Non-goals for v1
     dux-notify              wrapper that formats a <=200 char push line
     dux-doctor              verify tmux, claude, codex, gh, projects registry
     dux-lock                acquire/release the single-session lock
-    dux-worker-wrap         runs inside the worker pane: claude -p + status protocol
+    dux-worker-wrap         runs inside the worker pane: harness adapter + status protocol
     dux-intake              pull labelled GitHub issues into backlog.md as queued
     dux-ledger              add/set/get/list over data/backlog.md; the only writer
     dux-task-new            allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, its folder, its queued line
@@ -159,8 +159,9 @@ Under 60 lines. Sections, all required:
 4. Rules: work alone, never address the operator, stay inside the worktree,
    never push to base, never merge, same obstacle twice means `blocked` and stop,
    report through the status protocol only, and exit after writing `blocked`
-   or `needs-decision`. There is no inbox in v1; `claude -p` cannot be resumed,
-   so an answer always arrives as a retry with the answer appended to the brief.
+   or `needs-decision`. There is no inbox in v1; a headless worker run cannot be
+   resumed under either harness, so an answer always arrives as a retry with the
+   answer appended to the brief.
 5. Definition of done, per shape.
 
 The brief never includes Dux conversation history or other tasks.
@@ -229,11 +230,13 @@ brief's worktree line restored (`dux-worktree discard`), so the task stays
 `queued`. The wrapper writes
 `state/<id>.pid` before starting the harness.
 
-The worker command is `claude -p` with the brief as the prompt, the project's
-`CLAUDE.md` loading normally, the operator's global `CLAUDE.md` loading normally,
-`--output-format stream-json` to `state/<id>.out`, and
-`--dangerously-skip-permissions` for every shape, because a headless worker
-cannot answer prompts and a denied tool call stalls the task. The blast radius is
+The worker command comes from the harness adapter `bin/workers/<harness>.sh`
+(section 19), never from this section. The brief is the prompt, the project's
+`CLAUDE.md` and the operator's global `CLAUDE.md` load normally under Claude, and
+the harness's output goes to `state/<id>.out`. Every shape runs unattended
+(`--dangerously-skip-permissions` under Claude, `--sandbox danger-full-access`
+under Codex) because a headless worker cannot answer prompts and a denied tool
+call stalls the task. The blast radius is
 the worktree plus `gh` and `codex` with the operator's credentials. Prompt rules
 are not the guard. Every Claude worker gets `--settings tasks/<id>/worker-settings.json`, rendered
 from `templates/worker-settings.json` with deny rules `Bash(git push* <base>*)`,
