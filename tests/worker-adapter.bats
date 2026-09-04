@@ -61,5 +61,5 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
   sleep 1; kill -TERM "$pid"
   wait "$pid" || rc=$?
   [ "${rc:-0}" -eq 143 ]
-  ! grep -q done "$DUX_STATUS_LOG"
+  [ "$(grep -c done "$DUX_STATUS_LOG" || true)" -eq 0 ]
 }

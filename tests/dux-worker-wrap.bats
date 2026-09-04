@@ -59,7 +59,7 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   id="$id2"; wt="$(dux-worktree create "$id")"
   printf 'sleep 3\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   wrap
-  ! status_log | grep -q heartbeat
+  [ "$(status_log | grep -c heartbeat || true)" -eq 0 ]
   id3="$(dux-task-new proj scout)"
   dux-brief "$id3" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
   id="$id3"; wt="$(dux-worktree create "$id")"
@@ -104,8 +104,8 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   prepare scout
   printf 'dump-env %s\nstatus done: report\n' "$DUX_HOME/state/worker.env" > "$FAKE_WORKER_SCRIPT"
   (cd "$wt" && CLAUDECODE=1 CLAUDE_PID=4242 CLAUDE_CODE_SESSION_ID=abc DUX_BACKEND=tmux dux-worker-wrap "$id")
-  ! grep -q '^CLAUDECODE=' "$DUX_HOME/state/worker.env"
-  ! grep -q '^CLAUDE_' "$DUX_HOME/state/worker.env"
+  [ "$(grep -c '^CLAUDECODE=' "$DUX_HOME/state/worker.env" || true)" -eq 0 ]
+  [ "$(grep -c '^CLAUDE_' "$DUX_HOME/state/worker.env" || true)" -eq 0 ]
   grep -qx "DUX_STATUS_LOG=$DUX_HOME/data/tasks/$id/status.log" "$DUX_HOME/state/worker.env"
 }
 
@@ -128,7 +128,7 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   grep -q '^codex ' "$FAKE_WORKER_LOG"
   grep -q -- '-m gpt-5.6-sol' "$FAKE_WORKER_LOG"
   grep -q -- '--sandbox danger-full-access' "$FAKE_WORKER_LOG"
-  ! grep -q '^claude ' "$FAKE_WORKER_LOG"
+  [ "$(grep -c '^claude ' "$FAKE_WORKER_LOG" || true)" -eq 0 ]
 }
 
 @test "on herdr every status line is mirrored and the title is set; on tmux nothing is" {

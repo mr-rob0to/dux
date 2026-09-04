@@ -236,7 +236,7 @@ ignore_env() {  # $1 project name; the project ignores every .env variant
   run dux-worktree discard "$id"
   [ "$status" -eq 0 ]
   [ ! -d "$wt" ]
-  ! git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$id"
+  run git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$id"; [ "$status" -ne 0 ]
   run dux-worktree discard "$id"
   [ "$status" -eq 0 ]
 }

@@ -110,7 +110,7 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
   run dux-teardown "$id"
   [ "$status" -eq 0 ]
   [[ "$output" == *"already gone"* ]]
-  ! grep -q '^pane close' "$FAKE_HERDR_LOG"
+  [ "$(grep -c '^pane close' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
   [ "$(dux-ledger get "$id" state)" = done ]
 }
 
