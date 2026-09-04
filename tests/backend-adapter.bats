@@ -2,6 +2,10 @@
 load helpers/setup
 
 # Runs for whichever backend $DUX_BACKEND names. The Makefile runs it twice.
+
+# Where tmux puts the socket named by -L, worked out the same way the adapter does.
+tmux_socket_path() { printf '%s/tmux-%s/%s\n' "${TMUX_TMPDIR:-/tmp}" "$(id -u)" "$1"; }
+
 setup_file() {
   if [ "${DUX_BACKEND:-}" = herdr ]; then
     export HERDR_WORKSPACE_ID=w1
@@ -16,6 +20,7 @@ teardown_file() {
   [ "${DUX_BACKEND:-}" = tmux ] || return 0
   tmux -L dux-test kill-server 2>/dev/null || true
   tmux -L dux-test-stopped kill-server 2>/dev/null || true
+  rm -f "$(tmux_socket_path dux-test-stale)"
 }
 
 @test "open returns an endpoint for this backend and runs the command" {
@@ -76,29 +81,45 @@ teardown_file() {
 
 @test "tmux find reads a server that is not running as no container, not as a failure" {
   [ "${DUX_BACKEND:-}" = tmux ] || skip
-  # The socket a stopped server left behind. tmux looked through it and reported
-  # no server, which is the one failure that is evidence of no window. A socket
-  # that is not there at all answers differently and has its own test below.
+  # A server that was started and stopped. Whether tmux left the socket behind or
+  # removed it, both readings are evidence of no window, so the answer is "none"
+  # either way. The two branches are pinned separately below.
   tmux -L dux-test-stopped new-session -d -s gone -x 80 -y 24
   tmux -L dux-test-stopped kill-server
   DUX_TMUX_SOCKET=dux-test-stopped run dux-backend find t23
   [ "$status" -eq 0 ]; [ -z "$output" ]
 }
 
-@test "tmux find refuses a socket that is not there rather than calling it no container" {
+@test "tmux find reads a socket name nothing has ever listened on as no container" {
   [ "${DUX_BACKEND:-}" = tmux ] || skip
-  # Real tmux, real message: a missing socket file is what a never-started server
-  # and a live server whose socket was removed both look like from the outside.
+  # Real tmux, real message: the first spawn on a machine asks through a socket
+  # path no server has ever been reachable at, and tmux answers "error
+  # connecting". No socket file is positive evidence of no container, so this
+  # must be an answer and not a refusal, or the first spawn can never run.
+  [ ! -e "$(tmux_socket_path dux-test-absent)" ]
   DUX_TMUX_SOCKET=dux-test-absent run dux-backend find t27
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+
+@test "tmux find refuses a real socket file it cannot connect through" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  # The case the socket check must not swallow: the file is there and tmux still
+  # could not look through it, so the question was not answered. A live server
+  # holding a worker reads the same way once its socket stops accepting.
+  sock="$(tmux_socket_path dux-test-stale)"
+  : > "$sock"
+  DUX_TMUX_SOCKET=dux-test-stale run dux-backend find t28
+  rm -f "$sock"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"finding: tmux could not list windows while looking for dux-t27"* ]]
+  [[ "$output" == *"finding: tmux could not list windows while looking for dux-t28"* ]]
   [[ "$output" == *"error connecting"* ]]
 }
 
-@test "tmux find reads a socket it cannot connect to as an unanswered question" {
+@test "tmux find reads a listing failure on a socket that is there as an unanswered question" {
   [ "${DUX_BACKEND:-}" = tmux ] || skip
-  # tmux says this when the socket file is not there to ask through, which is also
-  # what a live server holding the worker looks like once its socket is removed.
+  # dux-test has a live server, so its socket file is there: tmux failing anyway
+  # means it did not look, and a live server holding the worker reads the same.
+  [ -e "$(tmux_socket_path dux-test)" ]
   FAKE_TMUX_FAIL=list-windows \
   FAKE_TMUX_FAIL_MSG='error connecting to /tmp/tmux-0/dux-test (No such file or directory)' \
   run dux-backend find t25
