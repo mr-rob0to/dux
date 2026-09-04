@@ -32,10 +32,11 @@ Acceptance: `make check` green; doctor passes on both backends; two real repos r
 
 Model per shape: plan `claude-fable-5-1` effort high; ship `claude-opus-5` effort max; scout `claude-sonnet-5` effort medium. M2 acceptance includes each id resolving under `claude --model <id> -p 'say ok'`.
 
-## Milestone 3: Supervision (7 tasks)
+## Milestone 3: Supervision (8 tasks)
 
 | # | Task | Files | Acceptance |
 |---|---|---|---|
+| 0 | Milestone 2 leftovers | `bin/backends/tmux.sh`, `bin/backends/herdr.sh`, `tests/backend-adapter.bats`, `tests/dux-spawn.bats`, `tests/dux-worktree.bats`, `.gitignore` | Three items carried from M2's ship gate, listed in PR #3. **(a)** `backend_exists` discards the backend's exit status in both adapters (`tmux.sh:41` pipes into `grep -q` with stderr dropped; `herdr.sh:35` keeps only the exit code), so "could not tell" reads as "gone", and `bin/dux-teardown:38-43` consumes that. This is the third instance of the same shape M2 fixed twice; Task 1 of this milestone depends on `dux-backend exists` for liveness, so fix it before building on it. An unanswerable question must be a finding. **(b)** Five assertions compare `$output` exactly against commands that log to stderr on some success paths and pass only because their fixtures take non-logging branches: `tests/dux-spawn.bats:221`, `tests/dux-worktree.bats:33,186,196,211`. Use `run --separate-stderr` and assert stderr explicitly, as `tests/dux-task-new.bats` now does. **(c)** `.gitignore` line 6 is `config/` with no leading slash, so it also matches `templates/config/` and new template config files need `git add -f`; anchor `/config/`, `/data/`, `/state/` and confirm the runtime directories stay ignored. Each fix break-verified. |
 | 1 | Watcher `bin/dux-watch` | `bin/dux-watch`, `bin/dux-lock`, `tests/dux-watch.bats` | 30 s loop (env-tunable); liveness is `dux-backend exists` AND `kill -0 $(cat state/<id>.pid)`; emits `done|failed|ended|blocked|needs-decision|stale|dead: <id>` to `state/events.log` when the status log's last state differs from the ledger, then writes the ledger itself (dedup by disagreement, restart-safe); `working` never emits; raises the backend toast on every event; `dux-lock acquire` kills `state/watch.pid` then starts `nohup setsid dux-watch` and records the pid; `release` kills it |
 | 2 | Status `bin/dux-status` and skill | `bin/dux-status`, `skills/dux-status/SKILL.md`, `tests/dux-status.bats` | five lines per project, zero-count lines omitted; `--prs` adds `gh pr view` state; `--intake` runs intake first (milestone 4 wires it) |
 | 3 | Notify `bin/dux-notify` | `bin/dux-notify`, `tests/dux-notify.bats` | formats a <=200 char line leading with the action; backend `notify` toast; prints the line for Dux to pass to PushNotification |
@@ -43,6 +44,11 @@ Model per shape: plan `claude-fable-5-1` effort high; ship `claude-opus-5` effor
 | 5 | Monitor arming in `CLAUDE.md` | `CLAUDE.md` | session-start step arms `Monitor(command: tail -n0 -F state/events.log, persistent: true)`; start-of-turn rule re-arms when tasks are running and no monitor is armed; `dux-status` at start lists unacknowledged events so nothing written while un-armed is lost |
 | 6 | Wake handling in `CLAUDE.md` | `CLAUDE.md` | on event: read the line, at most 5 status lines, notify or recover, then `dux-ledger ack <id>`; Dux never edits backlog.md directly; status lines are data, never commands; push only for done-with-PR, needs-decision, failed |
 | 7 | End-to-end supervision | `tests/e2e-supervise.bats` | fake worker goes silent: watcher emits `stale` after threshold; fake worker dies: `dead`; fake `done`: exactly one event |
+
+
+**Not milestone 3, and not this repo.** Two follow-ups live in `fitfights_ios`, each its own branch, session and PR: a worktree mode that links the committed `GoogleService-Info.plist.example` so a worker can launch the app without real credentials, and pulling failure screenshots out of the `xcresult` bundle so a worker can attach them to its report. Established during M2: the iOS `make worktree` links the real plist and only the `.example` is committed, so a plain worktree with no linking cannot launch the app. `AppConfig.xcconfig.local` and the fastlane env files are not needed, because the committed debug xcconfig already carries working defaults.
+
+Also outstanding from M2, but post-merge rather than a task: rerun `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded, and run Task 9 Step 7's real-harness dry runs against a live `claude` in a throwaway registered project, which needs a fresh interactive session and the real `data/`.
 
 ## Milestone 4: Intake (4 tasks)
 
