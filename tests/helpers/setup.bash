@@ -22,8 +22,33 @@ setup() {
   : > "$FAKE_GH_LOG"
 }
 
+wait_for_workers() {  # $1 seconds; returns 1 if a worker is still alive after that
+  local deadline="$1" i=0 pidfile pid live
+  while :; do
+    live=0
+    for pidfile in "$DUX_HOME"/state/*.pid; do
+      [ -f "$pidfile" ] || continue
+      pid="$(cat "$pidfile" 2>/dev/null)"
+      case "$pid" in '' | *[!0-9]*) continue ;; esac
+      if kill -0 "$pid" 2>/dev/null; then live=1; fi
+    done
+    if [ "$live" -eq 0 ]; then return 0; fi
+    i=$((i + 1))
+    if [ "$i" -ge $((deadline * 5)) ]; then return 1; fi
+    sleep 0.2
+  done
+}
+
 teardown() {
-  [ -n "${DUX_HOME:-}" ] && rm -rf "$DUX_HOME"
+  [ -n "${DUX_HOME:-}" ] || return 0
+  # A spawned worker keeps writing into $DUX_HOME after it appends its last
+  # status line, so removing the home under it makes rm fail with "Directory
+  # not empty". Wait for every worker the test started, then remove.
+  wait_for_workers 30 || {
+    echo "teardown: a worker is still running under $DUX_HOME; not removing it" >&2
+    return 1
+  }
+  rm -rf "$DUX_HOME"
 }
 
 make_repo() {  # $1 dir, $2 default branch; creates a bare origin and a clone
