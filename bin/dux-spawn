@@ -16,6 +16,7 @@ while [ $# -gt 0 ]; do
 done
 
 task="$DUX_TASKS/$id"; brief="$task/brief.md"; epfile="$DUX_STATE/$id.endpoint"; branch="dux/$id"
+pidfile="$DUX_STATE/$id.pid"
 ledger="$DUX_ROOT/bin/dux-ledger"; worktree="$DUX_ROOT/bin/dux-worktree"; backend="$DUX_ROOT/bin/dux-backend"
 placeholder='- Worktree: <set by dux-spawn>'
 
@@ -36,8 +37,25 @@ chosen="$harness"; [ -n "$chosen" ] || chosen="$(task_harness "$task")"
 why="$(harness_refusal "$chosen")" || finding "$why"
 "$backend" name >/dev/null || exit $?
 [ ! -e "$epfile" ] || finding "endpoint already recorded for $id in $epfile"
+# Two signals, two questions, and either one that cannot say "gone" is a refusal.
+# The pidfile is written by the wrapper itself, inside the container, on every
+# backend, so it survives a Dux restarted under the other backend and a container
+# a human renamed, both of which make `find` answer "none" about a worker that is
+# running. No pidfile is the only reading that means no worker: one that cannot
+# be read and one that does not hold a pid are both "could not tell". A recycled
+# pid refuses a spawn that could have gone ahead, which costs one rescue against
+# two agents on one branch. Teardown clears the file, so recovery is ordinary.
+if [ -e "$pidfile" ] || [ -L "$pidfile" ]; then
+  wpid="$(cat "$pidfile" 2>/dev/null)" \
+    || finding "cannot read $pidfile; cannot tell whether a worker for $id is alive"
+  case "$wpid" in
+    ''|*[!0-9]*) finding "$pidfile does not hold a pid ('$wpid'); cannot tell whether a worker for $id is alive" ;;
+    *) kill -0 "$wpid" 2>/dev/null \
+         && finding "worker pid $wpid for $id is still running; tear the task down before spawning it again" ;;
+  esac
+fi
 # Both backends name the container after the task, so whether a worker may still
-# be alive is observable. Ask; never infer it from a file a dead spawn left behind.
+# be alive is observable there too. Ask the backend as well as the pidfile.
 alive_at="$("$backend" find "$id")" || exit $?
 [ -z "$alive_at" ] || finding "a container for $id already exists at $alive_at; close it or tear the task down before spawning it again"
 if [ -n "$harness" ]; then echo "$harness" > "$task/harness" || finding "cannot write $task/harness"; fi

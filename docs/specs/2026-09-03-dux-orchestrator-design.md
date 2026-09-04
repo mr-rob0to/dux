@@ -218,17 +218,28 @@ Refuses, with a finding, when:
 - the backend is unavailable or an endpoint for the id already exists;
 - the backend's `find <id>` (section 9) reports a container for the task, which
   means a worker may still be alive whatever the ledger and the brief say;
+- `state/<id>.pid` exists and does not name a process that is gone: a pid that
+  `kill -0` reaches is a live worker, and a file that cannot be read or does not
+  hold a pid is an unanswered question, which refuses the same way;
 - the lock is not held by this Dux session (`dux-lock mine`);
 - the brief is missing or has no `- Worktree: ` line to fill;
 - the chosen worker harness is unknown or is not dispatchable this milestone.
 
-Whether a worker may still be alive is asked, never remembered. Both backends
-name the container after the task, so `find` reads that fact back; no file
-records that a spawn reached `open`. A file would be wrong in both directions: a
-spawn killed before anything started would leave a mark no retry could clear, and
-a cleanup after a failed `open` would clear a mark while a worker ran. Spawn
-therefore fills whatever `- Worktree: ` line the brief has, rather than only the
-placeholder, so a spawn killed after that line was filled needs no hand edit.
+Whether a worker may still be alive is asked twice, of two independent signals,
+and either one that cannot say "gone" is a refusal. The backend's `find` reads
+back the container label both backends set, which answers for the backend Dux is
+using right now and only while the label is what Dux wrote. `state/<id>.pid` is
+written by the wrapper itself, inside the container, on every backend, so it
+still answers after Dux restarts under the other backend and after someone
+renames or moves the container. Neither replaces the other. Spawn writes no mark
+of its own: a spawn killed before anything started would leave one no retry could
+clear, and a cleanup after a failed `open` would clear one while a worker ran.
+The pidfile is not that mark, because only a wrapper that reached the container
+writes it and `dux-teardown` removes it. A recycled pid therefore refuses a spawn
+that could have gone ahead, which costs one rescue, against two agents on one
+branch in the other direction. Spawn fills whatever `- Worktree: ` line the brief
+has, rather than only the placeholder, so a spawn killed after that line was
+filled needs no hand edit.
 
 Otherwise: `dux-worktree create <id>` (fetch, mechanism, discovery, tip check,
 hooks dir, env-example copy for ship under the `git` mechanism), fill the brief's
@@ -286,7 +297,11 @@ name the project expects (`.env.example` to `.env`, `.env.local.example` to
 `.env.local`). A real ignored `.env` is never copied, under any condition; the
 two real projects run their tests off built-in defaults. An example the project
 has not committed, or a destination name it does not ignore (which would leave
-the worktree dirty and block teardown), is a finding and nothing is copied. A
+the worktree dirty and block teardown), is a finding and nothing is copied. The
+copy is staged at `<dest>.dux-part` and renamed over `<dest>`, so a symlink at
+either name is refused rather than written through: the worktree is checked out
+at `origin/<base>`, which can carry a committed symlink at either one, and the
+staging file is created with `O_EXCL` so the create cannot follow a link. A
 project with no example gets no env file and one log line. Model via
 `--model` per shape; effort via the CLI flag if this version exposes one,
 otherwise a one-line system-prompt instruction in the brief.
@@ -414,8 +429,12 @@ tmux: a window per task in the Dux session, `tmux new-window -d -n dux-<id>`
 with `remain-on-exit on`, so the window and its scrollback survive the worker's
 exit until teardown. `exists` checks the window is present. `find` filters
 `tmux list-windows -a` on the window name and never touches `_session`, which
-would start a server to answer a question about it; a server that is not running
-is positive evidence of no window, and any other listing failure is a finding.
+would start a server to answer a question about it. Exactly one failure is
+positive evidence of no window: `no server running`, which tmux says after
+looking through a socket that is there. `error connecting` says the socket was
+not there to look through, which is equally what a live server holding the worker
+looks like once something removes its socket file, so it and every other listing
+failure are findings.
 `notify` is `tmux display-message`.
 
 Herdr: a tab per task in Dux's own workspace, read live from

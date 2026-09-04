@@ -93,6 +93,11 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   id="$(fixture_task proj scout)"
   run dux-spawn "$id"
   [ "$status" -eq 0 ]
+  # The container is what this test asks about, so the other signal is settled
+  # first: once the wrapper has exited its pidfile names a dead pid and stops
+  # deciding the answer. The pidfile's own refusal has its own test.
+  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+  wait_for_workers 30
   # Exactly the disk state a spawn killed between backend open and the endpoint
   # write leaves: a live container, no endpoint file, the ledger still queued.
   rm -f "$DUX_HOME/state/$id.endpoint"
@@ -114,6 +119,42 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   dux-backend close herdr:w1:p9
   run dux-spawn "$id"
   [ "$status" -eq 0 ]
+}
+
+@test "a live wrapper pidfile refuses the spawn even when the backend reports no container" {
+  id="$(fixture_task proj scout)"
+  pf="$DUX_HOME/state/$id.pid"
+  echo $$ > "$pf"
+  # The backend has nothing for this task, so the pidfile is the only signal left:
+  # a worker started under the other backend, or in a container someone renamed.
+  [ -z "$(dux-backend find "$id")" ]
+  run dux-spawn "$id"
+  # This harness's teardown waits on every pidfile under state/, and this one
+  # names a process that outlives the test, so it goes before anything can abort.
+  rm -f "$pf"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: worker pid $$ for $id is still running"* ]]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+  # The probe above logged its own tab list, so count what a spawn would have done.
+  [ "$(grep -c '^tab create' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
+  [ ! -s "$FAKE_WORKER_LOG" ]
+}
+
+@test "a pidfile only lets the spawn through when it names a pid that is gone" {
+  id="$(fixture_task proj scout)"
+  pf="$DUX_HOME/state/$id.pid"
+  printf 'not-a-pid\n' > "$pf"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $pf does not hold a pid"* ]]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+  [ ! -s "$FAKE_HERDR_LOG" ]
+  # A pid that has certainly exited: $() reaps the shell that printed it.
+  bash -c 'echo $$' > "$pf"
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
 }
 
 @test "a spawn that died after the worktree and before the container is spawnable again" {

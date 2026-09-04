@@ -13,7 +13,9 @@ setup_file() {
   fi
 }
 teardown_file() {
-  [ "${DUX_BACKEND:-}" = tmux ] && tmux -L dux-test kill-server 2>/dev/null || true
+  [ "${DUX_BACKEND:-}" = tmux ] || return 0
+  tmux -L dux-test kill-server 2>/dev/null || true
+  tmux -L dux-test-stopped kill-server 2>/dev/null || true
 }
 
 @test "open returns an endpoint for this backend and runs the command" {
@@ -74,7 +76,41 @@ teardown_file() {
 
 @test "tmux find reads a server that is not running as no container, not as a failure" {
   [ "${DUX_BACKEND:-}" = tmux ] || skip
-  DUX_TMUX_SOCKET=dux-test-absent run dux-backend find t23
+  # The socket a stopped server left behind. tmux looked through it and reported
+  # no server, which is the one failure that is evidence of no window. A socket
+  # that is not there at all answers differently and has its own test below.
+  tmux -L dux-test-stopped new-session -d -s gone -x 80 -y 24
+  tmux -L dux-test-stopped kill-server
+  DUX_TMUX_SOCKET=dux-test-stopped run dux-backend find t23
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+
+@test "tmux find refuses a socket that is not there rather than calling it no container" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  # Real tmux, real message: a missing socket file is what a never-started server
+  # and a live server whose socket was removed both look like from the outside.
+  DUX_TMUX_SOCKET=dux-test-absent run dux-backend find t27
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: tmux could not list windows while looking for dux-t27"* ]]
+  [[ "$output" == *"error connecting"* ]]
+}
+
+@test "tmux find reads a socket it cannot connect to as an unanswered question" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  # tmux says this when the socket file is not there to ask through, which is also
+  # what a live server holding the worker looks like once its socket is removed.
+  FAKE_TMUX_FAIL=list-windows \
+  FAKE_TMUX_FAIL_MSG='error connecting to /tmp/tmux-0/dux-test (No such file or directory)' \
+  run dux-backend find t25
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: tmux could not list windows while looking for dux-t25"* ]]
+}
+
+@test "tmux find reads no server running as no container" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  FAKE_TMUX_FAIL=list-windows \
+  FAKE_TMUX_FAIL_MSG='no server running on /tmp/tmux-0/dux-test' \
+  run dux-backend find t26
   [ "$status" -eq 0 ]; [ -z "$output" ]
 }
 

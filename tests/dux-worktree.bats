@@ -158,6 +158,26 @@ commit_in() {  # $1 project name, $2... paths to add and push
   [ "$status" -eq 0 ]
 }
 
+@test "a committed symlink at the staging name is a finding and its target keeps its content" {
+  register proj
+  ignore_env proj
+  echo A=1 > "$DUX_HOME/proj/.env.example"
+  echo untouched > "$DUX_HOME/outside"
+  # The worktree is checked out at origin/main, so this symlink is on disk before
+  # copy_env runs, and the staging redirection would follow it out of the worktree.
+  ln -s "$DUX_HOME/outside" "$DUX_HOME/proj/.env.dux-part"
+  commit_in proj .env.example .env.dux-part
+  id="$(dux-task-new proj ship)"
+  run dux-worktree create "$id"
+  [ "$status" -eq 2 ]
+  wt="$DUX_HOME/proj/.worktrees/dux-$id"
+  [[ "$output" == *"finding: $wt/.env.dux-part already exists; refusing to stage .env.example through it"* ]]
+  # The refusal is not the claim being made here: nothing reached the target.
+  [ "$(cat "$DUX_HOME/outside")" = untouched ]
+  [ -L "$wt/.env.dux-part" ]
+  [ ! -e "$wt/.env" ]
+}
+
 @test "ship under make uses the project's target and discovers its path" {
   with_makefile proj "$custom_target"
   id="$(dux-task-new proj ship)"
