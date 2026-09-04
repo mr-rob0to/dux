@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(git push* __BASE__*)",
+      "Bash(git push*:__BASE__*)",
+      "Bash(git push*--no-verify*)",
+      "Bash(git*core.hooksPath*)",
+      "Bash(*GIT_CONFIG_COUNT*)",
+      "Bash(gh pr merge*)",
+      "Bash(gh api*git/refs*)",
+      "Bash(gh repo delete*)",
+      "Bash(gh auth token*)",
+      "Bash(gh secret*)",
+      "Bash(gh api -X DELETE*)"
+    ]
+  }
+}
