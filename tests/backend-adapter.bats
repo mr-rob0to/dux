@@ -93,6 +93,25 @@ teardown_file() {
   grep -q '^pane close w1:p9' "$FAKE_HERDR_LOG"
 }
 
+@test "herdr open closes the tab it created when the create returns no pane id" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  export FAKE_HERDR_NO_PANE_ID=1
+  run dux-backend open t12 "$DUX_HOME" "sleep 5"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: herdr tab create returned no pane id for t12"* ]]
+  grep -qx 'tab close w1:t9' "$FAKE_HERDR_LOG"
+  ! grep -q '^pane run ' "$FAKE_HERDR_LOG"
+}
+
+@test "herdr open closes the pane it created when pane run fails" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  export FAKE_HERDR_RUN_FAIL=1
+  run dux-backend open t13 "$DUX_HOME" "sleep 5"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: herdr pane run failed for t13 on w1:p9"* ]]
+  grep -qx 'pane close w1:p9' "$FAKE_HERDR_LOG"
+}
+
 @test "herdr close refuses when the focus state cannot be read" {
   [ "${DUX_BACKEND:-}" = herdr ] || skip
   export FAKE_HERDR_BAD_JSON=1

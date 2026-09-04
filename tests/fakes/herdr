@@ -8,7 +8,11 @@ case "$1 ${2:-}" in
       if [ "$1" = "--cwd" ] && [ -n "${FAKE_HERDR_LOG:-}" ]; then printf '%s' "$2" > "$FAKE_HERDR_LOG.cwd"; fi
       shift
     done
+    [ -n "${FAKE_HERDR_NO_PANE_ID:-}" ] && { echo '{"result":{"tab":{"tab_id":"w1:t9"}}}'; exit 0; }
     echo '{"result":{"tab":{"tab_id":"w1:t9"},"root_pane":{"pane_id":"w1:p9"}}}' ;;
+  "tab close")
+    [ -n "${FAKE_HERDR_TAB_CLOSE_FAIL:-}" ] && { echo '{"error":{"code":"close_failed"}}' >&2; exit 1; }
+    echo '{"result":{}}' ;;
   "pane get")
     if [ -e "${FAKE_HERDR_DEAD:-/nonexistent}" ]; then
       echo '{"error":{"code":"pane_not_found"}}' >&2; exit 1
@@ -26,12 +30,16 @@ case "$1 ${2:-}" in
     [ -n "${FAKE_HERDR_NO_PROMPT:-}" ] && { echo '{"error":{"code":"timeout"}}' >&2; exit 1; }
     echo '{"result":{}}' ;;
   "pane run")
+    [ -n "${FAKE_HERDR_RUN_FAIL:-}" ] && { echo '{"error":{"code":"run_failed"}}' >&2; exit 1; }
     if [ -n "${FAKE_HERDR_RUN:-}" ]; then
       cwd="$(cat "${FAKE_HERDR_LOG:-/dev/null}.cwd")"
       (cd "$cwd" && HERDR_PANE_ID="$3" HERDR_ENV=1 nohup bash -c "$4" >> "${FAKE_HERDR_OUTPUT:-/dev/null}" 2>&1 &)
     fi
     echo '{"result":{}}' ;;
-  "pane report-agent"|"pane report-metadata"|"notification show")
+  "pane report-metadata")
+    [ -n "${FAKE_HERDR_SLOW_METADATA:-}" ] && sleep "$FAKE_HERDR_SLOW_METADATA"
+    echo '{"result":{}}' ;;
+  "pane report-agent"|"notification show")
     echo '{"result":{}}' ;;
   "status ")
     printf 'server:\n  status: running\n' ;;

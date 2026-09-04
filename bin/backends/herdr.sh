@@ -6,18 +6,28 @@ set -u
 _pane() { echo "${1#herdr:}"; }
 
 backend_open() {  # id cwd cmd
-  local id="$1" cwd="$2" cmd="$3" ws="${HERDR_WORKSPACE_ID:-}" out pane
+  local id="$1" cwd="$2" cmd="$3" ws="${HERDR_WORKSPACE_ID:-}" out pane tab
   [ -n "$ws" ] || finding "HERDR_WORKSPACE_ID is unset; Dux is not running inside a Herdr pane"
   out="$(herdr tab create --workspace "$ws" --cwd "$cwd" --label "dux-$id" --no-focus)" \
     || finding "herdr tab create failed for $id"
   pane="$(printf '%s' "$out" | jq -r '.result.root_pane.pane_id // empty')"
-  [ -n "$pane" ] || finding "herdr tab create returned no pane id for $id"
+  if [ -z "$pane" ]; then
+    # The tab exists even with no pane to address it by, so close it by its own id.
+    tab="$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty')"
+    [ -n "$tab" ] || finding "herdr tab create returned neither a pane id nor a tab id for $id"
+    herdr tab close "$tab" >/dev/null 2>&1 \
+      || finding "herdr tab create returned no pane id for $id and herdr tab close failed for $tab"
+    finding "herdr tab create returned no pane id for $id; tab $tab closed"
+  fi
   # pane run types into a live shell; without a prompt the command would be lost.
   if ! herdr pane wait-output "$pane" --regex '[$%>#] ?$' --timeout 10000 >/dev/null 2>&1; then
     backend_close "herdr:$pane"   # fail-closed: a focused pane or a failed close is its own finding
     finding "no shell prompt in pane $pane for $id within 10s; pane closed, command not sent"
   fi
-  herdr pane run "$pane" "$cmd" >/dev/null || finding "herdr pane run failed for $id on $pane"
+  if ! herdr pane run "$pane" "$cmd" >/dev/null; then
+    backend_close "herdr:$pane"   # fail-closed, like the prompt path above
+    finding "herdr pane run failed for $id on $pane; pane closed"
+  fi
   echo "herdr:$pane"
 }
 

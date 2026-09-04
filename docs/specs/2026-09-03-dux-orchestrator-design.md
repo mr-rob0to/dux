@@ -398,6 +398,9 @@ a pane outlives its process, which is why liveness comes from the pid file.
 `tail` is `herdr pane read --source recent-unwrapped --lines n`. `close` is
 `herdr pane close` on the exact recorded pane, never `workspace close`; a close
 that fails is a finding, so teardown never records `done` with a leaked tab.
+An `open` that gets past `tab create` and then fails closes what it made before
+its finding: the pane it was given, or, when the create returned no pane id,
+that create's own `tab_id` through `herdr tab close`. Nothing else is closed.
 `notify` is `herdr notification show`.
 
 Headless workers are not auto-detected by Herdr, so `dux-worker-wrap` mirrors
