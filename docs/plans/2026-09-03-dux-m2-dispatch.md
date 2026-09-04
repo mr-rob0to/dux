@@ -2910,6 +2910,17 @@ git commit -m "fix: stop the identifier denylist tripping on a generic CI userna
 Break-verified: <paste both>"
 ```
 
+**As implemented (2026-09-03), differing from the steps above.** Recorded so a later reader trusts the code, not the recipe.
+
+1. The generic-account filter lives in the `Makefile`'s `lint-identifiers`, not in `bin/dux-install` as Step 3 says. Step 1's test writes a bare generic name into the *paths* file, so it can only pass if the lint drops generic names; and Step 7 asks for the filter to be deleted to fail a lint test, which those tests cannot do because they write the denylist by hand and never run the installer. Filtering at lint time satisfies both and keeps one source of truth.
+2. Two tests were added to `tests/identifiers.bats` beyond the step list: a denylist name must not match inside a longer word, and must match standing on its own. Without them Step 7's `grep -w` break is unguarded, because `grep -w` and `grep -F` behave identically on a generic name standing alone once the generic filter has removed it.
+3. Step 5's throwaway `DUX_ROOT` was applied to every test in `tests/dux-install.bats`, not only the new one. The other twelve tests were each writing a denylist into the checkout, which is defect 2 of this task.
+4. The tests assemble the CI account name and the stand-in name from variables rather than spelling them out. These tests clone this repo and lint the clone, so a literal name in the test source makes the test trip over itself.
+5. `bin/dux-install` skips its skills and `templates/config` loops when those directories are absent, which Step 1's installer test requires.
+6. Step 8's command as written was already dirty at HEAD for reasons unrelated to this task, so the meaningful form was run instead: a simulated CI denylist against the real `make lint-identifiers`, exiting 0.
+
+---
+
 ---
 
 ### Task 9: `skills/dux-dispatch`, end-to-end on both backends and both harnesses, docs
