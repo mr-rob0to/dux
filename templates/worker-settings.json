@@ -11,7 +11,8 @@
       "Bash(gh repo delete*)",
       "Bash(gh auth token*)",
       "Bash(gh secret*)",
-      "Bash(gh api -X DELETE*)"
+      "Bash(gh api*-X*DELETE*)",
+      "Bash(gh api*--method*DELETE*)"
     ]
   }
 }

@@ -8,10 +8,16 @@ ledger="$DUX_DATA/backlog.md"
 mutex="$ledger.lock"
 touch "$ledger" 2>/dev/null || finding "cannot write $ledger"
 
-valid_id()    { case "$1" in ''|*[!A-Za-z0-9._-]*) finding "task id must match [A-Za-z0-9._-]+: $1" ;; esac; }
+valid_id() {  # . and .. would resolve $DUX_TASKS/$id to the parent directory
+  case "$1" in ''|*[!A-Za-z0-9._-]*) finding "task id must match [A-Za-z0-9._-]+: $1" ;; esac
+  case "$1" in *[!.]*) ;; *) finding "task id must not be all dots: $1" ;; esac
+}
 valid_key()   { case "$1" in state|source|endpoint|pr) ;; *) finding "unknown ledger key $1 (state, source, endpoint, pr)" ;; esac; }
 valid_state() { case "$1" in queued|running|needs-decision|blocked|done|failed|ended|stale|dead|dropped) ;; *) finding "unknown state $1" ;; esac; }
-valid_value() { case "$1" in ''|*[[:space:]]*) finding "ledger value must be one token without whitespace: '$1'" ;; esac; }
+valid_value() {  # awk -v expands \n and \t, so a backslash could forge a second row
+  case "$1" in ''|*[[:space:]]*) finding "ledger value must be one token without whitespace: '$1'" ;; esac
+  case "$1" in *\\*) finding "ledger value must not contain a backslash: '$1'" ;; esac
+}
 
 line_of() { awk -v id="$1" '$1 == "-" && $2 == id { print; exit }' "$ledger"; }
 
