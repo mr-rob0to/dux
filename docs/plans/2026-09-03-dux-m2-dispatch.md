@@ -3,11 +3,27 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 13 of 13 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9, Task 9b).
-- reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
-- Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
-- Next action: the ship gate. Run `/ship` on the `m2-dispatch` branch; it opens the PR, runs the reviews and CI. Task 9 Step 7 (the two real-harness dry runs) is still outstanding and belongs in the PR's Verification section. After merge the operator reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 13 of 13 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9, Task 9b), plus ten post-review commits described below.
+- reviewed_sha: `59c3b93`, reviewed 2026-09-04 by `codex exec -m gpt-5.6-sol` (correctness) and a fresh security reviewer. Fix rounds used: 1 of 3. Findings: 4 Critical and 4 Important from correctness, 1 High, 2 Medium and 4 Low from security. Every one was verified against the code before being acted on. All fixed on this branch except three that became operator decisions, resolved as recorded below. A re-review scoped to `59c3b93..HEAD` ran before the PR opened.
+- Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in the plan, Minor fixed except one carried to M3 (see "Design review" at the end).
+- Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run. That smoke test is no longer a reason to trust a green run. See "What the reviews taught us" below.
+- Next action: the PR is open; watch CI, then the operator merges and reruns `bin/dux-install`. Task 9 Step 7 (the two real-harness dry runs) is still outstanding and is recorded in the PR's Verification section.
 
+**Operator decisions taken during the ship gate (2026-09-04)**
+
+1. **Claude is the only worker harness milestone 2 dispatches.** A Codex worker has no deny list, and `git push --no-verify` skips the per-task hook, so its only mechanical guard was one an ordinary mistake walks past. Codex is refused at harness selection on every route in. The adapter `bin/workers/codex.sh` and its tests stay in the tree for a later milestone. This supersedes the harness-selection half of decision 8 and part of decision 7. Codex's separate role as the ship gate's code reviewer is unaffected.
+2. **Workers never receive real secrets.** `copy_env` copies committed example files, renamed, and never a real ignored env file. Verified against the two real projects: the API's settings all carry working defaults, and the iOS project's ignored config is handled by its own worktree command. This supersedes the env-copy half of decision 4.
+3. **The `.gitignore` anchoring fix was deliberately left out** and is logged in the PR body.
+
+**What the reviews taught us, worth carrying into milestone 3**
+
+Three separate defects came out of one weakness: the tests were greener than the code deserved.
+
+- A test that fails one run in eight was passing as green until it was stress-run (Task 9b).
+- Twenty assertions across eight files could never fail, because bash ignores `set -e` for a negated command, so `! grep -q x file` never fails a bats test no matter what the file contains. Nine were truly dead; eleven worked only by accident of sitting last in the body.
+- Fixing those twenty exposed a real bug the dead assertions had been hiding: `bin/dux-worker-wrap` used GNU-only `\|` alternation in a BRE, which BSD sed ignores, so the orchestrator's own environment variables were never removed and leaked into every worker on macOS.
+
+For milestone 3: a new assertion is not trusted until it has been seen to fail, and "every test passed on the first run" is a reason to look harder, not a reason to relax.
 **Goal:** Turn an operator goal into a running, isolated worker: task ledger, task ids, brief rendering, worktree per project mechanism with a base-branch push guard, worker harness adapters for Claude Code and Codex, the in-pane wrapper that enforces the status protocol, spawn with its five refusals, teardown with its three refusals, the `dux-dispatch` skill, and an end-to-end test on both backends with both harnesses.
 
 **Architecture:** Every mechanic is a bash script under `bin/` that sources `bin/dux-env`, refuses with `finding:` on stderr and exit 2, and is reached by the Dux session only through the `dux-dispatch` skill. State is files: `data/backlog.md` (ledger, written only by `dux-ledger`), `data/tasks/<id>/` (brief, status log, report, rendered worker settings, hooks dir), `state/<id>.{endpoint,pid,out}`. Backends are reached only through `bin/dux-backend`; worker harnesses only through `bin/workers/<name>.sh`. The wrapper `dux-worker-wrap` is the only process that runs a harness, and it runs inside the worktree.
