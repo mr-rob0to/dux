@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 7 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 8 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
 - reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
 - Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
-- Next action: Task 6 (worker wrapper `bin/dux-worker-wrap`, backend `report` and `title`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
+- Next action: Task 7 (spawn `bin/dux-spawn`, `dux-lock mine`, fake `herdr` that runs the command), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
 
 **Goal:** Turn an operator goal into a running, isolated worker: task ledger, task ids, brief rendering, worktree per project mechanism with a base-branch push guard, worker harness adapters for Claude Code and Codex, the in-pane wrapper that enforces the status protocol, spawn with its five refusals, teardown with its three refusals, the `dux-dispatch` skill, and an end-to-end test on both backends with both harnesses.
 
@@ -1877,7 +1877,7 @@ Break-verified (codex): <paste>"
 - Produces: `dux-worker-wrap <id>`, run with the worktree as cwd, refuses when the task folder, brief, or hooks dir is missing, when cwd is not on `dux/<id>`, when the harness or its model entry is unknown, when the harness command is not on `PATH`, when the effort is not valid for the harness, or when the Claude settings file is missing. Every refusal after the task folder check is also recorded: `failed: wrapper: <message>` appended to `status.log` and a `## Failure` block in `report.md`, so milestone 3 sees a `failed` task with a reason instead of a silent `dead`. Otherwise it writes `state/<id>.pid`, removes every `CLAUDECODE` and `CLAUDE_*` variable inherited from the Dux session (a tmux server started from Dux's Bash tool carries them into every pane), exports `DUX_STATUS_LOG` and the `core.hooksPath` environment, sets the container title once, runs `worker_run` with stdout and stderr to `state/<id>.out` and stdin from `/dev/null`, polls every `DUX_WRAP_POLL_SECS` (default 5) mirroring new status lines through `dux-backend report`, appends `working: heartbeat` every `DUX_HEARTBEAT_SECS` (default 300) only when the out file grew, forwards INT and TERM to the harness as TERM (bash starts background children with INT ignored), and on exit appends `failed: worker exited <code>` or `ended: exit 0 without terminal status` unless the last line is an exit line, writing a `## Failure tail` of 20 lines to `report.md` on `failed`. Always exits 0 after the harness ends.
 - Produces: `dux-backend report <id> <working|blocked|idle> <message>` and `dux-backend title <title>`; herdr uses `HERDR_PANE_ID` (finding when unset); tmux no-ops.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Append to `tests/backend-adapter.bats`:
 
@@ -2079,12 +2079,12 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
 }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Run: `bats tests/dux-worker-wrap.bats; DUX_BACKEND=herdr bats tests/backend-adapter.bats`
 Expected: 12 wrapper tests fail with `dux-worker-wrap: command not found`; the three new adapter tests fail with `usage: dux-backend ...`.
 
-- [ ] **Step 3: Extend the backend adapters**
+- [x] **Step 3: Extend the backend adapters**
 
 In `bin/dux-backend` add before the `*)` line:
 
@@ -2122,7 +2122,7 @@ backend_report() { :; }  # id state message: tmux has no agent state to mirror (
 backend_title()  { :; }  # title
 ```
 
-- [ ] **Step 4: Write the wrapper**
+- [x] **Step 4: Write the wrapper**
 
 `bin/dux-worker-wrap`:
 
@@ -2244,12 +2244,12 @@ exit 0
 
 Run: `chmod +x bin/dux-worker-wrap`
 
-- [ ] **Step 5: Run to verify they pass**
+- [x] **Step 5: Run to verify they pass**
 
 Run: `make check`
 Expected: lint clean; `tests/dux-worker-wrap.bats` 12 pass (about 30 s of sleeps); adapter file: herdr 3 new pass, tmux 1 new pass and 2 skipped.
 
-- [ ] **Step 6: Break-verify the settings deny rule against a real `claude` (manual, recorded in the PR)**
+- [x] **Step 6: Break-verify the settings deny rule against a real `claude` (manual, recorded in the PR)**
 
 Create a throwaway repo with a bare origin and a `main` branch, register it, allocate a scout task, render a brief whose intent is "Run exactly `git push origin HEAD:main` and report the outcome, then append `done: report`", create the worktree, and from inside it run the rendered command line by hand:
 
@@ -2259,13 +2259,13 @@ claude -p "$(cat data/tasks/<id>/brief.md)" --model claude-sonnet-5 --effort low
 
 Expected: the stream shows the Bash call denied by the settings rule and the bare origin's `main` is unchanged. Then temporarily empty the `deny` array in the rendered file and rerun with `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=data/tasks/<id>/hooks` exported: expected the hook refuses with `finding: refusing to push to main from a Dux worktree` and `main` is still unchanged. Paste both excerpts into the PR body under Verification. If the deny rule does not block, keep the rendered rules, change the spec sentence in section 5.5 to say the `pre-push` hook is the only guard, and say so in the PR.
 
-- [ ] **Step 7: Break-verify the automated guards (two breaks, two failures)**
+- [x] **Step 7: Break-verify the automated guards (two breaks, two failures)**
 
 First: change `is_exit_line` to also accept `working`. Run `bats tests/dux-worker-wrap.bats`. Expected: "non-zero exit without an exit line appends failed" fails because the last line stays `working: starting`. Restore.
 
 Second: delete the line `export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$hooks"`. Run again. Expected: "a push to the base branch from inside the worker is refused" fails because the bare origin's `main` moved. Restore. Paste both into the commit.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add bin/dux-worker-wrap bin/dux-backend bin/backends tests/dux-worker-wrap.bats tests/backend-adapter.bats
