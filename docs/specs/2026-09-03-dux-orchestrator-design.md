@@ -221,7 +221,7 @@ Refuses, with a finding, when:
 - the chosen worker harness is unknown or is not dispatchable this milestone.
 
 Otherwise: `dux-worktree create <id>` (fetch, mechanism, discovery, tip check,
-hooks dir, `.env` copy for ship under the `git` mechanism), fill the brief's
+hooks dir, env-example copy for ship under the `git` mechanism), fill the brief's
 worktree line, call the backend's `open` (section 9) with the single command
 `<abs path>/bin/dux-worker-wrap <id>`, record the endpoint in
 `state/<id>.endpoint` and the ledger, set `running`, and for a `gh:` source post
@@ -241,9 +241,10 @@ is unchanged. The brief is the prompt, the project's
 `CLAUDE.md` and the operator's global `CLAUDE.md` load normally under Claude, and
 the harness's output goes to `state/<id>.out`. Every shape runs unattended
 (`--dangerously-skip-permissions`) because a headless worker cannot answer
-prompts and a denied tool call stalls the task. The blast radius is
-the worktree plus `gh` and `codex` with the operator's credentials. Prompt rules
-are not the guard. Every Claude worker gets `--settings tasks/<id>/worker-settings.json`, rendered
+prompts and a denied tool call stalls the task. The blast radius is the worktree
+plus `gh` and `codex` with the operator's credentials. It does not include the
+project's live secrets: only committed env examples are copied, so no real
+`.env` reaches a worker. Prompt rules are not the guard. Every Claude worker gets `--settings tasks/<id>/worker-settings.json`, rendered
 from `templates/worker-settings.json` with deny rules `Bash(git push* <base>*)`,
 `Bash(git push*:<base>*)`, `Bash(git push*--no-verify*)`,
 `Bash(git*core.hooksPath*)`, `Bash(*GIT_CONFIG_COUNT*)`, `Bash(gh pr merge*)`,
@@ -266,7 +267,14 @@ These guards stop a mistaken push, not a worker that sets out to bypass them:
 `--no-verify`, `git -c core.hooksPath=`, unsetting the environment, or the
 forge API all get past them, which is why they are denied by rule and by the
 brief, and why the worker's credentials are the operator's to bound.
-`.env` files are copied only for `ship` tasks, never for `plan` or `scout`. Model via
+Env files are copied only for `ship` tasks, never for `plan` or `scout`, and only
+the project's committed `.env*.example` and `.env*.sample` files, renamed to the
+name the project expects (`.env.example` to `.env`, `.env.local.example` to
+`.env.local`). A real ignored `.env` is never copied, under any condition; the
+two real projects run their tests off built-in defaults. An example the project
+has not committed, or a destination name it does not ignore (which would leave
+the worktree dirty and block teardown), is a finding and nothing is copied. A
+project with no example gets no env file and one log line. Model via
 `--model` per shape; effort via the CLI flag if this version exposes one,
 otherwise a one-line system-prompt instruction in the brief.
 

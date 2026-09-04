@@ -38,34 +38,65 @@ custom_target='worktree:
   [ "$(dux-worktree path "$id")" = "$wt" ]
 }
 
-ignore_env() {  # $1 project name; the project ignores every .env variant
-  printf '.worktrees/\n.env\n.env.*\n' > "$DUX_HOME/$1/.gitignore"
+ignore_env() {  # $1 project name; the project ignores the real env files, not the examples
+  printf '.worktrees/\n.env\n.env.local\n' > "$DUX_HOME/$1/.gitignore"
   (cd "$DUX_HOME/$1" && git add .gitignore && git commit -q -m "ignore env" && git push -q origin main)
 }
 
-@test "ship under git copies .env files but not examples or symlinks" {
+commit_in() {  # $1 project name, $2... paths to add and push
+  local n="$1"; shift
+  (cd "$DUX_HOME/$n" && git add "$@" && git commit -q -m fixture && git push -q origin main)
+}
+
+@test "ship under git copies committed env examples, renamed, and no real env file" {
   register proj
   ignore_env proj
-  echo A=1 > "$DUX_HOME/proj/.env"; echo B=2 > "$DUX_HOME/proj/.env.local"
-  echo X=0 > "$DUX_HOME/proj/.env.example"; ln -s .env "$DUX_HOME/proj/.env.link"
+  echo SECRET=live > "$DUX_HOME/proj/.env"; echo TOKEN=live > "$DUX_HOME/proj/.env.local"
+  echo A=1 > "$DUX_HOME/proj/.env.example"; echo B=2 > "$DUX_HOME/proj/.env.local.sample"
+  ln -s .env "$DUX_HOME/proj/.env.staging.example"
+  commit_in proj .env.example .env.local.sample .env.staging.example
   id="$(dux-task-new proj ship)"
   wt="$(dux-worktree create "$id")"
   [ "$(cat "$wt/.env")" = A=1 ]; [ "$(cat "$wt/.env.local")" = B=2 ]
-  [ ! -e "$wt/.env.example" ]; [ ! -e "$wt/.env.link" ]
+  [ ! -e "$wt/.env.staging" ]
+  # The negative that matters: no value from a real env file is anywhere in the worktree.
+  run grep -rl live "$wt"
+  [ "$status" -ne 0 ]; [ -z "$output" ]
+  # The copies land on ignored names, so the worktree is still clean for teardown.
+  [ -z "$(git -C "$wt" status --porcelain)" ]
 }
 
-@test "an env file the project does not ignore is a finding and nothing is copied" {
+@test "a project with no committed env example gets no env file and says so" {
   register proj
-  printf '.worktrees/\n.env\n' > "$DUX_HOME/proj/.gitignore"
-  (cd "$DUX_HOME/proj" && git add .gitignore && git commit -q -m "ignore env" && git push -q origin main)
-  echo A=1 > "$DUX_HOME/proj/.env"; echo B=2 > "$DUX_HOME/proj/.env.production"
+  ignore_env proj
+  echo SECRET=live > "$DUX_HOME/proj/.env"
+  id="$(dux-task-new proj ship)"
+  run dux-worktree create "$id"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no committed env example in $DUX_HOME/proj"* ]]
+  wt="$DUX_HOME/proj/.worktrees/dux-$id"
+  [ ! -e "$wt/.env" ]
+  run grep -rl live "$wt"
+  [ "$status" -ne 0 ]; [ -z "$output" ]
+}
+
+@test "an uncommitted example and an unignored destination are findings, and nothing is copied" {
+  register proj
+  ignore_env proj
+  echo SECRET=live > "$DUX_HOME/proj/.env"; echo A=1 > "$DUX_HOME/proj/.env.example"
   id="$(dux-task-new proj ship)"
   run dux-worktree create "$id"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"finding: .env.production is not ignored in $DUX_HOME/proj"* ]]
-  wt="$DUX_HOME/proj/.worktrees/dux-$id"
-  [ ! -e "$wt/.env" ]
-  [ ! -e "$wt/.env.production" ]
+  [[ "$output" == *"finding: .env.example is not committed in $DUX_HOME/proj"* ]]
+  [ ! -e "$DUX_HOME/proj/.worktrees/dux-$id/.env" ]
+  commit_in proj .env.example
+  printf '.worktrees/\n' > "$DUX_HOME/proj/.gitignore"
+  commit_in proj .gitignore
+  id2="$(dux-task-new proj ship)"
+  run dux-worktree create "$id2"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: .env is not ignored in $DUX_HOME/proj; copying .env.example to it would dirty the worktree"* ]]
+  [ ! -e "$DUX_HOME/proj/.worktrees/dux-$id2/.env" ]
 }
 
 @test "ship under make uses the project's target and discovers its path" {
