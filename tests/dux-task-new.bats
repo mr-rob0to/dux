@@ -1,12 +1,19 @@
+bats_require_minimum_version 1.5.0  # run --separate-stderr
+
 load helpers/setup
 
 setup_project() { make_repo "$DUX_HOME/proj" main; dux-project add proj "$DUX_HOME/proj" --base main >/dev/null; }
 
 @test "allocates an id, a folder with an empty status log, and a queued ledger line" {
   setup_project
-  run dux-task-new proj scout
+  # Separated, because a merged stderr line would corrupt the id and the failure
+  # would name the pattern without ever showing the value that missed it.
+  run --separate-stderr dux-task-new proj scout
   [ "$status" -eq 0 ]
-  [[ "$output" =~ ^proj-scout-[0-9]{8}-[a-z0-9]{3}$ ]]
+  if [ -n "$stderr" ]; then echo "expected no stderr, got: '$stderr'"; return 1; fi
+  if ! [[ "$output" =~ ^proj-scout-[0-9]{8}-[a-z0-9]{3}$ ]]; then
+    echo "id does not match ^proj-scout-[0-9]{8}-[a-z0-9]{3}\$: '$output'"; return 1
+  fi
   [ -d "$DUX_HOME/data/tasks/$output" ]
   [ -f "$DUX_HOME/data/tasks/$output/status.log" ]
   [ ! -s "$DUX_HOME/data/tasks/$output/status.log" ]

@@ -23,14 +23,21 @@ case "$source_key" in
        || finding "source must be local or gh:<owner>/<repo>#<n>: $source_key" ;;
 esac
 
+# head bounds the read, so nothing closes a pipe early on a reader that would
+# otherwise never stop. 256 random bytes leave ~62 usable characters.
 suffix() {
-  if [ -n "${DUX_TASK_SUFFIX:-}" ]; then echo "$DUX_TASK_SUFFIX"
-  else LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 3; fi
+  if [ -n "${DUX_TASK_SUFFIX:-}" ]; then echo "$DUX_TASK_SUFFIX"; return; fi
+  local s
+  s="$(head -c 256 /dev/urandom | LC_ALL=C tr -dc 'a-z0-9')"
+  [ "${#s}" -ge 3 ] || finding "cannot read 3 random characters from /dev/urandom (got '${s}')"
+  printf '%s' "${s:0:3}"
 }
 
 tries=0
 while :; do
-  id="$project-$shape-$(date -u +%Y%m%d)-$(suffix)"
+  # finding inside $( ) exits the subshell, not this script, so relay its status.
+  sfx="$(suffix)" || exit $?
+  id="$project-$shape-$(date -u +%Y%m%d)-$sfx"
   mkdir "$DUX_TASKS/$id" 2>/dev/null && break
   tries=$((tries + 1))
   [ "$tries" -ge 5 ] && finding "could not allocate a task id for $project after 5 tries (last: $id)"
