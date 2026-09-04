@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+# Worktree per project mechanism. See spec sections 4 and 5.5.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+shopt -u patsub_replacement 2>/dev/null || true   # & in a base branch or path stays literal
+cmd="${1:-}"; id="${2:-}"
+{ [ -n "$cmd" ] && [ -n "$id" ]; } || die "usage: dux-worktree create|path|remove|discard <id>"
+task="$DUX_TASKS/$id"; branch="dux/$id"
+
+project="$("$DUX_ROOT/bin/dux-ledger" get "$id" project)" || exit $?
+shape="$("$DUX_ROOT/bin/dux-ledger" get "$id" shape)" || exit $?
+repo="$("$DUX_ROOT/bin/dux-project" get "$project" path)" || exit $?
+base="$("$DUX_ROOT/bin/dux-project" get "$project" base)" || exit $?
+mech="$("$DUX_ROOT/bin/dux-project" get "$project" worktree)" || exit $?
+git -C "$repo" rev-parse --is-inside-work-tree >/dev/null 2>&1 || finding "project path $repo is not a git checkout"
+
+git_repo() { git -C "$repo" "$@"; }
+
+worktree_path() {  # the worktree registered on $branch, or nothing
+  git_repo worktree list --porcelain | awk -v b="refs/heads/$branch" '
+    /^worktree / { p = substr($0, 10) }
+    $1 == "branch" && $2 == b { print p; exit }'
+}
+
+declares_worktrees_section() {
+  local f
+  for f in CLAUDE.md AGENTS.md; do
+    [ -f "$repo/$f" ] && grep -qiE '^#+ +worktrees' "$repo/$f" && return 0
+  done
+  return 1
+}
+
+install_hooks() {  # builds $task/hooks: links to the project's hooks plus our pre-push
+  local hooks="$task/hooks" src f body
+  src="$(git_repo config --get core.hooksPath || true)"
+  if [ -n "$src" ]; then case "$src" in /*) ;; *) src="$repo/$src" ;; esac
+  else src="$(cd "$repo" && cd "$(git rev-parse --git-common-dir)" && pwd -P)/hooks"; fi
+  rm -rf "$hooks"; mkdir -p "$hooks" || finding "cannot create $hooks"
+  for f in "$src"/*; do
+    { [ -f "$f" ] && [ -x "$f" ]; } || continue
+    case "$f" in *.sample|*/pre-push) continue ;; esac
+    ln -s "$f" "$hooks/$(basename "$f")" || finding "cannot link $f into $hooks"
+  done
+  body="$(cat "$DUX_ROOT/templates/hooks/pre-push")"
+  f='__BASE__'; body="${body//$f/$base}"; f='__UPSTREAM__'; body="${body//$f/$src/pre-push}"
+  printf '%s\n' "$body" > "$hooks/pre-push" || finding "cannot write $hooks/pre-push"
+  chmod +x "$hooks/pre-push" || finding "cannot make $hooks/pre-push executable"
+}
+
+copy_env() {  # $1 worktree; ship under the git mechanism only
+  local f n=0
+  for f in "$repo"/.env "$repo"/.env.*; do
+    { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
+    case "$f" in *.example|*.sample) continue ;; esac
+    cp "$f" "$1/" || finding "cannot copy $(basename "$f") into $1"
+    n=$((n + 1))
+  done
+  log "copied $n env file(s) into the worktree"
+}
+
+create() {
+  [ -d "$task" ] || finding "no task folder for $id"
+  local use=git wt s f tip want
+  [ "$shape" = ship ] && use="$mech"
+  wt="$(worktree_path)"
+  if [ -n "$wt" ]; then
+    # A spawn killed mid-mechanism (make install can take minutes) leaves a worktree
+    # nothing ran in. Reuse it when it is clean and at the tip; refuse anything else.
+    git_repo fetch --quiet origin "$base" || finding "cannot fetch origin/$base in $repo"
+    [ -z "$(git -C "$wt" status --porcelain)" ] || finding "a worktree on $branch already exists and is dirty: $wt"
+    [ "$(git -C "$wt" rev-parse HEAD)" = "$(git_repo rev-parse "origin/$base")" ] \
+      || finding "a worktree on $branch already exists and is not at origin/$base: $wt"
+    log "reusing clean worktree $wt"
+    install_hooks
+    if [ "$shape" = ship ] && [ "$use" = git ]; then copy_env "$wt"; fi
+    echo "$wt"; return 0
+  fi
+  git_repo show-ref --verify --quiet "refs/heads/$branch" && finding "branch $branch already exists in $repo"
+  if [ "$shape" = ship ] && [ "$use" = git ] && declares_worktrees_section; then
+    finding "$project declares a Worktrees section but is registered with worktree=git; re-register with --worktree make or --worktree script"
+  fi
+  git_repo fetch --quiet origin "$base" || finding "cannot fetch origin/$base in $repo"
+  case "$use" in
+    make)
+      make -C "$repo" worktree "name=$branch" "base=$base" > "$task/worktree.log" 2>&1 \
+        || finding "make worktree failed for $project (see $task/worktree.log)" ;;
+    script)
+      s=""; for f in "$repo"/scripts/*worktree*; do [ -x "$f" ] && { s="$f"; break; }; done
+      [ -n "$s" ] || finding "no executable scripts/*worktree* in $repo"
+      (cd "$repo" && "$s" "$branch" "$base") > "$task/worktree.log" 2>&1 \
+        || finding "$s failed for $project (see $task/worktree.log)" ;;
+    git)
+      git_repo check-ignore -q .worktrees/x || finding ".worktrees/ is not ignored in $repo"
+      git_repo worktree add --quiet --no-track "$repo/.worktrees/dux-$id" -b "$branch" "origin/$base" \
+        || finding "git worktree add failed in $repo" ;;
+    *) finding "unknown worktree mechanism $use for $project" ;;
+  esac
+  wt="$(worktree_path)"
+  [ -n "$wt" ] || finding "mechanism $use created no worktree on $branch in $repo"
+  [ "$(cd "$wt" && pwd -P)" != "$(cd "$repo" && pwd -P)" ] || finding "worktree path equals the primary checkout $repo"
+  tip="$(git -C "$wt" rev-parse HEAD)"; want="$(git_repo rev-parse "origin/$base")"
+  [ "$tip" = "$want" ] || finding "worktree $wt is at $tip, not origin/$base ($want)"
+  install_hooks
+  if [ "$shape" = ship ] && [ "$use" = git ]; then copy_env "$wt"; fi
+  echo "$wt"
+}
+
+remove() {
+  local wt ahead
+  wt="$(worktree_path)"
+  if [ -z "$wt" ]; then log "no worktree on $branch; already removed"; return 0; fi
+  [ -z "$(git -C "$wt" status --porcelain)" ] || finding "worktree $wt has uncommitted changes"
+  if git -C "$wt" rev-parse --verify --quiet '@{upstream}' >/dev/null; then
+    ahead="$(git -C "$wt" rev-list --count '@{upstream}..HEAD')"
+    [ "$ahead" = 0 ] || finding "worktree $wt has $ahead unpushed commit(s)"
+  else
+    ahead="$(git -C "$wt" rev-list --count "origin/$base..HEAD")"
+    [ "$ahead" = 0 ] || finding "branch $branch has $ahead commit(s) and no upstream; push it or delete it by hand first"
+  fi
+  git_repo worktree remove "$wt" || finding "git worktree remove failed for $wt"
+  log "removed $wt; branch $branch kept"
+}
+
+discard() {  # a worktree nothing ran in: no commits beyond origin/<base>, then the branch goes too
+  local wt n
+  wt="$(worktree_path)"
+  if [ -n "$wt" ]; then
+    [ -z "$(git -C "$wt" status --porcelain)" ] || finding "worktree $wt has uncommitted changes; not discarding"
+    n="$(git -C "$wt" rev-list --count "origin/$base..HEAD")"
+    [ "$n" = 0 ] || finding "branch $branch has $n commit(s); use remove, not discard"
+    git_repo worktree remove "$wt" || finding "git worktree remove failed for $wt"
+  fi
+  if git_repo show-ref --verify --quiet "refs/heads/$branch"; then
+    git_repo branch -D "$branch" >/dev/null || finding "cannot delete branch $branch"
+  fi
+  log "discarded worktree and branch for $id"
+}
+
+case "$cmd" in
+  create)  create ;;
+  path)    p="$(worktree_path)"; [ -n "$p" ] || finding "no worktree on $branch in $repo"; echo "$p" ;;
+  remove)  remove ;;
+  discard) discard ;;
+  *) die "usage: dux-worktree create|path|remove|discard <id>" ;;
+esac

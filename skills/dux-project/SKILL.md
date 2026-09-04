@@ -11,9 +11,12 @@ description: Register a repository with Dux so tasks can be dispatched to it. Us
 2. Run `bin/dux-project resolve-base <path>`. If it prints a finding, show the
    operator each signal and ask which branch is correct. Pass the answer as
    `--base`.
+2a. If the repo's `CLAUDE.md` or `AGENTS.md` has a `Worktrees` heading, read it
+   and pass `--worktree make`, `--worktree script`, or `--worktree git` to match
+   what it says; `ship` tasks refuse to spawn otherwise.
 3. Ask whether GitHub issues should feed the backlog. If yes, ask for the label
    and pass `--issues label:<name>`; otherwise `--issues off`.
-4. Run `bin/dux-project add <name> <path> [--base X] [--issues Y]`.
+4. Run `bin/dux-project add <name> <path> [--base X] [--issues Y] [--worktree Z]`.
 5. Report the registry line in plain words: base branch, worktree mechanism,
    issue intake, and whether a PR template was installed or left alone.
 

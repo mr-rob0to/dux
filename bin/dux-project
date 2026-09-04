@@ -54,11 +54,12 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   add)
     name="${1:?name}"; path="${2:?path}"; given="$2"; shift 2
-    base=""; issues="off"
+    base=""; issues="off"; wt_flag=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --base) base="$2"; shift 2 ;;
         --issues) issues="$2"; shift 2 ;;
+        --worktree) wt_flag="$2"; shift 2 ;;
         *) die "unknown flag $1" ;;
       esac
     done
@@ -72,7 +73,16 @@ case "$cmd" in
     case "$issues" in off|label:*) ;; *) die "--issues must be off or label:<name>" ;; esac
     if [ -z "$base" ]; then base="$(resolve_base "$path")" || exit $?; fi
     valid_branch "$base" || finding "base branch name is not valid: $base"
-    wt="$(detect_worktree "$path")"
+    if [ -n "$wt_flag" ]; then
+      case "$wt_flag" in make|script|git) ;; *) finding "--worktree must be make, script, or git: $wt_flag" ;; esac
+      case "$wt_flag" in
+        make)   grep -qE '^worktree:' "$path/Makefile" 2>/dev/null || finding "no worktree target in $path/Makefile" ;;
+        script) ls "$path"/scripts/*worktree* >/dev/null 2>&1 || finding "no scripts/*worktree* in $path" ;;
+      esac
+      wt="$wt_flag"
+    else
+      wt="$(detect_worktree "$path")"
+    fi
     template_msg="$(install_template "$path")" || exit $?
     printf -- '- %s path=%s base=%s worktree=%s issues=%s (added %s)\n' \
       "$name" "$path" "$base" "$wt" "$issues" "$(date -u +%Y-%m-%d)" >> "$registry"

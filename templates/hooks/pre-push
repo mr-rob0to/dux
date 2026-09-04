@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Installed per task by dux-worktree. Refuses any push to the base branch, then
+# runs the project's own pre-push hook with the same input.
+set -u
+base="__BASE__"
+upstream="__UPSTREAM__"
+refs="$(cat)"
+while read -r _ _ remote_ref _; do
+  [ -n "$remote_ref" ] || continue
+  if [ "$remote_ref" = "refs/heads/$base" ]; then
+    echo "finding: refusing to push to $base from a Dux worktree" >&2
+    exit 1
+  fi
+done <<REFS
+$refs
+REFS
+if [ -x "$upstream" ]; then
+  printf '%s\n' "$refs" | "$upstream" "$@"
+  exit $?
+fi
+exit 0

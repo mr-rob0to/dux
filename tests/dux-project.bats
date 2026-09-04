@@ -152,3 +152,18 @@ load helpers/setup
   [[ "$output" == "finding: cannot write $DUX_HOME/repoP/.github/PULL_REQUEST_TEMPLATE.md"* ]]
   ! grep -q '^- repoP ' "$DUX_HOME/data/projects.md"
 }
+
+@test "add honors --worktree and validates it against the repo" {
+  make_repo "$DUX_HOME/repoQ" main
+  printf 'worktree:\n\t@echo wt\n' > "$DUX_HOME/repoQ/Makefile"
+  dux-project add repoQ "$DUX_HOME/repoQ" --worktree git
+  [ "$(dux-project get repoQ worktree)" = git ]
+  make_repo "$DUX_HOME/repoR" main
+  run dux-project add repoR "$DUX_HOME/repoR" --worktree make
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: no worktree target in $DUX_HOME/repoR/Makefile"* ]]
+  run dux-project add repoR "$DUX_HOME/repoR" --worktree zip
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --worktree must be make, script, or git"* ]]
+  ! grep -q '^- repoR ' "$DUX_HOME/data/projects.md"
+}
