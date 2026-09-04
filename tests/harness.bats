@@ -33,3 +33,13 @@ load helpers/setup
   run herdr pane get w1:p9
   [ "$status" -eq 1 ]
 }
+
+@test "fake herdr pane run executes the command in the tab's cwd when FAKE_HERDR_RUN is set" {
+  export FAKE_HERDR_RUN=1
+  mkdir -p "$DUX_HOME/cwd"
+  herdr tab create --workspace w1 --cwd "$DUX_HOME/cwd" --label dux-x --no-focus >/dev/null
+  herdr pane run w1:p9 "pwd; echo pane=\$HERDR_PANE_ID" >/dev/null
+  sleep 1
+  grep -qx "$DUX_HOME/cwd" "$FAKE_HERDR_OUTPUT"
+  grep -qx "pane=w1:p9" "$FAKE_HERDR_OUTPUT"
+}

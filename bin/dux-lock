@@ -60,6 +60,7 @@ case "${1:-}" in
       h="$(holder)"
       if alive "$h"; then echo "held by pid $h (alive)"; else echo "held by pid $h (dead)"; fi
     fi ;;
+  mine) [ "$(holder || true)" = "$me" ] ;;
   holder) holder || true ;;
-  *) die "usage: dux-lock acquire|release|status|holder" ;;
+  *) die "usage: dux-lock acquire|release|status|holder|mine" ;;
 esac
