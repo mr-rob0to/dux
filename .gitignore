@@ -3,4 +3,5 @@ state/
 .worktrees/
 tests/tmp/
 tests/personal-identifiers.txt
+tests/personal-names.txt
 config/

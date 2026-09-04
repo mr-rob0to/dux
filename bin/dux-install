@@ -9,6 +9,7 @@ target="${DUX_SKILLS_DIR:-$HOME/.claude/skills}"
 mkdir -p "$target" 2>/dev/null || finding "cannot create $target"
 
 for d in "$DUX_ROOT"/skills/*/; do
+  [ -d "$d" ] || continue
   n="$(basename "$d")"; dst="$target/$n"; src="$DUX_ROOT/skills/$n"
   if [ -L "$dst" ]; then
     [ "$(readlink "$dst")" = "$src" ] && { log "ok $n"; continue; }
@@ -25,14 +26,22 @@ for d in "$DUX_ROOT"/skills/*/; do
 done
 
 for f in "$DUX_ROOT"/templates/config/*; do
+  [ -e "$f" ] || continue
   n="$(basename "$f")"
   if [ -e "$DUX_CONFIG/$n" ] || [ -L "$DUX_CONFIG/$n" ]; then continue; fi
   cp "$f" "$DUX_CONFIG/$n" 2>/dev/null || finding "cannot write $DUX_CONFIG/$n"
   log "config $n seeded"
 done
 
+# Two denylists, because they are matched differently by `make lint-identifiers`.
+# Paths and project names are matched literally; a bare account name is matched
+# only as a whole word, and the Makefile drops the generic account names outright.
+mkdir -p "$DUX_ROOT/tests" 2>/dev/null || finding "cannot create $DUX_ROOT/tests"
 {
-  whoami; basename "$HOME"; echo "$HOME"
+  echo "$HOME"
   [ -f "$DUX_DATA/projects.md" ] && sed -n 's/^- \([^ ]*\) .*/\1/p' "$DUX_DATA/projects.md"
 } | grep -v '^$' | sort -u > "$DUX_ROOT/tests/personal-identifiers.txt"
+{
+  whoami; basename "$HOME"
+} | grep -v '^$' | sort -u > "$DUX_ROOT/tests/personal-names.txt"
 log "identifier denylist written"
