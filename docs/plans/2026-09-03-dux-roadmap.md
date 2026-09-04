@@ -1,8 +1,9 @@
 # Dux Roadmap: milestones 1 to 7
 
 **Where this stands**
-- Current milestone: 1 (skeleton), plan `2026-09-03-dux-m1-skeleton.md`, not started.
-- Milestones 2 to 6 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
+- Milestone 1 (skeleton) is merged: plan `2026-09-03-dux-m1-skeleton.md`, 8 of 8 tasks, reviewed_sha a3288cc.
+- Current milestone: 2 (dispatch), plan `2026-09-03-dux-m2-dispatch.md`, written and design-reviewed, awaiting operator approval. Not started.
+- Milestones 3 to 7 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
 - Spec: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
 
 One milestone is one session and one PR. After a milestone's PR merges, the next session starts from its plan file.
