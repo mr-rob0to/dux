@@ -1,0 +1,113 @@
+#!/usr/bin/env bash
+# Runs inside the worker container, in the task's worktree. Spec sections 5.4, 5.5, 9.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+[ $# -eq 1 ] || die "usage: dux-worker-wrap <id>"
+id="$1"
+task="$DUX_TASKS/$id"; brief="$task/brief.md"; status_log="$task/status.log"
+settings="$task/worker-settings.json"; hooks="$task/hooks"
+out="$DUX_STATE/$id.out"; pidfile="$DUX_STATE/$id.pid"
+poll="${DUX_WRAP_POLL_SECS:-5}"; beat="${DUX_HEARTBEAT_SECS:-300}"
+branch="dux/$id"
+
+[ -d "$task" ] || finding "no task folder for $id"
+# From here on a refusal is a failed task with a reason, not a silent pane.
+refuse() {
+  printf 'failed: wrapper: %s\n' "$*" >> "$status_log" 2>/dev/null
+  { echo "## Failure"; echo "wrapper: $*"; } >> "$task/report.md" 2>/dev/null
+  finding "$*"
+}
+[ -s "$brief" ] || refuse "no brief for $id"
+[ -d "$hooks" ] || refuse "no hooks dir for $id; dux-worktree installs it"
+project="$("$DUX_ROOT/bin/dux-ledger" get "$id" project 2>&1)" || refuse "$project"
+shape="$("$DUX_ROOT/bin/dux-ledger" get "$id" shape 2>&1)" || refuse "$shape"
+[ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "$branch" ] \
+  || refuse "dux-worker-wrap must run inside the worktree on $branch (cwd is $PWD)"
+
+harness="$(cat "$task/harness" 2>/dev/null || true)"
+if [ -z "$harness" ] && [ -f "$DUX_CONFIG/worker-harness" ]; then harness="$(tr -d '[:space:]' < "$DUX_CONFIG/worker-harness")"; fi
+harness="${harness:-claude}"
+case "$harness" in claude|codex) ;; *) refuse "unknown worker harness $harness (claude or codex)" ;; esac
+command -v "$harness" >/dev/null 2>&1 || refuse "$harness is not on PATH inside the worker container"
+# shellcheck source=/dev/null
+source "$DUX_ROOT/bin/workers/$harness.sh"
+
+models="$DUX_CONFIG/models"; [ "$harness" = codex ] && models="$DUX_CONFIG/models-codex"
+[ -s "$models" ] || refuse "missing $models; run dux-install"
+spec="$(tr ' ' '\n' < "$models" | sed -n "s/^$shape=//p" | head -1)"
+case "$spec" in *:*) ;; *) refuse "model entry for $shape in $models must be <model>:<effort>, got '${spec:-nothing}'" ;; esac
+model="${spec%%:*}"; effort="${spec#*:}"
+[ -n "$model" ] || refuse "empty model for $shape in $models"
+worker_effort_ok "$effort" || refuse "effort $effort is not valid for $harness"
+if [ "$harness" = claude ] && [ ! -s "$settings" ]; then refuse "no worker settings for $id; dux-brief renders them"; fi
+
+echo $$ > "$pidfile" || refuse "cannot write $pidfile"
+: >> "$status_log" || refuse "cannot write $status_log"
+# The Dux session's own harness variables must not reach the worker.
+for v in $(env | sed -n 's/^\(CLAUDECODE\|CLAUDE_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+export DUX_STATUS_LOG="$status_log"
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$hooks"
+
+mirroring=1
+mirror() {  # $1 dux state, $2 full line. Presentation only; status.log is the truth.
+  [ "$mirroring" = 1 ] || return 0
+  local s
+  case "$1" in working) s=working ;; needs-decision|blocked) s=blocked ;; *) s=idle ;; esac
+  if ! "$DUX_ROOT/bin/dux-backend" report "$id" "$s" "$2" 2>/dev/null; then
+    mirroring=0; log "status mirroring unavailable on this backend; status.log remains the truth"
+  fi
+}
+seen=0
+mirror_new() {
+  local n i line
+  n="$(wc -l < "$status_log" | tr -d ' ')"
+  i=$seen
+  while [ "$i" -lt "$n" ]; do
+    i=$((i + 1)); line="$(sed -n "${i}p" "$status_log")"
+    mirror "${line%%:*}" "$line"
+  done
+  seen=$n
+}
+
+intent_line="$(awk '/^## Intent$/ { f = 1; next } f && NF { print substr($0, 1, 60); exit }' "$brief")"
+"$DUX_ROOT/bin/dux-backend" title "$project: $intent_line" 2>/dev/null || log "title not set on this backend"
+
+( worker_run "$brief" "$model" "$effort" "$settings" ) < /dev/null > "$out" 2>&1 &
+wpid=$!
+# bash starts background children with INT ignored, so INT to the wrapper becomes TERM to the harness.
+trap 'kill -TERM "$wpid" 2>/dev/null' INT TERM
+
+is_exit_line() { case "${1%%:*}" in done|failed|blocked|needs-decision) return 0 ;; *) return 1 ;; esac; }
+last_status() { grep -v '^working: heartbeat$' "$status_log" 2>/dev/null | tail -n 1; }
+
+last_size=0; last_beat="$(date +%s)"
+while kill -0 "$wpid" 2>/dev/null; do
+  sleep "$poll"
+  mirror_new
+  kill -0 "$wpid" 2>/dev/null || break   # never heartbeat past the harness's exit
+  now_s="$(date +%s)"
+  if [ $((now_s - last_beat)) -ge "$beat" ]; then
+    size="$(wc -c < "$out" | tr -d ' ')"
+    if [ "$size" -gt "$last_size" ] && ! is_exit_line "$(last_status)"; then
+      echo "working: heartbeat" >> "$status_log"
+    fi
+    last_size=$size; last_beat=$now_s
+  fi
+done
+wait "$wpid"; rc=$?
+trap - INT TERM
+
+last="$(last_status)"
+if ! is_exit_line "$last"; then
+  if [ "$rc" -ne 0 ]; then echo "failed: worker exited $rc" >> "$status_log"
+  else echo "ended: exit 0 without terminal status" >> "$status_log"; fi
+fi
+last="$(last_status)"
+if [ "${last%%:*}" = failed ]; then
+  { echo "## Failure tail"; tail -n 20 "$out"; } >> "$task/report.md"
+fi
+mirror_new
+log "worker for $id exited $rc; last status: $last"
+exit 0

@@ -44,3 +44,19 @@ backend_close() {  # endpoint. Closes only on a positive "not focused" reading.
 backend_notify() {  # title body
   herdr notification show "$1" --body "$2" --sound "done" >/dev/null 2>&1 || true
 }
+
+_own_pane() {  # the pane this process runs in; presentation only, so the id comes from the environment
+  [ -n "${HERDR_PANE_ID:-}" ] || finding "HERDR_PANE_ID is unset; not inside a Herdr pane"
+  echo "$HERDR_PANE_ID"
+}
+
+backend_report() {  # id state message
+  local pane; pane="$(_own_pane)" || exit $?
+  herdr pane report-agent "$pane" --source dux --agent "dux-$1" --state "$2" --message "$3" >/dev/null 2>&1 \
+    || finding "herdr pane report-agent failed for $pane"
+}
+
+backend_title() {  # title
+  local pane; pane="$(_own_pane)" || exit $?
+  herdr pane report-metadata "$pane" --title "$1" >/dev/null 2>&1 || finding "herdr pane report-metadata failed for $pane"
+}

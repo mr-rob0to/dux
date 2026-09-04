@@ -30,5 +30,7 @@ case "$cmd" in
   tail)   own_endpoint "${1:?endpoint}"; backend_tail "$1" "${2:-40}" ;;
   close)  own_endpoint "${1:?endpoint}"; backend_close "$1" ;;
   notify) backend_notify "${1:?title}" "${2:-}" ;;
-  *) die "usage: dux-backend name|open|exists|tail|close|notify" ;;
+  report) backend_report "${1:?id}" "${2:?state}" "${3:?message}" ;;
+  title)  backend_title "${1:?title}" ;;
+  *) die "usage: dux-backend name|open|exists|tail|close|notify|report|title" ;;
 esac

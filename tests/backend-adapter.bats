@@ -150,3 +150,28 @@ teardown_file() {
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: tmux kill-window failed for"* ]]
 }
+
+@test "report mirrors a status line to the herdr pane named by HERDR_PANE_ID, and is a no-op on tmux" {
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  HERDR_PANE_ID=w1:p9 run dux-backend report t7 idle "done: PR https://example.invalid/pr/1"
+  [ "$status" -eq 0 ]
+  if [ "$DUX_BACKEND" = herdr ]; then
+    grep -qF 'pane report-agent w1:p9 --source dux --agent dux-t7 --state idle --message done: PR https://example.invalid/pr/1' "$FAKE_HERDR_LOG"
+  else
+    [ ! -s "$FAKE_HERDR_LOG" ]
+  fi
+}
+
+@test "title sets the herdr sidebar title" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  HERDR_PANE_ID=w1:p9 run dux-backend title "proj: ship the login screen"
+  [ "$status" -eq 0 ]
+  grep -qF 'pane report-metadata w1:p9 --title proj: ship the login screen' "$FAKE_HERDR_LOG"
+}
+
+@test "report without HERDR_PANE_ID is a finding on herdr" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  run env -u HERDR_PANE_ID dux-backend report t7 working "working: x"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: HERDR_PANE_ID is unset"* ]]
+}

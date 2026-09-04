@@ -55,3 +55,6 @@ backend_close() {  # endpoint. Closes only on a positive "not focused" reading.
 backend_notify() {  # title body
   _tmux display-message "$1: $2" 2>/dev/null || true
 }
+
+backend_report() { :; }  # id state message: tmux has no agent state to mirror (spec section 9)
+backend_title()  { :; }  # title
