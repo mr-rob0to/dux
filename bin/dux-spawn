@@ -16,50 +16,53 @@ while [ $# -gt 0 ]; do
 done
 
 task="$DUX_TASKS/$id"; brief="$task/brief.md"; epfile="$DUX_STATE/$id.endpoint"; branch="dux/$id"
-launchfile="$DUX_STATE/$id.launched"
 ledger="$DUX_ROOT/bin/dux-ledger"; worktree="$DUX_ROOT/bin/dux-worktree"; backend="$DUX_ROOT/bin/dux-backend"
 placeholder='- Worktree: <set by dux-spawn>'
 
 "$DUX_ROOT/bin/dux-lock" mine || finding "the Dux lock is not held by this session; refusing to spawn"
 state="$("$ledger" get "$id" state)" || exit $?
 [ "$state" = queued ] || finding "task $id is $state, not queued"
-# Checked before every other refusal: while this file exists a worker for the task
-# may be alive, whatever the ledger and the brief say. Only teardown clears it.
-[ ! -e "$launchfile" ] || finding "a worker for $id may still be alive ($launchfile); tear the task down before spawning it again"
 project="$("$ledger" get "$id" project)" || exit $?
 source_key="$("$ledger" get "$id" source)" || exit $?
 "$DUX_ROOT/bin/dux-project" get "$project" path >/dev/null || exit $?
 [ -s "$brief" ] || finding "no brief for $id; run dux-brief first"
-grep -qxF -- "$placeholder" "$brief" || finding "brief for $id has no worktree line to fill"
+# Any worktree line will do: a spawn killed after the line was filled must not need
+# the operator to put the placeholder back, and the line is not what keeps a second
+# worker off this task. The live container is (below).
+grep -q '^- Worktree: ' "$brief" || finding "brief for $id has no worktree line to fill"
 # The flag is the operator's choice and overwrites the task file below, so it is
 # what gets checked when it is given; otherwise the task file, then the config.
 chosen="$harness"; [ -n "$chosen" ] || chosen="$(task_harness "$task")"
 why="$(harness_refusal "$chosen")" || finding "$why"
 "$backend" name >/dev/null || exit $?
 [ ! -e "$epfile" ] || finding "endpoint already recorded for $id in $epfile"
+# Both backends name the container after the task, so whether a worker may still
+# be alive is observable. Ask; never infer it from a file a dead spawn left behind.
+alive_at="$("$backend" find "$id")" || exit $?
+[ -z "$alive_at" ] || finding "a container for $id already exists at $alive_at; close it or tear the task down before spawning it again"
 if [ -n "$harness" ]; then echo "$harness" > "$task/harness" || finding "cannot write $task/harness"; fi
 
 wt="$("$worktree" create "$id")" || exit $?
 
-swap_line() {  # $1 from, $2 to: replace the first exact line
-  awk -v from="$1" -v to="$2" 'hit == 0 && $0 == from { print to; hit = 1; next } { print }' "$brief" > "$brief.tmp" \
+set_worktree_line() {  # $1: replaces the brief's first "- Worktree: " line
+  awk -v to="$1" 'hit == 0 && index($0, "- Worktree: ") == 1 { print to; hit = 1; next } { print }' "$brief" > "$brief.tmp" \
     && mv "$brief.tmp" "$brief"
 }
-undo() {  # after a failed open: nothing ran, so the worktree and branch go and the task stays queued
-  rm -f "$launchfile"
-  swap_line "- Worktree: $wt" "$placeholder" || log "could not restore the worktree line in $brief"
+undo() {  # after a failed open. The brief line goes back either way, so no retry is
+          # blocked by it; the worktree goes only when nothing is running in it.
+  local alive
+  alive="$("$backend" find "$id")" || exit $?
+  set_worktree_line "$placeholder" || log "could not restore the worktree line in $brief"
+  [ -z "$alive" ] || finding "backend open failed for $id but a container for it is alive at $alive; close it before spawning $id again"
   "$worktree" discard "$id" >/dev/null 2>&1 || log "worktree $wt left in place; run dux-worktree discard $id by hand"
 }
 
-if ! swap_line "$placeholder" "- Worktree: $wt"; then
+if ! set_worktree_line "- Worktree: $wt"; then
   "$worktree" discard "$id" >/dev/null 2>&1 || true
   finding "cannot fill the worktree line in $brief"
 fi
 # Both backends hand this string to a shell, so it is composed as shell words.
 wrapcmd="$(printf '%q %q' "$DUX_ROOT/bin/dux-worker-wrap" "$id")"
-# Written before open, so a spawn killed before it records the endpoint still
-# leaves the mark the refusal above reads. Only undo and teardown clear it.
-printf 'pid=%s at=%s\n' "$$" "$(now)" > "$launchfile" || finding "cannot write $launchfile"
 ep="$("$backend" open "$id" "$wt" "$wrapcmd")" || { rc=$?; undo; exit $rc; }
 
 echo "$ep" > "$epfile" || finding "cannot write $epfile; the worker is running at $ep"

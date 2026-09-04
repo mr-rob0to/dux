@@ -216,9 +216,19 @@ Refuses, with a finding, when:
 - the resolved worktree path equals the primary checkout;
 - the worktree is not based on freshly fetched `origin/<base>`;
 - the backend is unavailable or an endpoint for the id already exists;
+- the backend's `find <id>` (section 9) reports a container for the task, which
+  means a worker may still be alive whatever the ledger and the brief say;
 - the lock is not held by this Dux session (`dux-lock mine`);
-- the brief is missing or has no `- Worktree: <set by dux-spawn>` line to fill;
+- the brief is missing or has no `- Worktree: ` line to fill;
 - the chosen worker harness is unknown or is not dispatchable this milestone.
+
+Whether a worker may still be alive is asked, never remembered. Both backends
+name the container after the task, so `find` reads that fact back; no file
+records that a spawn reached `open`. A file would be wrong in both directions: a
+spawn killed before anything started would leave a mark no retry could clear, and
+a cleanup after a failed `open` would clear a mark while a worker ran. Spawn
+therefore fills whatever `- Worktree: ` line the brief has, rather than only the
+placeholder, so a spawn killed after that line was filled needs no hand edit.
 
 Otherwise: `dux-worktree create <id>` (fetch, mechanism, discovery, tip check,
 hooks dir, env-example copy for ship under the `git` mechanism), fill the brief's
@@ -226,10 +236,13 @@ worktree line, call the backend's `open` (section 9) with the single command
 `<abs path>/bin/dux-worker-wrap <id>`, record the endpoint in
 `state/<id>.endpoint` and the ledger, set `running`, and for a `gh:` source post
 one issue comment (a failed comment is a warning, not a refusal, because the
-worker is already running). If `open` fails, the new worktree is removed and the
-brief's worktree line restored (`dux-worktree discard`), so the task stays
-`queued`. The wrapper writes
-`state/<id>.pid` before starting the harness.
+worker is already running). If `open` fails, the brief's worktree line is
+restored and the new worktree is removed (`dux-worktree discard`), so the task
+stays `queued` and a retry is one command. The worktree is kept, and the failure
+is a finding naming the endpoint, when `find` still reports a container: a
+backend can start the command and fail afterwards, and nothing is cleaned up
+around a live worker. The wrapper writes `state/<id>.pid` before starting the
+harness.
 
 The worker command comes from the harness adapter `bin/workers/<harness>.sh`
 (section 19), never from this section. Milestone 2 dispatches `claude` workers
@@ -389,6 +402,7 @@ Interface, each a function in `bin/backends/<name>.sh`:
 | Function | Contract |
 |---|---|
 | `open <id> <cwd> <cmd>` | start `<cmd>` in a new visible container labelled `dux-<id>`, print an opaque endpoint, never steal focus |
+| `find <id>` | print the endpoint of the container labelled `dux-<id>`, or nothing when there is none; a backend that cannot tell raises a finding |
 | `exists <endpoint>` | exit 0 if the container still exists; process liveness is the wrapper pid's job |
 | `tail <endpoint> <n>` | print the last n lines of output |
 | `close <endpoint>` | close only that container; refuse if it is the operator's focused pane |
@@ -398,8 +412,11 @@ Interface, each a function in `bin/backends/<name>.sh`:
 
 tmux: a window per task in the Dux session, `tmux new-window -d -n dux-<id>`
 with `remain-on-exit on`, so the window and its scrollback survive the worker's
-exit until teardown. `exists` checks the window is present. `notify` is
-`tmux display-message`.
+exit until teardown. `exists` checks the window is present. `find` filters
+`tmux list-windows -a` on the window name and never touches `_session`, which
+would start a server to answer a question about it; a server that is not running
+is positive evidence of no window, and any other listing failure is a finding.
+`notify` is `tmux display-message`.
 
 Herdr: a tab per task in Dux's own workspace, read live from
 `HERDR_WORKSPACE_ID`, via
@@ -408,7 +425,14 @@ then `herdr pane run <root_pane> <cmd>`, where `<cmd>` is always one absolute
 path plus the task id, so shell quoting and the operator's rc files cannot alter
 it. `pane run` types into a live shell, so `open` waits for the pane's shell
 prompt with `herdr pane wait-output` before running. The endpoint is the pane id
-from the create response, never derived from labels. `exists` is `herdr pane get`;
+from the create response, never derived from labels. The one place a label is
+read back is `find`, which asks `herdr tab list` for the tab whose `label` is
+`dux-<id>` and then `herdr pane list` for that tab's pane, because the tab
+listing carries no pane. It is not scoped to `HERDR_WORKSPACE_ID`: a tab moved to
+another workspace still holds a live worker. A listing that fails, a listing
+without the array it should have, more than one tab with the label, or a tab with
+no pane is a finding, so "I could not tell" is never returned as "nothing is
+running". `exists` is `herdr pane get`;
 a pane outlives its process, which is why liveness comes from the pid file.
 `tail` is `herdr pane read --source recent-unwrapped --lines n`. `close` is
 `herdr pane close` on the exact recorded pane, never `workspace close`; a close

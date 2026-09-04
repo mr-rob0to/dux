@@ -34,7 +34,7 @@ if [ -f "$epfile" ]; then
 else
   log "no endpoint recorded for $id"
 fi
-rm -f "$DUX_STATE/$id.pid" "$DUX_STATE/$id.launched"
+rm -f "$DUX_STATE/$id.pid"
 
 pr="-"
 case "$last" in "done: PR "*) pr="${last#done: PR }"; pr="${pr%% *}" ;; esac
