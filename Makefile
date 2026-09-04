@@ -11,7 +11,7 @@ test:
 lint: lint-shell lint-identifiers
 
 lint-shell:
-	shellcheck -s bash bin/dux-* bin/backends/*.sh tests/fakes/* tests/helpers/*.bash
+	shellcheck -s bash bin/dux-* bin/backends/*.sh templates/hooks/pre-push tests/fakes/* tests/helpers/*.bash
 
 lint-identifiers:
 	@if [ -s tests/personal-identifiers.txt ]; then \
