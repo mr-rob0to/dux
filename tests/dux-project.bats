@@ -55,7 +55,7 @@ load helpers/setup
   PATH="$DUX_ROOT/bin:/usr/bin:/bin" run dux-project add repoH "$DUX_HOME/repoH"
   [ "$status" -eq 2 ]
   [[ "$output" == *"finding: base branch signals disagree"* ]]
-  ! grep -q '^- repoH ' "$DUX_HOME/data/projects.md"
+  [ "$(grep -c '^- repoH ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
 }
 
 @test "add with a missing path is a finding, not a bash error" {
@@ -84,7 +84,7 @@ load helpers/setup
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: refusing to write through a symlink"* ]]
   [ -z "$(ls -A "$DUX_HOME/outside")" ]
-  ! grep -q '^- repoI ' "$DUX_HOME/data/projects.md"
+  [ "$(grep -c '^- repoI ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
 }
 
 @test "add refuses a dangling template symlink instead of writing through it" {
@@ -151,7 +151,7 @@ load helpers/setup
   chmod 755 "$DUX_HOME/repoO"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: cannot create $DUX_HOME/repoO/.github"* ]]
-  ! grep -q '^- repoO ' "$DUX_HOME/data/projects.md"
+  [ "$(grep -c '^- repoO ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
 }
 
 @test "add is a finding when the template cannot be written" {
@@ -161,7 +161,7 @@ load helpers/setup
   chmod 755 "$DUX_HOME/repoP/.github"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: cannot write $DUX_HOME/repoP/.github/PULL_REQUEST_TEMPLATE.md"* ]]
-  ! grep -q '^- repoP ' "$DUX_HOME/data/projects.md"
+  [ "$(grep -c '^- repoP ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
 }
 
 @test "add honors --worktree and validates it against the repo" {
@@ -176,5 +176,5 @@ load helpers/setup
   run dux-project add repoR "$DUX_HOME/repoR" --worktree zip
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: --worktree must be make, script, or git"* ]]
-  ! grep -q '^- repoR ' "$DUX_HOME/data/projects.md"
+  [ "$(grep -c '^- repoR ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
 }

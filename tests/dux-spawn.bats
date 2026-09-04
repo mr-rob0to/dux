@@ -81,7 +81,7 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   [ "$status" -eq 2 ]; [[ "$output" == *"finding: HERDR_WORKSPACE_ID is unset"* ]]
   [ "$(dux-ledger get "$id" state)" = queued ]
   [ ! -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
-  ! git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$id"
+  run git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$id"; [ "$status" -ne 0 ]
   grep -qxF -- '- Worktree: <set by dux-spawn>' "$DUX_HOME/data/tasks/$id/brief.md"
   [ ! -e "$DUX_HOME/state/$id.endpoint" ]
   [ ! -e "$DUX_HOME/state/$id.launched" ]

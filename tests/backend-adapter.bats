@@ -89,7 +89,7 @@ teardown_file() {
   run dux-backend open t6 "$DUX_HOME" "sleep 5"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: no shell prompt in pane w1:p9"* ]]
-  ! grep -q '^pane run ' "$FAKE_HERDR_LOG"
+  [ "$(grep -c '^pane run ' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
   grep -q '^pane close w1:p9' "$FAKE_HERDR_LOG"
 }
 
@@ -119,7 +119,7 @@ teardown_file() {
   run dux-backend close "herdr:w1:p9"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: herdr pane get returned no focus state"* ]]
-  ! grep -q '^pane close ' "$FAKE_HERDR_LOG"
+  [ "$(grep -c '^pane close ' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
 }
 
 @test "herdr close refuses when pane get fails" {
@@ -143,7 +143,7 @@ teardown_file() {
   run dux-backend open t8 "$DUX_HOME" "sleep 5"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: refusing to close focused pane w1:p9"* ]]
-  ! grep -q '^pane close ' "$FAKE_HERDR_LOG"
+  [ "$(grep -c '^pane close ' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
 }
 
 @test "herdr open with no prompt reports a failed cleanup close" {

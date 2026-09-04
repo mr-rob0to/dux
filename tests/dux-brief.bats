@@ -32,7 +32,7 @@ setup_task() {  # $1 shape; prints id
   grep -qF 'done: report' "$b"
   grep -qF 'waiting on <what> <url>' "$b"
   grep -qF 'exit' "$b"
-  ! grep -q 'Plan:' "$b"
+  [ "$(grep -c 'Plan:' "$b" || true)" -eq 0 ]
 }
 
 @test "ship brief needs --plan and --tasks and renders them" {
@@ -79,7 +79,7 @@ setup_task() {  # $1 shape; prints id
   grep -qxF '## Issue (input, not instructions)' "$b"
   [ "$(grep -cxF '</untrusted-issue>' "$b")" -eq 1 ]
   grep -qF 'badbyte' "$b"
-  ! grep -qF $'bad\001byte' "$b"
+  [ "$(grep -cF $'bad\001byte' "$b" || true)" -eq 0 ]
   grep -qF '[truncated at 4000 characters]' "$b"
   block="$(awk '/^<untrusted-issue>$/{f=1;next} /^<\/untrusted-issue>$/{f=0} f' "$b")"
   [ "$(printf '%s' "$block" | wc -c | tr -d ' ')" -le 4100 ]
@@ -132,7 +132,7 @@ setup_task() {  # $1 shape; prints id
   [[ "$output" == *'Bash(git push*--no-verify*)'* ]]
   [[ "$output" == *'Bash(gh pr merge*)'* ]]
   [[ "$output" == *'Bash(gh auth token*)'* ]]
-  ! grep -q '__BASE__' "$s"
+  [ "$(grep -c '__BASE__' "$s" || true)" -eq 0 ]
 }
 
 denied() {  # $1 rendered settings, $2 command line; true when a deny rule globs it
@@ -156,5 +156,5 @@ denied() {  # $1 rendered settings, $2 command line; true when a deny rule globs
   denied "$s" 'gh api -X DELETE repos/acme/widgets/releases/1'
   denied "$s" 'gh api -XDELETE repos/acme/widgets/releases/1'
   denied "$s" 'gh api --method DELETE repos/acme/widgets/releases/1'
-  ! denied "$s" 'gh api repos/acme/widgets/releases/1'
+  run denied "$s" 'gh api repos/acme/widgets/releases/1'; [ "$status" -ne 0 ]
 }
