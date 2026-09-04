@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 0 of 11 (Task 0, Tasks 1 to 8, Task 8b, Task 9).
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 1 of 11 (Task 0, Tasks 1 to 8, Task 8b, Task 9).
 - reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
 - Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
-- Next action: operator approves this plan; implementation runs in a worktree cut from `origin/main`; `/ship` opens the PR; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
+- Next action: Task 1 (ledger, test helpers, fake `gh`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
 
 **Goal:** Turn an operator goal into a running, isolated worker: task ledger, task ids, brief rendering, worktree per project mechanism with a base-branch push guard, worker harness adapters for Claude Code and Codex, the in-pane wrapper that enforces the status protocol, spawn with its five refusals, teardown with its three refusals, the `dux-dispatch` skill, and an end-to-end test on both backends with both harnesses.
 
@@ -69,7 +69,7 @@
 **Interfaces:**
 - Produces: the spec text every later task argues from. No code.
 
-- [ ] **Step 1: Amend section 3 (components)**
+- [x] **Step 1: Amend section 3 (components)**
 
 Add these lines to the tree under `bin/` and `data/`/`state/`, keeping alphabetical order within each block:
 
@@ -92,7 +92,7 @@ Add these lines to the tree under `bin/` and `data/`/`state/`, keeping alphabeti
   config/models-codex       per-shape Codex model:effort
 ```
 
-- [ ] **Step 2: Amend section 4 (registry)**
+- [x] **Step 2: Amend section 4 (registry)**
 
 After "`dux-project` detects it and the operator confirms." add:
 
@@ -104,7 +104,7 @@ flag is required when the project's `CLAUDE.md` or `AGENTS.md` carries a
 only `ship` tasks use the recorded mechanism, since only they run the project.
 ```
 
-- [ ] **Step 3: Amend section 5.2 (task id)**
+- [x] **Step 3: Amend section 5.2 (task id)**
 
 Replace "Branch name follows the project's convention with the id as the slug." with:
 
@@ -114,7 +114,7 @@ worktree is `<repo>/.worktrees/dux-<id>`; under `make` or `script` the project
 chooses the path and Dux discovers it from `git worktree list --porcelain`.
 ```
 
-- [ ] **Step 4: Amend section 5.3 (brief)**
+- [x] **Step 4: Amend section 5.3 (brief)**
 
 Replace "3. Project: path, base branch, worktree path, plan path and task range for ship." with:
 
@@ -139,7 +139,7 @@ operator. Issue text arrives through `--issue-file`, fenced as
 and excluded from the 60-line count.
 ```
 
-- [ ] **Step 5: Amend section 5.4 (status protocol)**
+- [x] **Step 5: Amend section 5.4 (status protocol)**
 
 Replace the sentence beginning "`dux-worker-wrap` appends `failed: worker exited <code>`" through "when it exits zero without one." with:
 
@@ -152,7 +152,7 @@ appends the last 20 lines of `state/<id>.out` to `tasks/<id>/report.md` under a
 `## Failure tail` heading.
 ```
 
-- [ ] **Step 6: Amend section 5.5 (spawn)**
+- [x] **Step 6: Amend section 5.5 (spawn)**
 
 Replace the heading and first sentence "### 5.5 Spawn (`dux-spawn <project> <shape> <brief-path>`)" with "### 5.5 Spawn (`dux-spawn <id> [--harness claude|codex]`)" and add before "Refuses, with a finding, when:":
 
@@ -206,7 +206,7 @@ forge API all get past them, which is why they are denied by rule and by the
 brief, and why the worker's credentials are the operator's to bound.
 ```
 
-- [ ] **Step 7: Amend section 5.6 (teardown)**
+- [x] **Step 7: Amend section 5.6 (teardown)**
 
 Replace the paragraph with:
 
@@ -221,7 +221,7 @@ worktree or container that is already gone is logged, not refused, so an
 interrupted teardown completes on rerun. The task folder is kept.
 ```
 
-- [ ] **Step 8: Amend section 9 (backends)**
+- [x] **Step 8: Amend section 9 (backends)**
 
 Add two rows to the interface table:
 
@@ -232,7 +232,7 @@ Add two rows to the interface table:
 
 Replace "Headless `claude -p` is not auto-detected by Herdr, so `dux-worker-wrap` publishes state itself: on each status line it runs `herdr pane report-agent ...`" with "Headless workers are not auto-detected by Herdr, so `dux-worker-wrap` mirrors every new status line through `dux-backend report`, which on Herdr runs `herdr pane report-agent $HERDR_PANE_ID --source dux --agent dux-<id> --state <s> --message <line>`". Keep the state mapping sentence. Replace "it also sets the sidebar title with `herdr pane report-metadata ...`" with "it sets the title once through `dux-backend title`, which on Herdr runs `herdr pane report-metadata $HERDR_PANE_ID --title \"<project>: <first intent line>\"`". Add: "When `HERDR_PANE_ID` is unset the adapter reports a finding; the wrapper logs it once and stops mirroring."
 
-- [ ] **Step 9: Amend section 19 (harness support, workers paragraph)**
+- [x] **Step 9: Amend section 19 (harness support, workers paragraph)**
 
 Replace "`bin/workers/<harness>.sh` provides one function, `worker_cmd <brief-path> <model> <effort>`, that prints the command line: Claude Code uses `claude -p`, Codex uses `codex exec --full-auto`." with:
 
@@ -251,7 +251,7 @@ token per shape.
 
 Replace "The default worker harness is `claude`; `config/worker-harness` overrides it and a brief may name one." with "The default worker harness is `claude`; `config/worker-harness` overrides it and `dux-spawn --harness` overrides per task."
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add docs/specs/2026-09-03-dux-orchestrator-design.md

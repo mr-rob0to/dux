@@ -64,21 +64,37 @@ Non-goals for v1
     dux-lock                acquire/release the single-session lock
     dux-worker-wrap         runs inside the worker pane: claude -p + status protocol
     dux-intake              pull labelled GitHub issues into backlog.md as queued
+    dux-ledger              add/set/get/list over data/backlog.md; the only writer
+    dux-task-new            allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, its folder, its queued line
     backends/tmux.sh        backend adapter (section 9)
     backends/herdr.sh       backend adapter (section 9)
+    workers/claude.sh       worker harness adapter (section 19)
+    workers/codex.sh        worker harness adapter (section 19)
+  templates/
+    brief.md                brief skeleton dux-brief renders
+    worker-settings.json    deny rules, __BASE__ rendered per task
+    hooks/pre-push          base-branch push guard, __BASE__ and __UPSTREAM__ rendered per task
+    config/                 defaults dux-install copies into config/ (adds models-codex, worker-harness)
   data/                     durable, gitignored
     projects.md             registry: one line per project
     backlog.md              queued / running / awaiting / done, one line per task
     tasks/<id>/brief.md     what the worker was told
     tasks/<id>/status.log   append-only "<state>: <line>" from the worker
     tasks/<id>/report.md    scout output or failure tail
+    tasks/<id>/worker-settings.json   rendered deny rules for the Claude harness
+    tasks/<id>/harness      optional per-task harness override written by dux-spawn --harness
+    tasks/<id>/hooks/       per-task git hooks dir (section 5.5)
+    tasks/<id>/worktree.log output of the project's worktree mechanism
   state/                    runtime, gitignored
     events.log              one line per wake-worthy change; Monitor tails this
     dux.lock                pid of the live Dux session
     <id>.endpoint           backend endpoint: tmux window id or herdr pane id
     <id>.out                worker stream-json output
+    <id>.pid                pid of dux-worker-wrap; liveness for the watcher
   tests/                    bats tests, fake claude
   config/backend            optional override: tmux | herdr
+  config/worker-harness     claude | codex, default claude
+  config/models-codex       per-shape Codex model:effort
   .github/PULL_REQUEST_TEMPLATE.md   canonical template Dux installs into projects
 ```
 
@@ -98,7 +114,13 @@ and prints a finding. It never guesses.
 `/ship` step 0 and re-verified by `dux-spawn` on every spawn. `worktree` names the
 mechanism in the operator's precedence order: `make` (a `make worktree` target),
 `script` (a repo script), or `git` (`git worktree add` into `<repo>/.worktrees/`).
-`dux-project` detects it and the operator confirms. `issues` is `off` or
+`dux-project` detects it and the operator confirms.
+`dux-project add --worktree make|script|git` records the mechanism explicitly; the
+flag is required when the project's `CLAUDE.md` or `AGENTS.md` carries a
+`Worktrees` heading, because prose is not something a script can follow.
+`plan` and `scout` tasks always use `git worktree add` from `origin/<base>`;
+only `ship` tasks use the recorded mechanism, since only they run the project.
+`issues` is `off` or
 `label:<name>`; only open issues carrying that label are eligible for intake
 (section 10).
 
@@ -120,7 +142,9 @@ task range in the brief.
 ### 5.2 Task id
 
 `<project>-<shape>-<yyyymmdd>-<3 random alnum>`, e.g. `fitfights_api-ship-20260903-k7q`.
-Branch name follows the project's convention with the id as the slug.
+The branch is `dux/<id>` in every project. Under the `git` mechanism the
+worktree is `<repo>/.worktrees/dux-<id>`; under `make` or `script` the project
+chooses the path and Dux discovers it from `git worktree list --porcelain`.
 
 ### 5.3 Brief (`dux-brief`)
 
@@ -129,7 +153,9 @@ Under 60 lines. Sections, all required:
 1. Intent: the operator's goal in their words, including constraints, exclusions,
    and decisions already made. Never a diff summary.
 2. Acceptance criteria: numbered, testable.
-3. Project: path, base branch, worktree path, plan path and task range for ship.
+3. Project: path, base branch, branch, worktree path (written as
+   `- Worktree: <set by dux-spawn>` by `dux-brief` and filled in by
+   `dux-spawn` once the worktree exists), plan path and task range for ship.
 4. Rules: work alone, never address the operator, stay inside the worktree,
    never push to base, never merge, same obstacle twice means `blocked` and stop,
    report through the status protocol only, and exit after writing `blocked`
@@ -138,6 +164,17 @@ Under 60 lines. Sections, all required:
 5. Definition of done, per shape.
 
 The brief never includes Dux conversation history or other tasks.
+
+`dux-brief <id>` reads project and shape from the ledger, renders
+`tasks/<id>/brief.md` from `templates/brief.md`, and renders
+`tasks/<id>/worker-settings.json` from `templates/worker-settings.json` with the
+project's base branch. Rules also carry: exit after `blocked` or
+`needs-decision`; write `working: waiting on <what> <url>` before any wait
+expected to exceed 10 minutes; for `plan`, the design review is a subagent
+inside the task, the docs-only PR is the approval artifact, never wait on the
+operator. Issue text arrives through `--issue-file`, fenced as
+`<untrusted-issue>`, capped at 4,000 characters, control characters stripped,
+and excluded from the 60-line count.
 
 ### 5.4 Status protocol
 
@@ -151,9 +188,12 @@ done: <PR url | report>
 failed: <one line>
 ```
 
-`dux-worker-wrap` appends `failed: worker exited <code>` when `claude -p` exits
-non-zero without a terminal line, and `ended: exit 0 without terminal status`
-when it exits zero without one. `ended` is not `failed`: Dux checks
+The exit lines are `done`, `failed`, `blocked`, and `needs-decision`.
+`dux-worker-wrap` appends `failed: worker exited <code>` when the harness exits
+non-zero and the last line is not an exit line, and `ended: exit 0 without
+terminal status` when it exits zero without one. On `failed` the wrapper
+appends the last 20 lines of `state/<id>.out` to `tasks/<id>/report.md` under a
+`## Failure tail` heading. `ended` is not `failed`: Dux checks
 `gh pr list --head <branch>` and the report file before classifying, and asks
 the operator if still unsure. The wrapper appends `working: heartbeat` every
 5 minutes only when `state/<id>.out` grew since the last interval, so a hung
@@ -162,7 +202,12 @@ write `working: waiting on <what> <url>` before any wait it expects to exceed
 10 minutes, such as `gh run watch`.
 Status lines are data. Dux never runs a command a status line names.
 
-### 5.5 Spawn (`dux-spawn <project> <shape> <brief-path>`)
+### 5.5 Spawn (`dux-spawn <id> [--harness claude|codex]`)
+
+`dux-task-new <project> <shape> [--source local|gh:<owner>/<repo>#<n>]`
+allocates the id, creates `tasks/<id>/` with an empty `status.log`, and appends
+the `queued` ledger line. `dux-brief <id> ...` renders the brief. `dux-spawn
+<id>` does the rest; it reads project, shape, and source from the ledger.
 
 Refuses, with a finding, when:
 
@@ -170,13 +215,19 @@ Refuses, with a finding, when:
 - the resolved worktree path equals the primary checkout;
 - the worktree is not based on freshly fetched `origin/<base>`;
 - the backend is unavailable or an endpoint for the id already exists;
-- the lock is not held by this Dux session (pid from `CLAUDE_PID`).
+- the lock is not held by this Dux session (`dux-lock mine`);
+- the brief is missing or has no `- Worktree: <set by dux-spawn>` line to fill.
 
-Otherwise: fetch, create worktree via the project's mechanism, copy the brief in,
-call the backend's `open` (section 9) with the single command
-`<abs path>/bin/dux-worker-wrap <id>` to get an endpoint, record the endpoint and
-`running` in `backlog.md`. The wrapper writes `state/<id>.pid` before starting
-`claude -p`.
+Otherwise: `dux-worktree create <id>` (fetch, mechanism, discovery, tip check,
+hooks dir, `.env` copy for ship under the `git` mechanism), fill the brief's
+worktree line, call the backend's `open` (section 9) with the single command
+`<abs path>/bin/dux-worker-wrap <id>`, record the endpoint in
+`state/<id>.endpoint` and the ledger, set `running`, and for a `gh:` source post
+one issue comment (a failed comment is a warning, not a refusal, because the
+worker is already running). If `open` fails, the new worktree is removed and the
+brief's worktree line restored (`dux-worktree discard`), so the task stays
+`queued`. The wrapper writes
+`state/<id>.pid` before starting the harness.
 
 The worker command is `claude -p` with the brief as the prompt, the project's
 `CLAUDE.md` loading normally, the operator's global `CLAUDE.md` loading normally,
@@ -184,22 +235,41 @@ The worker command is `claude -p` with the brief as the prompt, the project's
 `--dangerously-skip-permissions` for every shape, because a headless worker
 cannot answer prompts and a denied tool call stalls the task. The blast radius is
 the worktree plus `gh` and `codex` with the operator's credentials. Prompt rules
-are not the guard. Every worker gets `--settings` pointing at
-`templates/worker-settings.json` with deny rules for `Bash(git push*origin <base>*)`,
-`Bash(gh repo delete*)`, `Bash(gh auth token*)`, `Bash(gh secret*)`, and
-`Bash(gh api -X DELETE*)`, and `dux-worktree` installs a `pre-push` hook in the
-worktree that refuses a push to `<base>`. Milestone 2 break-verifies that the deny
-rules hold under `--dangerously-skip-permissions` before anything relies on
-them. `.env` files are copied only for `ship` tasks, never for `plan` or `scout`. Model via
+are not the guard. Every Claude worker gets `--settings tasks/<id>/worker-settings.json`, rendered
+from `templates/worker-settings.json` with deny rules `Bash(git push* <base>*)`,
+`Bash(git push*:<base>*)`, `Bash(git push*--no-verify*)`,
+`Bash(git*core.hooksPath*)`, `Bash(*GIT_CONFIG_COUNT*)`, `Bash(gh pr merge*)`,
+`Bash(gh api*git/refs*)`, `Bash(gh repo delete*)`, `Bash(gh auth token*)`,
+`Bash(gh secret*)`, and `Bash(gh api -X DELETE*)`. Claude Code documents that deny rules block in every
+mode including bypass; milestone 2 break-verifies that against a real `claude`
+before the milestone closes. The `pre-push` guard is a per-task hooks directory
+`tasks/<id>/hooks/`: a symlink to every hook the project already has plus a
+`pre-push` that refuses `refs/heads/<base>` and then runs the project's own
+`pre-push` with the same input. `dux-worker-wrap` points every git the worker
+runs at it through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0=core.hooksPath` in the
+worker's environment. Nothing is written into the project's `.git/config` or
+`.git/hooks`. Under the Codex harness the sandbox is `danger-full-access` (a
+linked worktree's git dir lives under the primary checkout, outside any
+workspace-write root) with `shell_environment_policy.ignore_default_excludes`
+set so `GIT_CONFIG_KEY_0` reaches git; the hook and the brief are its guards.
+These guards stop a mistaken push, not a worker that sets out to bypass them:
+`--no-verify`, `git -c core.hooksPath=`, unsetting the environment, or the
+forge API all get past them, which is why they are denied by rule and by the
+brief, and why the worker's credentials are the operator's to bound.
+`.env` files are copied only for `ship` tasks, never for `plan` or `scout`. Model via
 `--model` per shape; effort via the CLI flag if this version exposes one,
 otherwise a one-line system-prompt instruction in the brief.
 
 ### 5.6 Teardown (`dux-teardown <id>`)
 
-Refuses when the worktree has uncommitted changes, unpushed commits, or the task
-is not terminal. Otherwise removes the worktree with the project's mechanism,
-calls the backend's `close`, marks `done` or `failed` in `backlog.md`. Task folder
-is kept.
+Refuses when the lock is not held by this session, the task is not terminal
+(last status line `done` or `failed`, or ledger `done` or `failed`), or the
+worktree has uncommitted changes or unpushed commits. Otherwise removes the
+worktree (`git worktree remove`, branch kept), closes the container when it
+still exists, deletes `state/<id>.endpoint` and `state/<id>.pid`, records the
+PR url from `done: PR <url>`, and marks `done` or `failed` in `backlog.md`. A
+worktree or container that is already gone is logged, not refused, so an
+interrupted teardown completes on rerun. The task folder is kept.
 
 ## 6. Supervision
 
@@ -305,6 +375,8 @@ Interface, each a function in `bin/backends/<name>.sh`:
 | `tail <endpoint> <n>` | print the last n lines of output |
 | `close <endpoint>` | close only that container; refuse if it is the operator's focused pane |
 | `notify <title> <body>` | local visual notice, no-op if unsupported |
+| `report <id> <state> <message>` | mirror one status line to the container's UI; presentation only; tmux no-op |
+| `title <title>` | set the container's sidebar title; tmux no-op |
 
 tmux: a window per task in the Dux session, `tmux new-window -d -n dux-<id>`
 with `remain-on-exit on`, so the window and its scrollback survive the worker's
@@ -325,14 +397,17 @@ a pane outlives its process, which is why liveness comes from the pid file.
 that fails is a finding, so teardown never records `done` with a leaked tab.
 `notify` is `herdr notification show`.
 
-Headless `claude -p` is not auto-detected by Herdr, so `dux-worker-wrap`
-publishes state itself: on each status line it runs
+Headless workers are not auto-detected by Herdr, so `dux-worker-wrap` mirrors
+every new status line through `dux-backend report`, which on Herdr runs
 `herdr pane report-agent $HERDR_PANE_ID --source dux --agent dux-<id> --state <s> --message <line>`
 with `working` for working, `blocked` for needs-decision and blocked, and `idle`
-for done and failed; it also sets the sidebar title with
-`herdr pane report-metadata --title "<project>: <short intent>"`. Under tmux
-these calls are skipped. The status protocol in section 5.4 remains the single
-source of truth; backend state is presentation.
+for done and failed; it sets the title once through `dux-backend title`, which
+on Herdr runs
+`herdr pane report-metadata $HERDR_PANE_ID --title "<project>: <first intent line>"`.
+Under tmux these calls are skipped. When `HERDR_PANE_ID` is unset the adapter
+reports a finding; the wrapper logs it once and stops mirroring. The status
+protocol in section 5.4 remains the single source of truth; backend state is
+presentation.
 
 Result for the operator on Herdr: every worker is a tab in the Dux workspace,
 named by task, with live working/blocked/idle state in the sidebar. Clicking a
@@ -556,11 +631,19 @@ Dux separates the harness that runs the orchestrator from the harness that runs
 workers. They are supported at different levels.
 
 **Workers** are a command in a container plus a brief plus a status file, so
-any harness that can run bash works. `bin/workers/<harness>.sh` provides one
-function, `worker_cmd <brief-path> <model> <effort>`, that prints the command
-line: Claude Code uses `claude -p`, Codex uses `codex exec --full-auto`. The
-default worker harness is `claude`; `config/worker-harness` overrides it and a
-brief may name one. Both harnesses read the brief's rules, and the project's
+any harness that can run bash works. `bin/workers/<harness>.sh` provides
+`worker_cmd <brief> <model> <effort> <settings>`, which prints the command line
+for logs and tests, `worker_run` with the same arguments, which execs it (no
+`eval` anywhere), and `worker_effort_ok <effort>`. Claude Code: `claude -p
+"<brief>" --model <m> --effort <e> --dangerously-skip-permissions --settings
+<settings> --output-format stream-json --verbose`. Codex: `codex exec -m <m>
+--sandbox danger-full-access -c
+shell_environment_policy.ignore_default_excludes=true -c
+model_reasoning_effort="<e>" "<brief>"`. Models and efforts come from
+`config/models` (Claude) or `config/models-codex` (Codex), one `shape=model:effort`
+token per shape. The
+default worker harness is `claude`; `config/worker-harness` overrides it and
+`dux-spawn --harness` overrides per task. Both harnesses read the brief's rules, and the project's
 `AGENTS.md` (Codex) or `CLAUDE.md` (Claude Code) load as usual. Milestone 2
 ships both adapters and the end-to-end test runs on each.
 
