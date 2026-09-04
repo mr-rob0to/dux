@@ -17,6 +17,13 @@ die()     { printf 'dux: %s\n' "$*" >&2; exit 1; }
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 now()     { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
+# The one place a task id is accepted, so every script that builds a path from one
+# reaches the same answer. "." and ".." would resolve $DUX_TASKS/$id to a parent.
+valid_task_id() {  # $1 id; a finding when it is not one
+  case "$1" in ''|*[!A-Za-z0-9._-]*) finding "task id must match [A-Za-z0-9._-]+: $1" ;; esac
+  case "$1" in *[!.]*) ;; *) finding "task id must not be all dots: $1" ;; esac
+}
+
 task_harness() {  # $1 task dir; prints the harness that task would run under
   local h=""
   [ -f "$1/harness" ] && h="$(tr -d '[:space:]' < "$1/harness")"
