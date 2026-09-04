@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 BATS  ?= bats
 
-.PHONY: test lint lint-shell lint-identifiers check
+.PHONY: test lint lint-shell lint-identifiers check check-bash32
 
 test:
 	$(BATS) --recursive tests --filter-tags '!adapter,!worker,!e2e'
@@ -9,6 +9,16 @@ test:
 	DUX_BACKEND=tmux  $(BATS) tests/backend-adapter.bats
 	DUX_WORKER_HARNESS=claude $(BATS) tests/worker-adapter.bats
 	DUX_WORKER_HARNESS=codex  $(BATS) tests/worker-adapter.bats
+	DUX_BACKEND=herdr DUX_WORKER_HARNESS=claude $(BATS) tests/e2e-dispatch.bats
+	DUX_BACKEND=herdr DUX_WORKER_HARNESS=codex  $(BATS) tests/e2e-dispatch.bats
+	DUX_BACKEND=tmux  DUX_WORKER_HARNESS=claude $(BATS) tests/e2e-dispatch.bats
+	DUX_BACKEND=tmux  DUX_WORKER_HARNESS=codex  $(BATS) tests/e2e-dispatch.bats
+
+# macOS only: run the whole suite with /bin/bash (3.2) first on PATH, since
+# every script's shebang resolves bash through PATH.
+check-bash32:
+	@mkdir -p tests/tmp/bash32 && ln -sf /bin/bash tests/tmp/bash32/bash
+	PATH="$(CURDIR)/tests/tmp/bash32:$$PATH" $(MAKE) test
 
 lint: lint-shell lint-identifiers
 

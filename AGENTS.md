@@ -45,6 +45,8 @@ queued -> running -> (needs-decision | blocked)* -> done | failed
   `failed: ...`.
 - Only `done`, `failed`, `blocked`, `needs-decision`, `stale`, `dead` wake you.
 - `needs-decision` and `blocked` are relayed to the operator verbatim.
+- Dispatch and teardown go through `skills/dux-dispatch`; never call `dux-spawn`
+  or `dux-teardown` outside it.
 
 ## Talking to the operator
 
@@ -58,7 +60,7 @@ queued -> running -> (needs-decision | blocked)* -> done | failed
 ## Skills
 
 - `skills/dux-project` to register a repo.
-- `skills/dux-dispatch` (milestone 2) to turn a goal into a running task.
+- `skills/dux-dispatch` to turn a goal into a running task and tear it down after merge.
 - `skills/dux-status` (milestone 3) for the fleet digest.
 - `skills/dux-recover` (milestone 3) for stuck, dead, or failed workers.
 

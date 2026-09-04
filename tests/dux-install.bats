@@ -110,7 +110,13 @@ setup() {
 }
 
 @test "install --yes is a finding when the backup move fails, and the skill dir stays" {
-  ln -s "$DUX_ROOT/skills/dux-project" "$DUX_SKILLS_DIR/dux-project"
+  # The installer links skills in directory order and stops at the first problem.
+  # Pre-link everything before `ship` so the read-only dir reports the backup
+  # move, not `cannot link` for some other skill.
+  for d in "$DUX_ROOT"/skills/*/; do
+    n="$(basename "$d")"; [ "$n" = ship ] && continue
+    ln -s "$DUX_ROOT/skills/$n" "$DUX_SKILLS_DIR/$n"
+  done
   mkdir -p "$DUX_SKILLS_DIR/ship"; echo old > "$DUX_SKILLS_DIR/ship/SKILL.md"
   chmod 555 "$DUX_SKILLS_DIR"
   run dux-install --yes
