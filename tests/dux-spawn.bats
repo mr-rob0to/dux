@@ -84,8 +84,45 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   ! git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$id"
   grep -qxF -- '- Worktree: <set by dux-spawn>' "$DUX_HOME/data/tasks/$id/brief.md"
   [ ! -e "$DUX_HOME/state/$id.endpoint" ]
+  [ ! -e "$DUX_HOME/state/$id.launched" ]
   run dux-spawn "$id"
   [ "$status" -eq 0 ]
+}
+
+@test "a spawn that died after the container started is not re-spawnable" {
+  id="$(fixture_task proj scout)"
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  # Exactly the disk state a spawn killed between backend open and the endpoint
+  # write leaves: a live worker, no endpoint file, the ledger still queued.
+  [ -s "$DUX_HOME/state/$id.launched" ]
+  rm -f "$DUX_HOME/state/$id.endpoint"
+  dux-ledger set "$id" state queued
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a worker for $id may still be alive"* ]]
+  # Today the only thing stopping the retry is the filled-in worktree line in the
+  # brief, and its finding invites the operator to put the placeholder back. That
+  # workaround reuses the worktree and starts a second worker, so it must be refused too.
+  b="$DUX_HOME/data/tasks/$id/brief.md"
+  sed 's#^- Worktree: /.*#- Worktree: <set by dux-spawn>#' "$b" > "$b.tmp" && mv "$b.tmp" "$b"
+  grep -qxF -- '- Worktree: <set by dux-spawn>' "$b"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a worker for $id may still be alive"* ]]
+  [ "$(grep -c '^tab create' "$FAKE_HERDR_LOG")" -eq 1 ]
+  [ "$(grep -c '^pane run' "$FAKE_HERDR_LOG")" -eq 1 ]
+}
+
+@test "a DUX_ROOT containing a space still starts the worker" {
+  id="$(fixture_task proj scout)"
+  mkdir -p "$DUX_HOME/dux root"
+  ln -s "$DUX_ROOT" "$DUX_HOME/dux root/dux"
+  run env DUX_ROOT="$DUX_HOME/dux root/dux" dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+  [[ "$(cat "$DUX_HOME/state/$id.pid")" =~ ^[0-9]+$ ]]
+  grep -q '^claude ' "$FAKE_WORKER_LOG"
 }
 
 @test "a worktree finding propagates and leaves the task queued" {
