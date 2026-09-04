@@ -50,8 +50,11 @@ echo $$ > "$pidfile" || refuse "cannot write $pidfile"
 # bash starts background children with INT ignored, so INT here becomes TERM to it.
 wpid=""; signalled=0
 trap 'signalled=1; if [ -n "$wpid" ]; then kill -TERM "$wpid" 2>/dev/null || true; fi' INT TERM
-# The Dux session's own harness variables must not reach the worker.
-for v in $(env | sed -n 's/^\(CLAUDECODE\|CLAUDE_[A-Z0-9_]*\)=.*/\1/p'); do unset "$v"; done
+# The Dux session's own harness variables must not reach the worker. Matched with
+# case, not a regex: BSD sed has no \| alternation, so a GNU pattern here unsets nothing.
+for v in $(env | cut -d= -f1); do
+  case "$v" in CLAUDECODE|CLAUDE_*) unset "$v" ;; esac
+done
 export DUX_STATUS_LOG="$status_log"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$hooks"
 
