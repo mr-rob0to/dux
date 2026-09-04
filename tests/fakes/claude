@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
-# Fake Claude Code for tests. Ignores real flags; replays $FAKE_CLAUDE_SCRIPT.
+# Fake worker harness for tests (claude, and codex via symlink). Ignores real
+# flags; replays $FAKE_WORKER_SCRIPT (else $FAKE_CLAUDE_SCRIPT).
 set -u
-script="${FAKE_CLAUDE_SCRIPT:-}"
+me="$(basename "$0")"
+printf '%s %s\n' "$me" "$*" >> "${FAKE_WORKER_LOG:-/dev/null}"
+script="${FAKE_WORKER_SCRIPT:-${FAKE_CLAUDE_SCRIPT:-}}"
 log="${DUX_STATUS_LOG:-/dev/null}"
+child=""
+trap 'kill "$child" 2>/dev/null; exit 130' INT
+trap 'kill "$child" 2>/dev/null; exit 143' TERM
 if [ -z "$script" ] || [ ! -f "$script" ]; then echo '{"type":"result","subtype":"success"}'; exit 0; fi
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
-    status\ *)  printf '%s\n' "${line#status }" >> "$log"
-                printf '{"type":"assistant","text":%s}\n' "$(printf '%s' "${line#status }" | jq -Rs .)" ;;
-    sleep\ *)   sleep "${line#sleep }" ;;
-    exit\ *)    exit "${line#exit }" ;;
-    *)          echo "fake claude: bad directive: $line" >&2; exit 99 ;;
+    status\ *)   printf '%s\n' "${line#status }" >> "$log"
+                 printf '{"type":"assistant","text":%s}\n' "$(printf '%s' "${line#status }" | jq -Rs .)" ;;
+    sleep\ *)    sleep "${line#sleep }" & child=$!; wait "$child"; child="" ;;
+    dump-env\ *) env > "${line#dump-env }" ;;
+    run\ *)      bash -c "${line#run }" ;;
+    say\ *)      printf '{"type":"assistant","text":%s}\n' "$(printf '%s' "${line#say }" | jq -Rs .)" ;;
+    exit\ *)     exit "${line#exit }" ;;
+    *)           echo "fake $me: bad directive: $line" >&2; exit 99 ;;
   esac
 done < "$script"
 echo '{"type":"result","subtype":"success"}'

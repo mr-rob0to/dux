@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 6 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 7 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
 - reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
 - Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
-- Next action: Task 5 (worker harness adapters `bin/workers/claude.sh`, `bin/workers/codex.sh`, fake `codex`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
+- Next action: Task 6 (worker wrapper `bin/dux-worker-wrap`, backend `report` and `title`), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
 
 **Goal:** Turn an operator goal into a running, isolated worker: task ledger, task ids, brief rendering, worktree per project mechanism with a base-branch push guard, worker harness adapters for Claude Code and Codex, the in-pane wrapper that enforces the status protocol, spawn with its five refusals, teardown with its three refusals, the `dux-dispatch` skill, and an end-to-end test on both backends with both harnesses.
 
@@ -1664,7 +1664,7 @@ Break-verified: <paste>"
 - Produces (fake): `claude` and `codex` append `<name> <argv>` to `$FAKE_WORKER_LOG`, replay `$FAKE_WORKER_SCRIPT` (else `$FAKE_CLAUDE_SCRIPT`) with directives `status <line>`, `sleep <s>`, `dump-env <file>`, `run <shell command>` (runs it in the worker's cwd and environment, output to stdout), `say <text>` (stdout only, no status line), `exit <code>`, and exit 130 on INT or 143 on TERM.
 - Produces (config): `templates/config/models-codex` is `plan=gpt-5.6-sol:high ship=gpt-5.6-sol:xhigh scout=gpt-5.6-sol:medium`; `templates/config/worker-harness` is `claude`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `tests/worker-adapter.bats`:
 
@@ -1736,12 +1736,12 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `DUX_WORKER_HARNESS=claude bats tests/worker-adapter.bats; DUX_WORKER_HARNESS=codex bats tests/worker-adapter.bats`
 Expected: claude: 3 fail (no adapter file), 1 fail (the old fake keeps sleeping past TERM's default action is to die, so this one may pass; that is fine); codex: 4 fail, `codex: command not found`.
 
-- [ ] **Step 3: Write the adapters**
+- [x] **Step 3: Write the adapters**
 
 `bin/workers/claude.sh`:
 
@@ -1788,7 +1788,7 @@ worker_run() {  # brief model effort settings(ignored); replaces the current pro
 worker_effort_ok() { case "$1" in minimal|low|medium|high|xhigh) return 0 ;; *) return 1 ;; esac; }
 ```
 
-- [ ] **Step 4: Rewrite the fake and link `codex` to it**
+- [x] **Step 4: Rewrite the fake and link `codex` to it**
 
 `tests/fakes/claude`:
 
@@ -1829,7 +1829,7 @@ printf 'plan=gpt-5.6-sol:high ship=gpt-5.6-sol:xhigh scout=gpt-5.6-sol:medium\n'
 printf 'claude\n' > templates/config/worker-harness
 ```
 
-- [ ] **Step 5: Wire the Makefile**
+- [x] **Step 5: Wire the Makefile**
 
 ```makefile
 test:
@@ -1843,16 +1843,16 @@ lint-shell:
 	shellcheck -s bash bin/dux-* bin/backends/*.sh bin/workers/*.sh templates/hooks/pre-push tests/fakes/* tests/helpers/*.bash
 ```
 
-- [ ] **Step 6: Run to verify they pass**
+- [x] **Step 6: Run to verify they pass**
 
 Run: `make check`
 Expected: lint clean; worker adapter file 4 pass under each harness; `tests/harness.bats` still passes (the fake still honors `FAKE_CLAUDE_SCRIPT`); `tests/dux-doctor.bats` "doctor fails and names a missing tool" still passes because Task 1 removed the fakes dir from its PATH.
 
-- [ ] **Step 7: Break-verify**
+- [x] **Step 7: Break-verify**
 
 In `bin/workers/claude.sh` `worker_run`, drop `--effort "$3"`; in `bin/workers/codex.sh` `worker_run`, drop the `-c "model_reasoning_effort=..."` argument. Run both harness lines. Expected: "worker_run runs the harness with the model and effort" fails under each harness on the effort grep (two distinct failures). Restore both. Paste both into the commit.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add bin/workers tests/fakes/claude tests/fakes/codex tests/worker-adapter.bats templates/config/models-codex templates/config/worker-harness Makefile
