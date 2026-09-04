@@ -1,8 +1,8 @@
 # Dux Roadmap: milestones 1 to 7
 
 **Where this stands**
-- Milestone 1 (skeleton) is merged: plan `2026-09-03-dux-m1-skeleton.md`, 8 of 8 tasks, reviewed_sha a3288cc.
-- Current milestone: 2 (dispatch), plan `2026-09-03-dux-m2-dispatch.md`, written and design-reviewed, awaiting operator approval. Not started.
+- Milestone 1 (skeleton) is merged 2026-09-03: plan `2026-09-03-dux-m1-skeleton.md`, 8 of 8 tasks, reviewed_sha a3288cc.
+- Current milestone: 2 (dispatch), plan `2026-09-03-dux-m2-dispatch.md`, approved and implemented, 12 of 12 tasks; at the ship gate.
 - Milestones 3 to 7 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
 - Spec: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
 

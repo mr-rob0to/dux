@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 11 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 12 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
 - reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
 - Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
-- Next action: Task 9 (`skills/dux-dispatch`, end-to-end on both backends and both harnesses, docs), in the `m2-dispatch` worktree cut from `origin/main`; `/ship` opens the PR after Task 9; operator merges, then reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
+- Next action: the ship gate. Run `/ship` on the `m2-dispatch` branch; it opens the PR, runs the reviews and CI. Task 9 Step 7 (the two real-harness dry runs) is still outstanding and belongs in the PR's Verification section. After merge the operator reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
 
 **Goal:** Turn an operator goal into a running, isolated worker: task ledger, task ids, brief rendering, worktree per project mechanism with a base-branch push guard, worker harness adapters for Claude Code and Codex, the in-pane wrapper that enforces the status protocol, spawn with its five refusals, teardown with its three refusals, the `dux-dispatch` skill, and an end-to-end test on both backends with both harnesses.
 
@@ -2940,7 +2940,7 @@ Break-verified: <paste both>"
 - Consumes: everything from Tasks 1 to 8.
 - Produces: the operator-facing skill; the proof that spawn, status, and teardown work end to end on `tmux` and `herdr` with `claude` and `codex` workers; docs that match the scripts.
 
-- [ ] **Step 1: Write the failing e2e test**
+- [x] **Step 1: Write the failing e2e test**
 
 `tests/e2e-dispatch.bats`:
 
@@ -3043,7 +3043,7 @@ container_gone() {  # $1 endpoint
 }
 ```
 
-- [ ] **Step 2: Wire the Makefile**
+- [x] **Step 2: Wire the Makefile**
 
 Append to the `test` target and add the bash 3.2 target:
 
@@ -3060,12 +3060,12 @@ check-bash32:
 	PATH="$(CURDIR)/tests/tmp/bash32:$$PATH" $(MAKE) test
 ```
 
-- [ ] **Step 3: Run to verify the e2e fails for a reason that is not "command not found"**
+- [x] **Step 3: Run to verify the e2e fails for a reason that is not "command not found"**
 
 Run: `DUX_BACKEND=herdr DUX_WORKER_HARNESS=claude bats tests/e2e-dispatch.bats`
 Expected: with Tasks 1 to 8 in place the first two tests pass and the third passes. If any fails, the failure is a real integration defect: fix the script it names, not the test. Run all four Makefile lines.
 
-- [ ] **Step 4: Write the skill, and keep the installer test honest**
+- [x] **Step 4: Write the skill, and keep the installer test honest**
 
 In `tests/dux-install.bats`, in the test "install --yes is a finding when the backup move fails, and the skill dir stays", replace the line `ln -s "$DUX_ROOT/skills/dux-project" "$DUX_SKILLS_DIR/dux-project"` with:
 
@@ -3134,7 +3134,7 @@ operator has said the PR is merged or the task is abandoned:
 - Never merge, and never push to a base branch, from this session.
 ```
 
-- [ ] **Step 5: Update the docs**
+- [x] **Step 5: Update the docs**
 
 `docs/ARCHITECTURE.md`: in the component block add, in place, the entries for `dux-ledger`, `dux-task-new`, `dux-brief`, `dux-worktree`, `dux-spawn`, `dux-worker-wrap`, `dux-teardown`, `workers/claude.sh`, `workers/codex.sh`, `templates/brief.md`, `templates/worker-settings.json`, `templates/hooks/pre-push`, `skills/dux-dispatch/SKILL.md`, and the state files `<id>.pid`, `tasks/<id>/{worker-settings.json,harness,hooks/,worktree.log}`; in "Planned for later milestones" drop the milestone 2 names; add `report` and `title` to the backend adapter function list; replace the dispatch flow with:
 
@@ -3174,7 +3174,7 @@ operator has said the PR is merged or the task is abandoned:
 
 `docs/plans/2026-09-03-dux-roadmap.md` "Where this stands": current milestone 2 (dispatch), plan `2026-09-03-dux-m2-dispatch.md`, and note the M1 merge date 2026-09-03.
 
-- [ ] **Step 6: Run the whole gate locally**
+- [x] **Step 6: Run the whole gate locally**
 
 Run: `make check` and then `make check-bash32`.
 Expected: both green. The e2e adds roughly one minute (four runs with sleeps).
@@ -3183,7 +3183,7 @@ Expected: both green. The e2e adds roughly one minute (four runs with sleeps).
 
 Create a throwaway repo with a bare origin (`make_repo` by hand or `git init` plus `git clone --bare`), register it, and in a fresh `claude` session in the dux repo ask Dux to "scout the throwaway repo and report what the README says". Expected: the session runs `dux-task-new`, `dux-brief`, `dux-spawn`; a `dux-<id>` tab or window appears; the real `claude` worker writes `working:` then `done: report` and `report.md` exists. Repeat with `--harness codex`, with an intent that also asks the scout to run `git status` and `git log -1` and quote them in the report (a stripped `GIT_CONFIG_KEY_0` would make both fail). Then, from inside a fresh worktree of the throwaway repo with the wrapper's environment exported by hand (`DUX_STATUS_LOG`, `GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=<hooks dir>`), run the rendered Codex command line with a brief whose intent is "create `codex-was-here.txt`, commit it, push the branch `dux/<id>` to origin, then try `git push origin HEAD:main` and report both results, then append `done: report`". Expected: the branch lands on the bare origin, the push to `main` is refused by the hook, and `main` is unchanged. Tear everything down. Paste the two transcript excerpts (the commands the session ran and the status log) into the PR body under Verification. Remove the throwaway registry line afterwards.
 
-- [ ] **Step 8: Verify the model ids resolve (manual, recorded in the PR)**
+- [x] **Step 8: Verify the model ids resolve (manual, recorded in the PR)**
 
 ```bash
 for m in claude-fable-5-1 claude-opus-5 claude-sonnet-5; do claude --model "$m" -p 'say ok' --output-format text; done
@@ -3191,7 +3191,7 @@ for m in claude-fable-5-1 claude-opus-5 claude-sonnet-5; do claude --model "$m" 
 
 Expected: three `ok` lines. Paste into the PR. If an id does not resolve, change `templates/config/models` in this PR and say so.
 
-- [ ] **Step 9: Update this plan's header, tick the boxes, commit**
+- [x] **Step 9: Update this plan's header, tick the boxes, commit**
 
 Set "Tasks done: 10 of 10", record the reviewed sha once `/ship` reports it.
 
@@ -3203,6 +3203,15 @@ git commit -m "feat: add dux-dispatch skill, end-to-end dispatch test, docs"
 - [ ] **Step 10: Ship**
 
 Say "running /ship" in one line, then invoke `/ship`. The PR body fills `.github/PULL_REQUEST_TEMPLATE.md`; Verification carries the break-verification failures (one per task, plus the two manual guard checks from Task 6 Step 6), the two skill dry-run excerpts, and the model-id output. No attribution trailers, no session URLs.
+
+**As implemented (2026-09-03), differing from the steps above.** Recorded so a later reader trusts the code, not the recipe.
+
+1. Step 1's e2e file was written and passed on the first run of all four pairs, as the plan's smoke test predicted. No script needed fixing.
+2. Step 3's "verify the e2e fails" is not reachable as written: the whole milestone is already implemented, so the test is green from the start. The step was run as the plan's own fallback text says (run all four Makefile lines and treat red as a code defect), not as a red-first check.
+3. Step 4 says to expect 12 passing tests in `tests/dux-install.bats`. Task 8b added a thirteenth; the run is 13. The pre-link loop itself was verified to be load-bearing: reverting it to the single `dux-project` link makes "install --yes is a finding when the backup move fails" fail on `finding: cannot move`.
+4. Steps 7 and 10 are not done. Step 7 needs a fresh interactive Dux session, a throwaway registered project in the real `data/`, and real `claude` and `codex` worker runs; Step 10 is the gate itself. Both belong to the ship stage, and the implementing session was scoped to commit locally only.
+5. Step 8 was run: `claude-fable-5-1`, `claude-opus-5`, and `claude-sonnet-5` each answered. `templates/config/models` is unchanged.
+6. Step 9's "Tasks done: 10 of 10" predates Task 0b and Task 8b; the header counts 12 of 12.
 
 ---
 
