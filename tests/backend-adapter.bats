@@ -20,7 +20,8 @@ teardown_file() {
   [ "${DUX_BACKEND:-}" = tmux ] || return 0
   tmux -L dux-test kill-server 2>/dev/null || true
   tmux -L dux-test-stopped kill-server 2>/dev/null || true
-  rm -f "$(tmux_socket_path dux-test-stale)"
+  tmux -L dux-test-stale kill-server 2>/dev/null || true
+  rm -f "$(tmux_socket_path dux-test-stale)" "$(tmux_socket_path dux-test-notsock)"
 }
 
 @test "open returns an endpoint for this backend and runs the command" {
@@ -101,18 +102,37 @@ teardown_file() {
   [ "$status" -eq 0 ]; [ -z "$output" ]
 }
 
-@test "tmux find refuses a real socket file it cannot connect through" {
+@test "tmux find refuses a socket path holding something that is not a socket" {
   [ "${DUX_BACKEND:-}" = tmux ] || skip
-  # The case the socket check must not swallow: the file is there and tmux still
-  # could not look through it, so the question was not answered. A live server
-  # holding a worker reads the same way once its socket stops accepting.
-  sock="$(tmux_socket_path dux-test-stale)"
+  # The case no error text can decide: a plain file sits where the socket belongs,
+  # and tmux says "Socket operation on non-socket" under 3.6a on macOS but "no
+  # server running" under 3.4 on Linux. Reading the second as an answer would let
+  # a second worker start on a branch that already has one, so the path itself has
+  # to decide, and a path that is not a socket answers nothing.
+  sock="$(tmux_socket_path dux-test-notsock)"
   : > "$sock"
-  DUX_TMUX_SOCKET=dux-test-stale run dux-backend find t28
+  DUX_TMUX_SOCKET=dux-test-notsock run dux-backend find t28
   rm -f "$sock"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"finding: tmux could not list windows while looking for dux-t28"* ]]
-  [[ "$output" == *"error connecting"* ]]
+  [[ "$output" == *"finding: the tmux socket path"* ]]
+  [[ "$output" == *"is not a socket, so nothing there can answer for dux-t28"* ]]
+}
+
+@test "tmux find reads a real socket no server answers on as no container" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  # A server killed outright leaves its socket behind: a real socket with nothing
+  # listening. Real tmux, real message on both platforms. That is a normal state
+  # a spawn must not wedge on, so it has to be an answer and not a refusal.
+  local sock spid i
+  sock="$(tmux_socket_path dux-test-stale)"
+  tmux -L dux-test-stale new-session -d -s stale -x 80 -y 24
+  spid="$(tmux -L dux-test-stale display-message -p '#{pid}')"
+  kill -9 "$spid"
+  for i in 1 2 3 4 5 6 7 8 9 10; do kill -0 "$spid" 2>/dev/null || break; sleep 0.2; done
+  [ -S "$sock" ]
+  DUX_TMUX_SOCKET=dux-test-stale run dux-backend find t29
+  rm -f "$sock"
+  [ "$status" -eq 0 ]; [ -z "$output" ]
 }
 
 @test "tmux find reads a listing failure on a socket that is there as an unanswered question" {

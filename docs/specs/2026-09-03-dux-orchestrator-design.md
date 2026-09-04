@@ -432,17 +432,29 @@ tmux: a window per task in the Dux session, `tmux new-window -d -n dux-<id>`
 with `remain-on-exit on`, so the window and its scrollback survive the worker's
 exit until teardown. `exists` checks the window is present. `find` filters
 `tmux list-windows -a` on the window name and never touches `_session`, which
-would start a server to answer a question about it. Two failures are positive
-evidence of no window: `no server running`, which tmux says after looking through
-a socket that is there, and any failure while the socket file itself is absent,
-which is a path no server has ever been reachable at and is what every first
-spawn on a machine sees. The socket file is
+would start a server to answer a question about it. A failed listing is read from
+what the socket path is, never from tmux's error text alone: tmux says different
+things on different platforms for the same path, and reading the wrong one as
+"nothing is running" would let a second worker start on a branch that already has
+one. A plain file at the socket path is `error connecting to <path> (Socket
+operation on non-socket)` under tmux 3.6a on macOS and `no server running on
+<path>` under tmux 3.4 on Linux. The socket path is
 `${TMUX_TMPDIR:-/tmp}/tmux-<effective uid>/<name>`, where the name is the `-L`
-value or `default`. A failure while that file is there is a finding: tmux did not
-look, and a live server holding the worker reads the same way once its socket
-stops accepting. Every other listing failure is a finding too. The worker in a
-server whose socket was removed outright is caught by `dux-spawn`'s
-`state/<id>.pid` check, which does not depend on the backend.
+value or `default`, and the three readings are:
+
+- **No path.** No server has ever been reachable there, which is what every first
+  spawn on a machine sees: no window.
+- **A socket.** tmux looked through it, so `no server running` is the stale socket
+  an exited server left behind, a normal state a spawn must not wedge on: no
+  window. Every other failure there is a finding, because tmux did not look and a
+  live server holding the worker reads the same way once its socket stops
+  accepting.
+- **Anything else.** A finding: something is wrong at the path and guessing is
+  not allowed.
+
+The worker in a server whose socket was removed outright reads as no window here
+and is caught by `dux-spawn`'s `state/<id>.pid` check, which does not depend on
+the backend.
 `notify` is `tmux display-message`.
 
 Herdr: a tab per task in Dux's own workspace, read live from

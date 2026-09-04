@@ -83,12 +83,17 @@ matches `herdr tab list` on `label` and then resolves the tab to a pane through
 `herdr pane list`, because the tab listing carries no pane. It never answers
 "nothing" when it could not tell: a listing that fails, a listing without the
 array it should have, more than one container for the id, or a labelled tab with
-no pane is a finding. Under tmux two readings are evidence of no window:
-`no server running`, and a failure when the socket file
-(`${TMUX_TMPDIR:-/tmp}/tmux-<uid>/<-L name or default>`) is not there at all,
-which is every first spawn on a machine. A failure while that file is there is a
-finding, because tmux did not look and a live server holding the worker reads the
-same way. `find` is one of the two ways spawn asks whether a worker may still be
+no pane is a finding. Under tmux the socket path
+(`${TMUX_TMPDIR:-/tmp}/tmux-<uid>/<-L name or default>`) decides how a failed
+listing reads, and tmux's wording only refines that once the path is a socket:
+builds disagree about what they say for the same path, and the wrong reading
+would answer "nothing is running" to a question tmux never answered. No path at
+all is a path no server has ever been reachable at and is no window, which is
+every first spawn on a machine. A socket there means tmux looked through it, so
+`no server running` is the stale socket an exited server left and is no window
+too; every other failure there is a finding, because tmux did not look and a live
+server holding the worker reads the same way. Anything else at that path is a
+finding. `find` is one of the two ways spawn asks whether a worker may still be
 alive; the other is the wrapper's own `state/<id>.pid`, which answers whichever
 backend started it and catches a worker in a server whose socket vanished.
 
