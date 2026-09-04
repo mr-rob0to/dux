@@ -3,9 +3,9 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 1 of 6 (see `2026-09-03-dux-roadmap.md`). Tasks done: 8 of 8.
+- Milestone: 1 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 8 of 8. Merged.
 - reviewed_sha: a3288cc (Codex gpt-5.6-sol, no findings). Fix rounds used: 3 of 3.
-- Next action: PR open via /ship; operator merges. Then re-run bin/dux-install from the main checkout.
+- Next action: none. Milestone complete and merged; re-run bin/dux-install from the main checkout if you have not.
 
 **Goal:** Stand up the Dux repo with its shared shell library, single-session lock, project registry, backend adapters for tmux and Herdr, doctor, operating contract, installer, bundled ship skill, MIT license, and a test harness with fake `claude` and fake `herdr`.
 
