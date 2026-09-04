@@ -150,12 +150,34 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   [ ! -s "$FAKE_GH_LOG" ]
 }
 
-@test "--harness codex is recorded and the codex fake runs" {
+# The refusal sits where the harness is chosen, so all three inputs hit it.
+codex_refused() {  # asserts the last `run` refused and started nothing for $id
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: codex workers are not available: no deny list, so git push --no-verify skips the only guard (milestone 2)"* ]]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+  [ ! -s "$FAKE_HERDR_LOG" ]
+  [ ! -s "$FAKE_WORKER_LOG" ]
+}
+
+@test "codex is refused from the flag, from config, and from the task file" {
   id="$(fixture_task proj scout)"
-  dux-spawn "$id" --harness codex >/dev/null
-  [ "$(cat "$DUX_HOME/data/tasks/$id/harness")" = codex ]
+  run dux-spawn "$id" --harness codex
+  codex_refused
+  echo codex > "$DUX_HOME/config/worker-harness"
+  run dux-spawn "$id"
+  codex_refused
+  echo claude > "$DUX_HOME/config/worker-harness"
+  echo codex > "$DUX_HOME/data/tasks/$id/harness"
+  run dux-spawn "$id"
+  codex_refused
+  # The flag is the choice, so it overrides the task file and the spawn goes ahead.
+  run dux-spawn "$id" --harness claude
+  [ "$status" -eq 0 ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/harness")" = claude ]
   wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
-  grep -q '^codex ' "$FAKE_WORKER_LOG"
+  grep -q '^claude ' "$FAKE_WORKER_LOG"
+  [ "$(grep -c '^codex ' "$FAKE_WORKER_LOG" || true)" -eq 0 ]
 }
 
 @test "a gh source gets one start comment; a failed comment is a warning, not a refusal" {

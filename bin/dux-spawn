@@ -4,7 +4,7 @@ set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
-usage="usage: dux-spawn <id> [--harness claude|codex]"
+usage="usage: dux-spawn <id> [--harness claude]"
 id="${1:-}"; [ -n "$id" ] || die "$usage"
 shift
 harness=""
@@ -31,7 +31,10 @@ source_key="$("$ledger" get "$id" source)" || exit $?
 "$DUX_ROOT/bin/dux-project" get "$project" path >/dev/null || exit $?
 [ -s "$brief" ] || finding "no brief for $id; run dux-brief first"
 grep -qxF -- "$placeholder" "$brief" || finding "brief for $id has no worktree line to fill"
-case "$harness" in ''|claude|codex) ;; *) finding "unknown worker harness $harness (claude or codex)" ;; esac
+# The flag is the operator's choice and overwrites the task file below, so it is
+# what gets checked when it is given; otherwise the task file, then the config.
+chosen="$harness"; [ -n "$chosen" ] || chosen="$(task_harness "$task")"
+why="$(harness_refusal "$chosen")" || finding "$why"
 "$backend" name >/dev/null || exit $?
 [ ! -e "$epfile" ] || finding "endpoint already recorded for $id in $epfile"
 if [ -n "$harness" ]; then echo "$harness" > "$task/harness" || finding "cannot write $task/harness"; fi

@@ -26,15 +26,14 @@ shape="$("$DUX_ROOT/bin/dux-ledger" get "$id" shape 2>&1)" || refuse "$shape"
 [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "$branch" ] \
   || refuse "dux-worker-wrap must run inside the worktree on $branch (cwd is $PWD)"
 
-harness="$(cat "$task/harness" 2>/dev/null || true)"
-if [ -z "$harness" ] && [ -f "$DUX_CONFIG/worker-harness" ]; then harness="$(tr -d '[:space:]' < "$DUX_CONFIG/worker-harness")"; fi
-harness="${harness:-claude}"
-case "$harness" in claude|codex) ;; *) refuse "unknown worker harness $harness (claude or codex)" ;; esac
+harness="$(task_harness "$task")"
+why="$(harness_refusal "$harness")" || refuse "$why"
 command -v "$harness" >/dev/null 2>&1 || refuse "$harness is not on PATH inside the worker container"
 # shellcheck source=/dev/null
 source "$DUX_ROOT/bin/workers/$harness.sh"
 
-models="$DUX_CONFIG/models"; [ "$harness" = codex ] && models="$DUX_CONFIG/models-codex"
+# One model file per harness: config/models for claude, config/models-<name> for the rest.
+models="$DUX_CONFIG/models"; [ "$harness" = claude ] || models="$DUX_CONFIG/models-$harness"
 [ -s "$models" ] || refuse "missing $models; run dux-install"
 spec="$(tr ' ' '\n' < "$models" | sed -n "s/^$shape=//p" | head -1)"
 case "$spec" in *:*) ;; *) refuse "model entry for $shape in $models must be <model>:<effort>, got '${spec:-nothing}'" ;; esac

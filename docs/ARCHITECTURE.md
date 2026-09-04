@@ -16,7 +16,8 @@ skills/
   dux-project/SKILL.md     register a repo, install the PR template if absent
   ship/SKILL.md            bundled delivery gate, installed by dux-install (milestone 1, task 8)
 bin/
-  dux-env                  sourced by every script: paths, log, die, finding, now, require_cmd
+  dux-env                  sourced by every script: paths, log, die, finding, now,
+                           task_harness, harness_refusal, require_cmd
   dux-lock                 single live session per DUX_HOME (pid file, exit 3 when held)
   dux-project              registry add/list/get/resolve-base, PR template install, --worktree
   dux-ledger               add/set/get/list over data/backlog.md; the only writer
@@ -30,7 +31,7 @@ bin/
   backends/tmux.sh         window per task, remain-on-exit; endpoint tmux:<session>:<window_id>
   backends/herdr.sh        tab per task in the Dux workspace; endpoint herdr:<pane_id>
   workers/claude.sh        worker harness adapter: worker_cmd, worker_run, worker_effort_ok
-  workers/codex.sh         worker harness adapter: worker_cmd, worker_run, worker_effort_ok
+  workers/codex.sh         same adapter for Codex; tested, not dispatchable in milestone 2
   dux-doctor               preflight: CLIs, gh auth, backend CLI, registry, lock
   dux-install              symlink bundled skills, seed config, write identifier denylist (task 8)
   dux-uninstall            remove only symlinks that point into this repo (task 8)
@@ -84,9 +85,15 @@ refuses the operator's focused pane and treats a failed Herdr close as a finding
    fenced issue block) and `tasks/<id>/worker-settings.json`.
 3. `dux-spawn <id>` refuses with a finding unless: the lock is this session's
    (`dux-lock mine`), the task is `queued`, the project is registered, the
-   brief has its worktree line to fill, the backend selects, no endpoint
-   is recorded for the id, and no `state/<id>.launched` marks a worker that
-   may still be alive.
+   brief has its worktree line to fill, the chosen worker harness is
+   dispatchable, the backend selects, no endpoint is recorded for the id, and
+   no `state/<id>.launched` marks a worker that may still be alive.
+   Milestone 2 dispatches `claude` workers only. `codex` is refused by
+   `harness_refusal` in `dux-env`, which `dux-spawn` and `dux-worker-wrap` both
+   call, so the `--harness` flag, `config/worker-harness` and
+   `tasks/<id>/harness` all reach the same answer: a Codex worker has no deny
+   list, so `git push --no-verify` skips the `pre-push` hook, its one
+   mechanical guard. This does not touch Codex as the ship gate's reviewer.
 4. `dux-worktree create <id>`: fetch `origin/<base>`, create the worktree
    (project mechanism for `ship`, `git worktree add` otherwise), discover the
    path, refuse the primary checkout or a stale tip, build

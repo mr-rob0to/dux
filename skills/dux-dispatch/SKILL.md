@@ -31,7 +31,7 @@ when something is off; relay the finding verbatim and stop.
    goal into two tasks without saying so.
 6. Read the brief's Intent and criteria back in two lines. Spawn unless the
    operator objects.
-7. `bin/dux-spawn <id> [--harness codex]`, with the Bash tool timeout raised to 600000 ms: a `ship` spawn runs the project's own worktree setup (venv builds, generated projects) and can take minutes. If it is cut off anyway, run the same command again; a clean, untouched worktree is reused.
+7. `bin/dux-spawn <id>`, with the Bash tool timeout raised to 600000 ms: a `ship` spawn runs the project's own worktree setup (venv builds, generated projects) and can take minutes. If it is cut off anyway, run the same command again; a clean, untouched worktree is reused. Workers are Claude only this milestone; `--harness codex` is refused with a finding. That says nothing about Codex as the ship gate's reviewer.
 8. Report in plain words: the shape, the project, and what done looks like. No
    task ids, branch names, or paths unless asked.
 
