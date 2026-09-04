@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Task id, folder, and queued ledger line. See spec section 5.2.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+project="${1:-}"; shape="${2:-}"
+{ [ -n "$project" ] && [ -n "$shape" ]; } || die "usage: dux-task-new <project> <shape> [--source local|gh:<owner>/<repo>#<n>]"
+shift 2
+source_key="local"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --source) source_key="$2"; shift 2 ;;
+    *) die "unknown flag $1" ;;
+  esac
+done
+
+case "$shape" in plan|ship|scout) ;; *) finding "unknown shape $shape (plan, ship, scout)" ;; esac
+"$DUX_ROOT/bin/dux-project" get "$project" path >/dev/null || exit $?
+case "$source_key" in
+  local) ;;
+  *) printf '%s' "$source_key" | grep -qE '^gh:[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+$' \
+       || finding "source must be local or gh:<owner>/<repo>#<n>: $source_key" ;;
+esac
+
+suffix() {
+  if [ -n "${DUX_TASK_SUFFIX:-}" ]; then echo "$DUX_TASK_SUFFIX"
+  else LC_ALL=C tr -dc 'a-z0-9' < /dev/urandom | head -c 3; fi
+}
+
+tries=0
+while :; do
+  id="$project-$shape-$(date -u +%Y%m%d)-$(suffix)"
+  mkdir "$DUX_TASKS/$id" 2>/dev/null && break
+  tries=$((tries + 1))
+  [ "$tries" -ge 5 ] && finding "could not allocate a task id for $project after 5 tries (last: $id)"
+done
+: > "$DUX_TASKS/$id/status.log" || finding "cannot create $DUX_TASKS/$id/status.log"
+"$DUX_ROOT/bin/dux-ledger" add "$id" "$project" "$shape" "$source_key" || { rc=$?; rm -rf "${DUX_TASKS:?}/$id"; exit $rc; }
+echo "$id"
