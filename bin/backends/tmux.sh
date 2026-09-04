@@ -49,23 +49,31 @@ backend_find() {  # id: prints the endpoint of the window named dux-<id>, nothin
   rc=$?
   err="$(cat "$errfile")"; rm -f "$errfile"
   if [ "$rc" -ne 0 ]; then
-    # Two readings are positive evidence of no window. "no server running" is
-    # tmux having looked through a socket that is there. A socket file that is
-    # not there at all is a path no server has ever been reachable at, which is
-    # every first spawn on a machine. Between them sits the case the strictness
-    # is for: the socket is there and the connection still failed, so tmux did
-    # not look and a live server holding the worker looks exactly the same. That
-    # and every other failure are unanswered questions and must never read as
-    # "nothing is running". A worker in a server whose socket was removed is
-    # caught by dux-spawn's own pidfile check, which this backs up.
+    # What the socket path is decides this, and tmux's error text only refines it
+    # once the path is a socket. The text alone cannot decide: tmux says
+    # different things on different platforms for the same path (a plain file at
+    # the socket path is "Socket operation on non-socket" under tmux 3.6a on
+    # macOS and "no server running" under tmux 3.4 on Linux), and reading the
+    # wrong one as "nothing is running" lets a second worker start on a branch
+    # that already has one.
+    #   no path        no server has ever been reachable there, which is every
+    #                  first spawn on a machine: no container.
+    #   a socket       tmux looked through it, so "no server running" is the
+    #                  stale socket an exited server left, a normal state a spawn
+    #                  must not wedge on: no container. Every other failure there
+    #                  is a question tmux did not answer, and a live server
+    #                  holding the worker reads exactly the same way.
+    #   anything else  something is wrong at the path and guessing is not allowed.
+    # A worker in a server whose socket was removed outright reads as no
+    # container here; dux-spawn's own pidfile check is the layer that catches it.
+    sock="$(_socket_path)"
+    if [ ! -e "$sock" ] && [ ! -L "$sock" ]; then return 0; fi
+    [ -S "$sock" ] || finding \
+      "the tmux socket path $sock is not a socket, so nothing there can answer for dux-$id: ${err:-exit $rc}"
     case "$err" in
       *"no server running"*) return 0 ;;
     esac
-    sock="$(_socket_path)"
-    if [ -e "$sock" ] || [ -L "$sock" ]; then
-      finding "tmux could not list windows while looking for dux-$id: ${err:-exit $rc}"
-    fi
-    return 0
+    finding "tmux could not list windows while looking for dux-$id: ${err:-exit $rc}"
   fi
   [ -n "$out" ] || return 0
   n="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
