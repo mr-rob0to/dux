@@ -58,28 +58,49 @@ install_hooks() {  # builds $task/hooks: links to the project's hooks plus our p
 }
 
 copy_env() {  # $1 worktree; ship under the git mechanism only
-  # Only the project's committed examples, renamed to the name it expects. A real
-  # .env never matches the glob, so live keys stay in the project checkout: a
-  # worker holds network access and reads issue text anyone can file.
-  local f base name n=0 pass
+  # Only the project's committed examples, renamed to the name it expects, and
+  # read from origin/<base> rather than the primary checkout's working tree: a
+  # tracked example the operator edited locally to hold live values is not what
+  # the repository says, and it is not what a worker may have. A real .env never
+  # matches the glob, so live keys stay in the project checkout: a worker holds
+  # network access and reads issue text anyone can file.
+  local f file name entry dest n=0 pass
   # Two passes: every candidate is checked before any is copied, so one bad
   # example gets a finding and an untouched worktree.
   for pass in check copy; do
     for f in "$repo"/.env.*; do
       { [ -f "$f" ] && [ ! -L "$f" ]; } || continue
-      base="$(basename "$f")"
-      case "$base" in
-        *.example) name="${base%.example}" ;;
-        *.sample)  name="${base%.sample}" ;;
+      file="$(basename "$f")"
+      case "$file" in
+        *.example) name="${file%.example}" ;;
+        *.sample)  name="${file%.sample}" ;;
         *) continue ;;
       esac
+      dest="$1/$name"
+      entry="$(git_repo ls-tree "origin/$base" -- "$file" 2>/dev/null)"
+      [ -n "$entry" ] || finding "$file is not committed in $repo; refusing to copy it into a worktree"
+      case "$entry" in
+        120000\ *) continue ;;   # a symlink in the commit, skipped like one in the working tree
+        100644\ blob\ *|100755\ blob\ *) ;;
+        *) finding "$file is not a regular file in origin/$base; refusing to copy it into a worktree" ;;
+      esac
       if [ "$pass" = check ]; then
-        git_repo ls-files --error-unmatch -- "$f" >/dev/null 2>&1 \
-          || finding "$base is not committed in $repo; refusing to copy it into a worktree"
-        git_repo check-ignore -q -- "$repo/$name" \
-          || finding "$name is not ignored in $repo; copying $base to it would dirty the worktree"
+        # Judged by the worktree's rules, not the primary checkout's: the copy
+        # lands at origin/<base>, where uncommitted .gitignore edits and local
+        # excludes in the checkout do not apply.
+        git -C "$1" check-ignore -q -- "$dest" \
+          || finding "$name is not ignored in $1; copying $file to it would dirty the worktree"
+        # cp follows a symlink destination and writes through it. Anything already
+        # here is refused, except the same content a rerun would write again.
+        if [ -e "$dest" ] || [ -L "$dest" ]; then
+          { [ -f "$dest" ] && [ ! -L "$dest" ] && git_repo show "origin/$base:$file" | cmp -s - "$dest"; } \
+            || finding "$dest already exists and is not this example's committed content; refusing to write $file over it"
+        fi
       else
-        cp "$f" "$1/$name" || finding "cannot copy $base into $1 as $name"
+        git_repo show "origin/$base:$file" > "$dest.dux-part" \
+          || { rm -f "$dest.dux-part"; finding "cannot read origin/$base:$file in $repo"; }
+        mv "$dest.dux-part" "$dest" \
+          || { rm -f "$dest.dux-part"; finding "cannot copy $file into $1 as $name"; }
         n=$((n + 1))
       fi
     done
