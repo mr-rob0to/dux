@@ -16,7 +16,7 @@ Design review 2026-09-03 (fresh Fable): 4 Critical, 14 Important, 12 Minor; all 
 
 Acceptance: `make check` green; doctor passes on both backends; two real repos register with correct base branches; a Herdr tab opens without stealing focus.
 
-## Milestone 2: Dispatch (9 tasks)
+## Milestone 2: Dispatch (10 tasks)
 
 | # | Task | Files | Acceptance |
 |---|---|---|---|
