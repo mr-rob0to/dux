@@ -97,8 +97,11 @@ refuses the operator's focused pane and treats a failed Herdr close as a finding
 4. `dux-worktree create <id>`: fetch `origin/<base>`, create the worktree
    (project mechanism for `ship`, `git worktree add` otherwise), discover the
    path, refuse the primary checkout or a stale tip, build
-   `tasks/<id>/hooks/` with the base-branch `pre-push` guard, copy `.env*` for
-   `ship` under `git`.
+   `tasks/<id>/hooks/` with the base-branch `pre-push` guard, and for `ship`
+   under `git` copy the project's committed `.env*.example` and `.env*.sample`
+   files, renamed to the name the project expects. A real ignored `.env` is
+   never copied. An uncommitted example, or a destination name the project does
+   not ignore, is a finding; no example at all is a log line.
 5. Spawn writes `state/<id>.launched` and only then calls `dux-backend open
    <id> <wt> <abs>/bin/dux-worker-wrap <id>`, which starts the wrapper in a new
    container; the command is composed as shell words because both backends hand
