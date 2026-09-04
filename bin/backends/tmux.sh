@@ -45,10 +45,14 @@ backend_find() {  # id: prints the endpoint of the window named dux-<id>, nothin
   rc=$?
   err="$(cat "$errfile")"; rm -f "$errfile"
   if [ "$rc" -ne 0 ]; then
-    # A server that is not there is positive evidence of no window. Any other
-    # failure is an unanswered question and must never read as "nothing is running".
+    # "no server running" is tmux having looked: positive evidence of no window.
+    # "error connecting" is tmux not having looked, because the socket was not
+    # there to ask through, which is also what a live server holding the worker
+    # looks like once something removes its socket file. The two are not the same
+    # answer. Any failure but the first is an unanswered question and must never
+    # read as "nothing is running".
     case "$err" in
-      *"no server running"*|*"error connecting"*) return 0 ;;
+      *"no server running"*) return 0 ;;
       *) finding "tmux could not list windows while looking for dux-$id: ${err:-exit $rc}" ;;
     esac
   fi

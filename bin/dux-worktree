@@ -96,7 +96,20 @@ copy_env() {  # $1 worktree; ship under the git mechanism only
           { [ -f "$dest" ] && [ ! -L "$dest" ] && git_repo show "origin/$base:$file" | cmp -s - "$dest"; } \
             || finding "$dest already exists and is not this example's committed content; refusing to write $file over it"
         fi
+        # The rename defeats a symlink at $dest, and the staging name is one path
+        # over: the worktree is checked out at origin/<base>, so a committed
+        # symlink named <name>.dux-part is already on disk when the copy pass
+        # redirects into it, and the redirection would write through it to
+        # wherever it points. Nothing already at the staging name is written.
+        if [ -e "$dest.dux-part" ] || [ -L "$dest.dux-part" ]; then
+          finding "$dest.dux-part already exists; refusing to stage $file through it"
+        fi
       else
+        # O_EXCL through noclobber, so the create cannot follow a link even if one
+        # arrives between the two passes. The file is ours from here, which is what
+        # makes the rm on a failed read safe.
+        ( set -C; : > "$dest.dux-part" ) \
+          || finding "$dest.dux-part appeared before $file could be staged; refusing to write through it"
         git_repo show "origin/$base:$file" > "$dest.dux-part" \
           || { rm -f "$dest.dux-part"; finding "cannot read origin/$base:$file in $repo"; }
         mv "$dest.dux-part" "$dest" \

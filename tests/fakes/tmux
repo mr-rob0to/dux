@@ -9,6 +9,6 @@ for a in "$@"; do
   case "$a" in -L|-S|-f) skip=1 ;; -*) ;; *) sub="$a"; break ;; esac
 done
 if [ -n "${FAKE_TMUX_FAIL:-}" ] && [ "$sub" = "$FAKE_TMUX_FAIL" ]; then
-  echo "fake tmux: $sub failed" >&2; exit 1
+  echo "${FAKE_TMUX_FAIL_MSG:-fake tmux: $sub failed}" >&2; exit 1
 fi
 exec "$real" "$@"

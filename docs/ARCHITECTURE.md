@@ -83,7 +83,11 @@ matches `herdr tab list` on `label` and then resolves the tab to a pane through
 `herdr pane list`, because the tab listing carries no pane. It never answers
 "nothing" when it could not tell: a listing that fails, a listing without the
 array it should have, more than one container for the id, or a labelled tab with
-no pane is a finding. `find` is how spawn knows a worker may still be alive.
+no pane is a finding. Under tmux only `no server running` is read as no window;
+`error connecting` says the socket was not there to ask through, which a live
+server whose socket was removed also looks like, so it is a finding. `find` is
+one of the two ways spawn asks whether a worker may still be alive; the other is
+the wrapper's own `state/<id>.pid`, which answers whichever backend started it.
 
 ## Dispatch flow (exists today)
 
@@ -95,8 +99,12 @@ no pane is a finding. `find` is how spawn knows a worker may still be alive.
 3. `dux-spawn <id>` refuses with a finding unless: the lock is this session's
    (`dux-lock mine`), the task is `queued`, the project is registered, the
    brief has a `- Worktree: ` line to fill, the chosen worker harness is
-   dispatchable, the backend selects, no endpoint is recorded for the id, and
-   `dux-backend find <id>` reports no container for the task.
+   dispatchable, the backend selects, no endpoint is recorded for the id,
+   `dux-backend find <id>` reports no container for the task, and
+   `state/<id>.pid` is absent or names a pid that is gone. The last two are
+   independent signals and either one that cannot say "gone" refuses: `find`
+   answers only for the current backend and an unrenamed container, while the
+   pidfile is written by the wrapper inside the container on every backend.
    Milestone 2 dispatches `claude` workers only. `codex` is refused by
    `harness_refusal` in `dux-env`, which `dux-spawn` and `dux-worker-wrap` both
    call, so the `--harness` flag, `config/worker-harness` and
@@ -109,8 +117,11 @@ no pane is a finding. `find` is how spawn knows a worker may still be alive.
    `tasks/<id>/hooks/` with the base-branch `pre-push` guard, and for `ship`
    under `git` copy the project's committed `.env*.example` and `.env*.sample`
    files, renamed to the name the project expects. A real ignored `.env` is
-   never copied. An uncommitted example, or a destination name the project does
-   not ignore, is a finding; no example at all is a log line.
+   never copied. Each copy is staged at `<dest>.dux-part` and renamed over
+   `<dest>`; a pre-existing path at either name is refused, and the staging file
+   is created with `O_EXCL` so it cannot follow a committed symlink. An
+   uncommitted example, or a destination name the project does not ignore, is a
+   finding; no example at all is a log line.
 5. Spawn calls `dux-backend open <id> <wt> <abs>/bin/dux-worker-wrap <id>`, which
    starts the wrapper in a new container; the command is composed as shell words
    because both backends hand it to a shell. Spawn records the endpoint in
