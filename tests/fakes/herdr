@@ -4,6 +4,10 @@ set -u
 printf '%s\n' "$*" >> "${FAKE_HERDR_LOG:-/dev/null}"
 case "$1 ${2:-}" in
   "tab create")
+    while [ $# -gt 0 ]; do
+      if [ "$1" = "--cwd" ] && [ -n "${FAKE_HERDR_LOG:-}" ]; then printf '%s' "$2" > "$FAKE_HERDR_LOG.cwd"; fi
+      shift
+    done
     echo '{"result":{"tab":{"tab_id":"w1:t9"},"root_pane":{"pane_id":"w1:p9"}}}' ;;
   "pane get")
     if [ -e "${FAKE_HERDR_DEAD:-/nonexistent}" ]; then
@@ -21,7 +25,13 @@ case "$1 ${2:-}" in
   "pane wait-output")
     [ -n "${FAKE_HERDR_NO_PROMPT:-}" ] && { echo '{"error":{"code":"timeout"}}' >&2; exit 1; }
     echo '{"result":{}}' ;;
-  "pane run"|"pane report-agent"|"pane report-metadata"|"notification show")
+  "pane run")
+    if [ -n "${FAKE_HERDR_RUN:-}" ]; then
+      cwd="$(cat "${FAKE_HERDR_LOG:-/dev/null}.cwd")"
+      (cd "$cwd" && HERDR_PANE_ID="$3" HERDR_ENV=1 nohup bash -c "$4" >> "${FAKE_HERDR_OUTPUT:-/dev/null}" 2>&1 &)
+    fi
+    echo '{"result":{}}' ;;
+  "pane report-agent"|"pane report-metadata"|"notification show")
     echo '{"result":{}}' ;;
   "status ")
     printf 'server:\n  status: running\n' ;;

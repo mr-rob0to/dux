@@ -1,0 +1,140 @@
+load helpers/setup
+
+# Spawn tests run on the fake Herdr backend with a fake worker that finishes at once.
+setup() {
+  DUX_HOME="$(cd "$(mktemp -d "${BATS_TMPDIR:-/tmp}/dux-home.XXXXXX")" && pwd -P)"; export DUX_HOME
+  export GIT_AUTHOR_NAME=dux-test GIT_AUTHOR_EMAIL=dux-test@example.invalid
+  export GIT_COMMITTER_NAME=dux-test GIT_COMMITTER_EMAIL=dux-test@example.invalid
+  mkdir -p "$DUX_HOME/data" "$DUX_HOME/state" "$DUX_HOME/config"
+  cp "$DUX_ROOT"/templates/config/* "$DUX_HOME/config/"
+  export PATH="$DUX_ROOT/tests/fakes:$DUX_ROOT/bin:$PATH"
+  export FAKE_HERDR_LOG="$DUX_HOME/state/fake-herdr.log" FAKE_HERDR_OUTPUT="$DUX_HOME/state/fake-herdr.out"
+  export FAKE_WORKER_LOG="$DUX_HOME/state/fake-worker.log" FAKE_GH_LOG="$DUX_HOME/state/fake-gh.log"
+  : > "$FAKE_HERDR_LOG"; : > "$FAKE_HERDR_OUTPUT"; : > "$FAKE_WORKER_LOG"; : > "$FAKE_GH_LOG"
+  export DUX_BACKEND=herdr HERDR_WORKSPACE_ID=w1 FAKE_HERDR_RUN=1
+  export FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1
+  printf 'status working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  export DUX_SESSION_PID=$$
+  dux-lock acquire >/dev/null
+}
+
+wait_for() {  # $1 file, $2 grep pattern, $3 seconds
+  local i=0
+  until grep -q "$2" "$1" 2>/dev/null; do i=$((i + 1)); [ "$i" -ge "$3" ] && return 1; sleep 1; done
+}
+
+@test "refuses when the lock is not this session's, and touches nothing" {
+  id="$(fixture_task proj scout)"
+  DUX_SESSION_PID=424242 run dux-spawn "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the Dux lock is not held by this session"* ]]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+  [ ! -s "$FAKE_HERDR_LOG" ]
+}
+
+@test "refuses a task that is not queued and an endpoint that already exists" {
+  id="$(fixture_task proj scout)"
+  dux-ledger set "$id" state running
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: task $id is running, not queued"* ]]
+  dux-ledger set "$id" state queued
+  echo herdr:w1:p9 > "$DUX_HOME/state/$id.endpoint"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: endpoint already recorded for $id"* ]]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+}
+
+@test "refuses an unregistered project" {
+  mkdir -p "$DUX_HOME/data/tasks/ghost-scout-20260903-abc"
+  dux-ledger add ghost-scout-20260903-abc ghost scout local
+  run dux-spawn ghost-scout-20260903-abc
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: project ghost not registered"* ]]
+}
+
+@test "refuses a missing brief, a brief without the worktree line, and an unknown harness" {
+  id="$(fixture_task proj scout)"
+  b="$DUX_HOME/data/tasks/$id/brief.md"
+  cp "$b" "$DUX_HOME/brief.bak"; rm "$b"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: no brief for $id"* ]]
+  grep -v 'set by dux-spawn' "$DUX_HOME/brief.bak" > "$b"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: brief for $id has no worktree line to fill"* ]]
+  cp "$DUX_HOME/brief.bak" "$b"
+  run dux-spawn "$id" --harness gemini
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: unknown worker harness gemini"* ]]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+}
+
+@test "an unavailable backend is a finding and nothing is created" {
+  id="$(fixture_task proj scout)"
+  DUX_BACKEND=zellij run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: unknown backend zellij"* ]]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+}
+
+@test "a failed open removes the new worktree, restores the brief, and leaves the task queued" {
+  id="$(fixture_task proj scout)"
+  run env -u HERDR_WORKSPACE_ID dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == *"finding: HERDR_WORKSPACE_ID is unset"* ]]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
+  ! git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$id"
+  grep -qxF -- '- Worktree: <set by dux-spawn>' "$DUX_HOME/data/tasks/$id/brief.md"
+  [ ! -e "$DUX_HOME/state/$id.endpoint" ]
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+}
+
+@test "a worktree finding propagates and leaves the task queued" {
+  id="$(fixture_task proj ship)"
+  git -C "$DUX_HOME/proj" branch "dux/$id" origin/main
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: branch dux/$id already exists"* ]]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+}
+
+@test "success records the endpoint and running, fills the worktree line, and the worker runs" {
+  id="$(fixture_task proj scout)"
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  wt="$DUX_HOME/proj/.worktrees/dux-$id"
+  [ "$output" = "spawned $id endpoint=herdr:w1:p9 worktree=$wt" ]
+  [ "$(cat "$DUX_HOME/state/$id.endpoint")" = herdr:w1:p9 ]
+  [ "$(dux-ledger get "$id" state)" = running ]
+  [ "$(dux-ledger get "$id" endpoint)" = herdr:w1:p9 ]
+  grep -qxF -- "- Worktree: $wt" "$DUX_HOME/data/tasks/$id/brief.md"
+  grep -qF "tab create --workspace w1 --cwd $wt --label dux-$id --no-focus" "$FAKE_HERDR_LOG"
+  grep -qxF "pane run w1:p9 $DUX_ROOT/bin/dux-worker-wrap $id" "$FAKE_HERDR_LOG"
+  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+  grep -q '^claude ' "$FAKE_WORKER_LOG"
+  [ ! -s "$FAKE_GH_LOG" ]
+}
+
+@test "--harness codex is recorded and the codex fake runs" {
+  id="$(fixture_task proj scout)"
+  dux-spawn "$id" --harness codex >/dev/null
+  [ "$(cat "$DUX_HOME/data/tasks/$id/harness")" = codex ]
+  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+  grep -q '^codex ' "$FAKE_WORKER_LOG"
+}
+
+@test "a gh source gets one start comment; a failed comment is a warning, not a refusal" {
+  make_repo "$DUX_HOME/proj" main
+  dux-project add proj "$DUX_HOME/proj" --base main >/dev/null
+  id="$(dux-task-new proj scout --source 'gh:acme/widgets#12')"
+  printf 'x\n' > "$DUX_HOME/i"; printf '1. y\n' > "$DUX_HOME/c"
+  dux-brief "$id" --intent-file "$DUX_HOME/i" --criteria-file "$DUX_HOME/c" >/dev/null
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  grep -qxF "issue comment 12 --repo acme/widgets --body Dux started on branch \`dux/$id\`." "$FAKE_GH_LOG"
+  [ "$(grep -c '^issue comment' "$FAKE_GH_LOG")" -eq 1 ]
+  id2="$(dux-task-new proj scout --source 'gh:acme/widgets#13')"
+  dux-brief "$id2" --intent-file "$DUX_HOME/i" --criteria-file "$DUX_HOME/c" >/dev/null
+  FAKE_GH_FAIL=1 run dux-spawn "$id2"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"could not comment on gh:acme/widgets#13"* ]]
+  [ "$(dux-ledger get "$id2" state)" = running ]
+}

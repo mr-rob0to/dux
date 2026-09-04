@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# Spawn a queued task into a worktree and a backend container. Spec section 5.5.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+usage="usage: dux-spawn <id> [--harness claude|codex]"
+id="${1:-}"; [ -n "$id" ] || die "$usage"
+shift
+harness=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --harness) harness="$2"; shift 2 ;;
+    *) die "$usage" ;;
+  esac
+done
+
+task="$DUX_TASKS/$id"; brief="$task/brief.md"; epfile="$DUX_STATE/$id.endpoint"; branch="dux/$id"
+ledger="$DUX_ROOT/bin/dux-ledger"; worktree="$DUX_ROOT/bin/dux-worktree"; backend="$DUX_ROOT/bin/dux-backend"
+placeholder='- Worktree: <set by dux-spawn>'
+
+"$DUX_ROOT/bin/dux-lock" mine || finding "the Dux lock is not held by this session; refusing to spawn"
+state="$("$ledger" get "$id" state)" || exit $?
+[ "$state" = queued ] || finding "task $id is $state, not queued"
+project="$("$ledger" get "$id" project)" || exit $?
+source_key="$("$ledger" get "$id" source)" || exit $?
+"$DUX_ROOT/bin/dux-project" get "$project" path >/dev/null || exit $?
+[ -s "$brief" ] || finding "no brief for $id; run dux-brief first"
+grep -qxF -- "$placeholder" "$brief" || finding "brief for $id has no worktree line to fill"
+case "$harness" in ''|claude|codex) ;; *) finding "unknown worker harness $harness (claude or codex)" ;; esac
+"$backend" name >/dev/null || exit $?
+[ ! -e "$epfile" ] || finding "endpoint already recorded for $id in $epfile"
+if [ -n "$harness" ]; then echo "$harness" > "$task/harness" || finding "cannot write $task/harness"; fi
+
+wt="$("$worktree" create "$id")" || exit $?
+
+swap_line() {  # $1 from, $2 to: replace the first exact line
+  awk -v from="$1" -v to="$2" 'hit == 0 && $0 == from { print to; hit = 1; next } { print }' "$brief" > "$brief.tmp" \
+    && mv "$brief.tmp" "$brief"
+}
+undo() {  # after a failed open: nothing ran, so the worktree and branch go and the task stays queued
+  swap_line "- Worktree: $wt" "$placeholder" || log "could not restore the worktree line in $brief"
+  "$worktree" discard "$id" >/dev/null 2>&1 || log "worktree $wt left in place; run dux-worktree discard $id by hand"
+}
+
+if ! swap_line "$placeholder" "- Worktree: $wt"; then
+  "$worktree" discard "$id" >/dev/null 2>&1 || true
+  finding "cannot fill the worktree line in $brief"
+fi
+ep="$("$backend" open "$id" "$wt" "$DUX_ROOT/bin/dux-worker-wrap $id")" || { rc=$?; undo; exit $rc; }
+
+echo "$ep" > "$epfile" || finding "cannot write $epfile; the worker is running at $ep"
+"$ledger" set "$id" endpoint "$ep" || exit $?
+"$ledger" set "$id" state running || exit $?
+case "$source_key" in
+  gh:*)
+    ref="${source_key#gh:}"; slug="${ref%%#*}"; n="${ref##*#}"
+    gh issue comment "$n" --repo "$slug" --body "Dux started on branch \`$branch\`." >/dev/null 2>&1 \
+      || log "could not comment on $source_key; the task is running regardless" ;;
+esac
+echo "spawned $id endpoint=$ep worktree=$wt"

@@ -123,3 +123,11 @@ load helpers/setup
   [ "$(cat "$DUX_HOME/state/dux.lock")" = "$$" ]
   [ -z "$(ls "$DUX_HOME"/state/dux.lock.*.tmp 2>/dev/null)" ]
 }
+
+@test "mine is true only for the holder" {
+  DUX_SESSION_PID=$$ dux-lock acquire
+  DUX_SESSION_PID=$$ run dux-lock mine; [ "$status" -eq 0 ]; [ -z "$output" ]
+  DUX_SESSION_PID=424242 run dux-lock mine; [ "$status" -eq 1 ]
+  rm -f "$DUX_HOME/state/dux.lock"
+  DUX_SESSION_PID=$$ run dux-lock mine; [ "$status" -eq 1 ]
+}
