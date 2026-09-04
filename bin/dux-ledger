@@ -8,10 +8,6 @@ ledger="$DUX_DATA/backlog.md"
 mutex="$ledger.lock"
 touch "$ledger" 2>/dev/null || finding "cannot write $ledger"
 
-valid_id() {  # . and .. would resolve $DUX_TASKS/$id to the parent directory
-  case "$1" in ''|*[!A-Za-z0-9._-]*) finding "task id must match [A-Za-z0-9._-]+: $1" ;; esac
-  case "$1" in *[!.]*) ;; *) finding "task id must not be all dots: $1" ;; esac
-}
 valid_key()   { case "$1" in state|source|endpoint|pr) ;; *) finding "unknown ledger key $1 (state, source, endpoint, pr)" ;; esac; }
 valid_state() { case "$1" in queued|running|needs-decision|blocked|done|failed|ended|stale|dead|dropped) ;; *) finding "unknown state $1" ;; esac; }
 valid_value() {  # awk -v expands \n and \t, so a backslash could forge a second row
@@ -43,14 +39,14 @@ cmd="${1:-}"; shift || true
 case "$cmd" in
   add)
     id="${1:?id}"; project="${2:?project}"; shape="${3:?shape}"; src="${4:?source}"
-    valid_id "$id"; valid_value "$project"; valid_value "$shape"; valid_value "$src"
+    valid_task_id "$id"; valid_value "$project"; valid_value "$shape"; valid_value "$src"
     lock_ledger
     [ -z "$(line_of "$id")" ] || finding "task $id already in ledger"
     printf -- '- %s project=%s shape=%s state=queued source=%s endpoint=- pr=- (updated %s)\n' \
       "$id" "$project" "$shape" "$src" "$(now)" >> "$ledger" || finding "cannot append to $ledger" ;;
   set)
     id="${1:?id}"; key="${2:?key}"; val="${3:?value}"
-    valid_id "$id"; valid_key "$key"; valid_value "$val"
+    valid_task_id "$id"; valid_key "$key"; valid_value "$val"
     [ "$key" = state ] && valid_state "$val"
     lock_ledger
     [ -n "$(line_of "$id")" ] || finding "task $id not in ledger"

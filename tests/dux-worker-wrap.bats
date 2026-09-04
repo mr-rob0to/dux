@@ -180,6 +180,47 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   [ ! -s "$FAKE_WORKER_LOG" ]
 }
 
+@test "a signal after the last check and before the fork still stops the harness" {
+  prepare scout
+  printf 'status working: started\nsleep 30\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  # The window the trap cannot cover: signalled is set with no wpid to kill, so
+  # only the re-check after the fork can stop the harness.
+  export DUX_WRAP_FORK_PAUSE_SECS=5
+  bash -c 'cd "$1" && DUX_BACKEND=tmux exec dux-worker-wrap "$2"' _ "$wt" "$id" & wp=$!
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    [ -s "$DUX_HOME/state/$id.pid" ] && break
+    sleep 0.3
+  done
+  [ -s "$DUX_HOME/state/$id.pid" ]
+  sleep 1
+  kill -TERM "$wp"
+  # Without the re-check the wrapper supervises the harness for the full 30s.
+  gone=0
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24; do
+    kill -0 "$wp" 2>/dev/null || { gone=1; break; }
+    sleep 0.5
+  done
+  wait "$wp" || true
+  [ "$gone" -eq 1 ]
+  [ "$(status_log | tail -n 1)" = "failed: worker exited 143" ]
+  [ "$(status_log | grep -c '^done: report' || true)" -eq 0 ]
+}
+
+@test "an invalid task id is refused before any file is written" {
+  prepare scout
+  before="$(ls -A "$DUX_HOME/data" | sort)"
+  run dux-worker-wrap ..
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task id must not be all dots: .."* ]]
+  [ ! -e "$DUX_HOME/data/status.log" ]
+  [ ! -e "$DUX_HOME/data/report.md" ]
+  [ "$(ls -A "$DUX_HOME/data" | sort)" = "$before" ]
+  run dux-worker-wrap 'a b'
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task id must match [A-Za-z0-9._-]+: a b"* ]]
+  [ "$(ls -A "$DUX_HOME/data" | sort)" = "$before" ]
+}
+
 @test "TERM to the wrapper reaches the harness and is recorded as failed" {
   prepare scout
   printf 'sleep 30\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"

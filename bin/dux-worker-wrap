@@ -6,6 +6,10 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 [ $# -eq 1 ] || die "usage: dux-worker-wrap <id>"
 id="$1"
+# Before any path is built from it. refuse() below appends to $task/status.log and
+# $task/report.md, and for id=".." the directory check passes because
+# $DUX_TASKS/.. is data/, so a refusal would drop those two files into data/.
+valid_task_id "$id"
 task="$DUX_TASKS/$id"; brief="$task/brief.md"; status_log="$task/status.log"
 settings="$task/worker-settings.json"; hooks="$task/hooks"
 out="$DUX_STATE/$id.out"; pidfile="$DUX_STATE/$id.pid"
@@ -82,8 +86,13 @@ intent_line="$(awk '/^## Intent$/ { f = 1; next } f && NF { print substr($0, 1, 
 "$DUX_ROOT/bin/dux-backend" title "$project: $intent_line" 2>/dev/null || log "title not set on this backend"
 
 [ "$signalled" = 0 ] || refuse "signalled before the harness started"
+# Tests only: widens the gap the trap cannot cover, so the re-check below is reachable.
+[ -z "${DUX_WRAP_FORK_PAUSE_SECS:-}" ] || sleep "$DUX_WRAP_FORK_PAUSE_SECS"
 ( worker_run "$brief" "$model" "$effort" "$settings" ) < /dev/null > "$out" 2>&1 &
 wpid=$!
+# A signal between the check above and this assignment found an empty wpid and did
+# nothing, and the harness would then run unsupervised. Deliver it now.
+[ "$signalled" = 0 ] || kill -TERM "$wpid" 2>/dev/null || true
 
 is_exit_line() { case "${1%%:*}" in done|failed|blocked|needs-decision) return 0 ;; *) return 1 ;; esac; }
 last_status() { grep -v '^working: heartbeat$' "$status_log" 2>/dev/null | tail -n 1; }
