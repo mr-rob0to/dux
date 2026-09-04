@@ -95,8 +95,67 @@ commit_in() {  # $1 project name, $2... paths to add and push
   id2="$(dux-task-new proj ship)"
   run dux-worktree create "$id2"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"finding: .env is not ignored in $DUX_HOME/proj; copying .env.example to it would dirty the worktree"* ]]
-  [ ! -e "$DUX_HOME/proj/.worktrees/dux-$id2/.env" ]
+  wt2="$DUX_HOME/proj/.worktrees/dux-$id2"
+  [[ "$output" == *"finding: .env is not ignored in $wt2; copying .env.example to it would dirty the worktree"* ]]
+  [ ! -e "$wt2/.env" ]
+}
+
+@test "a locally edited tracked example copies its committed content, not the edit" {
+  register proj
+  ignore_env proj
+  echo A=1 > "$DUX_HOME/proj/.env.example"
+  commit_in proj .env.example
+  # Tracked, so ls-files would have passed it; edited, so the working copy is not
+  # what the repository holds. Nothing the operator typed locally may travel.
+  echo A=live-secret > "$DUX_HOME/proj/.env.example"
+  id="$(dux-task-new proj ship)"
+  wt="$(dux-worktree create "$id")"
+  [ "$(cat "$wt/.env")" = A=1 ]
+  run grep -rl live-secret "$wt"
+  [ "$status" -ne 0 ]; [ -z "$output" ]
+}
+
+@test "the ignore rules that decide are the worktree's, not the primary checkout's" {
+  register proj
+  echo A=1 > "$DUX_HOME/proj/.env.example"
+  commit_in proj .env.example
+  # Ignored in the primary checkout only: an uncommitted .gitignore edit that the
+  # worktree, pinned at origin/main, never sees.
+  printf '.worktrees/\n.env\n' > "$DUX_HOME/proj/.gitignore"
+  id="$(dux-task-new proj ship)"
+  run dux-worktree create "$id"
+  [ "$status" -eq 2 ]
+  wt="$DUX_HOME/proj/.worktrees/dux-$id"
+  [[ "$output" == *"finding: .env is not ignored in $wt; copying .env.example to it would dirty the worktree"* ]]
+  [ ! -e "$wt/.env" ]
+}
+
+@test "a destination that already exists is a finding and nothing is written through it" {
+  register proj
+  ignore_env proj
+  echo A=1 > "$DUX_HOME/proj/.env.example"
+  commit_in proj .env.example
+  id="$(dux-task-new proj ship)"
+  wt="$(dux-worktree create "$id")"
+  [ "$(cat "$wt/.env")" = A=1 ]
+  # A symlink where the copy lands: cp would follow it and write outside the worktree.
+  echo untouched > "$DUX_HOME/outside"
+  rm "$wt/.env"; ln -s "$DUX_HOME/outside" "$wt/.env"
+  run dux-worktree create "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: $wt/.env already exists and is not this example's committed content"* ]]
+  [ "$(cat "$DUX_HOME/outside")" = untouched ]
+  [ -L "$wt/.env" ]
+  # A regular file holding something else is refused too.
+  rm "$wt/.env"; printf 'A=tampered\n' > "$wt/.env"
+  run dux-worktree create "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: $wt/.env already exists and is not this example's committed content"* ]]
+  [ "$(cat "$wt/.env")" = A=tampered ]
+  # The copy this script made itself is not something a rerun has to refuse.
+  printf 'A=1\n' > "$wt/.env"
+  run dux-worktree create "$id"
+  [ "$status" -eq 0 ]
 }
 
 @test "ship under make uses the project's target and discovers its path" {
