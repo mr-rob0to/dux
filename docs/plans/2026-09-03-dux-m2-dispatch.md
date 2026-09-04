@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 12 of 12 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9).
+- Milestone: 2 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 12 of 13 (Task 0, Task 0b, Tasks 1 to 8, Task 8b, Task 9, Task 9b).
 - reviewed_sha: none yet. Fix rounds used: 0 of 3. Design review: done 2026-09-03 by a fresh Fable session; 2 Critical, 7 Important, 8 Minor; all Critical and Important fixed in this plan, Minor fixed except one carried to M3 (see "Design review" at the end).
 - Smoke-tested 2026-09-03: every script and test in this plan was extracted into a scratch clone and run; `make lint` clean, every bats file green including the four end-to-end pairs, under bash 5.3 and bash 3.2. Implementers should expect green on the first run and treat a red test as a code defect, never as a reason to edit the test.
 - Next action: the ship gate. Run `/ship` on the `m2-dispatch` branch; it opens the PR, runs the reviews and CI. Task 9 Step 7 (the two real-harness dry runs) is still outstanding and belongs in the PR's Verification section. After merge the operator reruns `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded.
@@ -3249,6 +3249,43 @@ Say "running /ship" in one line, then invoke `/ship`. The PR body fills `.github
 - Spec coverage: section 4 (registry flag: Task 4), 5.2 (Task 2), 5.3 (Task 3), 5.4 (Task 6), 5.5 (Tasks 4, 6, 7), 5.6 (Task 8), 9 report/title (Task 6), 10 issue fencing and start comment (Tasks 3, 7), 15 e2e and refusal coverage (Tasks 7, 8, 9), 19 worker adapters (Task 5). Section 6 (watcher) and the `dux-status`/`dux-notify`/`dux-recover` scripts are milestone 3 and untouched.
 - Names used across tasks: `dux-ledger add|set|get|line|list`, `dux-task-new`, `dux-brief <id>`, `dux-worktree create|path|remove <id>`, `worker_cmd|worker_run|worker_effort_ok`, `dux-backend report|title`, `dux-lock mine`, `dux-spawn <id> [--harness]`, `dux-teardown <id>`, `fixture_task`, `make_repo`, `FAKE_WORKER_SCRIPT`, `FAKE_WORKER_LOG`, `FAKE_GH_LOG`, `FAKE_HERDR_RUN`, `DUX_WRAP_POLL_SECS`, `DUX_HEARTBEAT_SECS`, `DUX_LEDGER_WAIT_TENTHS`, `DUX_TASK_SUFFIX`.
 - Shellcheck: no `A && B || C` anywhere in the scripts (SC2015); every `[ a ] && [ b ] || c` was written as `{ [ a ] && [ b ]; } || c` or an `if`.
+### Task 9b: The spawn test's codex pair must not race its own teardown
+
+**Files:**
+- Modify: `tests/dux-spawn.bats` (and `tests/helpers/setup.bash` only if the fix belongs in the shared teardown)
+
+**Interfaces:**
+- Consumes: the fake `codex` harness and the fake `herdr` `pane run` background execution from Tasks 5 and 7.
+- Produces: a spawn suite that is green on 100 consecutive runs.
+
+**Why this task exists.** Found by three separate implementers during this milestone and reproduced by the orchestrator on the finished tree at `817f8df`: `tests/dux-spawn.bats` test 9, "--harness codex is recorded and the codex fake runs", fails between one run in three and one run in eight. It is never an assertion failure. It dies in the shared `teardown()` at `rm -rf "$DUX_HOME"` with `rm: <temp home>: Directory not empty`, because the backgrounded fake codex worker is still writing into `$DUX_HOME` when the test body ends.
+
+The test is a Task 7 artefact, so this is unfinished acceptance for Task 7 rather than new scope: the plan's Global Constraints require every new test to be green, and a test that fails one run in eight is not green. Left alone it reddens CI intermittently, and an intermittently red gate is worse than no gate, because it teaches everyone to re-run instead of read.
+
+- [ ] **Step 1: Reproduce it before changing anything**
+
+Run the file in a loop until it fails, and record the run number and the exact `rm:` line. Do not proceed on the strength of the description above; confirm the mechanism yourself.
+
+- [ ] **Step 2: Fix the race at its cause**
+
+The test must not end while a process it started is still writing into `$DUX_HOME`. Wait for the spawned worker to finish before the test body returns, using the same `wait_for` style the other tests use. Do not paper over it: no `sleep`, no retry loop around the teardown removal, no `|| true` on the teardown, and do not delete or skip the test.
+
+If the right place for the wait turns out to be the shared `teardown()` rather than this one test, put it there and say so, since every backgrounded-worker test has the same exposure.
+
+- [ ] **Step 3: Prove it**
+
+Run `bats tests/dux-spawn.bats` 100 times consecutively. All 100 must pass. Paste the loop command and its summary line into the commit body. Fewer than 100 runs is not evidence for a one-in-eight defect.
+
+- [ ] **Step 4: Confirm the test still tests what it did**
+
+The assertions that made this test worth having must still fire: the `harness` file records `codex`, and the codex fake actually ran. Break one of them, see it fail, restore it. A wait that lets the test pass by no longer reaching its assertions is a worse defect than the flake.
+
+- [ ] **Step 5: Commit**
+
+Stage `tests/dux-spawn.bats` (plus the helper if you changed it) and commit with the subject `fix: wait for the spawned worker before tearing down the spawn test`, with the 100-run evidence and the break-verification in the body.
+
+---
+
 
 ## Design review (2026-09-03, fresh Fable session, before implementation)
 
