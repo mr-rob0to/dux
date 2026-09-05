@@ -442,7 +442,7 @@ ledger follows it, and nothing else happens.
 ## 7. Session lifecycle
 
 A `SessionStart` hook runs `dux-lock acquire` (pid from `CLAUDE_PID`) and prints
-the result, including whether the watcher started, into context. CLAUDE.md then has Dux run `dux-doctor`, `dux-intake`
+the result, including whether the watcher started, into context. AGENTS.md then has Dux run `dux-doctor`, `dux-intake`
 for every project with issues enabled, and `dux-status`, then arm the Monitor.
 If the lock is held by a live pid, Dux announces it is read-only and skips spawn,
 teardown, and recover. A `SessionEnd` hook releases the lock and kills the
@@ -688,7 +688,7 @@ receiving anything beyond the brief file and their project's own instructions.
 | Backend unreachable | spawn and teardown refuse; watcher uses the wrapper verdict and logs the changed open-question set once |
 | Issue intake fails | skip with one warning; backlog unchanged |
 | Second Dux session | read-only, announced |
-| Monitor dies | CLAUDE.md start-of-turn rule: if no monitor is armed and tasks are running, re-arm |
+| Monitor dies | AGENTS.md start-of-turn rule: if no monitor is armed and tasks are running, re-arm |
 
 ## 15. Testing
 
