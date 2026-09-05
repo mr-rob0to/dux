@@ -720,7 +720,7 @@ Section 6.2, replace "`dux-status` at session start lists every ledger entry who
 
 Commit: `docs: pin the watcher's liveness, lifecycle, and ack field in the spec`
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `tests/dux-env.bats`, append:
 
@@ -1144,12 +1144,12 @@ start_loop() { DUX_WATCH_INTERVAL_SECS="${1:-1}" dux-watch >> "$watchlog" 2>&1 3
 }
 ```
 
-- [ ] **Step 3: Run to verify they fail**
+- [x] **Step 3: Run to verify they fail**
 
 Run: `bats tests/dux-env.bats tests/dux-ledger.bats tests/dux-watch.bats tests/dux-lock.bats tests/dux-doctor.bats`
 Expected: the env tests fail with `pid_runs: command not found`; the ledger tests fail (`acked` unknown key, `ack` and `unack` unknown subcommands, line 7's regex no longer matching); every watch test fails with `dux-watch: command not found` (or `stand_in: command not found` until the helper lands); the lock tests fail at the watcher assertions with status 0 and no pidfile; the doctor tests fail with status 0 and no watcher line.
 
-- [ ] **Step 4: Extend the test helper**
+- [x] **Step 4: Extend the test helper**
 
 In `tests/helpers/setup.bash` `setup()`, after the `PATH` export add `export DUX_WATCHER=off`. Add the helpers and the teardown step:
 
@@ -1188,11 +1188,11 @@ stop_watcher_if_any() {  # kills a watcher or stand-in a test started, before th
 
 The helper file sources `bin/dux-env` for `pid_runs` (add `source "$DUX_ROOT/bin/dux-env"` after `export DUX_ROOT`; `dux-env` only sets variables and defines functions, and `DUX_HOME` is exported by `setup()` afterwards, so the directories it creates at source time are the repo's own and already exist). In `teardown()`, call `stop_watcher_if_any` before `wait_for_workers 30`, and change `wait_for_workers` to skip `watch.pid`: `case "$pidfile" in */watch.pid) continue ;; esac` after the `-f` check. The two files with their own `setup()` (`tests/dux-spawn.bats`, `tests/dux-teardown.bats`) also add `export DUX_WATCHER=off`.
 
-- [ ] **Step 5: Add the `dux-env` helpers**
+- [x] **Step 5: Add the `dux-env` helpers**
 
 Add `mtime_epoch` and `pid_runs` exactly as written in the design section, after `now()`. GNU `stat -c` is tried first because GNU `stat -f` means "file system" and prints a block of text with exit 1, which `||` would then append a second line to; BSD `stat -c` fails with nothing on stdout, so the order is safe both ways. `ps -ww` because procps truncates to `COLUMNS` when it is set, and a truncated command line would read every worker as gone.
 
-- [ ] **Step 6: Extend `bin/dux-ledger`**
+- [x] **Step 6: Extend `bin/dux-ledger`**
 
 `add` writes `pr=- acked=-`. Extract `set`'s awk into `write_field id key value` and make it insert a missing key before `(updated`:
 
@@ -1245,7 +1245,7 @@ acked_of() {  # $1 line: the acked field, "-" when the line predates it. The one
 
 Usage line: `add|set|get|line|list|ack|unack`. (`${1:?id}` stays in `dux-ledger`: it is called only by scripts, never by the operator. Making every script's usage a finding is a follow-up, noted in Task 7's docs.)
 
-- [ ] **Step 7: Write `bin/dux-watch`**
+- [x] **Step 7: Write `bin/dux-watch`**
 
 ```bash
 #!/usr/bin/env bash

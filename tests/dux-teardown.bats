@@ -7,6 +7,7 @@ setup() {
   mkdir -p "$DUX_HOME/data" "$DUX_HOME/state" "$DUX_HOME/config"
   cp "$DUX_ROOT"/templates/config/* "$DUX_HOME/config/"
   export PATH="$DUX_ROOT/tests/fakes:$DUX_ROOT/bin:$PATH"
+  export DUX_WATCHER=off
   export FAKE_HERDR_LOG="$DUX_HOME/state/fake-herdr.log" FAKE_HERDR_OUTPUT="$DUX_HOME/state/fake-herdr.out"
   export FAKE_WORKER_LOG="$DUX_HOME/state/fake-worker.log" FAKE_GH_LOG="$DUX_HOME/state/fake-gh.log"
   : > "$FAKE_HERDR_LOG"; : > "$FAKE_HERDR_OUTPUT"; : > "$FAKE_WORKER_LOG"; : > "$FAKE_GH_LOG"

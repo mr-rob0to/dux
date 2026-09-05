@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Turns worker state changes into events. A per-task surprise is logged and
+# skipped so supervision of every other task continues. See spec section 6.1.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+events="$DUX_STATE/events.log"
+watchpid="$DUX_STATE/watch.pid"
+interval="${DUX_WATCH_INTERVAL_SECS:-30}"
+stale_after="${DUX_STALE_SECS:-1200}"
+grace="${DUX_WATCH_GRACE_SECS:-120}"
+ledger="$DUX_ROOT/bin/dux-ledger"
+backend="$DUX_ROOT/bin/dux-backend"
+usage="usage: dux-watch [--once] | dux-watch eval <id>"
+
+{ : >> "$events"; } 2>/dev/null || finding "cannot write $events"
+
+status_state() {  # $1 id; last status word, or empty when no status exists
+  local last
+  last="$(tail -n 1 "$DUX_TASKS/$1/status.log" 2>/dev/null)"
+  printf '%s' "${last%%:*}"
+}
+
+endpoint_of() {  # $1 id; state file wins over the ledger
+  local ep
+  ep="$(cat "$DUX_STATE/$1.endpoint" 2>/dev/null)" || ep="$($ledger get "$1" endpoint 2>/dev/null)"
+  printf '%s' "$ep"
+}
+
+backend_evidence() {  # $1 endpoint; present, gone, or unknown:<message>
+  local err rc
+  err="$($backend exists "$1" 2>&1 >/dev/null)"; rc=$?
+  case "$rc" in
+    0) echo present ;;
+    1) echo gone ;;
+    *) echo "unknown:backend cannot tell whether $1 exists: $err" ;;
+  esac
+}
+
+# The first line is alive, gone, starting, or unknown:<why>. Later note: lines
+# carry container evidence without changing the wrapper pid's verdict.
+liveness() {  # $1 id
+  local id epfile pidfile ep wpid evidence anchor age
+  id="$1"; epfile="$DUX_STATE/$id.endpoint"; pidfile="$DUX_STATE/$id.pid"
+  ep="$(endpoint_of "$id")"
+
+  if [ -e "$pidfile" ] || [ -L "$pidfile" ]; then
+    wpid="$(cat "$pidfile" 2>/dev/null)" || { echo "unknown:cannot read $pidfile"; return 0; }
+    case "$wpid" in
+      ''|*[!0-9]*) echo "unknown:$pidfile does not hold a pid ('$wpid')"; return 0 ;;
+    esac
+    if pid_runs "$wpid" "dux-worker-wrap $id"; then
+      echo alive
+      if [ -z "$ep" ] || [ "$ep" = - ]; then
+        echo "note:no endpoint recorded"
+      else
+        evidence="$(backend_evidence "$ep")"
+        case "$evidence" in
+          present) ;;
+          gone) echo "note:container $ep is gone but wrapper pid $wpid is alive" ;;
+          unknown:*) echo "note:${evidence#unknown:}" ;;
+        esac
+      fi
+    else
+      echo gone
+      if [ -n "$ep" ] && [ "$ep" != - ]; then
+        evidence="$(backend_evidence "$ep")"
+        [ "$evidence" != present ] || echo "note:container $ep remains but wrapper pid $wpid is gone"
+        case "$evidence" in unknown:*) echo "note:${evidence#unknown:}" ;; esac
+      fi
+    fi
+    return 0
+  fi
+
+  if [ -z "$ep" ] || [ "$ep" = - ]; then
+    echo "unknown:no endpoint and no pidfile"
+    return 0
+  fi
+  if [ -e "$epfile" ] || [ -L "$epfile" ]; then anchor="$epfile"; else anchor="$DUX_TASKS/$id/status.log"; fi
+  age=$(( $(date +%s) - $(mtime_epoch "$anchor" 2>/dev/null || echo 0) ))
+  if [ "$age" -lt "$grace" ]; then echo starting; else echo gone; fi
+  evidence="$(backend_evidence "$ep")"
+  case "$evidence" in unknown:*) echo "note:${evidence#unknown:}" ;; esac
+}
+
+last_activity() {  # $1 id; newer of the status log and wrapper pidfile
+  local a b
+  a="$(mtime_epoch "$DUX_TASKS/$1/status.log" 2>/dev/null || echo 0)"
+  b="$(mtime_epoch "$DUX_STATE/$1.pid" 2>/dev/null || echo 0)"
+  if [ "$a" -ge "$b" ]; then echo "$a"; else echo "$b"; fi
+}
+
+# The first line is the ledger target or skip:<why>. Any later note: lines are
+# observations to log without changing the target.
+target_for() {  # $1 id
+  local id st live verdict notes age target
+  id="$1"; st="$(status_state "$id")"
+  case "$st" in
+    done|failed|blocked|needs-decision|ended) echo "$st"; return 0 ;;
+    ''|working) ;;
+    *) echo "skip:status log ends in an unknown state '$st'"; return 0 ;;
+  esac
+  live="$(liveness "$id")"
+  verdict="$(printf '%s\n' "$live" | sed -n '1p')"
+  notes="$(printf '%s\n' "$live" | sed -n '2,$p')"
+  case "$verdict" in
+    alive)
+      age=$(( $(date +%s) - $(last_activity "$id") ))
+      if [ "$age" -ge "$stale_after" ]; then target=stale; else target=running; fi ;;
+    gone) target=dead ;;
+    starting) target=running ;;
+    unknown:*) target="skip:${verdict#unknown:}" ;;
+  esac
+  echo "$target"
+  [ -z "$notes" ] || printf '%s\n' "$notes"
+}
+
+emit() {  # $1 id, $2 state; record first so a crash cannot lose the wake
+  printf '%s %s: %s\n' "$(now)" "$2" "$1" >> "$events" || { log "watch: cannot append to $events"; return 0; }
+  "$ledger" set "$1" state "$2" || log "watch: ledger not updated for $1; the event will repeat until it is"
+  "$backend" notify Dux "$2: $1" >/dev/null 2>&1 || true
+}
+
+observations=""
+pass() {
+  local id lstate result target line seen=""
+  for id in $("$ledger" list --state running) $("$ledger" list --state stale); do
+    lstate="$("$ledger" get "$id" state 2>/dev/null)" || continue
+    result="$(target_for "$id")"
+    target="$(printf '%s\n' "$result" | sed -n '1p')"
+    while IFS= read -r line; do
+      [ -n "$line" ] || continue
+      case "$line" in
+        note:*) seen="${seen}dux: watch: $id: ${line#note:}"$'\n' ;;
+      esac
+    done <<EOF
+$(printf '%s\n' "$result" | sed -n '2,$p')
+EOF
+    case "$target" in
+      skip:*) seen="${seen}finding: watch: $id: ${target#skip:}"$'\n'; continue ;;
+    esac
+    [ "$target" != "$lstate" ] || continue
+    if [ "$target" = running ]; then
+      "$ledger" set "$id" state running && "$ledger" unack "$id" && log "watch: $id resumed"
+      continue
+    fi
+    emit "$id" "$target"
+  done
+  if [ "$seen" != "$observations" ]; then
+    observations="$seen"
+    if [ -z "$seen" ]; then log "watch: every task answers again"; else printf '%s' "$seen" >&2; fi
+  fi
+}
+
+case "${1:-}" in
+  eval)
+    [ $# -eq 2 ] || finding "$usage"
+    valid_task_id "$2"
+    "$ledger" get "$2" state >/dev/null || exit $?
+    target_for "$2"
+    exit 0 ;;
+  --once) [ $# -eq 1 ] || finding "$usage"; pass; exit 0 ;;
+  '') ;;
+  *) finding "$usage" ;;
+esac
+
+echo $$ > "$watchpid" || finding "cannot write $watchpid"
+log "watch: started pid $$, every ${interval}s, stale after ${stale_after}s"
+sleeper=""
+trap 'log "watch: stopping"; [ -z "$sleeper" ] || kill "$sleeper" 2>/dev/null; exit 0' TERM INT
+while :; do
+  [ "$(cat "$watchpid" 2>/dev/null)" = "$$" ] || { log "watch: $watchpid names another watcher; exiting"; exit 0; }
+  pass
+  sleep "$interval" & sleeper=$!
+  wait "$sleeper"
+  sleeper=""
+done

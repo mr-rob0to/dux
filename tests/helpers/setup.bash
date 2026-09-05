@@ -1,6 +1,8 @@
 # Sourced by every bats file via `load helpers/setup`.
 DUX_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export DUX_ROOT
+# shellcheck source=bin/dux-env
+source "$DUX_ROOT/bin/dux-env"
 
 setup() {
   # Physical path: git prints worktree paths resolved through symlinks (/private/tmp on macOS).
@@ -12,6 +14,7 @@ setup() {
   mkdir -p "$DUX_HOME/data" "$DUX_HOME/state" "$DUX_HOME/config"
   cp "$DUX_ROOT"/templates/config/* "$DUX_HOME/config/"
   export PATH="$DUX_ROOT/tests/fakes:$DUX_ROOT/bin:$PATH"
+  export DUX_WATCHER=off
   export FAKE_HERDR_LOG="$DUX_HOME/state/fake-herdr.log"
   export FAKE_HERDR_OUTPUT="$DUX_HOME/state/fake-herdr.out"
   export FAKE_WORKER_LOG="$DUX_HOME/state/fake-worker.log"
@@ -28,6 +31,7 @@ wait_for_workers() {  # $1 seconds; returns 1 if a worker is still alive after t
     live=0
     for pidfile in "$DUX_HOME"/state/*.pid; do
       [ -f "$pidfile" ] || continue
+      case "$pidfile" in */watch.pid) continue ;; esac
       pid="$(cat "$pidfile" 2>/dev/null)"
       case "$pid" in '' | *[!0-9]*) continue ;; esac
       if kill -0 "$pid" 2>/dev/null; then live=1; fi
@@ -39,8 +43,35 @@ wait_for_workers() {  # $1 seconds; returns 1 if a worker is still alive after t
   done
 }
 
+# Start a quiet process whose command line ends with the requested words.
+stand_in() {  # $1 command-line needle
+  local fifo; fifo="$DUX_HOME/state/stand-in.$$.$RANDOM.fifo"
+  mkfifo "$fifo" || return 1
+  ( exec -a "$1" cat ) <> "$fifo" >/dev/null 2>&1 3>&- &
+  echo $! >> "$DUX_HOME/state/stand-ins"
+  echo $!
+}
+
+wait_until() {  # $1 seconds, $2.. command; polls every 0.2 seconds
+  local i=0 max=$(( $1 * 5 )); shift
+  until "$@"; do i=$((i + 1)); [ "$i" -ge "$max" ] && return 1; sleep 0.2; done
+}
+
+stop_watcher_if_any() {
+  local p
+  if [ -f "$DUX_HOME/state/watch.pid" ]; then
+    p="$(cat "$DUX_HOME/state/watch.pid" 2>/dev/null)"
+    if pid_runs "$p" dux-watch; then kill "$p" 2>/dev/null || true; fi
+    rm -f "$DUX_HOME/state/watch.pid"
+  fi
+  if [ -f "$DUX_HOME/state/stand-ins" ]; then
+    while read -r p; do kill "$p" 2>/dev/null || true; done < "$DUX_HOME/state/stand-ins"
+  fi
+}
+
 teardown() {
   [ -n "${DUX_HOME:-}" ] || return 0
+  stop_watcher_if_any
   # A spawned worker keeps writing into $DUX_HOME after it appends its last
   # status line, so removing the home under it makes rm fail with "Directory
   # not empty". Wait for every worker the test started, then remove.
