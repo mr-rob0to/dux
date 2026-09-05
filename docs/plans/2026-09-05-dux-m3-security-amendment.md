@@ -75,12 +75,12 @@
 
 **Interfaces:** Defines the threat boundary, run/channel/receipt/handoff names, shape evidence, and review rule consumed by Tasks 1 to 4.
 
-- [ ] Amend spec sections 1 to 3, 5.3 to 5.6, 6.1 to 6.4, 7, 9, 11, 13 to 15, and 17 to 19 with the boundary and every lifecycle operation above.
-- [ ] Amend constitution principle 6 and its rationale from mechanical worker containment to trusted local workers plus untrusted application data. Follow governance with a 2.0.0 version because the principle is redefined.
-- [ ] Keep `AGENTS.md` under 150 lines; require fixed notifications, fenced recovery data, and `/ship` review against the boundary without excusing untrusted channels.
-- [ ] Assert the boundary, five phases, retained handoffs, same-UID disclaimer, and future-isolation limit. Delete the trusted-worker sentence and confirm that test fails.
+- [x] Amend spec sections 1 to 3, 5.3 to 5.6, 6.1 to 6.4, 7, 9, 11, 13 to 15, and 17 to 19 with the boundary and every lifecycle operation above.
+- [x] Amend constitution principle 6 and its rationale from mechanical worker containment to trusted local workers plus untrusted application data. Follow governance with a 2.0.0 version because the principle is redefined.
+- [x] Keep `AGENTS.md` under 150 lines; require fixed notifications, fenced recovery data, and `/ship` review against the boundary without excusing untrusted channels.
+- [x] Assert the boundary, five phases, retained handoffs, same-UID disclaimer, and future-isolation limit. Delete the trusted-worker sentence and confirm that test fails.
 
-**Done when:** `bats tests/contract.bats` passes, `wc -l AGENTS.md` is at most 150, and the deliberate deletion produces one red boundary test.
+:** `bats tests/contract.bats` passes, `wc -l AGENTS.md` is at most 150, and the deliberate deletion produces one red boundary test.
 
 ## Task 1: Put worker messages behind one task channel
 

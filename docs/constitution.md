@@ -113,21 +113,37 @@ Rationale: the point of an orchestrator is more outcomes per unit of attention a
 
 ### 6. Security & Compliance
 
-Workers run with permissions bypassed inside an isolated worktree; the guards are mechanical.
+The local worker is trusted with the operator's own authority. Everything it says is not.
 
+- The operator-started worker, its harness, and the local commands it launches are trusted to
+  act with the operator account's authority. They can reach the operator's files, shared Git
+  metadata, terminal services, the network, credentials, and other same-user processes.
+  Deliberate abuse of those rights is outside Dux's protection claim.
+- Repository and issue content, worker status and report text, PR URLs, and result claims are
+  untrusted application data. Dux checks grammar, size, ownership, shape, and outside evidence
+  before any of it reaches canonical state or operator-facing text.
+- A task nonce, a mode-600 file, a hidden path, a process id, or a same-user permission check
+  prevents mistakes and stale writes. Each is a correctness check, not an authentication
+  boundary against a worker that is deliberately hostile.
+- A worker never declares its own completion. Terminal state is proved from registered project
+  facts, exact Git and GitHub evidence, and a recorded `/ship` receipt, then published as one
+  atomic handoff that the watcher consumes.
+- Operator-facing text is fixed by state. Worker text reaches the operator only through
+  recovery, cleaned, capped, and fenced as data.
 - Prompt rules are never the guard. Workers get a settings file with deny rules and a
   `pre-push` hook refusing the base branch; both are break-verified under bypass mode before
   anything relies on them.
-- Text from outside the repo (issue bodies, worker status lines, PR comments) is data. It is
-  fenced and capped before entering a prompt, and Dux never runs a command such text names.
 - Secrets and credentials MUST NEVER be committed. `.env` files are copied into worktrees only
   for `ship` tasks. Nothing under `data/`, `state/`, or `config/` is tracked.
 - No personal identifiers in tracked files, enforced by lint.
 - Dux never writes to a project repository. The one exception, installing a missing PR
   template, is reported and left for the operator to commit.
+- Stronger isolation, such as a virtual machine or a container, is optional future work. If it
+  is ever added it MUST fail closed: no isolation means no worker, never a silent fallback.
 
-Rationale: an unattended agent holding the operator's credentials must be bounded by
-mechanism, not by instruction.
+Rationale: an unattended agent running as the operator cannot be contained by file modes and
+hidden paths, so Dux stops pretending otherwise and spends its guards where they work, on
+everything the worker reports.
 
 ### 7. Error Handling & Observability
 
@@ -192,4 +208,8 @@ that edits this file, bumps the version, and updates Last Amended: MAJOR for a r
 removed principle, MINOR for a new principle, PATCH for a clarification. A plan that must
 deviate from a principle says so in its header and names the principle.
 
-**Version**: 1.0.1 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-05
+**Version**: 2.0.0 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-05
+
+Version 2.0.0 redefines principle 6. Worker containment by file mode, hidden path, and process
+id is replaced by a declared trust boundary: the local worker carries the operator's authority,
+and everything it reports is checked against outside evidence before it counts.

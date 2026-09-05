@@ -95,6 +95,15 @@ the one CI uses, so local green means CI green.
 - If a fix reaches outside the branch's intended code path, stop and say so rather
   than widening the diff.
 
+When `DUX_SHIP_RECORD` is set, this run is supervised by Dux and each phase leaves a
+receipt tied to the current commit. Record this one once the gate is green, and do the
+same at the end of steps 6, 7, 8, and 9. When the variable is unset, skip every such
+line; nothing else about this skill changes.
+
+```bash
+[ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD checks
+```
+
 ## Step 5. Pre-review self-audit
 
 Check what a diff-only reviewer cannot see:
@@ -137,6 +146,10 @@ Then:
 - After material fixes, re-review **scoped to the new commits only**, so round two
   does not re-litigate round one.
 
+```bash
+[ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD review
+```
+
 ## Step 7. Security review (REQUIRED)
 
 Separate pass, separate reviewer. The correctness review in step 6 is not a
@@ -158,6 +171,15 @@ otherwise have to guess:
 > just the hunks. Report findings ranked by severity with file:line, a concrete
 > attack scenario for each, and the specific fix. State explicitly which areas you
 > checked and found clean.
+>
+> If the repository states a declared security boundary, judge the diff against it.
+> Say plainly when a finding falls outside that boundary and report it as an
+> accepted limit rather than a defect. A boundary the repository has not declared
+> is not a defence, and a claim the repository does make is in scope.
+
+```bash
+[ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD security
+```
 
 **Coverage the audit must reach**, whether or not the diff obviously touches it:
 
@@ -206,12 +228,23 @@ deliberately deferred.
 Pushing over an existing remote branch: `git fetch` first, then `--force-with-lease`.
 Never a bare `--force`.
 
+```bash
+[ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD pr
+```
+
 ## Step 9. CI
 
 Watch until green. Report the run URL. A red run, or one that never started, is not shipped.
 
 ```bash
 gh run watch
+```
+
+Record the final phase only when the checks really came back green and non-empty; the
+recorder verifies the pull request and its checks before it accepts this one.
+
+```bash
+[ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD ci
 ```
 
 ## Stop and report (do not proceed)
