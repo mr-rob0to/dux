@@ -185,6 +185,7 @@ mirror() {  # $1 dux state. The pane says which state, never what the worker wro
 # ---- reading the worker's proposals --------------------------------------
 LINE_CAP=200      # bytes of one cleaned status line
 STATUS_CAP=65536  # bytes of status.outbox over a whole run
+REPORT_CAP=1048576  # bytes of report.outbox over a whole run
 accepted=0        # bytes of status.outbox already read
 accepted_sum=""   # what those bytes were, so a rewrite of them is visible
 terminal=""       # the one terminal proposal, held back until the run is over
@@ -330,6 +331,10 @@ fi
 import_proposals final
 [ -z "$violation" ] || refuse "$violation"
 if [ -s "$report_outbox" ]; then
+  # Measured before a byte of it is copied, for the same reason as the status cap.
+  report_size="$(wc -c < "$report_outbox" | tr -d ' ')"
+  [ "$report_size" -le "$REPORT_CAP" ] \
+    || refuse "the worker for $id wrote more than $REPORT_CAP bytes of report"
   clean_text < "$report_outbox" >> "$task/report.md" || refuse "cannot write $task/report.md"
 fi
 
