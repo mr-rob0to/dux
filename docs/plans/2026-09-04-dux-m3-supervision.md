@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 6 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 to 5 are complete; Task 6 is next.
+- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 7 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 to 6 are complete; Task 7 is next.
 - Design review: done 2026-09-04 by a fresh Fable session; 4 Critical, 7 Important, 15 Minor. All Critical and Important fixed in the plan; 11 Minor fixed, 2 fixed by deletion, 2 logged. Table at the end.
 - Revised again 2026-09-04 on the operator's decision of open question 1: the wrapper pid now decides liveness in both directions and the container is corroboration (Decision 4). Not a second design review; `/ship` reviews the code.
-- Next action: Task 6 is in progress on the approved feature worktree.
+- Next action: Task 7 is in progress on the approved feature worktree.
 
 **Declared deviation from the constitution (principle 2, "stop and print a finding"):** `dux-watch` is the one script that does not exit on a per-task surprise. It prints `finding: watch: <id>: <one line>` to its log and skips that task for that pass, because exiting would end supervision of every other task without anyone noticing, which is the silent degradation principle 2 exists to prevent. Startup surprises (an unwritable `state/`, a bad argument) still exit 2. Every other script in this milestone follows the principle as written.
 
@@ -2621,7 +2621,7 @@ Change `persistent: true` to `persistent: false` in `AGENTS.md`. Run `bats tests
 **Interfaces:**
 - Produces: the wake procedure: what Dux reads, what it runs, what it pushes, how it acknowledges, and the duplicate rule. Under 150 lines in total.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```bash
 @test "AGENTS.md wake rule acknowledges through dux-ledger ack and pushes for exactly three states" {
@@ -2632,11 +2632,11 @@ Change `persistent: true` to `persistent: false` in `AGENTS.md`. Run `bats tests
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Expected: the first two greps fail.
 
-- [ ] **Step 3: Replace the `## Task lifecycle` section and touch the two lists**
+- [x] **Step 3: Replace the `## Task lifecycle` section and touch the two lists**
 
 ```markdown
 ## Task lifecycle
@@ -2671,11 +2671,11 @@ In `skills/dux-dispatch/SKILL.md` the last "Never" bullet becomes "Never read `s
 
 Confirm `wc -l AGENTS.md` is under 150 (expected around 95) and `tests/contract.bats` is green.
 
-- [ ] **Step 4: Break-verify**
+- [x] **Step 4: Break-verify**
 
 Delete the line `Then run \`bin/dux-ledger ack <id>\`. Never edit \`data/backlog.md\` yourself.` Run `bats tests/contract.bats`. Expected: the new test fails at its first grep. Restore.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 `docs: add the wake rule to AGENTS.md`
 
