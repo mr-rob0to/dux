@@ -16,6 +16,50 @@ alive()  { is_pid "$1" && kill -0 "$1" 2>/dev/null; }
 holder() { [ -f "$lock" ] && cat "$lock"; }
 empty_lock() { [ -f "$lock" ] && [ ! -s "$lock" ]; }
 
+watchpid="$DUX_STATE/watch.pid"
+watchlog="$DUX_STATE/watch.log"
+watcher_on() { [ "${DUX_WATCHER:-on}" != off ]; }
+
+stop_watcher() {  # stop the recorded watcher; report and preserve a stranger
+  local w i
+  w="$(cat "$watchpid" 2>/dev/null)" || return 0
+  if pid_runs "$w" dux-watch; then
+    kill -TERM "$w" 2>/dev/null || true
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      kill -0 "$w" 2>/dev/null || break
+      sleep 0.5
+    done
+    if kill -0 "$w" 2>/dev/null; then log "watcher pid $w did not stop; kill it by hand"; fi
+  elif kill -0 "$w" 2>/dev/null; then
+    log "$watchpid names pid $w, which is not dux-watch; left alone"
+  fi
+  rm -f "$watchpid"
+}
+
+start_watcher() {
+  local i=0 w max=$(( ${DUX_LOCK_WATCH_WAIT_SECS:-5} * 2 ))
+  { : >> "$DUX_STATE/events.log"; } 2>/dev/null || finding "cannot write $DUX_STATE/events.log"
+  wc -l < "$DUX_STATE/events.log" | tr -d ' ' > "$DUX_STATE/wakes.base"
+  ( set -m; nohup "$DUX_ROOT/bin/dux-watch" < /dev/null >> "$watchlog" 2>&1 & )
+  while [ "$i" -lt "$max" ]; do
+    w="$(cat "$watchpid" 2>/dev/null)"
+    if pid_runs "$w" dux-watch; then echo "watcher started (pid $w)"; return 0; fi
+    i=$((i + 1))
+    sleep 0.5
+  done
+  log "watcher did not start within ${DUX_LOCK_WATCH_WAIT_SECS:-5}s; see $watchlog"
+}
+
+acquired() {
+  if watcher_on; then
+    stop_watcher
+    start_watcher
+  else
+    log "watcher disabled by DUX_WATCHER=off"
+  fi
+  exit 0
+}
+
 # The temp file is named by this process's own pid, so two acquires for the
 # same session never share (and truncate) one inode.
 claim() {
@@ -41,18 +85,22 @@ retire_stale_lock() {
 
 case "${1:-}" in
   acquire)
-    claim && exit 0
+    claim && acquired
     h="$(holder || true)"
-    [ "$h" = "$me" ] && exit 0
+    [ "$h" = "$me" ] && acquired
     if alive "$h"; then echo "held by pid $h"; exit 3; fi
     retire_stale_lock
-    claim && exit 0
+    claim && acquired
     [ -f "$lock" ] || finding "cannot create $lock and no session holds it"
     empty_lock && finding "$lock is empty; remove it if no Dux session is running"
     echo "held by pid $(holder)"; exit 3 ;;
   release)
     h="$(holder || true)"
-    [ "$h" = "$me" ] && rm -f "$lock"; exit 0 ;;
+    if [ "$h" = "$me" ]; then
+      rm -f "$lock"
+      watcher_on && stop_watcher
+    fi
+    exit 0 ;;
   status)
     if [ ! -f "$lock" ]; then echo free
     elif empty_lock; then echo "lock file empty"

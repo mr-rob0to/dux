@@ -23,6 +23,18 @@ esac
 reg="$DUX_DATA/projects.md"
 if [ -s "$reg" ] && grep -q '^- ' "$reg"; then ok "registry"; else fail "registry" "no projects in $reg; run dux-project add"; fi
 
+lockst="$("$DUX_ROOT/bin/dux-lock" status)"
+case "$lockst" in
+  free|"lock file empty") echo "watcher: no session" ;;
+  *)
+    w="$(cat "$DUX_STATE/watch.pid" 2>/dev/null)"
+    if pid_runs "$w" dux-watch; then
+      ok "watcher (pid $w)"
+    else
+      fail watcher "not running; run bin/dux-lock acquire (see state/watch.log)"
+    fi ;;
+esac
+
 echo "backend: ${backend:-none}"
-echo "lock: $("$DUX_ROOT/bin/dux-lock" status)"
+echo "lock: $lockst"
 exit $rc

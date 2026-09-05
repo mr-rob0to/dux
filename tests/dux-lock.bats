@@ -1,3 +1,4 @@
+bats_require_minimum_version 1.5.0
 load helpers/setup
 
 @test "acquire creates the lock with our pid" {
@@ -130,4 +131,61 @@ load helpers/setup
   DUX_SESSION_PID=424242 run dux-lock mine; [ "$status" -eq 1 ]
   rm -f "$DUX_HOME/state/dux.lock"
   DUX_SESSION_PID=$$ run dux-lock mine; [ "$status" -eq 1 ]
+}
+
+@test "acquire starts a watcher in its own process group" {
+  DUX_WATCHER=on DUX_SESSION_PID=$$ run --separate-stderr dux-lock acquire
+  [ "$status" -eq 0 ]
+  w="$(cat "$DUX_HOME/state/watch.pid")"
+  [ "$output" = "watcher started (pid $w)" ]
+  ps -ww -o command= -p "$w" | grep -q dux-watch
+  [ "$(ps -o pgid= -p "$w" | tr -d ' ')" != "$(ps -o pgid= -p $$ | tr -d ' ')" ]
+  [ -f "$DUX_HOME/state/events.log" ]; [ "$(cat "$DUX_HOME/state/wakes.base")" = 0 ]
+}
+
+@test "a same-session acquire replaces the watcher" {
+  DUX_WATCHER=on DUX_SESSION_PID=$$ dux-lock acquire >/dev/null
+  w1="$(cat "$DUX_HOME/state/watch.pid")"
+  DUX_WATCHER=on DUX_SESSION_PID=$$ dux-lock acquire >/dev/null
+  w2="$(cat "$DUX_HOME/state/watch.pid")"
+  [ "$w1" != "$w2" ]; wait_until 5 bash -c "! kill -0 $w1 2>/dev/null"; kill -0 "$w2"
+}
+
+@test "release stops the watcher and removes its pidfile" {
+  DUX_WATCHER=on DUX_SESSION_PID=$$ dux-lock acquire >/dev/null
+  w="$(cat "$DUX_HOME/state/watch.pid")"
+  DUX_WATCHER=on DUX_SESSION_PID=$$ run dux-lock release
+  [ "$status" -eq 0 ]; wait_until 5 bash -c "! kill -0 $w 2>/dev/null"
+  [ ! -e "$DUX_HOME/state/watch.pid" ]
+}
+
+@test "release by a non-holder leaves the watcher" {
+  DUX_WATCHER=on DUX_SESSION_PID=$$ dux-lock acquire >/dev/null
+  w="$(cat "$DUX_HOME/state/watch.pid")"
+  DUX_WATCHER=on DUX_SESSION_PID=424242 dux-lock release
+  kill -0 "$w"; [ -f "$DUX_HOME/state/watch.pid" ]
+}
+
+@test "an acquire blocked by a live holder leaves its watcher" {
+  sleep 30 3>&- & other=$!
+  DUX_SESSION_PID=$other dux-lock acquire >/dev/null
+  w="$(stand_in dux-watch)"; echo "$w" > "$DUX_HOME/state/watch.pid"
+  DUX_WATCHER=on DUX_SESSION_PID=$$ run dux-lock acquire
+  kill "$other"
+  [ "$status" -eq 3 ]; kill -0 "$w"; [ "$(cat "$DUX_HOME/state/watch.pid")" = "$w" ]
+}
+
+@test "acquire leaves a recorded stranger alone and reports it" {
+  s="$(stand_in not-a-watcher)"; echo "$s" > "$DUX_HOME/state/watch.pid"
+  DUX_WATCHER=on DUX_SESSION_PID=$$ run --separate-stderr dux-lock acquire
+  [ "$status" -eq 0 ]; kill -0 "$s"
+  [[ "$stderr" == *"names pid $s, which is not dux-watch; left alone"* ]]
+  [ "$(cat "$DUX_HOME/state/watch.pid")" != "$s" ]
+}
+
+@test "DUX_WATCHER=off leaves no watcher and reports it" {
+  DUX_WATCHER=off DUX_SESSION_PID=$$ run --separate-stderr dux-lock acquire
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  [[ "$stderr" == *"watcher disabled by DUX_WATCHER=off"* ]]
+  [ ! -e "$DUX_HOME/state/watch.pid" ]
 }

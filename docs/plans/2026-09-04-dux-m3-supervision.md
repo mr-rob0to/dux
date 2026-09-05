@@ -1378,7 +1378,7 @@ done
 
 Run: `chmod +x bin/dux-watch`
 
-- [ ] **Step 8: Extend `bin/dux-lock`**
+- [x] **Step 8: Extend `bin/dux-lock`**
 
 Add after `empty_lock()`:
 
@@ -1424,7 +1424,7 @@ acquired() {  # every path out of acquire that holds the lock ends here
 
 In the `acquire)` arm replace each `claim && exit 0` with `claim && acquired`, and `[ "$h" = "$me" ] && exit 0` with `[ "$h" = "$me" ] && acquired`. In `release)`: `if [ "$h" = "$me" ]; then rm -f "$lock"; watcher_on && stop_watcher; fi; exit 0`.
 
-- [ ] **Step 9: Extend `bin/dux-doctor`**
+- [x] **Step 9: Extend `bin/dux-doctor`**
 
 Before the final `echo "backend: ..."` lines:
 
