@@ -61,13 +61,14 @@ container_gone() {  # $1 endpoint
   grep -q "^$DUX_WORKER_HARNESS " "$FAKE_WORKER_LOG"
   [[ "$(cat "$DUX_HOME/state/$id.pid")" =~ ^[0-9]+$ ]]
   sleep 3
+  ep="$(dux-ledger get "$id" endpoint)"
   run dux-teardown "$id"
   [ "$status" -eq 0 ]
   [ "$(dux-ledger get "$id" state)" = done ]
   [ "$(dux-ledger get "$id" pr)" = "https://example.invalid/pr/1" ]
   [ ! -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
   [ ! -e "$DUX_HOME/state/$id.endpoint" ]
-  container_gone "$(dux-ledger get "$id" endpoint)"
+  container_gone "$ep"
 }
 
 @test "a worker that exits without an exit line is recorded as failed and can be torn down" {

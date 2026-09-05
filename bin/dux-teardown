@@ -51,4 +51,5 @@ pr="-"
 case "$last" in "done: PR "*) pr="${last#done: PR }"; pr="${pr%% *}" ;; esac
 case "$pr" in https://*) "$ledger" set "$id" pr "$pr" || exit $? ;; *) pr="-" ;; esac
 "$ledger" set "$id" state "$final" || exit $?
+"$ledger" set "$id" endpoint - || exit $?
 echo "torn down $id state=$final pr=$pr"
