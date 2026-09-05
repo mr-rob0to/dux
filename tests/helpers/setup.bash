@@ -47,7 +47,9 @@ wait_for_workers() {  # $1 seconds; returns 1 if a worker is still alive after t
 stand_in() {  # $1 command-line needle
   local fifo; fifo="$DUX_HOME/state/stand-in.$$.$RANDOM.fifo"
   mkfifo "$fifo" || return 1
-  ( exec -a "$1" cat ) <> "$fifo" >/dev/null 2>&1 3>&- &
+  # Perl receives the literal $SIG and $ARGV names below.
+  # shellcheck disable=SC2016
+  ( exec perl -e '$SIG{INT} = "DEFAULT"; exec {"/bin/cat"} $ARGV[0]' "$1" ) <> "$fifo" >/dev/null 2>&1 3>&- &
   echo $! >> "$DUX_HOME/state/stand-ins"
   echo $!
 }
