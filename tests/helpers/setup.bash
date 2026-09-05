@@ -63,7 +63,7 @@ make_repo() {  # $1 dir, $2 default branch; creates a bare origin and a clone
 
 fixture_task() {  # $1 project name, $2 shape; prints the task id. Needs Tasks 2 and 3.
   make_repo "$DUX_HOME/$1" main
-  dux-project add "$1" "$DUX_HOME/$1" --base main >/dev/null
+  dux-project add "$DUX_HOME/$1" --base main >/dev/null
   local id; id="$(dux-task-new "$1" "$2")"
   printf 'Do the thing the operator asked for.\n' > "$DUX_HOME/intent.$id"
   printf '1. The thing is done.\n' > "$DUX_HOME/criteria.$id"

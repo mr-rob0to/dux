@@ -3,7 +3,7 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 0 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Branch not yet cut; starts from freshly fetched `origin/main` after PR #4.
+- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 1 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Task 0 is complete; Task 1 is next.
 - Design review: done 2026-09-04 by a fresh Fable session; 4 Critical, 7 Important, 15 Minor. All Critical and Important fixed in the plan; 11 Minor fixed, 2 fixed by deletion, 2 logged. Table at the end.
 - Revised again 2026-09-04 on the operator's decision of open question 1: the wrapper pid now decides liveness in both directions and the container is corroboration (Decision 4). Not a second design review; `/ship` reviews the code.
 - Next action: Task 0(a) is in progress on the approved feature worktree.
@@ -494,7 +494,7 @@ Change `/config/` back to `config/`. Run `bats tests/contract.bats`. Expected: `
   run dux-project add
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: usage: dux-project add <path> [--name <name>] [--base <branch>] [--issues off|label:<name>] [--worktree make|script|git]" ]]
-  run dux-project add onlyaname
+  run dux-project add --name onlyaname
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project add"* ]]
   run dux-project get repoA
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project get <name> <key>" ]]
@@ -563,7 +563,7 @@ finding that names the flag.
 
 Commit: `docs: take the project name from the folder in the spec`
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Rewrite every `dux-project add <name> <path>` call in `tests/dux-project.bats` to `dux-project add <path>` where the folder name equals the old name (every fixture does: `repoA` lives at `$DUX_HOME/repoA`), and add:
 
@@ -617,11 +617,11 @@ Rewrite every `dux-project add <name> <path>` call in `tests/dux-project.bats` t
 
 Update the callers: `tests/helpers/setup.bash` `fixture_task` becomes `dux-project add "$DUX_HOME/$1" --base main >/dev/null`; `tests/dux-worktree.bats` `register` becomes `dux-project add "$DUX_HOME/$n" --base main "$@" >/dev/null`; `tests/dux-task-new.bats` `setup_project` and the direct calls in `tests/dux-spawn.bats` and `tests/dux-brief.bats` drop the name argument. Count the call sites first (`grep -rn 'dux-project add' tests skills README.md | wc -l`, 37 at the time of writing), change them, count again, and re-read one full changed test.
 
-- [ ] **Step 3: Run to verify they fail**
+- [x] **Step 3: Run to verify they fail**
 
 Run: `bats tests/dux-project.bats`. Expected: the derived-name tests fail with `finding: not a git repository: ` (the path landed in the name slot); the old-form test fails with status 0.
 
-- [ ] **Step 4: Rewrite `add`'s argument parsing**
+- [x] **Step 4: Rewrite `add`'s argument parsing**
 
 ```bash
   add)
@@ -654,16 +654,16 @@ Run: `bats tests/dux-project.bats`. Expected: the derived-name tests fail with `
 
 The rest of `add` (path uniqueness, `--issues`, base resolution, `--worktree`, template install, the registry line) is unchanged. The existing tests "add refuses a name with characters outside" and "nothing but dots" now pass `--name '.*'` and `--name ..` respectively and keep their finding texts.
 
-- [ ] **Step 5: Update the skill and docs**
+- [x] **Step 5: Update the skill and docs**
 
 `skills/dux-project/SKILL.md` step 4: `bin/dux-project add <path> [--name <name>] [--base X] [--issues Y] [--worktree Z]`, plus one sentence: "The name defaults to the folder name; pass `--name` only when that is taken or unusable." (`README.md` does not show the command; Task 7 adds the new form when it writes the supervision paragraph.)
 
-- [ ] **Step 6: Run to verify they pass, then break-verify**
+- [x] **Step 6: Run to verify they pass, then break-verify**
 
 Run: `make check`. Expected: green, 37 call sites updated.
 Break: in the `*)` positional arm remove `[ -z "$path" ] || usage "$usage_add";`. Run `bats tests/dux-project.bats`. Expected: "the old two-positional form" fails with status 0 and a registry line for `repoV`. Restore.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 `feat: take the project name from the folder in dux-project add`
 

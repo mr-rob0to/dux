@@ -55,26 +55,31 @@ install_template() {  # $1 path. Prints one line for the caller to relay.
 cmd="${1:-}"; shift || true
 case "$cmd" in
   add)
-    [ $# -ge 2 ] || usage "$usage_add"
-    case "$2" in -*) usage "$usage_add" ;; esac
-    name="$1"; path="$2"; given="$2"; shift 2
-    base=""; issues="off"; wt_flag=""
+    path=""; name=""; base=""; issues="off"; wt_flag=""
     while [ $# -gt 0 ]; do
       case "$1" in
+        --name) [ $# -ge 2 ] || usage "$usage_add"; name="$2"; shift 2 ;;
         --base) [ $# -ge 2 ] || usage "$usage_add"; base="$2"; shift 2 ;;
         --issues) [ $# -ge 2 ] || usage "$usage_add"; issues="$2"; shift 2 ;;
         --worktree) [ $# -ge 2 ] || usage "$usage_add"; wt_flag="$2"; shift 2 ;;
-        *) usage "$usage_add" ;;
+        -*) usage "$usage_add" ;;
+        *) [ -z "$path" ] || usage "$usage_add"; path="$1"; shift ;;
       esac
     done
-    case "$name" in ''|*[!A-Za-z0-9._-]*) finding "project name must match [A-Za-z0-9._-]+: $name" ;; esac
-    # . and .. would resolve a path built from the name to the parent, and . is a
-    # metacharacter in the registry grep.
-    case "$name" in *[!.]*) ;; *) finding "project name must not be all dots: $name" ;; esac
+    [ -n "$path" ] || usage "$usage_add"
+    given="$path"
     path="$(cd "$path" 2>/dev/null && pwd)" || finding "not a git repository: $given"
     case "$path" in *[[:space:]]*) finding "project path must not contain whitespace: $path" ;; esac
+    if [ -z "$name" ]; then
+      name="$(basename "$path")"
+      case "$name" in ''|*[!A-Za-z0-9._-]*) finding "folder name '$name' is not usable as a project name; pass --name" ;; esac
+      case "$name" in *[!.]*) ;; *) finding "folder name '$name' is not usable as a project name; pass --name" ;; esac
+    else
+      case "$name" in ''|*[!A-Za-z0-9._-]*) finding "project name must match [A-Za-z0-9._-]+: $name" ;; esac
+      case "$name" in *[!.]*) ;; *) finding "project name must not be all dots: $name" ;; esac
+    fi
     git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1 || finding "not a git repository: $path"
-    grep -q "^- $name " "$registry" && finding "project $name already registered"
+    grep -q "^- $name " "$registry" && finding "project $name already registered; pass --name to register it under another name"
     other="$(grep -F -- " path=$path " "$registry" | sed -n 's/^- \([^ ]*\) .*/\1/p')"
     [ -z "$other" ] || finding "path $path already registered as $other"
     case "$issues" in off|label:*) ;; *) finding "--issues must be off or label:<name>" ;; esac

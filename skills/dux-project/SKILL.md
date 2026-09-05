@@ -16,7 +16,8 @@ description: Register a repository with Dux so tasks can be dispatched to it. Us
    what it says; `ship` tasks refuse to spawn otherwise.
 3. Ask whether GitHub issues should feed the backlog. If yes, ask for the label
    and pass `--issues label:<name>`; otherwise `--issues off`.
-4. Run `bin/dux-project add <name> <path> [--base X] [--issues Y] [--worktree Z]`.
+4. Run `bin/dux-project add <path> [--name <name>] [--base X] [--issues Y] [--worktree Z]`.
+   The name defaults to the folder name; pass `--name` only when that is taken or unusable.
 5. Report the registry line in plain words: base branch, worktree mechanism,
    issue intake, and whether a PR template was installed or left alone.
 

@@ -2,7 +2,7 @@ bats_require_minimum_version 1.5.0  # run --separate-stderr
 
 load helpers/setup
 
-setup_project() { make_repo "$DUX_HOME/proj" main; dux-project add proj "$DUX_HOME/proj" --base main >/dev/null; }
+setup_project() { make_repo "$DUX_HOME/proj" main; dux-project add "$DUX_HOME/proj" --base main >/dev/null; }
 
 @test "allocates an id, a folder with an empty status log, and a queued ledger line" {
   setup_project

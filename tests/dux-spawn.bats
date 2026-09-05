@@ -264,7 +264,7 @@ codex_refused() {  # asserts the last `run` refused and started nothing for $id
 
 @test "a gh source gets one start comment; a failed comment is a warning, not a refusal" {
   make_repo "$DUX_HOME/proj" main
-  dux-project add proj "$DUX_HOME/proj" --base main >/dev/null
+  dux-project add "$DUX_HOME/proj" --base main >/dev/null
   id="$(dux-task-new proj scout --source 'gh:acme/widgets#12')"
   printf 'x\n' > "$DUX_HOME/i"; printf '1. y\n' > "$DUX_HOME/c"
   dux-brief "$id" --intent-file "$DUX_HOME/i" --criteria-file "$DUX_HOME/c" >/dev/null
