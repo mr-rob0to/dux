@@ -34,16 +34,17 @@ watcher, `bin/dux-watch`, which turns worker state changes into one line each in
 `state/events.log`; if it did not say `watcher started`, doctor will fail. Then:
 
 1. Run `bin/dux-doctor`. Fix anything it fails before dispatching.
-2. Run `bin/dux-status` and show the digest. Every line under `unacknowledged`
-   is a wake that landed while no Monitor was armed: handle each as Task
-   lifecycle says, before anything else.
-3. Arm the Monitor exactly once:
+2. Arm the Monitor exactly once:
    `Monitor(command: "tail -n0 -F state/events.log", persistent: true)`.
    A second Monitor means two wakes per event.
+3. Run `bin/dux-status` and show the digest. Every line under `unacknowledged`
+   is a wake that landed while no Monitor was armed: handle each as Task
+   lifecycle says, before anything else.
 
 At the start of every turn: if tasks are running and no Monitor is armed in
-this conversation, arm it again. Restart this session daily or after 40 wakes;
-`dux-status` prints the count.
+this conversation, arm it again, then run `bin/dux-status` and handle every
+unacknowledged line. Restart this session daily or after 40 wakes; the digest
+prints the count.
 
 ## Task lifecycle
 

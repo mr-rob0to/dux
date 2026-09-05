@@ -192,6 +192,8 @@ means another live session holds the lock and this one is read-only. A successfu
 acquire replaces any watcher recorded in `state/watch.pid`, starts a fresh one,
 and writes diagnostics to `state/watch.log`. `DUX_WATCHER=off` is the explicit
 test and maintenance switch. `dux-doctor` then requires the watcher while the
-switch is on, and `dux-status` reconstructs the fleet before the Monitor is armed.
+switch is on. Dux arms the Monitor before `dux-status` reconstructs the fleet,
+and it runs the digest again after replacing a dead Monitor. The ordering means
+the digest catches earlier events while the Monitor catches later ones.
 SessionEnd runs `dux-lock release`, which stops this session's watcher and removes
 the lock only when it holds this session's pid. Worker containers keep running.
