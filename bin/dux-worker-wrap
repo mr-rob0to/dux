@@ -237,7 +237,9 @@ import_proposals() {  # imports new progress; buffers a terminal proposal
         printf '%s\n' "$clean" >> "$status_log"; mirror working ;;
       needs-decision:\ ?*|blocked:\ ?*|done:\ ?*|failed:\ ?*)
         terminal="$clean" ;;
-      *) log "ignoring a status proposal for $id that is not a state line" ;;
+      # Not relayed, not logged: an operator reads fixed text chosen by state,
+      # never a line the worker wrote.
+      *) violation="the worker for $id proposed a line that is not a status line"; return 0 ;;
     esac
   done
 }
