@@ -232,6 +232,17 @@ import_proposals() {  # $1 "final" when nothing more is coming
   while [ "$i" -lt "$count" ]; do
     i=$((i + 1))
     clean="$(printf '%s' "${lines[$i]}" | clean_text)"
+    # A worker gets one terminal line and then stops. A second one, or anything
+    # at all behind one, means the run Dux is about to prove is not the run the
+    # worker was still having.
+    if [ -n "$terminal" ]; then
+      case "$clean" in
+        needs-decision:\ ?*|blocked:\ ?*|done:\ ?*|failed:\ ?*)
+          violation="the worker for $id proposed a second terminal status" ;;
+        *) violation="the worker for $id kept writing after its terminal status" ;;
+      esac
+      return 0
+    fi
     case "$clean" in
       working:\ ?*)
         printf '%s\n' "$clean" >> "$status_log"; mirror working ;;
