@@ -184,14 +184,32 @@ mirror() {  # $1 dux state. The pane says which state, never what the worker wro
 
 # ---- reading the worker's proposals --------------------------------------
 accepted=0        # bytes of status.outbox already read
+accepted_sum=""   # what those bytes were, so a rewrite of them is visible
 terminal=""       # the one terminal proposal, held back until the run is over
+violation=""      # the first proposal rule the worker broke
 clean_text() { LC_ALL=C tr -d '\000-\010\013-\037\177'; }
+
+# A checksum, not a byte-for-byte copy: this catches a worker rewriting its own
+# proposals by mistake and a stale writer from an earlier run, which is what the
+# threat boundary asks of it. A worker set on defeating it runs as we do and
+# does not need to bother.
+prefix_sum() { head -c "$2" "$1" | cksum; }
 
 import_proposals() {  # imports new progress; buffers a terminal proposal
   local size partial plen i count line clean
   local -a lines
+  [ -z "$violation" ] || return 0
   [ -f "$status_outbox" ] || return 0
   size="$(wc -c < "$status_outbox" | tr -d ' ')"
+  # What Dux has already read is the worker's own record too, and it does not
+  # get to change it. Checked before the "anything new?" test, because a rewrite
+  # that keeps the length would otherwise never be looked at.
+  if [ "$size" -lt "$accepted" ]; then
+    violation="the worker for $id truncated its status proposals"; return 0
+  fi
+  if [ "$accepted" -gt 0 ] && [ "$(prefix_sum "$status_outbox" "$accepted")" != "$accepted_sum" ]; then
+    violation="the worker for $id rewrote a status proposal it had already made"; return 0
+  fi
   [ "$size" -gt "$accepted" ] || return 0
   # Bounded by the size just measured: the worker keeps writing while we read,
   # and bytes past that point belong to the next pass, not this one.
@@ -209,6 +227,7 @@ import_proposals() {  # imports new progress; buffers a terminal proposal
     count=$((count - 1))
   fi
   accepted=$((size - plen))
+  accepted_sum="$(prefix_sum "$status_outbox" "$accepted")"
   i=0
   while [ "$i" -lt "$count" ]; do
     i=$((i + 1))
@@ -256,6 +275,9 @@ last_size=0; last_beat="$(date +%s)"
 while kill -0 "$wpid" 2>/dev/null; do
   sleep "$poll"
   import_proposals
+  # A broken proposal ends the run: stop reading what the worker is writing and
+  # refuse once its group is gone.
+  if [ -n "$violation" ]; then break; fi
   kill -0 "$wpid" 2>/dev/null || break   # never heartbeat past the harness's exit
   now_s="$(date +%s)"
   if [ $((now_s - last_beat)) -ge "$beat" ]; then
@@ -266,6 +288,9 @@ while kill -0 "$wpid" 2>/dev/null; do
     last_size=$size; last_beat=$now_s
   fi
 done
+# A run the wrapper ended itself has to be stopped before the wait below, or a
+# harness that does not exit on its own holds the wrapper here forever.
+if [ -n "$violation" ]; then stop_group || log "worker group $pgid for $id is still running"; fi
 wait "$wpid"; rc=$?
 trap - INT TERM
 # The harness has gone; whatever it left running has not. Nothing this run
@@ -275,6 +300,7 @@ if ! stop_group; then
 fi
 
 import_proposals
+[ -z "$violation" ] || refuse "$violation"
 if [ -s "$report_outbox" ]; then
   clean_text < "$report_outbox" >> "$task/report.md" || refuse "cannot write $task/report.md"
 fi

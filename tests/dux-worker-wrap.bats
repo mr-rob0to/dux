@@ -171,6 +171,27 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   kill -KILL -- "-$(cat "$DUX_HOME/state/$id.pgid")" 2>/dev/null || true
 }
 
+@test "a worker that rewrites or truncates its status proposals fails the task" {
+  prepare scout
+  printf 'status working: one\nsleep 3\nrun printf "working: two\\n" > "$DUX_STATUS_LOG"\nsleep 3\nstatus done: report\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worker for $id rewrote a status proposal it had already made"* ]]
+  [ "$(status_log | tail -n 1)" = "failed: wrapper: the worker for $id rewrote a status proposal it had already made" ]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+  id2="$(dux-task-new proj scout)"
+  printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
+  dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
+  id="$id2"; wt="$(dux-worktree create "$id")"
+  printf 'status working: one\nsleep 3\nrun : > "$DUX_STATUS_LOG"\nsleep 3\nstatus done: report\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worker for $id truncated its status proposals"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+}
+
 @test "a scout's report reaches report.md through the channel" {
   prepare scout
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
