@@ -324,8 +324,9 @@ the only reading that means no worker, while a file that cannot be read, one tha
 does not hold a pid, and one whose pid `kill -0` reaches all refuse. Otherwise
 removes the worktree (`git worktree remove`, branch kept), closes the container
 when it still exists, deletes `state/<id>.endpoint` and `state/<id>.pid`, records
-the PR url from `done: PR <url>`, and marks `done` or `failed` in `backlog.md`. A
-worktree or container that is already gone is logged, not refused, so an
+the PR url from `done: PR <url>`, and marks `done` or `failed` in `backlog.md`.
+It then sets the ledger's `endpoint` to `-`, which is how the digest tells a
+torn-down task from one awaiting merge. A worktree or container that is already gone is logged, not refused, so an
 interrupted teardown completes on rerun. The task folder is kept.
 
 ## 6. Supervision
@@ -433,10 +434,18 @@ wakes, whichever comes first. The digest at start makes the restart a non-event.
 
 ## 8. Fleet digest (`dux-status`)
 
-Files and the backend only, no network. Per project, five lines: queued,
-running, awaiting you (needs-decision, blocked), ready to merge (done with PR),
-failed. Zero-count lines omitted. `--prs` adds `gh pr view` state per ready PR;
-`--intake` runs `dux-intake` first.
+Files and the backend only, no network. First a watcher line and the wake count
+since session start. Per project, six lines, with zero-count lines omitted:
+queued; running, with stale and long-running counts in a suffix; awaiting you
+(needs-decision, blocked); needs recovery (dead, ended); ready (done with a PR
+or a report, not yet torn down); failed (not yet torn down). Long-running means
+the task's `brief.md` is older than `DUX_LONG_RUNNING_SECS`, which defaults to
+four hours. For a running or stale task whose status log already holds an exit
+line, the count follows the status log and a `note:` line says so. Then an
+`unacknowledged` block prints one `<state>: <id> (<project>)` line per task Dux
+has not acknowledged. `--prs` adds `gh pr view` state per ready PR; a failed
+`gh` is a warning, not a finding. `--intake` runs `dux-intake` first in
+milestone 4 and is a finding until then.
 
 ## 9. Runtime backends
 
