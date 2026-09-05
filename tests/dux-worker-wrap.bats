@@ -216,6 +216,25 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | head -n 1)" = "working: one" ]
 }
 
+@test "a second terminal proposal, or any line after one, fails the task" {
+  prepare scout
+  printf 'status done: report\nstatus failed: changed my mind\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worker for $id proposed a second terminal status"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+  [ "$(status_log | grep -c '^failed: changed' || true)" -eq 0 ]
+  id2="$(dux-task-new proj scout)"
+  printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
+  dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
+  id="$id2"; wt="$(dux-worktree create "$id")"
+  printf 'status done: report\nstatus working: one more thing\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worker for $id kept writing after its terminal status"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+}
+
 @test "a scout's report reaches report.md through the channel" {
   prepare scout
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
