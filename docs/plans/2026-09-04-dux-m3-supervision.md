@@ -487,7 +487,7 @@ Change `/config/` back to `config/`. Run `bats tests/contract.bats`. Expected: `
 **Interfaces:**
 - Produces: a missing argument, an extra positional, an unknown flag, or an unknown subcommand prints `finding: usage: dux-project <subcommand line>` and exits 2. Today `bin/dux-project add <path>` prints `bin/dux-project: line 56: 2: path` because `${2:?path}` fires under `set -u` before the script can say anything. Note `add`'s usage line is written in Task 0(e)'s form because 0(e) lands next; write it that way now so the test does not change twice.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```bash
 @test "a missing argument is a usage finding, not a bash error, for every subcommand" {
@@ -514,11 +514,11 @@ Change `/config/` back to `config/`. Run `bats tests/contract.bats`. Expected: `
 }
 ```
 
-- [ ] **Step 2: Run to verify they fail**
+- [x] **Step 2: Run to verify they fail**
 
 Expected: `run dux-project add` prints `bin/dux-project: line 56: 1: name` with status 1.
 
-- [ ] **Step 3: Fix**
+- [x] **Step 3: Fix**
 
 Add near the top of `bin/dux-project`:
 
@@ -529,11 +529,11 @@ usage() { finding "$1"; }
 
 Replace every `${N:?word}` in the script with an explicit count check: in `add`, `[ $# -ge 2 ] || usage "$usage_add"` (two positionals are still required until 0(e) lands; with `-ge 1`, `add <name>` alone would still reach `${2:?path}` and print bash's error); in `get`, `[ $# -eq 2 ] || usage "usage: dux-project get <name> <key>"`; in `resolve-base`, `[ $# -eq 1 ] || usage "usage: dux-project resolve-base <path>"`; the `*)` arm becomes `usage "usage: dux-project add|list|get|resolve-base"`. In `add`'s flag loop the `*)` arm becomes `usage "$usage_add"`. The `--issues` check keeps its own finding text. (`add`'s positional parsing is finished in 0(e); here only the count checks change.)
 
-- [ ] **Step 4: Break-verify**
+- [x] **Step 4: Break-verify**
 
 Remove `[ $# -eq 2 ] || usage ...` from `get`. Run `bats tests/dux-project.bats`. Expected: the usage test fails at `run dux-project get repoA` with the bash `line N: 2: key` text in `$output`. Restore.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 `fix: refuse a missing dux-project argument with the usage line`
 

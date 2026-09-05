@@ -1,5 +1,28 @@
 load helpers/setup
 
+@test "a missing argument is a usage finding, not a bash error, for every subcommand" {
+  run dux-project add
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: usage: dux-project add <path> [--name <name>] [--base <branch>] [--issues off|label:<name>] [--worktree make|script|git]" ]]
+  run dux-project add onlyaname
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project add"* ]]
+  run dux-project get repoA
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project get <name> <key>" ]]
+  run dux-project resolve-base
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project resolve-base <path>" ]]
+  run dux-project frobnicate
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project add|list|get|resolve-base" ]]
+  [ "$(grep -c 'line [0-9]' <<< "$output" || true)" -eq 0 ]
+}
+
+@test "an unknown flag on add is a usage finding and registers nothing" {
+  make_repo "$DUX_HOME/repoS" main
+  run dux-project add "$DUX_HOME/repoS" --colour red
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: usage: dux-project add"* ]]
+  [ ! -s "$DUX_HOME/data/projects.md" ]
+}
+
 @test "add writes a registry line with detected git worktree mechanism" {
   make_repo "$DUX_HOME/repoA" main
   run dux-project add repoA "$DUX_HOME/repoA"
