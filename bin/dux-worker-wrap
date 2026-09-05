@@ -349,6 +349,15 @@ if ! stop_group; then
   finding "the worker group $pgid for $id survived TERM and KILL; state/$id.pgid and its task channel are left for recovery"
 fi
 
+# The references are how Task 2 finds this run's channel and its facts. If they
+# no longer name the channel this process made, nothing downstream can be sure
+# which run it is reading, so the result does not count.
+if [ "$(cat "$portal" 2>/dev/null)" != "$channel" ] \
+  || ! grep -q "^channel=$channel\$" "$runfile" 2>/dev/null \
+  || ! grep -q "^run=$run\$" "$runfile" 2>/dev/null; then
+  refuse "the run references for $id no longer name this run's channel"
+fi
+
 import_proposals final
 [ -z "$violation" ] || refuse "$violation"
 outbox_intact "$report_outbox" "$report_ident" \

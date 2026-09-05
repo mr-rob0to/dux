@@ -256,6 +256,18 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | grep -c 'xxx' || true)" -eq 0 ]
 }
 
+@test "a run reference pointed somewhere else during the run is refused" {
+  prepare scout
+  # The worker's environment no longer names any Dux path, so the fixture is
+  # given the one it rewrites; a real worker would have to find it.
+  printf 'run printf %%s\\n /elsewhere > %s/state/%s.portal\nstatus done: report\nexit 0\n' \
+    "$DUX_HOME" "$id" > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the run references for $id no longer name this run's channel"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+}
+
 @test "an outbox the worker replaced is refused, and its contents are not read" {
   prepare scout
   printf 'status working: a\nrun rm -f "$DUX_STATUS_LOG"; printf "done: swapped in\\n" > "$DUX_STATUS_LOG"\nexit 0\n' \
