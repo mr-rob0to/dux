@@ -84,7 +84,12 @@ case "$1 ${2:-}" in
     [ -n "${FAKE_HERDR_RUN_FAIL:-}" ] && { echo '{"error":{"code":"run_failed"}}' >&2; exit 1; }
     if [ -n "${FAKE_HERDR_RUN:-}" ]; then
       cwd="$(cat "${FAKE_HERDR_LOG:-/dev/null}.cwd")"
-      (cd "$cwd" && HERDR_PANE_ID="$3" HERDR_ENV=1 nohup bash -c "$4" >> "${FAKE_HERDR_OUTPUT:-/dev/null}" 2>&1 &)
+      # Bash starts asynchronous children with INT ignored. The real pane runs
+      # its command in the foreground, so reset INT in a tiny external launcher
+      # before exec to keep this fake faithful to the real signal boundary.
+      # Perl receives the literal $SIG and @ARGV names below.
+      # shellcheck disable=SC2016
+      ( cd "$cwd" || exit; HERDR_PANE_ID="$3" HERDR_ENV=1 nohup perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' bash -c "$4" >> "${FAKE_HERDR_OUTPUT:-/dev/null}" 2>&1 ) &
     fi
     echo '{"result":{}}' ;;
   "pane report-metadata")

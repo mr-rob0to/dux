@@ -8,7 +8,9 @@ case "$1 ${2:-}" in
   "issue comment")
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: comment failed" >&2; exit 1; fi
     echo "https://example.invalid/issues/comment/1" ;;
-  "pr list")       echo "[]" ;;
+  "pr list")
+    if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr list failed" >&2; exit 1; fi
+    echo "${FAKE_GH_PR_LIST:-[]}" ;;
   "pr view")
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr view failed" >&2; exit 1; fi
     echo "${FAKE_GH_PR_STATE:-OPEN}" ;;
