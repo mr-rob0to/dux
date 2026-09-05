@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 2 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 and 1 are complete; Task 2 is next.
+- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 3 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 to 2 are complete; Task 3 is next.
 - Design review: done 2026-09-04 by a fresh Fable session; 4 Critical, 7 Important, 15 Minor. All Critical and Important fixed in the plan; 11 Minor fixed, 2 fixed by deletion, 2 logged. Table at the end.
 - Revised again 2026-09-04 on the operator's decision of open question 1: the wrapper pid now decides liveness in both directions and the container is corroboration (Decision 4). Not a second design review; `/ship` reviews the code.
-- Next action: Task 2 is in progress on the approved feature worktree.
+- Next action: Task 3 is in progress on the approved feature worktree.
 
 **Declared deviation from the constitution (principle 2, "stop and print a finding"):** `dux-watch` is the one script that does not exit on a per-task surprise. It prints `finding: watch: <id>: <one line>` to its log and skips that task for that pass, because exiting would end supervision of every other task without anyone noticing, which is the silent degradation principle 2 exists to prevent. Startup surprises (an unwritable `state/`, a bad argument) still exit 2. Every other script in this milestone follows the principle as written.
 
@@ -1620,7 +1620,7 @@ Expected: every status test fails with `dux-status: command not found`; the tear
 
 After `"$ledger" set "$id" state "$final" || exit $?` add `"$ledger" set "$id" endpoint - || exit $?`.
 
-- [ ] **Step 5: Write `bin/dux-status`**
+- [x] **Step 5: Write `bin/dux-status`**
 
 ```bash
 #!/usr/bin/env bash
@@ -1702,7 +1702,7 @@ Run: `chmod +x bin/dux-status`
 
 The order of the `unacknowledged` block is the ledger's order, which is the order tasks were created; the test's fixture creates them in the order it asserts. A task whose project is no longer in the registry is not shown; that is logged as a follow-up, not built here.
 
-- [ ] **Step 6: Fake `gh` and the skill**
+- [x] **Step 6: Fake `gh` and the skill**
 
 `tests/fakes/gh`: add `"pr view")` printing `${FAKE_GH_PR_STATE:-OPEN}` (the `-q .state` form means the fake prints the bare value), failing with exit 1 when `FAKE_GH_FAIL` is set.
 
@@ -1730,14 +1730,14 @@ description: Show the fleet digest. Use when the operator asks what is running, 
 Never edit `data/backlog.md`. Never read `state/<id>.out`.
 ```
 
-- [ ] **Step 7: Run to verify they pass, then break-verify**
+- [x] **Step 7: Run to verify they pass, then break-verify**
 
 Run: `make check`. Expected: green; the two e2e-dispatch runs green with the endpoint captured before teardown.
 Break (one per commit):
 1. Teardown commit. Remove the new `endpoint -` line. Expected: the teardown assertion fails with `herdr:w1:p9`. Paste. Restore.
 2. Status commit. In the `done)` arm remove `if [ "$ep" != - ]; then ... fi`, keeping the increment. Expected: "a torn-down task is archived" fails with `  ready 1` in the output. Paste. Restore.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 `fix: clear the ledger endpoint on teardown`, `feat: add dux-status digest and skill`.
 

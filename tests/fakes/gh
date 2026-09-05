@@ -9,5 +9,8 @@ case "$1 ${2:-}" in
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: comment failed" >&2; exit 1; fi
     echo "https://example.invalid/issues/comment/1" ;;
   "pr list")       echo "[]" ;;
+  "pr view")
+    if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr view failed" >&2; exit 1; fi
+    echo "${FAKE_GH_PR_STATE:-OPEN}" ;;
   *) echo "fake gh: unhandled: $*" >&2; exit 2 ;;
 esac
