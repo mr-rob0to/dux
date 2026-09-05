@@ -84,6 +84,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   grep -qx "DUX_REPORT=$ch/report.outbox" "$env_file"
   grep -qx "GIT_CONFIG_COUNT=1" "$env_file"
   grep -qx "GIT_CONFIG_KEY_0=core.hooksPath" "$env_file"
+  grep -qx "GIT_CONFIG_VALUE_0=$ch/hooks" "$env_file"
   # The proposal reached status.log by way of the wrapper, not the worker's hand.
   [ "$(status_log)" = "done: report" ]
 }
@@ -99,6 +100,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   grep -qE '^-rw-------.*report\.outbox$' "$ls"
   grep -qE '^-r--------.*brief\.md$' "$ls"
   grep -qE '^-r--------.*worker-settings\.json$' "$ls"
+  grep -qE '^drwx------.*/hooks$' "$ls"
   ch="$(dirname "$(cat "$DUX_HOME/state/chan.path")")"
   [ ! -e "$ch" ]
   [ ! -e "$DUX_HOME/state/$id.portal" ]
@@ -152,7 +154,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   grep -q "^DUX_STATUS_LOG=$DUX_HOME/state/channels/$id\." "$DUX_HOME/state/worker.env"
 }
 
-@test "a push to the base branch from inside the worker is refused by the task's hook" {
+@test "a push to the base branch from inside the worker is refused by the channel's hook" {
   prepare scout
   before="$(git -C "$DUX_HOME/proj.origin" rev-parse main)"
   printf 'run git commit -q --allow-empty -m work\nrun git push origin HEAD:refs/heads/main\nrun git push -q -u origin dux/%s\nstatus done: report\n' "$id" > "$FAKE_WORKER_SCRIPT"

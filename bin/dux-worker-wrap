@@ -85,6 +85,15 @@ if [ -s "$settings" ]; then
   { cp "$settings" "$c_settings" && chmod 400 "$c_settings"; } \
     || refuse "cannot stage the worker settings in the task channel"
 fi
+# The worker's git runs the channel's copy of the hooks, so the set it obeys is
+# the set Dux staged for this run and nothing in the task folder is on its path.
+cp -R "$hooks" "$channel/hooks" || refuse "cannot stage the task hooks in the task channel"
+# Read-only files, but a writable directory: a channel a refusal leaves behind
+# has to stay removable, and a mode the worker can lift anyway is worth nothing
+# bought at the price of a tree nothing can clear.
+chmod 700 "$channel/hooks" || refuse "cannot restrict $channel/hooks"
+[ ! -f "$channel/hooks/pre-push" ] || chmod 500 "$channel/hooks/pre-push" \
+  || refuse "cannot restrict $channel/hooks/pre-push"
 printf '%s\n' "$channel" > "$portal" || refuse "cannot write $portal"
 
 # What a result has to be checked against, written before the worker can
@@ -111,14 +120,13 @@ context_id="$(git hash-object --stdin < "$context" 2>/dev/null)" \
 } > "$runfile" || refuse "cannot write $runfile"
 
 cleanup_channel() {  # the channel and the references only this run owns
-  chmod 700 "$channel/hooks" 2>/dev/null || true
   rm -rf "$channel" 2>/dev/null || log "task channel $channel left in place"
   rm -f "$portal"
 }
 
 export DUX_STATUS_LOG="$status_outbox"
 export DUX_REPORT="$report_outbox"
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$hooks"
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$channel/hooks"
 
 mirroring=1
 mirror() {  # $1 dux state. The pane says which state, never what the worker wrote.
