@@ -195,7 +195,7 @@ clean_text() { LC_ALL=C tr -d '\000-\010\013-\037\177'; }
 # does not need to bother.
 prefix_sum() { head -c "$2" "$1" | cksum; }
 
-import_proposals() {  # imports new progress; buffers a terminal proposal
+import_proposals() {  # $1 "final" when nothing more is coming
   local size partial plen i count line clean
   local -a lines
   [ -z "$violation" ] || return 0
@@ -242,6 +242,11 @@ import_proposals() {  # imports new progress; buffers a terminal proposal
       *) violation="the worker for $id proposed a line that is not a status line"; return 0 ;;
     esac
   done
+  # Nothing more is coming, so bytes with no newline behind them are a line the
+  # worker started and never finished, not one it is still writing.
+  if [ "${1:-}" = final ] && [ -n "$partial" ]; then
+    violation="the worker for $id left a status line unfinished"
+  fi
 }
 
 intent_line="$(awk '/^## Intent$/ { f = 1; next } f && NF { print substr($0, 1, 60); exit }' "$brief")"
@@ -301,7 +306,7 @@ if ! stop_group; then
   finding "the worker group $pgid for $id survived TERM and KILL; state/$id.pgid and its task channel are left for recovery"
 fi
 
-import_proposals
+import_proposals final
 [ -z "$violation" ] || refuse "$violation"
 if [ -s "$report_outbox" ]; then
   clean_text < "$report_outbox" >> "$task/report.md" || refuse "cannot write $task/report.md"

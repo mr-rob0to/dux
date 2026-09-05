@@ -204,6 +204,18 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | tail -n 1)" = "failed: wrapper: the worker for $id proposed a line that is not a status line" ]
 }
 
+@test "a status line the worker never finished fails the task" {
+  prepare scout
+  printf 'status working: one\nrun printf "done: PR https://example.invalid/pr/1" >> "$DUX_STATUS_LOG"\nexit 0\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worker for $id left a status line unfinished"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+  [ "$(status_log | grep -c '^ended:' || true)" -eq 0 ]
+  [ "$(status_log | head -n 1)" = "working: one" ]
+}
+
 @test "a scout's report reaches report.md through the channel" {
   prepare scout
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
