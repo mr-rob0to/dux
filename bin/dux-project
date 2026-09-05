@@ -6,6 +6,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 registry="$DUX_DATA/projects.md"
 touch "$registry"
+usage_add="usage: dux-project add <path> [--name <name>] [--base <branch>] [--issues off|label:<name>] [--worktree make|script|git]"
+usage() { finding "$1"; }
 
 field() {  # $1 name, $2 key
   grep "^- $1 " "$registry" | sed -n "s/.* $2=\([^ ]*\).*/\1/p"
@@ -53,14 +55,16 @@ install_template() {  # $1 path. Prints one line for the caller to relay.
 cmd="${1:-}"; shift || true
 case "$cmd" in
   add)
-    name="${1:?name}"; path="${2:?path}"; given="$2"; shift 2
+    [ $# -ge 2 ] || usage "$usage_add"
+    case "$2" in -*) usage "$usage_add" ;; esac
+    name="$1"; path="$2"; given="$2"; shift 2
     base=""; issues="off"; wt_flag=""
     while [ $# -gt 0 ]; do
       case "$1" in
-        --base) base="$2"; shift 2 ;;
-        --issues) issues="$2"; shift 2 ;;
-        --worktree) wt_flag="$2"; shift 2 ;;
-        *) die "unknown flag $1" ;;
+        --base) [ $# -ge 2 ] || usage "$usage_add"; base="$2"; shift 2 ;;
+        --issues) [ $# -ge 2 ] || usage "$usage_add"; issues="$2"; shift 2 ;;
+        --worktree) [ $# -ge 2 ] || usage "$usage_add"; wt_flag="$2"; shift 2 ;;
+        *) usage "$usage_add" ;;
       esac
     done
     case "$name" in ''|*[!A-Za-z0-9._-]*) finding "project name must match [A-Za-z0-9._-]+: $name" ;; esac
@@ -73,7 +77,7 @@ case "$cmd" in
     grep -q "^- $name " "$registry" && finding "project $name already registered"
     other="$(grep -F -- " path=$path " "$registry" | sed -n 's/^- \([^ ]*\) .*/\1/p')"
     [ -z "$other" ] || finding "path $path already registered as $other"
-    case "$issues" in off|label:*) ;; *) die "--issues must be off or label:<name>" ;; esac
+    case "$issues" in off|label:*) ;; *) finding "--issues must be off or label:<name>" ;; esac
     if [ -z "$base" ]; then base="$(resolve_base "$path")" || exit $?; fi
     valid_branch "$base" || finding "base branch name is not valid: $base"
     if [ -n "$wt_flag" ]; then
@@ -91,11 +95,12 @@ case "$cmd" in
       "$name" "$path" "$base" "$wt" "$issues" "$(date -u +%Y-%m-%d)" >> "$registry"
     echo "$template_msg"
     log "registered $name base=$base worktree=$wt issues=$issues" ;;
-  list) sed -n 's/^- \([^ ]*\) .*/\1/p' "$registry" ;;
+  list) [ $# -eq 0 ] || usage "usage: dux-project list"; sed -n 's/^- \([^ ]*\) .*/\1/p' "$registry" ;;
   get)
-    name="${1:?name}"; key="${2:?key}"
+    [ $# -eq 2 ] || usage "usage: dux-project get <name> <key>"
+    name="$1"; key="$2"
     grep -q "^- $name " "$registry" || finding "project $name not registered"
     field "$name" "$key" ;;
-  resolve-base) resolve_base "${1:?path}" ;;
-  *) die "usage: dux-project add|list|get|resolve-base" ;;
+  resolve-base) [ $# -eq 1 ] || usage "usage: dux-project resolve-base <path>"; resolve_base "$1" ;;
+  *) usage "usage: dux-project add|list|get|resolve-base" ;;
 esac
