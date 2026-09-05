@@ -42,8 +42,9 @@ operator has said the PR is merged or the task is abandoned:
 
 - `bin/dux-teardown <id>`. Dirty, unpushed, still-running, and focused-pane
   refusals are findings; report them and stop.
-- Then `bin/dux-ledger ack <id>`, so a task torn down before its wake was handled
-  is not pushed again at the next session start.
+- Then `bin/dux-ledger ack <id> <done|failed>` with the final state, so a task
+  torn down before its wake was handled is not pushed again at the next session
+  start.
 
 ## Never
 

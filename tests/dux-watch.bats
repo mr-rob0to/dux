@@ -58,7 +58,7 @@ start_loop() { DUX_WATCH_INTERVAL_SECS="${1:-1}" dux-watch >> "$watchlog" 2>&1 3
   dux-watch --once
   [ "$(events_count)" -eq 1 ]; [ "$(dux-ledger get t1 state)" = stale ]
   dux-watch --once; [ "$(events_count)" -eq 1 ]
-  dux-ledger ack t1
+  dux-ledger ack t1 stale
   status_is t1 "working: awake"
   run --separate-stderr dux-watch --once
   [ "$(events_count)" -eq 1 ]; [ "$(dux-ledger get t1 state)" = running ]

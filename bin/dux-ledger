@@ -75,15 +75,21 @@ case "$cmd" in
     lock_ledger
     [ -n "$(line_of "$id")" ] || finding "task $id not in ledger"
     write_field "$id" "$key" "$val" ;;
-  ack|unack)
-    id="${1:?id}"; valid_task_id "$id"
+  ack)
+    [ $# -eq 2 ] || finding "usage: dux-ledger ack <id> <handled-state>"
+    id="$1"; expected="$2"; valid_task_id "$id"; valid_state "$expected"
     lock_ledger
     line="$(line_of "$id")"; [ -n "$line" ] || finding "task $id not in ledger"
-    if [ "$cmd" = ack ]; then
-      write_field "$id" acked "$(field_of "$line" state)"
-    else
-      write_field "$id" acked -
-    fi ;;
+    current="$(field_of "$line" state)"
+    [ "$current" = "$expected" ] \
+      || finding "task $id is now $current; refusing to acknowledge handled state $expected"
+    write_field "$id" acked "$expected" ;;
+  unack)
+    [ $# -eq 1 ] || finding "usage: dux-ledger unack <id>"
+    id="$1"; valid_task_id "$id"
+    lock_ledger
+    line="$(line_of "$id")"; [ -n "$line" ] || finding "task $id not in ledger"
+    write_field "$id" acked - ;;
   get)
     id="${1:?id}"; key="${2:?key}"
     case "$key" in project|shape|state|source|endpoint|pr|updated|acked) ;; *) finding "unknown ledger key $key" ;; esac

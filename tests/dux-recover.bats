@@ -66,7 +66,7 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
 }
 
 @test "--extend works once, returns running, and clears ack" {
-  task_in stale; status_is "working: slow"; dux-ledger ack "$id"
+  task_in stale; status_is "working: slow"; dux-ledger ack "$id" stale
   run dux-recover "$id" --extend
   [ "$status" -eq 0 ]; [ "$output" = "extended $id once; stale again after 1200s of silence" ]
   [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "working: extended once by dux-recover" ]

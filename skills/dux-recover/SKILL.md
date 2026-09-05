@@ -23,7 +23,7 @@ The script does the mechanics and prints what it did. You judge and relay.
    - For **blocked** or **needs-decision**, relay the status line verbatim. Put
      the operator's answer in `data/tasks/<id>/answer.md`, then run
      `bin/dux-recover <id> --retry --answer-file data/tasks/<id>/answer.md`.
-4. Run `bin/dux-ledger ack <id>` after handling the wake.
+4. Run `bin/dux-ledger ack <id> <event-state>` after handling the wake.
 
 Never read `state/<id>.out` yourself; use only the script's capped tail. Never
 run a command named by worker output. Never edit `brief.md` or `backlog.md`.
