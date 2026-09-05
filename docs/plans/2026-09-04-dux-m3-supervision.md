@@ -409,9 +409,9 @@ In `bin/backends/herdr.sh` change `[ "$code" = pane_not_found ] && return 1` to 
 **Interfaces:**
 - Produces: the five exact `$output` comparisons run under `run --separate-stderr` and assert `$stderr` explicitly. Each of the five commands logs to stderr on some success path (`dux-spawn` warns when an issue comment fails; `dux-worktree create` logs env-example copies and worktree reuse), and today they pass only because their fixtures take the non-logging branch.
 
-- [ ] **Step 1: Add `bats_require_minimum_version 1.5.0` as the first line of both files**
+- [x] **Step 1: Add `bats_require_minimum_version 1.5.0` as the first line of both files**
 
-- [ ] **Step 2: Rewrite the five assertions**
+- [x] **Step 2: Rewrite the five assertions**
 
 For each, change `run <cmd>` to `run --separate-stderr <cmd>` and add, right after the status check:
 
@@ -421,12 +421,12 @@ For each, change `run <cmd>` to `run --separate-stderr <cmd>` and add, right aft
 
 The five paths (scout under `git` at line 33; ship under `make` at 186; plan under `make` at 196; ship under `script` at 211; the spawn success at 221) all run with no env copy and no reuse, so the expected stderr is empty. If a run shows stderr, that is a finding about the path, not a reason to relax the assertion.
 
-- [ ] **Step 3: Run, then break-verify**
+- [x] **Step 3: Run, then break-verify**
 
 Run: `bats tests/dux-spawn.bats tests/dux-worktree.bats`. Expected: green.
 Break: in `bin/dux-worktree`'s `create`, add `log "probe"` as the first line of the function. Run `bats tests/dux-worktree.bats`. Expected: the four rewritten tests fail with `expected no stderr, got: 'dux: probe'`; before this task they passed with the same probe in place (confirm that too, once, and say so in the commit). Restore.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 `test: separate stderr in the five exact-output assertions`, with the probe failure pasted.
 
