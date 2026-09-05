@@ -235,6 +235,27 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
 }
 
+@test "a status line over 200 bytes fails the task, 200 exactly does not" {
+  prepare scout
+  # "working: " is 9 bytes, so 191 x's is exactly the limit and 192 is over it.
+  at="$(printf 'x%.0s' $(seq 1 191))"
+  over="$(printf 'x%.0s' $(seq 1 192))"
+  printf 'status working: %s\nstatus done: report\nexit 0\n' "$at" > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 0 ]
+  [ "$(status_log | tail -n 1)" = "done: report" ]
+  id2="$(dux-task-new proj scout)"
+  printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
+  dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
+  id="$id2"; wt="$(dux-worktree create "$id")"
+  printf 'status working: %s\nstatus done: report\nexit 0\n' "$over" > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worker for $id proposed a status line over 200 bytes"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+  [ "$(status_log | grep -c 'xxx' || true)" -eq 0 ]
+}
+
 @test "a scout's report reaches report.md through the channel" {
   prepare scout
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"

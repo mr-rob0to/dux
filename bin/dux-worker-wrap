@@ -183,6 +183,7 @@ mirror() {  # $1 dux state. The pane says which state, never what the worker wro
 }
 
 # ---- reading the worker's proposals --------------------------------------
+LINE_CAP=200      # bytes of one cleaned status line
 accepted=0        # bytes of status.outbox already read
 accepted_sum=""   # what those bytes were, so a rewrite of them is visible
 terminal=""       # the one terminal proposal, held back until the run is over
@@ -232,6 +233,9 @@ import_proposals() {  # $1 "final" when nothing more is coming
   while [ "$i" -lt "$count" ]; do
     i=$((i + 1))
     clean="$(printf '%s' "${lines[$i]}" | clean_text)"
+    if [ "$(printf '%s' "$clean" | wc -c | tr -d ' ')" -gt "$LINE_CAP" ]; then
+      violation="the worker for $id proposed a status line over $LINE_CAP bytes"; return 0
+    fi
     # A worker gets one terminal line and then stops. A second one, or anything
     # at all behind one, means the run Dux is about to prove is not the run the
     # worker was still having.
