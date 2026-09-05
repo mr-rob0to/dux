@@ -372,6 +372,9 @@ or nonnumeric pidfile is skipped as unknown. With no pidfile, the task is
 starting during a short grace period and gone after it; with neither pidfile nor
 endpoint it is skipped as unknown. The watcher logs the whole changed set of
 notes and skipped questions once, then logs when every task answers again.
+Process matching accepts the Dux command name only at the start of the command
+line or after a path separator, and only when followed by a space or the end.
+An unrelated command with a prefixed name is never trusted or signalled.
 
 A `working` line after `stale` sets the ledger back to `running` without an
 event and clears its acknowledgement. The silence clock uses the newest of the

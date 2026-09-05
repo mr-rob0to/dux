@@ -28,8 +28,9 @@ pid_runs() {  # $1 pid, $2 command-line needle ending at a word boundary
   command="$(ps -ww -o command= -p "$1" 2>/dev/null)" || return 1
   printf '%s\n' "$command" | awk -v needle="$2" '
     { p = index($0, needle); while (p) {
+        l = (p == 1 ? "" : substr($0, p - 1, 1))
         r = substr($0, p + length(needle), 1)
-        if (r == "" || r == " ") found = 1
+        if ((l == "" || l == "/") && (r == "" || r == " ")) found = 1
         rest = substr($0, p + 1); q = index(rest, needle)
         if (!q) break
         p += q
