@@ -63,6 +63,7 @@ case "$1 ${2:-}" in
     forget "$3"
     echo '{"result":{}}' ;;
   "pane get")
+    [ -e "${FAKE_HERDR_GET_FAIL:-/nonexistent}" ] && { echo '{"error":{"code":"server_unreachable"}}' >&2; exit 1; }
     if [ -e "${FAKE_HERDR_DEAD:-/nonexistent}" ]; then
       echo '{"error":{"code":"pane_not_found"}}' >&2; exit 1
     fi
