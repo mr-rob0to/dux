@@ -104,11 +104,23 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   ch="$(dirname "$(cat "$DUX_HOME/state/chan.path")")"
   [ ! -e "$ch" ]
   [ ! -e "$DUX_HOME/state/$id.portal" ]
+  [ ! -e "$DUX_HOME/state/$id.pgid" ]
   # What a later result has to be proved against outlives the channel.
   grep -qx "run=${ch##*.}" "$DUX_HOME/state/$id.run"
   grep -qx "id=$id" "$DUX_HOME/state/$id.result-context"
   grep -qx "branch=dux/$id" "$DUX_HOME/state/$id.result-context"
   grep -qx "context=$(git hash-object "$DUX_HOME/state/$id.result-context")" "$DUX_HOME/state/$id.run"
+}
+
+@test "a child the harness leaves behind is stopped with the harness" {
+  prepare scout
+  printf 'orphan %s\nstatus done: report\nexit 0\n' "$DUX_HOME/state/orphan.pid" > "$FAKE_WORKER_SCRIPT"
+  wrap
+  op="$(cat "$DUX_HOME/state/orphan.pid")"
+  [[ "$op" =~ ^[0-9]+$ ]]
+  run kill -0 "$op"
+  [ "$status" -ne 0 ]
+  [ "$(status_log | tail -n 1)" = "done: report" ]
 }
 
 @test "a scout's report reaches report.md through the channel" {
