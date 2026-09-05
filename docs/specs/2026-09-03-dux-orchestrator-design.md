@@ -56,7 +56,7 @@ Non-goals for v1
     dux-spawn               create worktree + backend container, launch worker
     dux-brief               render tasks/<id>/brief.md from arguments
     dux-worktree            create/find worktree per project's own mechanism
-    dux-watch               tail all status logs, emit state changes to events.log
+    dux-watch               supervise tasks; --once and eval <id> support checks and recovery
     dux-status              render digest from data/ and tmux
     dux-teardown            remove worktree and window, refuse if dirty/unpushed
     dux-notify              wrapper that formats a <=200 char push line
@@ -77,7 +77,7 @@ Non-goals for v1
     config/                 defaults dux-install copies into config/ (adds models-codex, worker-harness)
   data/                     durable, gitignored
     projects.md             registry: one line per project
-    backlog.md              queued / running / awaiting / done, one line per task
+    backlog.md              queued / running / awaiting / done, with acked=<state|-> per task
     tasks/<id>/brief.md     what the worker was told
     tasks/<id>/status.log   append-only "<state>: <line>" from the worker
     tasks/<id>/report.md    scout output or failure tail
@@ -88,6 +88,9 @@ Non-goals for v1
   state/                    runtime, gitignored
     events.log              one line per wake-worthy change; Monitor tails this
     dux.lock                pid of the live Dux session
+    watch.pid               pid of the current watcher
+    watch.log               watcher output and changing open questions
+    wakes.base              event line count when this session acquired the lock
     <id>.endpoint           backend endpoint: tmux window id or herdr pane id
     <id>.out                worker stream-json output
     <id>.pid                pid of dux-worker-wrap; liveness for the watcher
@@ -329,15 +332,19 @@ interrupted teardown completes on rerun. The task folder is kept.
 
 ### 6.1 Watcher (`dux-watch`)
 
-A single bash process. `dux-lock acquire` kills any pid in `state/watch.pid`,
-then starts `nohup setsid dux-watch` and records its pid; `release` kills it.
+A single bash process. `dux-lock acquire` stops the watcher named in
+`state/watch.pid` only when that pid runs `dux-watch`; a stranger's pid is
+reported and left alone. It starts `dux-watch` in its own process group through
+bash job control (`set -m`, because macOS has no `setsid`) with output in
+`state/watch.log`. The watcher writes its own pid to `state/watch.pid` and exits
+before a pass when that file names another pid. `release` stops it the same way.
 Acquire and release run from Claude Code `SessionStart` and `SessionEnd` hooks in
 the repo's `.claude/settings.json`, not from a CLAUDE.md instruction, so an
 orphaned watcher from a crashed session is replaced on the next start.
 
-Every 30 seconds the watcher reads the last line of every non-terminal task's
-`status.log` and checks liveness (`exists <endpoint>` from the backend AND
-`kill -0` on `state/<id>.pid`), and appends to `state/events.log` only when:
+Every 30 seconds the watcher reads the last line of every running or stale
+task's `status.log`, checks liveness, and appends `<iso8601Z> <state>: <id>` to
+`state/events.log` only when:
 
 - the last state changed to `done`, `failed`, `blocked`, or `needs-decision`;
 - no new line for 20 minutes while the endpoint is alive (`stale: <id>`);
@@ -350,6 +357,22 @@ written before a crash is still pending because the ledger still disagrees.
 The watcher also raises the backend's local toast on every event, so local
 visibility does not depend on a live Monitor.
 
+The task-specific wrapper pid decides liveness in both directions, and the
+container is supporting evidence. A pid that runs as `dux-worker-wrap <id>` is
+alive even when the backend lost its window; a numeric pid that does not run as
+that wrapper is gone even when a container remains. A backend that did not
+answer, a missing container beside a live wrapper, and a missing endpoint beside
+a live wrapper are logged as notes without changing the verdict. An unreadable
+or nonnumeric pidfile is skipped as unknown. With no pidfile, the task is
+starting during a short grace period and gone after it; with neither pidfile nor
+endpoint it is skipped as unknown. The watcher logs the whole changed set of
+notes and skipped questions once, then logs when every task answers again.
+
+A `working` line after `stale` sets the ledger back to `running` without an
+event and clears its acknowledgement. The silence clock uses the newest of the
+status log's and pidfile's modification times, so a later silence produces a new
+`stale` wake.
+
 Truth order: `status.log` last line plus liveness is the truth; `backlog.md` is
 derived and written only by scripts, never by Dux directly. `dux-status`
 recomputes from the status logs when the two disagree and says so.
@@ -359,8 +382,11 @@ recomputes from the status logs when the two disagree and says so.
 Dux arms one persistent Monitor on `tail -n0 -F state/events.log`. Each line
 wakes Dux once. On wake Dux reads that line and at most the last 5 lines of the
 task's `status.log`, and decides: notify, recover, or acknowledge. Events written
-while no Monitor was armed are not lost: `dux-status` at session start lists
-every ledger entry whose state changed since the last acknowledged event.
+while no Monitor was armed are not lost. Each ledger line carries
+`acked=<state|->`; Dux runs `dux-ledger ack <id>` after handling a wake. The
+watcher and `dux-recover --extend` clear the acknowledgement when they return a
+stale task to `running`, so the same state can wake again after new progress.
+`dux-status` lists every event-state task whose acknowledgement differs.
 
 Dux never reads `state/<id>.out` except inside `dux-recover`, and then only the
 last 40 lines.
@@ -394,7 +420,7 @@ terminal.
 ## 7. Session lifecycle
 
 A `SessionStart` hook runs `dux-lock acquire` (pid from `CLAUDE_PID`) and prints
-the result into context. CLAUDE.md then has Dux run `dux-doctor`, `dux-intake`
+the result, including whether the watcher started, into context. CLAUDE.md then has Dux run `dux-doctor`, `dux-intake`
 for every project with issues enabled, and `dux-status`, then arm the Monitor.
 If the lock is held by a live pid, Dux announces it is read-only and skips spawn,
 teardown, and recover. A `SessionEnd` hook releases the lock and kills the
@@ -629,7 +655,7 @@ receiving anything beyond the brief file and their project's own instructions.
 | Spawn precondition unmet | refuse with finding |
 | Teardown on dirty or unpushed | refuse with finding; never bypass |
 | Dux restarted mid-task | reconcile from files and backend; workers unaffected |
-| Backend unreachable | spawn and teardown refuse; watcher marks nothing, logs `backend-down` once |
+| Backend unreachable | spawn and teardown refuse; watcher uses the wrapper verdict and logs the changed open-question set once |
 | Issue intake fails | skip with one warning; backlog unchanged |
 | Second Dux session | read-only, announced |
 | Monitor dies | CLAUDE.md start-of-turn rule: if no monitor is armed and tasks are running, re-arm |
