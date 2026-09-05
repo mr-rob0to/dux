@@ -270,6 +270,18 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | grep -c 'filler line' || true)" -eq 0 ]
 }
 
+@test "a report over 1 MiB fails the task" {
+  prepare scout
+  printf 'run yes "filler line" | head -c 1100000 >> "$DUX_REPORT"\nstatus done: report\nexit 0\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worker for $id wrote more than 1048576 bytes of report"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+  # refuse writes its own failure note there; none of the worker's bytes.
+  [ "$(grep -c 'filler line' "$DUX_HOME/data/tasks/$id/report.md" || true)" -eq 0 ]
+}
+
 @test "a scout's report reaches report.md through the channel" {
   prepare scout
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
