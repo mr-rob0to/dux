@@ -60,6 +60,15 @@ load helpers/setup
   [ "$output" = "0 0 1 1 1 1" ]
 }
 
+@test "pid_runs rejects a needle inside a prefixed command name" {
+  watcher="$(stand_in not-dux-watch)"
+  worker="$(stand_in 'not-dux-worker-wrap t1')"
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; pid_runs "$1" dux-watch' _ "$watcher"
+  [ "$status" -eq 1 ]
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; pid_runs "$1" "dux-worker-wrap t1"' _ "$worker"
+  [ "$status" -eq 1 ]
+}
+
 @test "mtime_epoch returns one portable timestamp" {
   touch -t 202001010000 "$DUX_HOME/f"
   run bash -c 'source "$DUX_ROOT/bin/dux-env"; mtime_epoch "$DUX_HOME/f"'
