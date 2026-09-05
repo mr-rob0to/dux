@@ -4,7 +4,7 @@
 
 - Original Milestone 3 Tasks 0 to 7 are implemented; `/ship` remains paused after its security audit.
 - The one independent design review is complete. The operator chose the lightweight, trusted-local-worker boundary; every review finding is recorded below.
-- This amendment is planned only. Next action: operator approval, implementation, then resume the existing `/ship` gate.
+- Task 0 and Task 1 are implemented on `feat/m3-supervision`; `make check` is green. Next action: Task 2.
 
 **Goal:** Dux treats repository content and worker messages as untrusted data, accepts task completion only from independently checked evidence, and prevents accidental cross-task control without claiming to contain a deliberately malicious process running as the operator.
 
@@ -88,11 +88,11 @@
 
 **Interfaces:** Creates `state/<id>.run`, `.portal`, `.pgid`, `.result-context` and the proposal channel; produces cleaned progress plus one buffered terminal request for Task 2.
 
-- [ ] Own the random channel lifecycle. Refuse old references, symlinks, non-regular outboxes, replacement, or run mismatch.
-- [ ] Scrub the inherited environment and Dux `PATH` entry, restore only task proposal variables, and activate the copied hook through the exact three `GIT_CONFIG_*` values.
-- [ ] Launch with fd 0 on `/dev/null` and a separate process group. Stop and prove the group gone before result proof; a survivor produces a cleanup finding, not terminal state.
-- [ ] Enforce immutable-prefix, grammar, one-terminal, 200-byte line, 64-KiB status, and 1-MiB report rules. Import only cleaned progress during the run.
-- [ ] Break-verify terminal timing, an ordinary orphan, prefix rewrite, second terminal, caps, environment scrub, hook activation, and replacement separately.
+- [x] Own the random channel lifecycle. Refuse old references, symlinks, non-regular outboxes, replacement, or run mismatch.
+- [x] Scrub the inherited environment and Dux `PATH` entry, restore only task proposal variables, and activate the copied hook through the exact three `GIT_CONFIG_*` values.
+- [x] Launch with fd 0 on `/dev/null` and a separate process group. Stop and prove the group gone before result proof; a survivor produces a cleanup finding, not terminal state.
+- [x] Enforce immutable-prefix, grammar, one-terminal, 200-byte line, 64-KiB status, and 1-MiB report rules. Import only cleaned progress during the run.
+- [x] Break-verify terminal timing, an ordinary orphan, prefix rewrite, second terminal, caps, environment scrub, hook activation, and replacement separately.
 
 **Done when:** `bats tests/dux-worker-wrap.bats tests/dux-brief.bats` passes; a fake parent that proposes done and exits while its child sleeps leaves no handoff, the child is stopped, and only then can completion proceed.
 
