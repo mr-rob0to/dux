@@ -54,6 +54,14 @@ Testing is non-negotiable for scripts and for guards.
 - A guard you have not seen fail is not a guard. Every new test is break-verified once: break
   the guarded condition, run, confirm the failure, restore, and paste the failure output into
   the commit body. One break per commit; N breaks need N distinct failures.
+- Break-verification happens at the task boundary, not at the ship gate. A task is not done
+  until every assertion it added has been broken and seen to fail. The next task MUST NOT
+  start before that.
+- A suite that is green on its first run is a reason to look harder, not a reason to move on.
+  The usual cause is an assertion that never reached the code under test.
+- Fix commits outnumbering feature commits in a milestone is a stop signal: the tests were
+  passing for the wrong reason. Say so and re-examine the design rather than opening another
+  fix round.
 - Tests assert on behavior, never on the fixture. A test that passes because a fake returned
   what the test put in is a defect.
 - Tests MUST be deterministic and isolated: every test runs against a temp `DUX_HOME`; no test
@@ -65,7 +73,8 @@ Testing is non-negotiable for scripts and for guards.
   before its milestone closes, and the transcript excerpt is pasted into the pull request.
 
 Rationale: the failure mode this project guards against is a check that passes while the
-behavior is wrong.
+behavior is wrong. Catching it inside the task costs minutes; catching it at the ship gate
+costs hours, and it never arrives alone.
 
 ### 4. Architecture & Design
 
@@ -168,7 +177,10 @@ A milestone is done when all of the following hold:
 
 - Every task checkbox in the milestone plan is ticked and the plan header says so.
 - `make check` is green on a clean checkout.
-- Every new test was break-verified and the failure is in a commit body.
+- Every new test was break-verified at the task that added it, not at the ship gate, and the
+  failure is in a commit body.
+- The pull request reports the milestone's fix-to-feature commit ratio and the time spent
+  fixing after the code was written.
 - Every skill touched was dry-run and the excerpt is in the PR.
 - `docs/ARCHITECTURE.md` matches the scripts and flows that exist.
 - The PR was opened by `/ship`, the reviews ran, CI is green, and the operator merged it.
@@ -180,4 +192,4 @@ that edits this file, bumps the version, and updates Last Amended: MAJOR for a r
 removed principle, MINOR for a new principle, PATCH for a clarification. A plan that must
 deviate from a principle says so in its header and names the principle.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-03
+**Version**: 1.0.1 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-05
