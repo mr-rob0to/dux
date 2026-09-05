@@ -54,6 +54,8 @@ stand_in() {  # $1 command-line needle
   echo $!
 }
 
+not_running() { ! kill -0 "$1" 2>/dev/null; }
+
 wait_until() {  # $1 seconds, $2.. command; polls every 0.2 seconds
   local i=0 max=$(( $1 * 5 )); shift
   until "$@"; do i=$((i + 1)); [ "$i" -ge "$max" ] && return 1; sleep 0.2; done
