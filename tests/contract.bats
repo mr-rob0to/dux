@@ -45,6 +45,13 @@ load helpers/setup
   grep -q 'unacknowledged' "$DUX_ROOT/AGENTS.md"
 }
 
+@test "AGENTS.md wake rule acknowledges through dux-ledger ack and pushes for exactly three states" {
+  grep -q 'bin/dux-ledger ack <id>' "$DUX_ROOT/AGENTS.md"
+  grep -q 'at most the last 5 lines' "$DUX_ROOT/AGENTS.md"
+  grep -qE 'Push .*only for `done` with a PR, `needs-decision`, and `failed`' "$DUX_ROOT/AGENTS.md"
+  [ "$(grep -c 'never edit `data/backlog.md`\|Never edit `data/backlog.md`' "$DUX_ROOT/AGENTS.md")" -ge 1 ]
+}
+
 @test "gitignore anchors the runtime dirs and leaves templates/config tracked" {
   cd "$DUX_ROOT"
   for p in data/x state/x config/x; do git check-ignore -q --no-index "$p" || { echo "$p should be ignored"; return 1; }; done
