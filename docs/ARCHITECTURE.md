@@ -27,7 +27,8 @@ bin/
   dux-brief                render tasks/<id>/brief.md and tasks/<id>/worker-settings.json
   dux-worktree             create/remove/discard a worktree per the project's mechanism
   dux-spawn                worktree plus backend container for a queued task; five refusals
-  dux-worker-wrap          runs inside the container: pid, status mirroring, heartbeat, exit line
+  dux-worker-wrap          runs inside the container: task channel, scrubbed environment,
+                           process group, proposal rules, heartbeat, terminal state
   dux-teardown             remove the worktree, close the container, mark done or failed
   dux-watch                classify task events, record them, and raise local toasts
   dux-status               recompute the fleet digest and missed wakes from files
@@ -52,7 +53,10 @@ data/         (gitignored) projects.md registry; backlog.md ledger with acked st
                            tasks/<id>/{intent.md,criteria.md,brief.md,status.log,report.md,
                            worker-settings.json,harness,hooks/,worktree.log,retry,retried-from}
 state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
-                           <id>.endpoint; <id>.pid; <id>.out; events.log
+                           <id>.endpoint; <id>.pid; <id>.pgid; <id>.out; events.log;
+                           <id>.run; <id>.portal; <id>.result-context;
+                           channels/<id>.<run>/{status.outbox,report.outbox,brief.md,
+                           worker-settings.json,hooks/}
 config/       (gitignored) backend override, reviewer defaults, models, models-codex,
                            worker-harness
 tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash
@@ -143,13 +147,46 @@ backend started it and catches a worker in a server whose socket vanished.
    placeholder either way, and the worktree is discarded only when `find` shows
    no container; a container that outlived the failed `open` is a finding naming
    it, never a silent cleanup around a live worker.
-6. `dux-worker-wrap <id>` writes `state/<id>.pid`, exports `DUX_STATUS_LOG` and
-   the hooks-dir git config, runs `worker_run` from `bin/workers/<harness>.sh`
-   with output to `state/<id>.out`, mirrors each status line through
-   `dux-backend report`, heartbeats while output grows, and appends `failed:` or
-   `ended:` when the harness exits without an exit line.
+6. `dux-worker-wrap <id>` writes `state/<id>.pid`, makes the task channel (below),
+   runs `worker_run` from `bin/workers/<harness>.sh` in a process group of its own
+   with output to `state/<id>.out`, heartbeats while that output grows, mirrors the
+   dux state to the pane as fixed text, and appends `failed:` or `ended:` when the
+   harness exits without a terminal proposal.
 7. `dux-teardown <id>` (terminal, clean, pushed) removes the worktree, closes
    the container, and marks `done` or `failed` with the PR url.
+
+## The task channel
+
+A worker runs with the operator's own authority, so nothing it writes is
+canonical and nothing it says is evidence. It writes into a channel of its own
+and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
+
+- The channel is `state/channels/<id>.<run>`, mode 700, named with a random
+  run id. It holds read-only copies of the brief, the worker settings and the
+  task hooks, and two mode-600 files the worker appends to: `status.outbox` and
+  `report.outbox`. `state/<id>.portal` names it, `state/<id>.run` records the
+  run, and `state/<id>.result-context` records the facts a result is later
+  proved against. This run refuses to start if any of those four already exists,
+  including as a symlink.
+- The worker's environment is scrubbed of `DUX_*`, `CLAUDE_*`, `HERDR_*`,
+  `TMUX*` and `GIT_CONFIG_*`, and of Dux's own `PATH` entry. Only
+  `DUX_STATUS_LOG`, `DUX_REPORT` and the three `GIT_CONFIG_*` values that point
+  git at the channel's hooks are put back. The brief names those two variables;
+  no Dux path is handed to a worker.
+- The worker runs in its own process group with stdin on `/dev/null`. Before any
+  terminal state is written the wrapper stops that whole group, TERM then KILL,
+  and proves it gone. A survivor is a cleanup finding and no terminal state, so
+  a parent that claims done while its children keep running completes nothing.
+- Proposal rules, each one a failed task: what Dux has already read may not be
+  rewritten or truncated, every line is `<state>: <text>` with a known state, a
+  line is at most 200 bytes, the whole status outbox at most 64 KiB and the
+  report at most 1 MiB, and after one terminal line nothing more may be written.
+  Control characters are stripped. Only `working:` lines reach `status.log`
+  during the run; the terminal line is held until the run is over and the
+  references still name this run's channel.
+- The pane shows `dux <id>: <state>`, fixed text chosen by the state. Worker
+  text never reaches the operator except through `dux-notify` and
+  `dux-recover`, capped and fenced as data.
 
 ## Wake flow (exists today)
 
