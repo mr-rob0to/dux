@@ -394,13 +394,15 @@ last 40 lines.
 
 ### 6.3 Notifications (`dux-notify`)
 
-PushNotification for `done` with PR link, `needs-decision`, and `failed`.
-`blocked`, `stale`, and `dead` go to the digest, and push only if they persist
-past one recovery attempt. Message under 200 characters, leads with what the
-operator would act on. Remote Control on the Dux session is how the operator
-replies from a phone. On Herdr, the same events also raise a local toast via
-`herdr notification show`, so a done worker is visible without leaving the
-terminal.
+`dux-notify <id>` formats one line of at most 200 characters that leads with
+what the operator would do (`Review and merge:`, `Decide:`, `Unblock:`, `Retry
+or drop:`, `Check:`, `Classify:`) and prints it for Dux to pass to
+PushNotification. Dux pushes for `done` with a PR link, `needs-decision`, and
+`failed`. `blocked`, `stale`, and `dead` go to the digest, and push only if they
+persist past one recovery attempt. The watcher raises the backend's local toast
+when it emits; `dux-notify --toast` raises it again only where a push is
+unavailable. Remote Control on the Dux session is how the operator replies from
+a phone.
 
 ### 6.4 Recovery (`dux-recover`)
 

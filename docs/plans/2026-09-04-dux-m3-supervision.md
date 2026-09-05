@@ -1754,7 +1754,7 @@ Break (one per commit):
 - Consumes: `dux-ledger get`, `data/tasks/<id>/status.log`, `dux-backend notify` (with `--toast`).
 - Produces: `dux-notify <id> [--toast]` prints one line of at most 200 characters, leading with the action, per the design table. Refuses `queued`, `running`, `dropped`, an unknown id, a bad flag.
 
-- [ ] **Step 1: Amend the spec**
+- [x] **Step 1: Amend the spec**
 
 Section 6.3, replace the first two sentences with:
 
