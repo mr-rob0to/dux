@@ -1,3 +1,4 @@
+bats_require_minimum_version 1.5.0
 load helpers/setup
 
 # Spawn tests run on the fake Herdr backend with a fake worker that finishes at once.
@@ -215,8 +216,9 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
 
 @test "success records the endpoint and running, fills the worktree line, and the worker runs" {
   id="$(fixture_task proj scout)"
-  run dux-spawn "$id"
+  run --separate-stderr dux-spawn "$id"
   [ "$status" -eq 0 ]
+  if [ -n "$stderr" ]; then echo "expected no stderr, got: '$stderr'"; return 1; fi
   wt="$DUX_HOME/proj/.worktrees/dux-$id"
   [ "$output" = "spawned $id endpoint=herdr:w1:p9 worktree=$wt" ]
   [ "$(cat "$DUX_HOME/state/$id.endpoint")" = herdr:w1:p9 ]

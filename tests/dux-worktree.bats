@@ -1,3 +1,4 @@
+bats_require_minimum_version 1.5.0
 load helpers/setup
 
 hooks_env() {  # $1 id; prints the env assignments that activate the task's hooks dir
@@ -27,8 +28,9 @@ custom_target='worktree:
   register proj
   echo SECRET=1 > "$DUX_HOME/proj/.env"
   id="$(dux-task-new proj scout)"
-  run dux-worktree create "$id"
+  run --separate-stderr dux-worktree create "$id"
   [ "$status" -eq 0 ]
+  if [ -n "$stderr" ]; then echo "expected no stderr, got: '$stderr'"; return 1; fi
   wt="$DUX_HOME/proj/.worktrees/dux-$id"
   [ "$output" = "$wt" ]
   [ "$(git -C "$wt" branch --show-current)" = "dux/$id" ]
@@ -181,8 +183,9 @@ commit_in() {  # $1 project name, $2... paths to add and push
 @test "ship under make uses the project's target and discovers its path" {
   with_makefile proj "$custom_target"
   id="$(dux-task-new proj ship)"
-  run dux-worktree create "$id"
+  run --separate-stderr dux-worktree create "$id"
   [ "$status" -eq 0 ]
+  if [ -n "$stderr" ]; then echo "expected no stderr, got: '$stderr'"; return 1; fi
   [ "$output" = "$DUX_HOME/proj/.worktrees/custom-dux-$id" ]
   [ -f "$output/made-by-make" ]
   [ -s "$DUX_HOME/data/tasks/$id/worktree.log" ]
@@ -191,8 +194,9 @@ commit_in() {  # $1 project name, $2... paths to add and push
 @test "plan under make ignores the mechanism and uses git worktree add" {
   with_makefile proj "$custom_target"
   id="$(dux-task-new proj plan)"
-  run dux-worktree create "$id"
+  run --separate-stderr dux-worktree create "$id"
   [ "$status" -eq 0 ]
+  if [ -n "$stderr" ]; then echo "expected no stderr, got: '$stderr'"; return 1; fi
   [ "$output" = "$DUX_HOME/proj/.worktrees/dux-$id" ]
   [ ! -e "$DUX_HOME/proj/.worktrees/custom-dux-$id" ]
 }
@@ -206,8 +210,9 @@ commit_in() {  # $1 project name, $2... paths to add and push
   dux-project add proj "$DUX_HOME/proj" --base main >/dev/null
   [ "$(dux-project get proj worktree)" = script ]
   id="$(dux-task-new proj ship)"
-  run dux-worktree create "$id"
+  run --separate-stderr dux-worktree create "$id"
   [ "$status" -eq 0 ]
+  if [ -n "$stderr" ]; then echo "expected no stderr, got: '$stderr'"; return 1; fi
   [ "$output" = "$DUX_HOME/proj/.worktrees/s-dux-$id" ]
   [ "$(cat "$DUX_HOME/proj/.worktrees/script-args")" = "dux/$id main" ]
 }
