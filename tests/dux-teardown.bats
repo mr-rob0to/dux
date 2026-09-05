@@ -63,6 +63,7 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
   grep -qx 'pane close w1:p9' "$FAKE_HERDR_LOG"
   [ "$(dux-ledger get "$id" state)" = done ]
   [ "$(dux-ledger get "$id" pr)" = "https://example.invalid/pr/9" ]
+  [ "$(dux-ledger get "$id" endpoint)" = - ]
   [ ! -e "$DUX_HOME/state/$id.endpoint" ]; [ ! -e "$DUX_HOME/state/$id.pid" ]
   [ -f "$DUX_HOME/data/tasks/$id/brief.md" ]
   git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$id"

@@ -1495,7 +1495,7 @@ failed `gh` is a warning, not a finding. `--intake` runs `dux-intake` first
 
 Commit: `docs: pin the digest shape in the spec`
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 `tests/dux-teardown.bats`, in "done with a PR: worktree removed ..." add `[ "$(dux-ledger get "$id" endpoint)" = - ]`. In `tests/e2e-dispatch.bats` "spawn, done with a PR, teardown", add `ep="$(dux-ledger get "$id" endpoint)"` before `run dux-teardown "$id"` and change the last line to `container_gone "$ep"`.
 
@@ -1611,12 +1611,12 @@ unacknowledged
 }
 ```
 
-- [ ] **Step 3: Run to verify they fail**
+- [x] **Step 3: Run to verify they fail**
 
 Run: `bats tests/dux-status.bats tests/dux-teardown.bats`
 Expected: every status test fails with `dux-status: command not found`; the teardown assertion fails with `herdr:w1:p9`.
 
-- [ ] **Step 4: `bin/dux-teardown`**
+- [x] **Step 4: `bin/dux-teardown`**
 
 After `"$ledger" set "$id" state "$final" || exit $?` add `"$ledger" set "$id" endpoint - || exit $?`.
 
