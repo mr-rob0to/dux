@@ -39,6 +39,11 @@ count() { grep -c " $1: $2\$" "$events" 2>/dev/null || true; }
 # The count must be read again on every wait_until poll.
 count_is() { [ "$(count "$1" "$2")" -eq "$3" ]; }
 
+# The watcher records the event before the ledger, on purpose, so that a crash
+# cannot lose a wake. Seeing the event therefore says nothing yet about the
+# ledger, and a test that reads one straight after the other is racing it.
+ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
+
 @test "a worker that goes silent is stale after the threshold, exactly once, and the toast fires" {
   ready || skip "set DUX_BACKEND"
   supervised_env
@@ -47,6 +52,7 @@ count_is() { [ "$(count "$1" "$2")" -eq "$3" ]; }
   dux-spawn "$id" >/dev/null
   wait_until 15 grep -q '^working: starting' "$DUX_HOME/data/tasks/$id/status.log"
   wait_until 15 count_is stale "$id" 1
+  wait_until 10 ledger_is "$id" stale
   [ "$(dux-ledger get "$id" state)" = stale ]
   sleep 3
   [ "$(count stale "$id")" -eq 1 ]
@@ -77,6 +83,7 @@ count_is() { [ "$(count "$1" "$2")" -eq "$3" ]; }
   echo "$harness_pid" >> "$DUX_HOME/state/stand-ins"
   kill -9 "$wrapper_pid"
   wait_until 15 count_is dead "$id" 1
+  wait_until 10 ledger_is "$id" dead
   [ "$(dux-ledger get "$id" state)" = dead ]
   dux-recover "$id" >/dev/null
   [ "$(dux-ledger get "$id" state)" = failed ]
@@ -94,6 +101,7 @@ count_is() { [ "$(count "$1" "$2")" -eq "$3" ]; }
   id="$(fixture_task proj scout)"
   dux-spawn "$id" >/dev/null
   wait_until 20 count_is done "$id" 1
+  wait_until 10 ledger_is "$id" done
   [ "$(dux-ledger get "$id" state)" = done ]
   w1="$(cat "$DUX_HOME/state/watch.pid")"
   dux-lock acquire >/dev/null

@@ -61,15 +61,27 @@ wait_until() {  # $1 seconds, $2.. command; polls every 0.2 seconds
   until "$@"; do i=$((i + 1)); [ "$i" -ge "$max" ] && return 1; sleep 0.2; done
 }
 
+reap() {  # $1 pid; kill it and wait until it is actually gone
+  local p="$1" i=0
+  kill "$p" 2>/dev/null || return 0
+  while kill -0 "$p" 2>/dev/null; do
+    i=$((i + 1)); [ "$i" -ge 50 ] && return 1
+    sleep 0.2
+  done
+}
+
 stop_watcher_if_any() {
   local p
   if [ -f "$DUX_HOME/state/watch.pid" ]; then
     p="$(cat "$DUX_HOME/state/watch.pid" 2>/dev/null)"
-    if pid_runs "$p" dux-watch; then kill "$p" 2>/dev/null || true; fi
+    # Waited on, not just signalled. Every dux command the watcher runs sources
+    # dux-env, which mkdir -p's data/ and state/, so a watcher still alive when
+    # teardown starts recreates the very directories rm -rf is removing.
+    if pid_runs "$p" dux-watch; then reap "$p" || true; fi
     rm -f "$DUX_HOME/state/watch.pid"
   fi
   if [ -f "$DUX_HOME/state/stand-ins" ]; then
-    while read -r p; do kill "$p" 2>/dev/null || true; done < "$DUX_HOME/state/stand-ins"
+    while read -r p; do reap "$p" || true; done < "$DUX_HOME/state/stand-ins"
   fi
 }
 
