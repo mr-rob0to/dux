@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 1 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Task 0 is complete; Task 1 is next.
+- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 2 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 and 1 are complete; Task 2 is next.
 - Design review: done 2026-09-04 by a fresh Fable session; 4 Critical, 7 Important, 15 Minor. All Critical and Important fixed in the plan; 11 Minor fixed, 2 fixed by deletion, 2 logged. Table at the end.
 - Revised again 2026-09-04 on the operator's decision of open question 1: the wrapper pid now decides liveness in both directions and the container is corroboration (Decision 4). Not a second design review; `/ship` reviews the code.
-- Next action: Task 0(a) is in progress on the approved feature worktree.
+- Next action: Task 2 is in progress on the approved feature worktree.
 
 **Declared deviation from the constitution (principle 2, "stop and print a finding"):** `dux-watch` is the one script that does not exit on a per-task surprise. It prints `finding: watch: <id>: <one line>` to its log and skips that task for that pass, because exiting would end supervision of every other task without anyone noticing, which is the silent degradation principle 2 exists to prevent. Startup surprises (an unwritable `state/`, a bad argument) still exit 2. Every other script in this milestone follows the principle as written.
 
@@ -1439,21 +1439,21 @@ case "$lockst" in
 esac
 ```
 
-- [ ] **Step 10: Run to verify they pass**
+- [x] **Step 10: Run to verify they pass**
 
 Run: `make check`. Expected: lint clean; the new env, ledger, watch, lock, and doctor tests green; every existing file green (the helper's `DUX_WATCHER=off` keeps `dux-lock acquire` in spawn, teardown, and e2e from starting a watcher). Then run `bats tests/dux-watch.bats` twenty times in a loop; any red run is a timing defect to fix here, not later.
 
-- [ ] **Step 11: Break-verify, one per commit**
+- [x] **Step 11: Break-verify, one per commit**
 
 Five commits, one break each:
 
 1. `feat: add pid_runs and mtime_epoch to dux-env` with `tests/dux-env.bats`. Break: in `pid_runs` remove the `r == "" ||` clause. Expected: the pid_runs test fails, printing `1 0 1 1 1 1` instead of `0 0 1 1 1 1`: the needle at the end of the command line (the production shape) no longer matches while the one before a space still does. Paste. Restore.
 2. `feat: add the ledger acked field with ack, unack, and list --unacked` with `tests/dux-ledger.bats`. Break: in `list --unacked`, drop the `acked_of` comparison so every event-state task is listed. Expected: "list --unacked names event states whose ack differs" fails with `t-done` present. Paste. Restore.
-3. `feat: add dux-watch with dedup by ledger disagreement` with `tests/dux-watch.bats` (all but the fresh-pidfile test) and the helper. Break: in `pass()` remove the line `[ "$t" != "$lstate" ] || continue`. Expected: "done emits exactly one event ... a second pass emits nothing" fails at `[ "$(events_count)" -eq 1 ]` after the second pass (count 2). Paste. Restore.
+3. `feat: add dux-watch with dedup by ledger disagreement` with `tests/dux-watch.bats` (all but the fresh-pidfile test) and the helper. Break: in `pass()` remove the line `[ "$target" != "$lstate" ] || continue`. The planned `done` probe stayed green because a done task leaves the watch set. The repeated-stale probe failed at its second pass instead, proving the guard on the path that can reach it. Paste. Restore.
 4. `test: pin the pidfile in the watcher's silence clock` adding the "a fresh pidfile keeps an old, empty status log from reading as stale" test. Break: in `last_activity` replace the `if` with `echo "$a"` so only the status log counts. Expected: that test fails with one `stale: t1` event. Paste. Restore.
 5. `feat: start and stop the watcher from dux-lock` with the lock and doctor tests. Break: in `stop_watcher` replace `if pid_runs "$w" dux-watch; then` with `if kill -0 "$w" 2>/dev/null; then`. Expected: "acquire leaves a recorded pid alone when it is not a dux-watch" fails at `kill -0 "$s"` (the stand-in was killed). Paste. Restore.
 
-- [ ] **Step 12: Commit**
+- [x] **Step 12: Commit**
 
 The five commits above, each with its failure pasted in the body.
 
