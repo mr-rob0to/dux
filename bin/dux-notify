@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Formats one action-first line for a task event. See spec section 6.3.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+usage="usage: dux-notify <id> [--toast]"
+id="${1:-}"
+[ -n "$id" ] || finding "$usage"
+shift
+toast=0
+while [ $# -gt 0 ]; do
+  case "$1" in --toast) toast=1 ;; *) finding "$usage" ;; esac
+  shift
+done
+valid_task_id "$id"
+ledger="$DUX_ROOT/bin/dux-ledger"
+
+state="$("$ledger" get "$id" state)" || exit $?
+project="$("$ledger" get "$id" project)" || exit $?
+shape="$("$ledger" get "$id" shape)" || exit $?
+pr="$("$ledger" get "$id" pr)" || exit $?
+
+last="$(tail -n 1 "$DUX_TASKS/$id/status.log" 2>/dev/null | LC_ALL=C tr -d '\000-\010\013-\037\177' | tr '\t' ' ')"
+text="${last#*: }"
+case "$last" in
+  "done: PR https://"*)
+    if [ "$pr" = - ]; then pr="${last#done: PR }"; pr="${pr%% *}"; fi ;;
+esac
+
+case "$state" in
+  done)
+    if [ "$pr" != - ]; then line="Review and merge: $pr ($project $shape)"
+    else line="Read the report: $project $shape finished ($id)"; fi ;;
+  needs-decision) line="Decide: $text ($project $shape)" ;;
+  blocked) line="Unblock: $text ($project $shape)" ;;
+  failed) line="Retry or drop: $project $shape failed: $text" ;;
+  stale) line="Check: $project $shape has been silent; recovery in progress ($id)" ;;
+  dead) line="Check: $project $shape worker died; recovery in progress ($id)" ;;
+  ended) line="Classify: $project $shape exited without a result ($id)" ;;
+  *) finding "nothing to notify for $id (state $state)" ;;
+esac
+[ "${#line}" -le 200 ] || line="${line:0:197}..."
+echo "$line"
+[ "$toast" = 0 ] || "$DUX_ROOT/bin/dux-backend" notify Dux "$line" >/dev/null 2>&1 || true
