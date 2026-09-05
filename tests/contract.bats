@@ -45,6 +45,14 @@ load helpers/setup
   grep -q 'unacknowledged' "$DUX_ROOT/AGENTS.md"
 }
 
+@test "AGENTS.md arms before its digest and repeats the digest after re-arming" {
+  monitor_line="$(grep -nF 'Monitor(command: "tail -n0 -F state/events.log", persistent: true)' "$DUX_ROOT/AGENTS.md" | head -n 1 | cut -d: -f1)"
+  status_line="$(grep -nF 'Run `bin/dux-status` and show the digest.' "$DUX_ROOT/AGENTS.md" | head -n 1 | cut -d: -f1)"
+  [ "$monitor_line" -lt "$status_line" ]
+  rearm="$(sed -n '/^At the start of every turn:/,/^## Task lifecycle/p' "$DUX_ROOT/AGENTS.md")"
+  [[ "$rearm" == *'arm it again, then run `bin/dux-status`'* ]]
+}
+
 @test "AGENTS.md wake rule acknowledges through dux-ledger ack and pushes for exactly three states" {
   grep -q 'bin/dux-ledger ack <id> <event-state>' "$DUX_ROOT/AGENTS.md"
   grep -qE 'Push .*only for `done` with a PR, `needs-decision`, and `failed`' "$DUX_ROOT/AGENTS.md"
