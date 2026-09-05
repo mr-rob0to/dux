@@ -167,8 +167,10 @@ backend started it and catches a worker in a server whose socket vanished.
    Every event also raises a local backend toast.
 5. Dux holds one persistent Monitor on `tail -n0 -F state/events.log`. Each line
    wakes the session once.
-6. On a wake, Dux reads `dux-ledger line <id>`. A matching `acked=` and `state=`
-   means the wake is a duplicate. Otherwise Dux reads at most five status lines.
+6. On a wake, Dux reads only the ledger state and acknowledgement. A matching
+   acknowledgement and event state means the wake is a duplicate. Worker text
+   reaches context only through the capped and cleaned `dux-notify` or through
+   the capped, cleaned, fenced `dux-recover` output.
 7. `dux-notify` formats the phone line for `done` with a PR, `needs-decision`,
    and `failed`. `dux-recover` handles the mechanical side of recovery.
 8. Dux runs `dux-ledger ack <id> <event-state>` after handling the wake. The
@@ -181,7 +183,7 @@ backend started it and catches a worker in a server whose socket vanished.
 | `dead` | Mark failed, save the last 20 output lines, and keep the worktree. |
 | `ended` | Use a branch PR or a non-failure report to classify done; otherwise ask the operator. |
 | `failed` | Show the saved failure and offer one retry or a scout. |
-| `blocked`, `needs-decision` | Relay the status verbatim; append the operator answer to one fresh retry. |
+| `blocked`, `needs-decision` | Relay the meaning of fenced status data; append the operator answer to one fresh retry. |
 
 ## Session lifecycle (exists today)
 
