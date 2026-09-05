@@ -1,0 +1,117 @@
+#!/usr/bin/env bash
+# Fleet digest from local files. Network access is opt-in through --prs.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+ledger="$DUX_ROOT/bin/dux-ledger"
+projects="$DUX_ROOT/bin/dux-project"
+usage="usage: dux-status [--prs] [--intake]"
+prs=0
+intake=0
+long_after="${DUX_LONG_RUNNING_SECS:-14400}"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --prs) prs=1 ;;
+    --intake) intake=1 ;;
+    *) finding "$usage" ;;
+  esac
+  shift
+done
+[ "$intake" = 0 ] || finding "issue intake is not available yet (milestone 4)"
+
+w="$(cat "$DUX_STATE/watch.pid" 2>/dev/null)"
+if pid_runs "$w" dux-watch; then echo "watcher: running (pid $w)"; else echo "watcher: not running"; fi
+if [ -f "$DUX_STATE/dux.lock" ] && [ -f "$DUX_STATE/wakes.base" ]; then
+  base="$(tr -d ' ' < "$DUX_STATE/wakes.base")"
+  case "$base" in ''|*[!0-9]*) base=0 ;; esac
+  total=0
+  [ ! -f "$DUX_STATE/events.log" ] || total="$(wc -l < "$DUX_STATE/events.log" | tr -d ' ')"
+  echo "wakes this session: $((total - base)) (restart after 40)"
+fi
+
+is_exit() { case "$1" in done|failed|blocked|needs-decision|ended) return 0 ;; *) return 1 ;; esac; }
+
+pr_state() {  # $1 URL
+  local state
+  if state="$(gh pr view "$1" --json state -q .state 2>/dev/null)" && [ -n "$state" ]; then
+    echo "$state"
+  else
+    log "gh pr view failed for $1"
+    echo "(pr state unavailable)"
+  fi
+}
+
+is_long_running() {  # $1 id; the spawn-written brief is the age anchor
+  local brief mtime age
+  brief="$DUX_TASKS/$1/brief.md"
+  [ -f "$brief" ] || return 1
+  mtime="$(mtime_epoch "$brief" 2>/dev/null)" || return 1
+  age=$(( $(date +%s) - mtime ))
+  [ "$age" -ge "$long_after" ]
+}
+
+notes=""
+for project in $("$projects" list); do
+  queued=0; running=0; stale=0; long=0; awaiting=0; recovery=0; ready=0; failed=0; ready_urls=""
+  for id in $("$ledger" list --project "$project"); do
+    state="$("$ledger" get "$id" state)"
+    endpoint="$("$ledger" get "$id" endpoint)"
+    pr="$("$ledger" get "$id" pr)"
+    case "$state" in
+      running|stale)
+        last="$(tail -n 1 "$DUX_TASKS/$id/status.log" 2>/dev/null)"
+        last_state="${last%%:*}"
+        if is_exit "$last_state" && [ "$last_state" != "$state" ]; then
+          notes="${notes}note: $id status log says $last_state, ledger says $state; the watcher will reconcile"$'\n'
+          state="$last_state"
+          case "$last" in
+            "done: PR https://"*) pr="${last#done: PR }"; pr="${pr%% *}" ;;
+          esac
+        fi ;;
+    esac
+    case "$state" in
+      queued) queued=$((queued + 1)) ;;
+      running) running=$((running + 1)); is_long_running "$id" && long=$((long + 1)) ;;
+      stale) running=$((running + 1)); stale=$((stale + 1)); is_long_running "$id" && long=$((long + 1)) ;;
+      needs-decision|blocked) awaiting=$((awaiting + 1)) ;;
+      dead|ended) recovery=$((recovery + 1)) ;;
+      done)
+        if [ "$endpoint" != - ]; then
+          ready=$((ready + 1))
+          [ "$pr" = - ] || ready_urls="$ready_urls $pr"
+        fi ;;
+      failed) [ "$endpoint" = - ] || failed=$((failed + 1)) ;;
+    esac
+  done
+  echo "$project"
+  [ "$queued" = 0 ] || echo "  queued $queued"
+  if [ "$running" != 0 ]; then
+    suffix=""
+    [ "$stale" = 0 ] || suffix="$stale stale"
+    if [ "$long" != 0 ]; then
+      [ -z "$suffix" ] || suffix="$suffix, "
+      suffix="${suffix}${long} long-running"
+    fi
+    if [ -z "$suffix" ]; then echo "  running $running"; else echo "  running $running ($suffix)"; fi
+  fi
+  [ "$awaiting" = 0 ] || echo "  awaiting you $awaiting"
+  [ "$recovery" = 0 ] || echo "  needs recovery $recovery"
+  if [ "$ready" != 0 ]; then
+    echo "  ready $ready"
+    if [ "$prs" = 1 ]; then
+      for url in $ready_urls; do echo "    $url $(pr_state "$url")"; done
+    fi
+  fi
+  [ "$failed" = 0 ] || echo "  failed $failed"
+done
+
+[ -z "$notes" ] || printf '%s' "$notes"
+unacked="$("$ledger" list --unacked)"
+if [ -n "$unacked" ]; then
+  echo unacknowledged
+  for id in $unacked; do
+    echo "  $("$ledger" get "$id" state): $id ($("$ledger" get "$id" project))"
+  done
+fi
