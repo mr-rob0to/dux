@@ -192,6 +192,18 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
 }
 
+@test "a status proposal that is not a state line fails the task" {
+  prepare scout
+  printf 'run printf "ready to go\\n" >> "$DUX_STATUS_LOG"\nsleep 3\nstatus done: report\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worker for $id proposed a line that is not a status line"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+  [ "$(status_log | grep -c 'ready to go' || true)" -eq 0 ]
+  [ "$(status_log | tail -n 1)" = "failed: wrapper: the worker for $id proposed a line that is not a status line" ]
+}
+
 @test "a scout's report reaches report.md through the channel" {
   prepare scout
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
