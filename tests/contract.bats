@@ -39,6 +39,12 @@ load helpers/setup
   [[ "$output" == *"dux-lock release"* ]]
 }
 
+@test "AGENTS.md arms one persistent Monitor on the events log and re-arms it per turn" {
+  grep -qF 'Monitor(command: "tail -n0 -F state/events.log", persistent: true)' "$DUX_ROOT/AGENTS.md"
+  grep -q 'no Monitor is armed' "$DUX_ROOT/AGENTS.md"
+  grep -q 'unacknowledged' "$DUX_ROOT/AGENTS.md"
+}
+
 @test "gitignore anchors the runtime dirs and leaves templates/config tracked" {
   cd "$DUX_ROOT"
   for p in data/x state/x config/x; do git check-ignore -q --no-index "$p" || { echo "$p should be ignored"; return 1; }; done
