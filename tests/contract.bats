@@ -47,9 +47,18 @@ load helpers/setup
 
 @test "AGENTS.md wake rule acknowledges through dux-ledger ack and pushes for exactly three states" {
   grep -q 'bin/dux-ledger ack <id> <event-state>' "$DUX_ROOT/AGENTS.md"
-  grep -q 'at most the last 5 lines' "$DUX_ROOT/AGENTS.md"
   grep -qE 'Push .*only for `done` with a PR, `needs-decision`, and `failed`' "$DUX_ROOT/AGENTS.md"
   [ "$(grep -c 'never edit `data/backlog.md`\|Never edit `data/backlog.md`' "$DUX_ROOT/AGENTS.md")" -ge 1 ]
+}
+
+@test "AGENTS.md keeps worker text behind capped supervision scripts" {
+  wake="$(sed -n '/^- On a wake:/,/Never edit `data\/backlog.md`/p' "$DUX_ROOT/AGENTS.md")"
+  [[ "$wake" == *'bin/dux-ledger get <id> state'* ]]
+  [[ "$wake" == *'bin/dux-ledger get <id> acked'* ]]
+  [[ "$wake" == *'`done`, `failed`, `needs-decision`: run `bin/dux-notify <id>`'* ]]
+  [[ "$wake" == *'`blocked`, `stale`, `dead`, `ended`: use `skills/dux-recover`'* ]]
+  [[ "$wake" == *'PushNotification only for `done` with a PR, `needs-decision`, and `failed`'* ]]
+  [[ "$wake" != *'status.log'* ]]
 }
 
 @test "gitignore anchors the runtime dirs and leaves templates/config tracked" {

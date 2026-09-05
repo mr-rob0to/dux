@@ -20,8 +20,9 @@ The script does the mechanics and prints what it did. You judge and relay.
      operator to choose done or failed, then run `--classify done|failed`.
    - For **failed**, give the failure tail's meaning in one line. Retry once
      only after the operator asks, or dispatch a scout.
-   - For **blocked** or **needs-decision**, relay the status line verbatim. Put
-     the operator's answer in `data/tasks/<id>/answer.md`, then run
+   - For **blocked** or **needs-decision**, relay the meaning of the capped,
+     cleaned status data. Put the operator's answer in
+     `data/tasks/<id>/answer.md`, then run
      `bin/dux-recover <id> --retry --answer-file data/tasks/<id>/answer.md`.
 4. Run `bin/dux-ledger ack <id> <event-state>` after handling the wake.
 
