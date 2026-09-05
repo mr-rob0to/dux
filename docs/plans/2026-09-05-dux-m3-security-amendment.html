@@ -1,0 +1,324 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="source-sha256" content="9c41c661b178ab5ba5b7a1195700dd15c0df7a62cc0baff56c175b810a171375"><title>Dux Milestone 3 Security Amendment</title><style>
+:root{color-scheme:light;--ink:#172522;--muted:#5d6a67;--paper:#f3f1e8;--panel:#fffdf7;--line:#d5d4c9;--green:#0d6553;--green2:#dcebe5;--amber:#9f541d;--amber2:#f7e7d2;--red:#9f3e34;--red2:#f3ded9;--blue:#275f8c;--shadow:0 12px 30px rgba(23,37,34,.08)}*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;color:var(--ink);background:radial-gradient(circle at 8% 0,rgba(13,101,83,.12),transparent 34rem),linear-gradient(180deg,#ecece3,var(--paper) 28rem);font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}a{color:var(--green);text-underline-offset:3px}code{padding:.08rem .3rem;border:1px solid #dde0d9;border-radius:4px;background:#f1f3ee;font:.9em/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere}.hero{position:relative;overflow:hidden;padding:clamp(30px,6vw,64px);border:1px solid var(--line);border-radius:24px;background:var(--panel);box-shadow:var(--shadow)}.hero:after{content:"M3";position:absolute;right:-12px;bottom:-72px;color:rgba(13,101,83,.06);font:800 220px/1 ui-monospace,monospace}.eyebrow{margin:0 0 9px;color:var(--green);font:700 13px/1.4 ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase}.hero h1{position:relative;z-index:1;max-width:850px;margin:0;font-size:clamp(38px,6vw,70px);line-height:1.03;letter-spacing:-.045em}.hero p{position:relative;z-index:1;max-width:800px;margin:22px 0 0;color:#354440;font-size:20px}.badges{position:relative;z-index:1;display:flex;flex-wrap:wrap;gap:9px;margin-top:25px}.badge{padding:7px 11px;border-radius:99px;font:700 12px/1.2 ui-monospace,monospace}.blocked{color:var(--red);background:var(--red2)}.planned{color:var(--amber);background:var(--amber2)}.chosen{color:var(--blue);background:#dce9f3}.shell{width:min(1220px,calc(100% - 32px));margin:0 auto;padding:38px 0 80px}.layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:26px;margin-top:26px;align-items:start}nav{position:sticky;top:18px;padding:18px;border:1px solid var(--line);border-radius:16px;background:rgba(255,253,247,.94);box-shadow:var(--shadow);backdrop-filter:blur(10px)}nav strong{display:block;margin-bottom:9px;color:var(--muted);font:700 12px/1.4 ui-monospace,monospace;letter-spacing:.1em;text-transform:uppercase}nav a{display:block;padding:4px 0;color:var(--ink);text-decoration:none;font-size:13.5px}nav a:hover{color:var(--green)}article{min-width:0;padding:clamp(22px,4vw,38px);border:1px solid var(--line);border-radius:20px;background:var(--panel);box-shadow:var(--shadow)}h1{letter-spacing:-.035em}article>h1{display:none}h2{scroll-margin-top:20px;margin:46px -10px 18px;padding:18px 12px 10px;border-top:1px solid var(--line);font-size:30px;line-height:1.15;letter-spacing:-.025em}h2:first-of-type{margin-top:0;border-top:0}h3{margin:27px 0 10px;font-size:21px;line-height:1.25}p{margin:0 0 14px}ul,ol{margin:0 0 18px;padding-left:1.4rem}li+li{margin-top:7px}article>p:nth-of-type(-n+3){padding:16px 18px;border-left:4px solid var(--green);border-radius:4px 12px 12px 4px;background:var(--green2)}article>p:nth-of-type(3){border-color:var(--amber);background:var(--amber2)}article>h2[id^="task-"]{margin-top:28px;padding:20px 20px 10px;border:1px solid var(--line);border-bottom:0;border-radius:14px 14px 0 0;background:#f1f1e9}article>h2[id^="task-"]~p strong:first-child{color:var(--green)}blockquote{margin:16px 0;padding:14px 18px;border-left:4px solid var(--amber);background:var(--amber2)}table{display:block;width:100%;overflow-x:auto;border-collapse:collapse;margin:14px 0 24px;font-size:14px}thead,tbody{display:table;width:100%;table-layout:fixed}th,td{padding:11px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;overflow-wrap:anywhere}th{color:var(--muted);background:#efefe7;font:700 12px/1.35 ui-monospace,monospace;letter-spacing:.03em;text-transform:uppercase}tr:last-child td{border-bottom:0}#one-time-design-review-findings+table td:first-child,#original-ship-findings+table td:first-child{font-weight:750;color:var(--amber)}#one-time-design-review-findings+table tr:nth-child(-n+4) td:first-child{color:var(--red)}footer{padding:22px 3px 0;color:var(--muted);font-size:13px}@media(max-width:900px){.layout{grid-template-columns:1fr}nav{position:static;columns:2}.hero{border-radius:16px}}@media(max-width:620px){.shell{width:min(100% - 18px,1220px);padding-top:10px}.hero,article{border-radius:13px}.hero{padding:28px 22px}.hero h1{font-size:38px}nav{columns:1}thead,tbody{min-width:720px}}@media print{body{background:#fff}.shell{width:100%;padding:0}nav{display:none}.layout{display:block}.hero,article{box-shadow:none;border:0}h2{break-after:avoid}table{break-inside:avoid}}
+</style></head><body><main class="shell"><header class="hero"><p class="eyebrow">Dux · security amendment · 2026-09-05</p><h1>Dux Milestone 3 security amendment</h1><p>Lightweight application controls for trusted local workers and untrusted repository, status, report, PR, and result data.</p><div class="badges"><span class="badge blocked">/ship paused</span><span class="badge planned">approval pending</span><span class="badge chosen">lightweight boundary chosen</span></div></header><div class="layout"><nav aria-label="Plan sections"><strong>Review map</strong><a href="#threat-boundary">Threat boundary</a><a href="#assumptions-and-constraints">Assumptions and constraints</a><a href="#trust-and-capability-map">Trust and capability map</a><a href="#files">Files</a><a href="#interfaces-and-lifecycle">Interfaces and lifecycle</a><a href="#task-0-make-the-lightweight-boundary-authoritative">Task 0: Make the lightweight boundary authoritative</a><a href="#task-1-put-worker-messages-behind-one-task-channel">Task 1: Put worker messages behind one task channel</a><a href="#task-2-prove-each-result-shape">Task 2: Prove each result shape</a><a href="#task-3-make-terminal-state-an-atomic-retained-handoff">Task 3: Make terminal state an atomic, retained handoff</a><a href="#task-4-retire-legacy-workers-and-prove-the-full-lifecycle">Task 4: Retire legacy workers and prove the full lifecycle</a><a href="#falsifiable-amendment-acceptance">Falsifiable amendment acceptance</a><a href="#migration-and-backward-compatibility">Migration and backward compatibility</a><a href="#risks-and-accepted-tradeoffs">Risks and accepted tradeoffs</a><a href="#open-questions">Open questions</a><a href="#self-review">Self-review</a><a href="#original-ship-findings">Original /ship findings</a><a href="#one-time-design-review-findings">One-time design-review findings</a></nav><article><h1 id="dux-milestone-3-security-amendment-plan">Dux Milestone 3 Security Amendment Plan</h1>
+<p><strong>Where this stands</strong></p>
+<ul>
+<li>Original Milestone 3 Tasks 0 to 7 are implemented; <code>/ship</code> remains paused after its security audit.</li>
+<li>The one independent design review is complete. The operator chose the lightweight, trusted-local-worker boundary; every review finding is recorded below.</li>
+<li>This amendment is planned only. Next action: operator approval, implementation, then resume the existing <code>/ship</code> gate.</li>
+</ul>
+<p><strong>Goal:</strong> Dux treats repository content and worker messages as untrusted data, accepts task completion only from independently checked evidence, and prevents accidental cross-task control without claiming to contain a deliberately malicious process running as the operator.</p>
+<p><strong>Approach:</strong> Keep the current Bash dependencies and linked worktrees. A trusted wrapper gives each worker a random task channel, cleans proposals, waits for its ordinary process group, and publishes an atomic terminal handoff. <code>dux-result</code> proves each shape from registered project facts, exact Git and GitHub evidence, and a <code>/ship</code> phase receipt. Supervision consumes only retained handoffs and fixed text.</p>
+<p><strong>Rejected alternatives:</strong> Accounts, privileged helpers, containers, and VMs add setup or a runtime the operator rejected. The reviewed <code>sandbox-exec</code> design is deprecated and cannot contain all same-user Git, terminal, socket, or detached-process attacks. Prompt rules, file modes, and nonces are correctness checks, not security isolation.</p>
+<h2 id="threat-boundary">Threat boundary</h2>
+<ul>
+<li>The operator-started worker, its harness, and local commands it launches are trusted to act with the operator account's authority. They may reach the operator's files, shared Git metadata, terminal services, network, credentials, and other same-user processes. Deliberate abuse of those rights is outside Dux's protection claim.</li>
+<li>Repository and issue content, status and report text, PR URLs and claims, result claims, and remote GitHub state are untrusted application data. Dux validates grammar, size, ownership, shape, and external evidence before they affect canonical state or operator text.</li>
+<li>Dux scripts, wrapper, watcher, installed <code>/ship</code> skill, and operator are trusted control code. A malicious project build or hook has worker privileges and can bypass Dux.</li>
+<li>A task nonce, mode-600 file, hidden path, process identifier, or same-UID permission check prevents mistakes and stale writes. None is an authentication boundary against a malicious local worker.</li>
+<li>Optional VM or container isolation may be designed later. This amendment neither requires it nor advertises hostile-process containment.</li>
+</ul>
+<h2 id="assumptions-and-constraints">Assumptions and constraints</h2>
+<ul>
+<li>Dux stays dependency-free beyond Bash, Git, jq, gh, the worker harness, and the selected terminal backend. It requires no administrator action.</li>
+<li>All changed scripts remain Bash 3.2 compatible and <code>shellcheck -s bash</code> clean. The managed-process behavior is tested on Ubuntu and live macOS <code>/bin/bash</code> 3.2.</li>
+<li>A wrapper can place a harness and ordinary descendants in one process group, meaning one managed process set. A Mac probe confirmed an orphan remained in that group and stopped with it. A child can deliberately start a new session and escape; that is outside scope.</li>
+<li>Plan completion requires exactly one open, non-draft PR whose changed entries are regular, non-executable Markdown files anywhere below <code>docs/</code> or HTML files immediately below <code>docs/plans/</code>, including at least one Markdown file below both <code>docs/specs/</code> and <code>docs/plans/</code>.</li>
+<li>Ship completion requires the brief's exact plan tasks checked, at least one changed file outside the plan-only allowlist, a complete five-phase <code>/ship</code> receipt for this run, and non-empty GitHub checks with every check <code>SUCCESS</code>, <code>NEUTRAL</code>, or <code>SKIPPED</code> and at least one <code>SUCCESS</code>.</li>
+<li>Scout completion requires non-whitespace report text of at most 1 MiB. A status proposal is at most 64 KiB, and each cleaned status line is at most 200 bytes.</li>
+<li>The existing public task states and ledger fields remain unchanged. <code>/ship</code> stays the only delivery gate.</li>
+</ul>
+<h2 id="trust-and-capability-map">Trust and capability map</h2>
+<table>
+<thead>
+<tr>
+<th>Part</th>
+<th>Allowed application action</th>
+<th>Required guard</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Worker process</td>
+<td>Change its worktree and use project commands, network, and credentials</td>
+<td>Receives only its channel and optional ship recorder; no inherited Dux session, root, backend, or sibling variables</td>
+</tr>
+<tr>
+<td>Proposal channel</td>
+<td>Carry one task's brief, settings, hook copy, status proposals, and report proposal</td>
+<td>Random run path, physical-path check, pre-created regular files, size limits, immutable accepted prefix, recorded cleanup</td>
+</tr>
+<tr>
+<td>Outer wrapper</td>
+<td>Read proposals, supervise the managed process group, prepare a terminal result</td>
+<td>Never trusts a worker URL, report shape, command, task id, or terminal timing</td>
+</tr>
+<tr>
+<td>Result verifier</td>
+<td>Read registered project facts, local Git facts, <code>/ship</code> phases, and GitHub PR facts</td>
+<td>Exact repository, branch, base, SHA, file scope, shape, and check rules; bounded queries; hook-free Git reads</td>
+</tr>
+<tr>
+<td>Final handoff</td>
+<td>Move a verified terminal result to watcher</td>
+<td>Atomic rename, matching run, ordered sequence, retained until teardown, idempotent consumption</td>
+</tr>
+<tr>
+<td>Operator surfaces</td>
+<td>Show trusted project fields, verified PR URL, fixed action text, or fenced recovery data</td>
+<td>No free-form worker text in push, toast, digest, backend chrome, or a command</td>
+</tr>
+</tbody>
+</table>
+<h2 id="files">Files</h2>
+<table>
+<thead>
+<tr>
+<th>Change</th>
+<th>Responsibility</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Create <code>bin/dux-result</code>, <code>tests/dux-result.bats</code></td>
+<td>Record Dux <code>/ship</code> phases and verify plan, ship, or scout completion</td>
+</tr>
+<tr>
+<td>Modify <code>bin/dux-worker-wrap</code>, <code>bin/dux-env</code>, <code>tests/dux-worker-wrap.bats</code></td>
+<td>Create the task channel, scrub the worker environment, supervise its process group, and prepare final handoff</td>
+</tr>
+<tr>
+<td>Modify <code>bin/dux-brief</code>, <code>templates/brief.md</code>, <code>tests/dux-brief.bats</code></td>
+<td>Point workers at proposal interfaces and state the trusted-local-process rule</td>
+</tr>
+<tr>
+<td>Modify <code>skills/ship/SKILL.md</code>, <code>tests/contract.bats</code></td>
+<td>Record five phases for Dux ship workers and make security review honor the declared project boundary</td>
+</tr>
+<tr>
+<td>Modify <code>bin/dux-watch</code>, <code>bin/dux-notify</code>, <code>bin/dux-status</code> and their Bats files</td>
+<td>Consume retained handoffs and use fixed operator text</td>
+</tr>
+<tr>
+<td>Modify <code>bin/dux-recover</code>, <code>bin/dux-teardown</code>, <code>bin/dux-spawn</code> and their Bats files</td>
+<td>Verify late results, retire legacy wrappers, and own reference cleanup</td>
+</tr>
+<tr>
+<td>Modify <code>tests/fakes/claude</code>, <code>tests/fakes/gh</code>, <code>tests/helpers/setup.bash</code>, <code>tests/e2e-dispatch.bats</code>, <code>tests/e2e-supervise.bats</code></td>
+<td>Adversarial fixtures and full lifecycle proof on both backends</td>
+</tr>
+<tr>
+<td>Modify <code>Makefile</code>, <code>.github/workflows/check.yml</code></td>
+<td>Portable checks plus a macOS Bash 3.2 job</td>
+</tr>
+<tr>
+<td>Modify <code>AGENTS.md</code>, <code>skills/dux-dispatch/SKILL.md</code>, <code>skills/dux-recover/SKILL.md</code></td>
+<td>Operator rules, safe status handling, and the legacy retirement command</td>
+</tr>
+<tr>
+<td>Modify constitution, authoritative spec, <code>docs/ARCHITECTURE.md</code>, <code>README.md</code>, and both M3 plans</td>
+<td>Make the boundary and lifecycle authoritative</td>
+</tr>
+</tbody>
+</table>
+<h2 id="interfaces-and-lifecycle">Interfaces and lifecycle</h2>
+<ul>
+<li><strong>Run record:</strong> before launch, the wrapper writes <code>state/&lt;id&gt;.run</code> with version, id, wrapper pid, <code>mktemp</code> nonce, physical worktree/channel paths, shape, and the <code>git hash-object --stdin</code> id of <code>state/&lt;id&gt;.result-context</code>. Spawn refuses conflicting live run artifacts.</li>
+<li><strong>Task channel:</strong> a random mode-700 temp directory is recorded in <code>state/&lt;id&gt;.portal</code>. It holds read-only brief, settings, and hook copies plus mode-600 <code>status.outbox</code> and <code>report.outbox</code>. The worker receives their <code>DUX_STATUS_LOG</code> and <code>DUX_REPORT</code>; ship also receives task-bound <code>DUX_SHIP_RECORD</code>.</li>
+<li><strong>Worker environment:</strong> before launch, remove inherited <code>DUX_*</code>, <code>CLAUDE_*</code>, <code>HERDR_*</code>, <code>TMUX*</code>, backend, <code>GIT_CONFIG_*</code>, and Dux <code>PATH</code> entries. Restore only task interfaces and <code>GIT_CONFIG_COUNT=1</code>, <code>GIT_CONFIG_KEY_0=core.hooksPath</code>, <code>GIT_CONFIG_VALUE_0=&lt;channel&gt;/hooks</code>. Project credentials remain.</li>
+<li><strong>Managed processes:</strong> Bash job control starts a separate process group recorded in <code>state/&lt;id&gt;.pgid</code>. Fd 0 is <code>/dev/null</code>, 1 and 2 write <code>state/&lt;id&gt;.out</code>, and higher fds close. After harness exit or stop, signal <code>TERM</code>, then <code>KILL</code>, and prove the group gone. A survivor blocks handoff and leaves references for recovery.</li>
+<li><strong>Proposal parsing:</strong> require each status snapshot to retain the accepted byte prefix. Import cleaned <code>working:</code> progress and buffer one terminal proposal. Rewrite, truncation, unknown or partial line, second terminal, later text, or limit breach fails the wrapper. Backend status gets a fixed label.</li>
+<li><strong>Result context:</strong> <code>state/&lt;id&gt;.result-context</code> records run, canonical <code>owner/repo</code>, base, <code>dux/&lt;id&gt;</code>, worktree, shape, and ship plan/task range. Git reads use an absolute path, ignore system/global config, set <code>core.hooksPath=/dev/null</code> and <code>core.fsmonitor=false</code>, and disable external diffs. This prevents accidental hooks, not malicious same-UID changes.</li>
+<li><strong>Ship receipt:</strong> <code>$DUX_SHIP_RECORD checks|review|security|pr|ci</code> calls <code>bin/dux-result record-ship &lt;id&gt; &lt;run&gt; &lt;phase&gt;</code>. The helper requires that order, records the current SHA for each phase in <code>state/&lt;id&gt;.ship-receipt</code>, and validates the exact PR plus non-empty green checks before <code>ci</code>. The bundled <code>/ship</code> skill calls it only when the variable exists, so non-Dux use is unchanged.</li>
+<li><strong>Shape verifier:</strong> <code>bin/dux-result verify &lt;id&gt; &lt;run&gt; [--report &lt;path&gt;]</code> prints one canonical result and exits 0; no valid result is 1, a finding is 2. Plan and ship require a clean worktree and one matching PR. Plan checks files; ship checks task boxes, implementation, phases, and CI; scout alone imports the report. Worker claims are ignored.</li>
+<li><strong>Final handoffs:</strong> <code>state/&lt;id&gt;.handoffs/</code> holds ordered directories. Build <code>.tmp.&lt;run&gt;.&lt;n&gt;/{run,status,event}</code> beside it, then rename to <code>&lt;n&gt;</code>. Watcher accepts the next matching sequence, appends its stable status and event once, updates ledger and verified PR, and writes <code>consumed</code>. Wrapper publishes sequence 1; recovery may publish later proof. Teardown removes all sequences.</li>
+<li><strong>Cleanup:</strong> after handoff, wrapper removes only its channel and portal/pgid references. Context, run, receipt, and handoffs remain for watcher and recovery. Teardown removes them after existing safety checks. Dead recovery removes a channel only after wrapper and managed group are gone.</li>
+</ul>
+<h2 id="task-0-make-the-lightweight-boundary-authoritative">Task 0: Make the lightweight boundary authoritative</h2>
+<p><strong>Files:</strong> Modify <code>docs/specs/2026-09-03-dux-orchestrator-design.md</code>, <code>docs/constitution.md</code>, <code>AGENTS.md</code>, <code>skills/ship/SKILL.md</code>; test <code>tests/contract.bats</code>.</p>
+<p><strong>Interfaces:</strong> Defines the threat boundary, run/channel/receipt/handoff names, shape evidence, and review rule consumed by Tasks 1 to 4.</p>
+<ul>
+<li>[ ] Amend spec sections 1 to 3, 5.3 to 5.6, 6.1 to 6.4, 7, 9, 11, 13 to 15, and 17 to 19 with the boundary and every lifecycle operation above.</li>
+<li>[ ] Amend constitution principle 6 and its rationale from mechanical worker containment to trusted local workers plus untrusted application data. Follow governance with a 2.0.0 version because the principle is redefined.</li>
+<li>[ ] Keep <code>AGENTS.md</code> under 150 lines; require fixed notifications, fenced recovery data, and <code>/ship</code> review against the boundary without excusing untrusted channels.</li>
+<li>[ ] Assert the boundary, five phases, retained handoffs, same-UID disclaimer, and future-isolation limit. Delete the trusted-worker sentence and confirm that test fails.</li>
+</ul>
+<p><strong>Done when:</strong> <code>bats tests/contract.bats</code> passes, <code>wc -l AGENTS.md</code> is at most 150, and the deliberate deletion produces one red boundary test.</p>
+<h2 id="task-1-put-worker-messages-behind-one-task-channel">Task 1: Put worker messages behind one task channel</h2>
+<p><strong>Files:</strong> Modify <code>bin/dux-worker-wrap</code>, <code>bin/dux-env</code>, <code>bin/dux-brief</code>, <code>templates/brief.md</code>, <code>tests/dux-worker-wrap.bats</code>, <code>tests/dux-brief.bats</code>, <code>tests/fakes/claude</code>, <code>tests/helpers/setup.bash</code>.</p>
+<p><strong>Interfaces:</strong> Creates <code>state/&lt;id&gt;.run</code>, <code>.portal</code>, <code>.pgid</code>, <code>.result-context</code> and the proposal channel; produces cleaned progress plus one buffered terminal request for Task 2.</p>
+<ul>
+<li>[ ] Own the random channel lifecycle. Refuse old references, symlinks, non-regular outboxes, replacement, or run mismatch.</li>
+<li>[ ] Scrub the inherited environment and Dux <code>PATH</code> entry, restore only task proposal variables, and activate the copied hook through the exact three <code>GIT_CONFIG_*</code> values.</li>
+<li>[ ] Launch with fd 0 on <code>/dev/null</code> and a separate process group. Stop and prove the group gone before result proof; a survivor produces a cleanup finding, not terminal state.</li>
+<li>[ ] Enforce immutable-prefix, grammar, one-terminal, 200-byte line, 64-KiB status, and 1-MiB report rules. Import only cleaned progress during the run.</li>
+<li>[ ] Break-verify terminal timing, an ordinary orphan, prefix rewrite, second terminal, caps, environment scrub, hook activation, and replacement separately.</li>
+</ul>
+<p><strong>Done when:</strong> <code>bats tests/dux-worker-wrap.bats tests/dux-brief.bats</code> passes; a fake parent that proposes done and exits while its child sleeps leaves no handoff, the child is stopped, and only then can completion proceed.</p>
+<h2 id="task-2-prove-each-result-shape">Task 2: Prove each result shape</h2>
+<p><strong>Files:</strong> Create <code>bin/dux-result</code>, <code>tests/dux-result.bats</code>; modify <code>bin/dux-worker-wrap</code>, <code>skills/ship/SKILL.md</code>, <code>tests/contract.bats</code>, <code>tests/fakes/gh</code>.</p>
+<p><strong>Interfaces:</strong> Consumes protected run context and a buffered request; produces <code>state/&lt;id&gt;.ship-receipt</code> and one canonical result line for Task 3.</p>
+<ul>
+<li>[ ] Implement ordered <code>record-ship</code> phases and conditional calls in <code>/ship</code> after local checks, code review, security review, PR creation or update, and non-empty green CI. Bind each phase to task, run, branch, and current SHA.</li>
+<li>[ ] Query at most two PR candidates. Require one open, non-draft PR with matching repository, head repository, branch, base, and final SHA.</li>
+<li>[ ] Enforce the plan file allowlist and required spec/plan Markdown. For ship, require selected plan tasks checked, an implementation file, all five phases in order, and at least one successful check with no non-green checks.</li>
+<li>[ ] Import only a bounded non-empty scout report. Remove every report-to-plan/ship, PR-to-scout, and worker-URL shortcut.</li>
+<li>[ ] Break-verify repository, head, base, SHA, draft, duplicate PR, plan file mode/path, ship task boxes, implementation diff, phase order, empty CI, failed CI, report shape, and malicious URL guards one at a time.</li>
+</ul>
+<p><strong>Done when:</strong> <code>bats tests/dux-result.bats tests/contract.bats</code> passes; every invalid evidence fixture returns 1 or 2 without a result, and the worker-supplied URL never appears in result state.</p>
+<h2 id="task-3-make-terminal-state-an-atomic-retained-handoff">Task 3: Make terminal state an atomic, retained handoff</h2>
+<p><strong>Files:</strong> Modify <code>bin/dux-worker-wrap</code>, <code>bin/dux-watch</code>, <code>bin/dux-notify</code>, <code>bin/dux-status</code>, <code>bin/dux-recover</code>, <code>bin/dux-teardown</code>, their matching Bats files, and <code>tests/helpers/setup.bash</code>.</p>
+<p><strong>Interfaces:</strong> Consumes Task 2's canonical line; creates and consumes <code>state/&lt;id&gt;.handoffs/&lt;n&gt;</code> without trusting a terminal-looking status line.</p>
+<ul>
+<li>[ ] Build each sequence in a same-filesystem temporary directory and rename it once. Never remove a sequence at wrapper exit or watcher transition; teardown is its lifecycle owner.</li>
+<li>[ ] Validate id, run, sequence, grammar, shape, and receipt before status, stable event, ledger, and URL writes. Replay interruptions without duplicates.</li>
+<li>[ ] Ignore terminal-looking status without a handoff. Recovery may prove a late result into the next sequence; remove <code>--classify done</code>.</li>
+<li>[ ] Make push, toast, digest, and backend messages fixed by state. Only <code>dux-recover</code> may show status/output text, after control stripping, fence neutralization, 200-byte lines, and the existing 40-line cap.</li>
+<li>[ ] Break-verify the run match, atomic rename, retained sequence, restart replay after each consumption step, duplicate event guard, fixed notification, and recovery fence separately.</li>
+</ul>
+<p><strong>Done when:</strong> <code>bats tests/dux-watch.bats tests/dux-notify.bats tests/dux-status.bats tests/dux-recover.bats tests/dux-teardown.bats</code> passes; watcher restart at every handoff step yields one terminal status, one event, one ledger result, and one retained consumed sequence.</p>
+<h2 id="task-4-retire-legacy-workers-and-prove-the-full-lifecycle">Task 4: Retire legacy workers and prove the full lifecycle</h2>
+<p><strong>Files:</strong> Modify <code>bin/dux-spawn</code>, <code>bin/dux-recover</code>, <code>bin/dux-teardown</code>, <code>skills/dux-dispatch/SKILL.md</code>, <code>skills/dux-recover/SKILL.md</code>, <code>docs/ARCHITECTURE.md</code>, <code>README.md</code>, <code>docs/plans/2026-09-04-dux-m3-supervision.md</code>, this plan, <code>Makefile</code>, <code>.github/workflows/check.yml</code>, <code>tests/e2e-dispatch.bats</code>, <code>tests/e2e-supervise.bats</code>.</p>
+<p><strong>Interfaces:</strong> <code>bin/dux-recover &lt;id&gt; --retire-legacy</code> converts one pre-amendment live task to a trusted failed handoff without removing its worktree; existing <code>--retry</code> and teardown then apply once.</p>
+<ul>
+<li>[ ] With the Dux lock and no new run, signal the exact legacy wrapper and refuse if it remains. Once gone, create a retirement run and <code>failed: stopped for security-boundary upgrade; worktree kept</code> handoff.</li>
+<li>[ ] Preserve the old branch and worktree. Allow the existing one retry after watcher records failure; allow ordinary teardown only after its clean/pushed/stopped checks. A second retirement or retry is a finding.</li>
+<li>[ ] Exercise tmux and Herdr for proposal isolation, early terminal plus ordinary orphan, exact PR URL, plan file scope, ship receipt and non-empty CI, wrong-shape report, hostile text, wrapper crash, handoff replay, legacy retirement, retry, and cleanup.</li>
+<li>[ ] Document limits, lifecycle, fixed notifications, migration, optional future isolation, and the completed one-time design review.</li>
+<li>[ ] Run each new guard's break-verification separately and paste its failure in the implementing commit. Re-read every changed control-flow function as required by <code>AGENTS.md</code>.</li>
+</ul>
+<p><strong>Done when:</strong> <code>make check</code> passes on Ubuntu, <code>make check-bash32</code> passes on macOS with both backend runs, the installed skill dry-run records all five ship phases in a throwaway task, and the existing <code>/ship</code> gate completes. Any Critical-fix re-review is the gate's existing review scoped to those commits, not a second whole-branch design review.</p>
+<h2 id="falsifiable-amendment-acceptance">Falsifiable amendment acceptance</h2>
+<ol>
+<li><strong>Declared boundary and accidental cross-task control:</strong> the spec, constitution, <code>AGENTS.md</code>, README, and <code>/ship</code> audit prompt say the same-user worker is trusted. Its normal environment contains no Dux root, home, session pid, backend endpoint, canonical status/report, or sibling task path. Putting another task id, command, or URL in its own proposal changes no sibling or canonical file. Restoring a canonical Dux variable makes the environment guard test fail. A deliberate same-user attack is explicitly not a passing criterion.</li>
+<li><strong>Terminal timing:</strong> a worker proposes terminal state and stays alive for two watcher intervals, or exits while an ordinary child stays alive. Status, handoff, ledger, event, digest, and notification remain non-terminal until the direct worker and managed group are gone.</li>
+<li><strong>PR trust:</strong> a worker proposes an attacker URL while GitHub returns another exact PR. Only GitHub's URL is stored. Zero, two, draft, fork-head, wrong-repository, wrong-base, wrong-branch, stale-SHA, dirty-worktree, empty-CI, pending, cancelled, or failed-check cases cannot complete.</li>
+<li><strong>Shape proof:</strong> a report never completes plan or ship, and a PR never completes scout. A plan PR with any non-allowed file or missing spec/plan Markdown fails. A ship PR with unchecked selected tasks, no implementation file, a missing/out-of-order phase, or no successful CI fails. A bounded non-empty scout report completes only scout.</li>
+<li><strong>Worker text:</strong> control bytes, terminal escapes, fence closers, commands, URLs, and text beyond limits appear only as cleaned, capped, fenced recovery data. No free-form worker text reaches a phone push, toast, fleet digest, backend chrome, ledger URL, or command Dux runs.</li>
+</ol>
+<h2 id="migration-and-backward-compatibility">Migration and backward compatibility</h2>
+<ul>
+<li>Existing completed tasks and the ledger/status formats remain readable. New running tasks use proposal channels and handoffs without a new public state or ledger field.</li>
+<li>A pre-amendment running, stale, dead, or ended task has no run record. Watcher never promotes its raw terminal line. <code>--retire-legacy</code> is the supported stop, failure, retry, and cleanup path; it never removes the worktree.</li>
+<li>A wrapper crash leaves named run/channel references. Recovery removes only the recorded channel after the exact wrapper and managed group are gone. Retry allocates a new task id and new nonce; no stale channel or receipt is reused.</li>
+<li>The <code>/ship</code> phase calls are conditional on <code>DUX_SHIP_RECORD</code>. Installed non-Dux use and docs-only PR behavior remain unchanged.</li>
+<li>This design works with the current linked-worktree and terminal backends. It does not migrate Git storage, socket names, user accounts, credentials, or host permissions.</li>
+</ul>
+<h2 id="risks-and-accepted-tradeoffs">Risks and accepted tradeoffs</h2>
+<ul>
+<li>A malicious worker or build can edit same-user files, Git metadata, tools, and sockets; inspect processes; reopen its terminal; detach; and use available credentials. This is the accepted boundary.</li>
+<li>Network and credentials remain as broad as the operator configured them. Least-privilege GitHub, SSH, cloud, and harness credentials are still the only remote damage limit.</li>
+<li>Process-group cleanup covers ordinary descendants, including an orphan that keeps the original group. It cannot contain a child that deliberately changes session or group. A leftover managed group blocks finalization and remains visible for recovery.</li>
+<li>The reviewed <code>sandbox-exec</code> dependency and its no-fallback policy are superseded. If optional isolation is added later, it needs a separate approved design and must fail closed rather than silently run without isolation.</li>
+<li>A collaborator can move the remote branch after local workers have stopped. Exact final SHA and check queries narrow the window; <code>/ship</code> retains remote push and reviewed-SHA authority. GitHub unavailability leaves the task ended, never guessed done.</li>
+</ul>
+<h2 id="open-questions">Open questions</h2>
+<p>None. The operator resolved the only product choice by selecting the lightweight boundary. Optional hostile-process isolation is future work, not a hidden prerequisite.</p>
+<h2 id="self-review">Self-review</h2>
+<ul>
+<li><strong>Coverage:</strong> Task 0 owns the boundary; Task 1 owns channels, environment, timing, ordinary children, and hook activation; Task 2 owns URL and shape proof; Task 3 owns handoff and text; Task 4 owns migration and both backends. Every original Important and every application-correctness review finding maps to a task.</li>
+<li><strong>Placeholders:</strong> no unresolved marker, generic edge-case instruction, or deferred requirement remains. Optional isolation is explicitly outside scope.</li>
+<li><strong>Consistency:</strong> <code>state/&lt;id&gt;.run</code>, <code>.portal</code>, <code>.pgid</code>, <code>.result-context</code>, <code>.ship-receipt</code>, <code>.handoffs/&lt;n&gt;</code>, <code>DUX_SHIP_RECORD</code>, and both outboxes each have one spelling and owner.</li>
+<li><strong>Falsifiability:</strong> every task names commands, expected behavior, and distinct breaks. Acceptance item 1 tests the declared limit instead of promising an unenforceable same-UID deny.</li>
+<li><strong>Lifecycle:</strong> wrapper creates run, channel, pgid, and context; group cleanup removes pgid; normal or dead cleanup removes the channel; result creates receipt; wrapper or recovery creates handoff sequences; watcher consumes but retains them; teardown removes all retained references; legacy retirement creates a compatible failed handoff; retry creates no backfill and uses a new id.</li>
+</ul>
+<h2 id="original-ship-findings">Original <code>/ship</code> findings</h2>
+<table>
+<thead>
+<tr>
+<th>Severity</th>
+<th>Finding</th>
+<th>Disposition under the chosen boundary</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Reclassified boundary</td>
+<td>A deliberate same-user worker can read Dux state, spoof the session pid, and control other tasks</td>
+<td>Accepted product boundary, not a claimed protection. Task 0 makes this explicit; Tasks 1 and 4 prevent accidental exposure and stale control only</td>
+</tr>
+<tr>
+<td>Important</td>
+<td>A live worker can declare terminal state</td>
+<td>Accepted and fixed in Tasks 1 and 3: proposals are private until the direct worker and ordinary managed group exit, then handoff is atomic</td>
+</tr>
+<tr>
+<td>Important</td>
+<td>Worker-supplied PR URLs are trusted</td>
+<td>Accepted and fixed in Task 2: the URL comes only from the exact GitHub PR lookup</td>
+</tr>
+<tr>
+<td>Important</td>
+<td>Any report can complete plan or ship</td>
+<td>Accepted and fixed in Task 2: each shape has exact file, phase, report, and CI evidence</td>
+</tr>
+<tr>
+<td>Important</td>
+<td>Free-form status enters notifications</td>
+<td>Accepted and fixed in Task 3: operator surfaces use fixed text; recovery alone shows cleaned fenced data</td>
+</tr>
+</tbody>
+</table>
+<h2 id="one-time-design-review-findings">One-time design-review findings</h2>
+<table>
+<thead>
+<tr>
+<th>Severity</th>
+<th>Finding</th>
+<th>Accepted or disputed, with reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Critical</td>
+<td>Default-allow file policy permits writes to sibling worktrees, Dux, startup files, and writable tools</td>
+<td>Accepted against the reviewed design; same-UID confinement is out of scope and channel/env checks prevent accidents only</td>
+</tr>
+<tr>
+<td>Critical</td>
+<td>A controlling terminal permits <code>/dev/tty</code> and <code>TIOCSTI</code> escape</td>
+<td>Accepted; fd 0 is <code>/dev/null</code> for normal operation, but deliberate terminal reopening remains an out-of-scope same-user action</td>
+</tr>
+<tr>
+<td>Critical</td>
+<td>Linked worktrees share writable Git config, objects, refs, and hooks</td>
+<td>Accepted; shared Git remains inside the trusted-worker boundary. Hook-free sanitized verifier reads reduce accidents but are not containment</td>
+</tr>
+<tr>
+<td>Critical</td>
+<td>Backend socket discovery and node protection were incomplete</td>
+<td>Accepted; Dux no longer claims to block a trusted worker from same-user sockets. Backend variables are scrubbed only to prevent accidental control</td>
+</tr>
+<tr>
+<td>Important</td>
+<td>Waiting for the harness pid leaves detached descendants</td>
+<td>Accepted; Task 1 stops and proves the ordinary process group before handoff. Deliberate new-session escape remains outside scope and is stated plainly</td>
+</tr>
+<tr>
+<td>Important</td>
+<td><code>process-info-pidinfo</code> still permits process and service enumeration</td>
+<td>Accepted; same-user process discovery is outside scope. No lightweight process-hiding claim remains</td>
+</tr>
+<tr>
+<td>Important</td>
+<td>Result proof did not enforce the task definition of done</td>
+<td>Accepted and fixed in Task 2 with file scope, task/implementation evidence, five phases, and non-empty green CI</td>
+</tr>
+<tr>
+<td>Important</td>
+<td>Removing the isolation record before watcher transition creates a race</td>
+<td>Accepted and fixed in Task 3 with atomic handoffs retained through consumption until teardown</td>
+</tr>
+<tr>
+<td>Important</td>
+<td>Legacy workers had no supported retirement path</td>
+<td>Accepted and fixed in Task 4 with <code>--retire-legacy</code>, worktree preservation, one retry, and ordinary cleanup</td>
+</tr>
+<tr>
+<td>Minor</td>
+<td>Copied Git hooks had no activation interface</td>
+<td>Accepted and fixed in Task 1 with the exact <code>GIT_CONFIG_COUNT</code>, <code>GIT_CONFIG_KEY_0</code>, and <code>GIT_CONFIG_VALUE_0</code> contract</td>
+</tr>
+</tbody>
+</table>
+<p>No finding is disputed. The revision retains the review's clean checks for URL discard, shape split, report and recovery caps, canonical-file ownership, prefix parsing, fixed text, environment scrub, channel validation, cleanup, physical paths, and Bash 3.2. Seatbelt, signal-denial, and Linux-refusal checks are superseded because mandatory sandboxing was removed. The one design review is complete.</p></article></div><footer>Generated from 2026-09-05-dux-m3-security-amendment.md. Source SHA-256: <code>9c41c661b178ab5ba5b7a1195700dd15c0df7a62cc0baff56c175b810a171375</code>. The Markdown file is the durable execution state.</footer></main></body></html>

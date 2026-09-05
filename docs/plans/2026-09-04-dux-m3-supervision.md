@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 8 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 to 7 are complete; the milestone is at the ship gate.
-- Design review: done 2026-09-04 by a fresh Fable session; 4 Critical, 7 Important, 15 Minor. All Critical and Important fixed in the plan; 11 Minor fixed, 2 fixed by deletion, 2 logged. Table at the end.
-- Revised again 2026-09-04 on the operator's decision of open question 1: the wrapper pid now decides liveness in both directions and the container is corroboration (Decision 4). Not a second design review; `/ship` reviews the code.
-- Next action: run `/ship` from the approved feature worktree; do not merge.
+
+- Milestone: 3 of 7. Tasks 0 to 7 are implemented on the feature branch; the original implementation work is complete.
+- Ship gate: paused after its security audit. The operator chose the lightweight boundary where local same-user workers are trusted and application-channel data is not.
+- Next action: approve and implement `2026-09-05-dux-m3-security-amendment.md`, then resume `/ship`; do not merge this milestone first.
 
 **Declared deviation from the constitution (principle 2, "stop and print a finding"):** `dux-watch` is the one script that does not exit on a per-task surprise. It prints `finding: watch: <id>: <one line>` to its log and skips that task for that pass, because exiting would end supervision of every other task without anyone noticing, which is the silent degradation principle 2 exists to prevent. Startup surprises (an unwritable `state/`, a bad argument) still exit 2. Every other script in this milestone follows the principle as written.
 
