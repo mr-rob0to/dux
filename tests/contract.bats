@@ -38,3 +38,10 @@ load helpers/setup
   run jq -r '.hooks.SessionEnd[0].hooks[0].command' "$DUX_ROOT/.claude/settings.json"
   [[ "$output" == *"dux-lock release"* ]]
 }
+
+@test "gitignore anchors the runtime dirs and leaves templates/config tracked" {
+  cd "$DUX_ROOT"
+  for p in data/x state/x config/x; do git check-ignore -q --no-index "$p" || { echo "$p should be ignored"; return 1; }; done
+  # A tracked path is never reported by check-ignore without --no-index; with it, the rule itself is tested.
+  [ "$(git check-ignore -q --no-index templates/config/models; echo $?)" -eq 1 ]
+}
