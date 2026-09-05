@@ -24,6 +24,30 @@ field_of() {  # $1 line, $2 key
   }'
 }
 
+write_field() {  # $1 id, $2 key, $3 value; inserts a missing key before (updated
+  local tmp="$ledger.$$.tmp"
+  awk -v id="$1" -v k="$2" -v v="$3" -v ts="$(now)" '
+    $1 == "-" && $2 == id {
+      out = "- " id; hit = 0
+      for (i = 3; i <= NF; i++) {
+        if ($i == "(updated") break
+        eq = index($i, "=")
+        if (eq && substr($i, 1, eq - 1) == k) { out = out " " k "=" v; hit = 1 }
+        else out = out " " $i
+      }
+      if (!hit) out = out " " k "=" v
+      print out " (updated " ts ")"; next
+    }
+    { print }' "$ledger" > "$tmp" || { rm -f "$tmp"; finding "cannot rewrite $ledger"; }
+  mv "$tmp" "$ledger" || { rm -f "$tmp"; finding "cannot replace $ledger"; }
+}
+
+acked_of() {  # $1 line; old lines default to unacknowledged
+  local a
+  a="$(field_of "$1" acked)"
+  printf '%s' "${a:--}"
+}
+
 lock_ledger() {  # a mutex older than a minute belongs to a script that died mid-write and is cleared
   local i=0 max="${DUX_LEDGER_WAIT_TENTHS:-50}"
   until mkdir "$mutex" 2>/dev/null; do
@@ -42,7 +66,7 @@ case "$cmd" in
     valid_task_id "$id"; valid_value "$project"; valid_value "$shape"; valid_value "$src"
     lock_ledger
     [ -z "$(line_of "$id")" ] || finding "task $id already in ledger"
-    printf -- '- %s project=%s shape=%s state=queued source=%s endpoint=- pr=- (updated %s)\n' \
+    printf -- '- %s project=%s shape=%s state=queued source=%s endpoint=- pr=- acked=- (updated %s)\n' \
       "$id" "$project" "$shape" "$src" "$(now)" >> "$ledger" || finding "cannot append to $ledger" ;;
   set)
     id="${1:?id}"; key="${2:?key}"; val="${3:?value}"
@@ -50,33 +74,31 @@ case "$cmd" in
     [ "$key" = state ] && valid_state "$val"
     lock_ledger
     [ -n "$(line_of "$id")" ] || finding "task $id not in ledger"
-    tmp="$ledger.$$.tmp"
-    awk -v id="$id" -v k="$key" -v v="$val" -v ts="$(now)" '
-      $1 == "-" && $2 == id {
-        out = "- " id
-        for (i = 3; i <= NF; i++) {
-          if ($i == "(updated") break
-          eq = index($i, "=")
-          if (eq && substr($i, 1, eq - 1) == k) out = out " " k "=" v; else out = out " " $i
-        }
-        print out " (updated " ts ")"; next
-      }
-      { print }' "$ledger" > "$tmp" || { rm -f "$tmp"; finding "cannot rewrite $ledger"; }
-    mv "$tmp" "$ledger" || { rm -f "$tmp"; finding "cannot replace $ledger"; } ;;
+    write_field "$id" "$key" "$val" ;;
+  ack|unack)
+    id="${1:?id}"; valid_task_id "$id"
+    lock_ledger
+    line="$(line_of "$id")"; [ -n "$line" ] || finding "task $id not in ledger"
+    if [ "$cmd" = ack ]; then
+      write_field "$id" acked "$(field_of "$line" state)"
+    else
+      write_field "$id" acked -
+    fi ;;
   get)
     id="${1:?id}"; key="${2:?key}"
-    case "$key" in project|shape|state|source|endpoint|pr|updated) ;; *) finding "unknown ledger key $key" ;; esac
+    case "$key" in project|shape|state|source|endpoint|pr|updated|acked) ;; *) finding "unknown ledger key $key" ;; esac
     line="$(line_of "$id")"; [ -n "$line" ] || finding "task $id not in ledger"
-    field_of "$line" "$key" ;;
+    if [ "$key" = acked ]; then acked_of "$line"; else field_of "$line" "$key"; fi ;;
   line)
     id="${1:?id}"; line="$(line_of "$id")"; [ -n "$line" ] || finding "task $id not in ledger"
     printf '%s\n' "$line" ;;
   list)
-    fstate=""; fproject=""
+    fstate=""; fproject=""; funacked=0
     while [ $# -gt 0 ]; do
       case "$1" in
         --state) fstate="$2"; shift 2 ;;
         --project) fproject="$2"; shift 2 ;;
+        --unacked) funacked=1; shift ;;
         *) die "unknown flag $1" ;;
       esac
     done
@@ -85,6 +107,16 @@ case "$cmd" in
         s = ""; p = ""
         for (i = 3; i <= NF; i++) { if (index($i, "state=") == 1) s = substr($i, 7); if (index($i, "project=") == 1) p = substr($i, 9) }
         if ((fs == "" || s == fs) && (fp == "" || p == fp)) print $2
-      }' "$ledger" ;;
-  *) die "usage: dux-ledger add|set|get|line|list" ;;
+      }' "$ledger" | while IFS= read -r id; do
+      if [ "$funacked" = 1 ]; then
+        line="$(line_of "$id")"; state="$(field_of "$line" state)"
+        case "$state" in
+          needs-decision|blocked|done|failed|ended|stale|dead)
+            [ "$(acked_of "$line")" != "$state" ] || continue ;;
+          *) continue ;;
+        esac
+      fi
+      echo "$id"
+    done ;;
+  *) die "usage: dux-ledger add|set|get|line|list|ack|unack" ;;
 esac

@@ -4,7 +4,7 @@ load helpers/setup
   run dux-ledger add proj-scout-20260903-abc proj scout local
   [ "$status" -eq 0 ]
   line="$(cat "$DUX_HOME/data/backlog.md")"
-  [[ "$line" =~ ^-\ proj-scout-20260903-abc\ project=proj\ shape=scout\ state=queued\ source=local\ endpoint=-\ pr=-\ \(updated\ [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\)$ ]]
+  [[ "$line" =~ ^-\ proj-scout-20260903-abc\ project=proj\ shape=scout\ state=queued\ source=local\ endpoint=-\ pr=-\ acked=-\ \(updated\ [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z\)$ ]]
 }
 
 @test "add refuses a duplicate id" {
@@ -114,4 +114,51 @@ load helpers/setup
   [ "$status" -eq 0 ]
   [ "$(dux-ledger get t1 state)" = running ]
   [ ! -d "$DUX_HOME/data/backlog.md.lock" ]
+}
+
+@test "add writes acked=- and ack records the current state" {
+  dux-ledger add t1 proj scout local
+  [[ "$(dux-ledger line t1)" == *" pr=- acked=- (updated "* ]]
+  [ "$(dux-ledger get t1 acked)" = - ]
+  dux-ledger set t1 state done
+  run dux-ledger ack t1
+  [ "$status" -eq 0 ]
+  [ "$(dux-ledger get t1 acked)" = done ]
+  [ "$(dux-ledger get t1 state)" = done ]
+}
+
+@test "unack lets the same state wake again" {
+  dux-ledger add t1 proj scout local
+  dux-ledger set t1 state stale; dux-ledger ack t1
+  run dux-ledger list --unacked; [ "$output" = "" ]
+  run dux-ledger unack t1
+  [ "$status" -eq 0 ]; [ "$(dux-ledger get t1 acked)" = - ]
+  run dux-ledger list --unacked; [ "$output" = t1 ]
+  run dux-ledger unack nope; [ "$status" -eq 2 ]; [[ "$output" == "finding: task nope not in ledger"* ]]
+}
+
+@test "an old line reads as unacknowledged and gains the field on ack" {
+  printf -- '- old project=proj shape=scout state=done source=local endpoint=herdr:w1:p9 pr=- (updated 2026-09-01T00:00:00Z)\n' > "$DUX_HOME/data/backlog.md"
+  [ "$(dux-ledger get old acked)" = - ]
+  run dux-ledger list --unacked; [ "$output" = old ]
+  dux-ledger ack old
+  [[ "$(dux-ledger line old)" == "- old project=proj shape=scout state=done source=local endpoint=herdr:w1:p9 pr=- acked=done (updated "* ]]
+  [ "$(dux-ledger get old shape)" = scout ]
+}
+
+@test "ack refuses unknown and bad ids, and set cannot write acked" {
+  run dux-ledger ack nope; [ "$status" -eq 2 ]; [[ "$output" == "finding: task nope not in ledger"* ]]
+  run dux-ledger ack ../x; [ "$status" -eq 2 ]; [[ "$output" == "finding: task id must match"* ]]
+  dux-ledger add t1 proj scout local
+  run dux-ledger set t1 acked done; [ "$status" -eq 2 ]; [[ "$output" == "finding: unknown ledger key acked"* ]]
+}
+
+@test "list --unacked names changed event states only" {
+  for s in queued running needs-decision blocked done failed ended stale dead; do
+    dux-ledger add "t-$s" proj scout local
+    dux-ledger set "t-$s" state "$s"
+  done
+  dux-ledger ack t-done
+  run dux-ledger list --unacked
+  [ "$output" = $'t-needs-decision\nt-blocked\nt-failed\nt-ended\nt-stale\nt-dead' ]
 }
