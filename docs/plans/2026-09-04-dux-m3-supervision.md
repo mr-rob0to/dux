@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 3 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 to 2 are complete; Task 3 is next.
+- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 4 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 to 3 are complete; Task 4 is next.
 - Design review: done 2026-09-04 by a fresh Fable session; 4 Critical, 7 Important, 15 Minor. All Critical and Important fixed in the plan; 11 Minor fixed, 2 fixed by deletion, 2 logged. Table at the end.
 - Revised again 2026-09-04 on the operator's decision of open question 1: the wrapper pid now decides liveness in both directions and the container is corroboration (Decision 4). Not a second design review; `/ship` reviews the code.
-- Next action: Task 3 is in progress on the approved feature worktree.
+- Next action: Task 4 is in progress on the approved feature worktree.
 
 **Declared deviation from the constitution (principle 2, "stop and print a finding"):** `dux-watch` is the one script that does not exit on a per-task surprise. It prints `finding: watch: <id>: <one line>` to its log and skips that task for that pass, because exiting would end supervision of every other task without anyone noticing, which is the silent degradation principle 2 exists to prevent. Startup surprises (an unwritable `state/`, a bad argument) still exit 2. Every other script in this milestone follows the principle as written.
 
@@ -1770,7 +1770,7 @@ recovery attempt. The watcher raises the backend's local toast when it emits;
 
 Commit: `docs: pin the notify line in the spec`
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 ```bash
 bats_require_minimum_version 1.5.0
@@ -1855,11 +1855,11 @@ status_is() { printf '%s\n' "$2" >> "$DUX_HOME/data/tasks/$1/status.log"; }
 }
 ```
 
-- [ ] **Step 3: Run to verify they fail**
+- [x] **Step 3: Run to verify they fail**
 
 Expected: every test fails with `dux-notify: command not found`.
 
-- [ ] **Step 4: Write the script**
+- [x] **Step 4: Write the script**
 
 ```bash
 #!/usr/bin/env bash
@@ -1904,12 +1904,12 @@ echo "$line"
 
 Run: `chmod +x bin/dux-notify`. (`LC_ALL=C tr -d '\000-\010\013-\037\177'` keeps `\n` and drops `\r` and `\033`; the `LC_ALL=C` is what stops BSD `tr` aborting on a byte that is not valid UTF-8, as `dux-brief` already does; the ESC's `[31m` survives as plain text, which the test pins so a future "clever" ANSI stripper is a deliberate change.)
 
-- [ ] **Step 5: Run, then break-verify**
+- [x] **Step 5: Run, then break-verify**
 
 Run: `make check`. Expected: green.
 Break: remove `[ "${#line}" -le 200 ] || line="${line:0:197}..."`. Run `bats tests/dux-notify.bats`. Expected: "the line is cut at 200 characters" fails at `[ "${#output}" -eq 200 ]`. Paste. Restore.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 `feat: add dux-notify push line formatter`
 
