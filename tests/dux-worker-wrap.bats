@@ -153,6 +153,24 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | tail -n 1)" = "done: PR https://example.invalid/pr/9" ]
 }
 
+@test "a worker group that will not stop blocks terminal state" {
+  prepare scout
+  printf 'stubborn %s\nstatus done: report\nexit 0\n' \
+    "$DUX_HOME/state/stubborn.pid" > "$FAKE_WORKER_SCRIPT"
+  export DUX_WRAP_STOP_GRACE_SECS=1 DUX_WRAP_STOP_SIGNALS=off
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"survived TERM and KILL"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+  sp="$(cat "$DUX_HOME/state/stubborn.pid")"
+  kill -0 "$sp"
+  # Everything a recovery would need to find the survivor is still on disk.
+  [ -s "$DUX_HOME/state/$id.pgid" ]
+  [ -s "$DUX_HOME/state/$id.portal" ]
+  [ -d "$(cat "$DUX_HOME/state/$id.portal")" ]
+  kill -KILL -- "-$(cat "$DUX_HOME/state/$id.pgid")" 2>/dev/null || true
+}
+
 @test "a scout's report reaches report.md through the channel" {
   prepare scout
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
