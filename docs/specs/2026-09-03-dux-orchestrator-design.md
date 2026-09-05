@@ -387,14 +387,20 @@ recomputes from the status logs when the two disagree and says so.
 
 ### 6.2 Wake
 
-Dux arms one persistent Monitor on `tail -n0 -F state/events.log`. Each line
-wakes Dux once. On wake Dux reads that line and at most the last 5 lines of the
-task's `status.log`, and decides: notify, recover, or acknowledge. Events written
-while no Monitor was armed are not lost. Each ledger line carries
-`acked=<state|->`; Dux runs `dux-ledger ack <id>` after handling a wake. The
-watcher and `dux-recover --extend` clear the acknowledgement when they return a
-stale task to `running`, so the same state can wake again after new progress.
-`dux-status` lists every event-state task whose acknowledgement differs.
+Dux arms one persistent Monitor on `tail -n0 -F state/events.log` before it reads
+the startup digest. Each line wakes Dux once. Starting the Monitor first closes
+the gap: the later digest finds events already written, and the Monitor catches
+events written after it starts. After replacing a dead Monitor, Dux runs the
+digest again for the same reason. On wake Dux reads the event state and id, then
+uses `dux-notify` or `dux-recover` for worker-controlled text; those scripts cap,
+strip, and fence what enters context. Events written while no Monitor was armed
+are therefore not lost. Each ledger line carries `acked=<state|->`; Dux runs
+`dux-ledger ack <id> <event-state>` after handling a wake. The command refuses
+when the ledger has since moved to another state, leaving that newer event
+unacknowledged. The watcher and `dux-recover --extend` clear the acknowledgement
+when they return a stale task to `running`, so the same state can wake again
+after new progress. `dux-status` lists every event-state task whose
+acknowledgement differs.
 
 Dux never reads `state/<id>.out` except inside `dux-recover`, and then only the
 last 40 lines.
@@ -418,10 +424,13 @@ first re-reads the status log: an exit line written after the event wins, the
 ledger follows it, and nothing else happens.
 
 - `stale`: inspect prints whether the one extension was used, the last 5 status
-  lines, and the last 40 lines of `state/<id>.out` (each cut at 200 characters,
-  fenced as data), the only place worker output enters Dux's context. Dux judges
-  progress. `--extend` appends `working: extended once by dux-recover`, which
-  restarts the silence clock and is the record that forbids a second extension.
+  lines, and the last 40 lines of `state/<id>.out`. Worker-controlled lines have
+  control characters stripped, are cut at 200 characters, and are fenced as
+  data before they enter Dux's context. Dux judges progress. `--extend` appends
+  `working: extended once by dux-recover`, then scans again for a terminal line
+  that raced the extension. A terminal line wins even when the extension line
+  was appended after it. Otherwise the extension restarts the silence clock and
+  is the record that forbids a second extension.
   `--stop` checks the pid runs `dux-worker-wrap <id>` (a recycled pid is a
   finding, never a signal), sends SIGINT, waits 60 seconds, and marks `failed`
   with the last 20 output lines in `report.md`; a wrapper still alive after the
@@ -433,7 +442,8 @@ ledger follows it, and nothing else happens.
   failure heading classifies it `done`; otherwise Dux asks the operator and
   records the answer with `--classify done|failed`. A `gh` failure is a finding,
   never evidence that no PR exists.
-- `failed`, `blocked`, `needs-decision`: inspect prints what to relay.
+- `failed`, `blocked`, `needs-decision`: inspect prints capped, stripped, fenced
+  status and failure text for Dux to relay.
   `--retry [--answer-file <f>]` allocates a new id, appends the answer (or the
   failure) to a copy of the Intent, renders the brief, records
   `tasks/<old>/retry` and `tasks/<new>/retried-from`, appends `failed:
@@ -445,8 +455,9 @@ ledger follows it, and nothing else happens.
 ## 7. Session lifecycle
 
 A `SessionStart` hook runs `dux-lock acquire` (pid from `CLAUDE_PID`) and prints
-the result, including whether the watcher started, into context. AGENTS.md then has Dux run `dux-doctor`, `dux-intake`
-for every project with issues enabled, and `dux-status`, then arm the Monitor.
+the result, including whether the watcher started, into context. AGENTS.md then
+has Dux run `dux-doctor`, arm the Monitor, and run `dux-intake` for every project
+with issues enabled plus `dux-status`.
 If the lock is held by a live pid, Dux announces it is read-only and skips spawn,
 teardown, and recover. A `SessionEnd` hook releases the lock and kills the
 watcher; workers keep running under the backend and are reconciled next start.
