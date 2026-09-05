@@ -1929,7 +1929,7 @@ Break: remove `[ "${#line}" -le 200 ] || line="${line:0:197}..."`. Run `bats tes
 - Consumes: `dux-lock mine`, `dux-ledger`, `dux-watch eval`, `dux-task-new`, `dux-brief`, `dux-spawn`, `dux-project get`, `gh pr list`, `state/<id>.out`, `state/<id>.pid`, `data/tasks/<id>/{status.log,report.md,brief.md,intent.md,criteria.md}`.
 - Produces: `dux-recover <id> [--extend | --stop | --retry [--answer-file <f>] | --classify done|failed]` exactly as the decision table says. Files: `tasks/<old>/retry`, `tasks/<new>/retried-from`. Status lines it may append: `working: extended once by dux-recover`, `failed: stopped by dux-recover after stale`, `failed: worker gone without an exit line (dux-recover)`, `failed: superseded by <new>`, `done: PR <url>`, `done: report`, `done: classified by the operator`, `failed: classified by the operator`.
 
-- [ ] **Step 1: Amend the spec**
+- [x] **Step 1: Amend the spec**
 
 Section 3: add `tasks/<id>/intent.md`, `tasks/<id>/criteria.md` (written by the dispatch skill), `tasks/<id>/retry`, `tasks/<id>/retried-from` under `data/`. Section 6.4, replace the list with:
 
