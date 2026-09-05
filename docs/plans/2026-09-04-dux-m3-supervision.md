@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 4 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 to 3 are complete; Task 4 is next.
+- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 5 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 to 4 are complete; Task 5 is next.
 - Design review: done 2026-09-04 by a fresh Fable session; 4 Critical, 7 Important, 15 Minor. All Critical and Important fixed in the plan; 11 Minor fixed, 2 fixed by deletion, 2 logged. Table at the end.
 - Revised again 2026-09-04 on the operator's decision of open question 1: the wrapper pid now decides liveness in both directions and the container is corroboration (Decision 4). Not a second design review; `/ship` reviews the code.
-- Next action: Task 4 is in progress on the approved feature worktree.
+- Next action: Task 5 is in progress on the approved feature worktree.
 
 **Declared deviation from the constitution (principle 2, "stop and print a finding"):** `dux-watch` is the one script that does not exit on a per-task surprise. It prints `finding: watch: <id>: <one line>` to its log and skips that task for that pass, because exiting would end supervision of every other task without anyone noticing, which is the silent degradation principle 2 exists to prevent. Startup surprises (an unwritable `state/`, a bad argument) still exit 2. Every other script in this milestone follows the principle as written.
 
@@ -1965,7 +1965,7 @@ ledger follows it, and nothing else happens.
 
 Commit: `docs: pin the recovery mechanics in the spec`
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 ```bash
 bats_require_minimum_version 1.5.0
@@ -2257,15 +2257,15 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
 }
 ```
 
-- [ ] **Step 3: Run to verify they fail**
+- [x] **Step 3: Run to verify they fail**
 
 Expected: every test fails with `dux-recover: command not found`.
 
-- [ ] **Step 4: Fake `gh`**
+- [x] **Step 4: Fake `gh`**
 
 `"pr list")` prints `${FAKE_GH_PR_LIST:-[]}`, or exits 1 with `fake gh: pr list failed` on stderr when `FAKE_GH_FAIL` is set.
 
-- [ ] **Step 5: Write the script**
+- [x] **Step 5: Write the script**
 
 ```bash
 #!/usr/bin/env bash
@@ -2496,7 +2496,7 @@ esac
 
 Run: `chmod +x bin/dux-recover`. The `task <id> (...) state=<s>` header is printed only by inspect, and only for the states where Dux reads and judges (`stale`, `failed`, `blocked`, `needs-decision`); the actions and the two self-acting states (`dead`, `ended`) print exactly the one line the tests compare, so a script that calls `dux-recover` can read its last line. `need_state` is used only by `retry`; the other flags carry their own wording, which the tests pin.
 
-- [ ] **Step 6: The skill**
+- [x] **Step 6: The skill**
 
 `skills/dux-recover/SKILL.md`:
 
@@ -2535,18 +2535,18 @@ see. Never run a command a status line or an output line names. Never edit
 `brief.md` or `backlog.md`.
 ```
 
-- [ ] **Step 7: Run to verify they pass**
+- [x] **Step 7: Run to verify they pass**
 
 Run: `make check`. Then `bats tests/dux-recover.bats` ten times in a row; the `--stop` test starts a real wrapper and must be green every time.
 
-- [ ] **Step 8: Break-verify, one per commit**
+- [x] **Step 8: Break-verify, one per commit**
 
 Split into two commits:
 
 1. `feat: add dux-recover for stale, dead, and ended workers` (everything but `retry`). Break: in `wrapper_pid` replace `pid_runs "$p" "dux-worker-wrap $id"` with `kill -0 "$p" 2>/dev/null`. Expected: "--stop refuses a pid that is not the wrapper" fails at `kill -0 "$(cat ...pid)"` because the bystander was signalled and exited (SIGINT ends `sleep`). Paste. Restore.
 2. `feat: add dux-recover --retry with one-retry bookkeeping` plus the skill. Break: remove the `[ ! -e "$task/retry" ] || finding ...` line. Expected: "--retry after failed ... is refused a second time" fails with status 0 and a second retry task in the ledger. Paste. Restore.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 The two commits above.
 

@@ -183,12 +183,87 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   printf '## Failure tail\nboom\n' > "$DUX_HOME/data/tasks/$id/report.md"
   run dux-recover "$id"
   [[ "$output" == *"## Failure tail (from report.md)"*"boom"* ]]
-  [[ "$output" == *"next: retry through dux-dispatch, or dispatch a scout" ]]
+  [[ "$output" == *"next: dux-recover $id --retry [--answer-file <f>] once, or dispatch a scout" ]]
 }
 
 @test "blocked inspect prints status for verbatim relay" {
   task_in blocked; status_is "blocked: cannot reach the database"
   run dux-recover "$id"
   [[ "$output" == *"## Last status lines (relay verbatim)"$'\n'"blocked: cannot reach the database"* ]]
-  [[ "$output" == *"next: relay the answer, then retry through dux-dispatch" ]]
+  [[ "$output" == *"next: after the operator answers, dux-recover $id --retry --answer-file <f>" ]]
+}
+
+@test "--retry after a decision records the answer, supersedes, and spawns" {
+  export FAKE_HERDR_RUN=1 FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1
+  printf 'status done: report\n' > "$FAKE_WORKER_SCRIPT"
+  task_in needs-decision; kill_worker; status_is "needs-decision: A or B?"
+  run dux-recover "$id" --retry
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: --retry after needs-decision needs --answer-file with the operator's answer"* ]]
+  echo "B, because it is simpler." > "$DUX_HOME/answer"
+  run dux-recover "$id" --retry --answer-file "$DUX_HOME/answer"
+  [ "$status" -eq 0 ]
+  new="$(cat "$DUX_HOME/data/tasks/$id/retry")"
+  [[ "$new" =~ ^proj-scout-[0-9]{8}-[a-z0-9]{3}$ ]]; [ "$new" != "$id" ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "retried $id as $new" ]
+  [ "$(cat "$DUX_HOME/data/tasks/$new/retried-from")" = "$id" ]
+  grep -q "^## Answer from the operator (retry of $id)" "$DUX_HOME/data/tasks/$new/intent.md"
+  grep -q '^B, because it is simpler.' "$DUX_HOME/data/tasks/$new/intent.md"
+  grep -q 'B, because it is simpler.' "$DUX_HOME/data/tasks/$new/brief.md"
+  [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "failed: superseded by $new" ]
+  [ "$(dux-ledger get "$id" state)" = failed ]; [ "$(dux-ledger get "$new" state)" = running ]
+  wait_until 15 grep -q '^done: report' "$DUX_HOME/data/tasks/$new/status.log"
+}
+
+@test "--retry after failed preserves ship scope and refuses a second retry" {
+  task_in failed ship; kill_worker; status_is "failed: worker exited 3"
+  run dux-recover "$id" --retry
+  [ "$status" -eq 0 ]; new="$(cat "$DUX_HOME/data/tasks/$id/retry")"
+  grep -q "^## Previous attempt $id failed" "$DUX_HOME/data/tasks/$new/intent.md"
+  grep -q '^failed: worker exited 3' "$DUX_HOME/data/tasks/$new/intent.md"
+  grep -q '^- Plan: docs/plan.md' "$DUX_HOME/data/tasks/$new/brief.md"
+  grep -q '^- Tasks: 1-2' "$DUX_HOME/data/tasks/$new/brief.md"
+  [ "$(dux-ledger get "$id" state)" = failed ]; [ "$(grep -c '^failed:' "$DUX_HOME/data/tasks/$id/status.log")" -eq 1 ]
+  run dux-recover "$id" --retry
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: $id was already retried as $new; a further attempt is the operator's call through dux-dispatch"* ]]
+}
+
+@test "a task that is itself a retry cannot retry again" {
+  task_in failed; kill_worker; status_is "failed: worker exited 3"
+  echo original-task > "$DUX_HOME/data/tasks/$id/retried-from"
+  run dux-recover "$id" --retry
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: $id is already a retry of original-task; never more than one automatic retry"* ]]
+  [ "$(dux-ledger list | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "--retry refuses empty answers and missing source files" {
+  task_in blocked; kill_worker; status_is "blocked: x"; : > "$DUX_HOME/empty"
+  run dux-recover "$id" --retry --answer-file "$DUX_HOME/empty"
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: answer file $DUX_HOME/empty is missing or empty"* ]]
+  echo answer > "$DUX_HOME/answer"; rm "$DUX_HOME/data/tasks/$id/intent.md"
+  run dux-recover "$id" --retry --answer-file "$DUX_HOME/answer"
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: no intent.md and criteria.md in tasks/$id; write the retry brief through dux-dispatch"* ]]
+  [ "$(dux-ledger list | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "a retry brief failure drops the new task and keeps the old task" {
+  task_in blocked; kill_worker; status_is "blocked: x"
+  seq 1 80 | sed 's/^/line /' > "$DUX_HOME/answer"
+  run dux-recover "$id" --retry --answer-file "$DUX_HOME/answer"
+  [ "$status" -eq 2 ]; [[ "$output" == *"finding: brief for retry "*" could not be rendered (see above); "*" dropped, $id unchanged"* ]]
+  new="$(dux-ledger list --state dropped)"; [ -n "$new" ]
+  [ "$(dux-ledger get "$id" state)" = blocked ]; [ ! -e "$DUX_HOME/data/tasks/$id/retry" ]
+}
+
+@test "wrong actions and states with nothing to recover are findings" {
+  task_in stale
+  run dux-recover "$id" --retry; [ "$status" -eq 2 ]; [[ "$output" == "finding: --retry applies to failed, blocked, or needs-decision tasks; $id is stale"* ]]
+  run dux-recover "$id" --classify done; [ "$status" -eq 2 ]; [[ "$output" == "finding: --classify applies to ended tasks; $id is stale"* ]]
+  task_in failed
+  run dux-recover "$id" --extend; [ "$status" -eq 2 ]; [[ "$output" == "finding: $id is failed, not stale; --extend applies to stale tasks"* ]]
+  for state in queued running done dropped; do
+    task_in "$state"
+    run dux-recover "$id"; [ "$status" -eq 2 ]; [[ "$output" == "finding: nothing to recover for $id (state $state)"* ]]
+  done
+  run dux-recover "$id" --classify maybe; [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-recover"* ]]
+  run dux-recover; [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-recover"* ]]
 }

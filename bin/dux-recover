@@ -4,16 +4,18 @@ set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
-usage="usage: dux-recover <id> [--extend | --stop | --classify done|failed]"
+usage="usage: dux-recover <id> [--extend | --stop | --retry [--answer-file <f>] | --classify done|failed]"
 id="${1:-}"
 [ -n "$id" ] || finding "$usage"
 shift
 valid_task_id "$id"
 action=inspect
+answer=""
 classify=""
 while [ $# -gt 0 ]; do
   case "$1" in
-    --extend|--stop) action="${1#--}" ;;
+    --extend|--stop|--retry) action="${1#--}" ;;
+    --answer-file) [ $# -ge 2 ] || finding "$usage"; answer="$2"; shift ;;
     --classify)
       [ $# -ge 2 ] || finding "$usage"
       action=classify; classify="$2"
@@ -29,6 +31,7 @@ status_log="$task/status.log"
 out="$DUX_STATE/$id.out"
 pidfile="$DUX_STATE/$id.pid"
 report="$task/report.md"
+brief="$task/brief.md"
 tail_lines="${DUX_RECOVER_TAIL_LINES:-40}"
 line_chars="${DUX_RECOVER_LINE_CHARS:-200}"
 wait_secs="${DUX_RECOVER_WAIT_SECS:-60}"
@@ -83,6 +86,13 @@ wrapper_pid() {
   case "$pid" in ''|*[!0-9]*) finding "$pidfile does not hold a pid ('$pid')" ;; esac
   if pid_runs "$pid" "dux-worker-wrap $id"; then printf '%s' "$pid"; fi
   return 0
+}
+
+need_state() {
+  local flag="$1" wording="$2" allowed
+  shift 2
+  for allowed in "$@"; do [ "$state" = "$allowed" ] && return 0; done
+  finding "$flag applies to $wording tasks; $id is $state"
 }
 
 stale_inspect() {
@@ -179,6 +189,49 @@ classify_as() {
   esac
 }
 
+retry() {
+  local new intent criteria plan tasks new_intent source_key rc
+  need_state --retry "failed, blocked, or needs-decision" failed blocked needs-decision
+  [ ! -e "$task/retry" ] || finding "$id was already retried as $(cat "$task/retry"); a further attempt is the operator's call through dux-dispatch"
+  if [ "$state" = failed ] && [ -e "$task/retried-from" ]; then
+    finding "$id is already a retry of $(cat "$task/retried-from"); never more than one automatic retry"
+  fi
+  case "$state" in blocked|needs-decision) [ -n "$answer" ] || finding "--retry after $state needs --answer-file with the operator's answer" ;; esac
+  if [ -n "$answer" ] && [ ! -s "$answer" ]; then finding "answer file $answer is missing or empty"; fi
+  intent="$task/intent.md"; criteria="$task/criteria.md"
+  { [ -s "$intent" ] && [ -s "$criteria" ]; } || finding "no intent.md and criteria.md in tasks/$id; write the retry brief through dux-dispatch"
+  source_key="$("$ledger" get "$id" source)" || exit $?
+  new="$("$DUX_ROOT/bin/dux-task-new" "$project" "$shape" --source "$source_key")" || exit $?
+  new_intent="$DUX_TASKS/$new/intent.md"
+  {
+    cat "$intent"
+    echo
+    if [ -n "$answer" ]; then echo "## Answer from the operator (retry of $id)"; cat "$answer"; fi
+    if [ "$state" = failed ]; then echo "## Previous attempt $id failed"; last_status; fi
+  } > "$new_intent" || finding "cannot write $new_intent"
+  cp "$criteria" "$DUX_TASKS/$new/criteria.md" || finding "cannot copy $criteria"
+  plan="$(sed -n 's/^- Plan: //p' "$brief" | head -n 1)"
+  tasks="$(sed -n 's/^- Tasks: //p' "$brief" | head -n 1)"
+  set -- --intent-file "$new_intent" --criteria-file "$DUX_TASKS/$new/criteria.md"
+  [ -z "$plan" ] || set -- "$@" --plan "$plan" --tasks "$tasks"
+  if ! "$DUX_ROOT/bin/dux-brief" "$new" "$@" >/dev/null; then
+    "$ledger" set "$new" state dropped || true
+    finding "brief for retry $new could not be rendered (see above); $new dropped, $id unchanged"
+  fi
+  echo "$new" > "$task/retry" || finding "cannot write $task/retry"
+  echo "$id" > "$DUX_TASKS/$new/retried-from" || finding "cannot write $DUX_TASKS/$new/retried-from"
+  case "$state" in
+    blocked|needs-decision)
+      append_status "failed: superseded by $new"
+      "$ledger" set "$id" state failed || exit $? ;;
+  esac
+  "$DUX_ROOT/bin/dux-spawn" "$new" >/dev/null || {
+    rc=$?
+    echo "retry $new created but not spawned; run dux-spawn $new"
+    exit "$rc"
+  }
+  echo "retried $id as $new"
+}
 
 case "$action" in
   inspect)
@@ -193,13 +246,14 @@ case "$action" in
           echo "## Failure tail (from report.md)"
           sed -n '/^## Failure/,$p' "$report" | tail -n 21
         fi
-        echo "next: retry through dux-dispatch, or dispatch a scout" ;;
+        echo "next: dux-recover $id --retry [--answer-file <f>] once, or dispatch a scout" ;;
       blocked|needs-decision)
         echo "## Last status lines (relay verbatim)"; tail -n 5 "$status_log"
-        echo "next: relay the answer, then retry through dux-dispatch" ;;
+        echo "next: after the operator answers, dux-recover $id --retry --answer-file <f>" ;;
       *) finding "nothing to recover for $id (state $state)" ;;
     esac ;;
   extend) extend ;;
   stop) stop ;;
+  retry) retry ;;
   classify) classify_as "$classify" ;;
 esac
