@@ -27,6 +27,7 @@ refuse() {
 [ -d "$hooks" ] || refuse "no hooks dir for $id; dux-worktree installs it"
 project="$("$DUX_ROOT/bin/dux-ledger" get "$id" project 2>&1)" || refuse "$project"
 shape="$("$DUX_ROOT/bin/dux-ledger" get "$id" shape 2>&1)" || refuse "$shape"
+base="$("$DUX_ROOT/bin/dux-project" get "$project" base 2>&1)" || refuse "$base"
 [ "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" = "$branch" ] \
   || refuse "dux-worker-wrap must run inside the worktree on $branch (cwd is $PWD)"
 
@@ -58,28 +59,116 @@ trap 'signalled=1; if [ -n "$wpid" ]; then kill -TERM "$wpid" 2>/dev/null || tru
 for v in $(env | cut -d= -f1); do
   case "$v" in CLAUDECODE|CLAUDE_*) unset "$v" ;; esac
 done
-export DUX_STATUS_LOG="$status_log"
+
+# ---- the task channel ----------------------------------------------------
+# The worker never writes canonical state. It proposes into a channel of its
+# own and the wrapper decides what, if anything, reaches status.log and
+# report.md. The random name and the file modes catch mistakes and stale
+# writes; they are not a boundary against the worker, which runs as we do.
+runfile="$DUX_STATE/$id.run"; portal="$DUX_STATE/$id.portal"
+context="$DUX_STATE/$id.result-context"; channels="$DUX_STATE/channels"
+mkdir -p "$channels" 2>/dev/null || refuse "cannot create $channels"
+chmod 700 "$channels" || refuse "cannot restrict $channels"
+channel="$(mktemp -d "$channels/$id.XXXXXXXX" 2>/dev/null)" || refuse "cannot create a task channel for $id"
+chmod 700 "$channel" || refuse "cannot restrict the task channel for $id"
+# Physical path: git and the pre-push hook resolve symlinks, so record the name
+# the kernel agrees on rather than the one mktemp happened to print.
+channel="$(cd "$channel" 2>/dev/null && pwd -P)" || refuse "cannot resolve the task channel for $id"
+run="${channel##*.}"
+status_outbox="$channel/status.outbox"; report_outbox="$channel/report.outbox"
+for f in "$status_outbox" "$report_outbox"; do
+  { : > "$f" && chmod 600 "$f"; } || refuse "cannot create $f"
+done
+c_brief="$channel/brief.md"; c_settings="$channel/worker-settings.json"
+{ cp "$brief" "$c_brief" && chmod 400 "$c_brief"; } || refuse "cannot stage the brief in the task channel"
+if [ -s "$settings" ]; then
+  { cp "$settings" "$c_settings" && chmod 400 "$c_settings"; } \
+    || refuse "cannot stage the worker settings in the task channel"
+fi
+printf '%s\n' "$channel" > "$portal" || refuse "cannot write $portal"
+
+# What a result has to be checked against, written before the worker can
+# change anything: the run it belongs to and the project facts Dux registered.
+worktree_path="$(pwd -P)"
+origin_url="$(git config --get remote.origin.url 2>/dev/null || true)"
+slug="-"
+case "$origin_url" in
+  *github.com[:/]*) slug="${origin_url#*github.com}"; slug="${slug#[:/]}"; slug="${slug%.git}" ;;
+esac
+{
+  echo "version=1"; echo "id=$id"; echo "run=$run"; echo "shape=$shape"
+  echo "project=$project"; echo "repo=$slug"; echo "base=$base"; echo "branch=$branch"
+  echo "worktree=$worktree_path"
+  echo "plan=$(sed -n 's/^- Plan: //p' "$brief" | head -1)"
+  echo "tasks=$(sed -n 's/^- Tasks: //p' "$brief" | head -1)"
+} > "$context" || refuse "cannot write $context"
+context_id="$(git hash-object --stdin < "$context" 2>/dev/null)" \
+  || refuse "cannot hash $context"
+{
+  echo "version=1"; echo "id=$id"; echo "run=$run"; echo "wrapper=$$"
+  echo "shape=$shape"; echo "worktree=$worktree_path"; echo "channel=$channel"
+  echo "context=$context_id"
+} > "$runfile" || refuse "cannot write $runfile"
+
+cleanup_channel() {  # the channel and the references only this run owns
+  chmod 700 "$channel/hooks" 2>/dev/null || true
+  rm -rf "$channel" 2>/dev/null || log "task channel $channel left in place"
+  rm -f "$portal"
+}
+
+export DUX_STATUS_LOG="$status_outbox"
+export DUX_REPORT="$report_outbox"
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$hooks"
 
 mirroring=1
-mirror() {  # $1 dux state, $2 full line. Presentation only; status.log is the truth.
+mirror() {  # $1 dux state. The pane says which state, never what the worker wrote.
   [ "$mirroring" = 1 ] || return 0
   local s
   case "$1" in working) s=working ;; needs-decision|blocked) s=blocked ;; *) s=idle ;; esac
-  if ! "$DUX_ROOT/bin/dux-backend" report "$id" "$s" "$2" 2>/dev/null; then
+  if ! "$DUX_ROOT/bin/dux-backend" report "$id" "$s" "dux $id: $1" 2>/dev/null; then
     mirroring=0; log "status mirroring unavailable on this backend; status.log remains the truth"
   fi
 }
-seen=0
-mirror_new() {
-  local n i line
-  n="$(wc -l < "$status_log" | tr -d ' ')"
-  i=$seen
-  while [ "$i" -lt "$n" ]; do
-    i=$((i + 1)); line="$(sed -n "${i}p" "$status_log")"
-    mirror "${line%%:*}" "$line"
+
+# ---- reading the worker's proposals --------------------------------------
+accepted=0        # bytes of status.outbox already read
+terminal=""       # the one terminal proposal, held back until the run is over
+clean_text() { LC_ALL=C tr -d '\000-\010\013-\037\177'; }
+
+import_proposals() {  # imports new progress; buffers a terminal proposal
+  local size partial plen i count line clean
+  local -a lines
+  [ -f "$status_outbox" ] || return 0
+  size="$(wc -c < "$status_outbox" | tr -d ' ')"
+  [ "$size" -gt "$accepted" ] || return 0
+  # Bounded by the size just measured: the worker keeps writing while we read,
+  # and bytes past that point belong to the next pass, not this one.
+  # A line it has not finished writing is not a proposal yet either, so the
+  # bytes after the last newline stay unread too.
+  partial=""; [ -n "$(tail -c "+$size" "$status_outbox" | head -c 1)" ] && partial=yes
+  lines=(); i=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    i=$((i + 1)); lines[i]="$line"
+  done < <(tail -c "+$((accepted + 1))" "$status_outbox" | head -c "$((size - accepted))")
+  count=$i
+  plen=0
+  if [ -n "$partial" ] && [ "$count" -gt 0 ]; then
+    plen="$(printf '%s' "${lines[$count]}" | wc -c | tr -d ' ')"
+    count=$((count - 1))
+  fi
+  accepted=$((size - plen))
+  i=0
+  while [ "$i" -lt "$count" ]; do
+    i=$((i + 1))
+    clean="$(printf '%s' "${lines[$i]}" | clean_text)"
+    case "$clean" in
+      working:\ ?*)
+        printf '%s\n' "$clean" >> "$status_log"; mirror working ;;
+      needs-decision:\ ?*|blocked:\ ?*|done:\ ?*|failed:\ ?*)
+        terminal="$clean" ;;
+      *) log "ignoring a status proposal for $id that is not a state line" ;;
+    esac
   done
-  seen=$n
 }
 
 intent_line="$(awk '/^## Intent$/ { f = 1; next } f && NF { print substr($0, 1, 60); exit }' "$brief")"
@@ -88,24 +177,23 @@ intent_line="$(awk '/^## Intent$/ { f = 1; next } f && NF { print substr($0, 1, 
 [ "$signalled" = 0 ] || refuse "signalled before the harness started"
 # Tests only: widens the gap the trap cannot cover, so the re-check below is reachable.
 [ -z "${DUX_WRAP_FORK_PAUSE_SECS:-}" ] || sleep "$DUX_WRAP_FORK_PAUSE_SECS"
-( worker_run "$brief" "$model" "$effort" "$settings" ) < /dev/null > "$out" 2>&1 &
+( worker_run "$c_brief" "$model" "$effort" "$c_settings" ) < /dev/null > "$out" 2>&1 &
 wpid=$!
 # A signal between the check above and this assignment found an empty wpid and did
 # nothing, and the harness would then run unsupervised. Deliver it now.
 [ "$signalled" = 0 ] || kill -TERM "$wpid" 2>/dev/null || true
 
-is_exit_line() { case "${1%%:*}" in done|failed|blocked|needs-decision) return 0 ;; *) return 1 ;; esac; }
 last_status() { grep -v '^working: heartbeat$' "$status_log" 2>/dev/null | tail -n 1; }
 
 last_size=0; last_beat="$(date +%s)"
 while kill -0 "$wpid" 2>/dev/null; do
   sleep "$poll"
-  mirror_new
+  import_proposals
   kill -0 "$wpid" 2>/dev/null || break   # never heartbeat past the harness's exit
   now_s="$(date +%s)"
   if [ $((now_s - last_beat)) -ge "$beat" ]; then
     size="$(wc -c < "$out" | tr -d ' ')"
-    if [ "$size" -gt "$last_size" ] && ! is_exit_line "$(last_status)"; then
+    if [ "$size" -gt "$last_size" ] && [ -z "$terminal" ]; then
       echo "working: heartbeat" >> "$status_log"
     fi
     last_size=$size; last_beat=$now_s
@@ -114,15 +202,22 @@ done
 wait "$wpid"; rc=$?
 trap - INT TERM
 
-last="$(last_status)"
-if ! is_exit_line "$last"; then
-  if [ "$rc" -ne 0 ]; then echo "failed: worker exited $rc" >> "$status_log"
-  else echo "ended: exit 0 without terminal status" >> "$status_log"; fi
+import_proposals
+if [ -s "$report_outbox" ]; then
+  clean_text < "$report_outbox" >> "$task/report.md" || refuse "cannot write $task/report.md"
+fi
+
+if [ -n "$terminal" ]; then
+  printf '%s\n' "$terminal" >> "$status_log"; mirror "${terminal%%:*}"
+elif [ "$rc" -ne 0 ]; then
+  echo "failed: worker exited $rc" >> "$status_log"; mirror failed
+else
+  echo "ended: exit 0 without terminal status" >> "$status_log"; mirror ended
 fi
 last="$(last_status)"
 if [ "${last%%:*}" = failed ]; then
   { echo "## Failure tail"; tail -n 20 "$out"; } >> "$task/report.md"
 fi
-mirror_new
+cleanup_channel
 log "worker for $id exited $rc; last status: $last"
 exit 0
