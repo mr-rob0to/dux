@@ -87,6 +87,16 @@ status_outbox="$channel/status.outbox"; report_outbox="$channel/report.outbox"
 for f in "$status_outbox" "$report_outbox"; do
   { : > "$f" && chmod 600 "$f"; } || refuse "cannot create $f"
 done
+# The file this run made, not whatever is at that name later. A worker that
+# removes an outbox and writes a new one in its place gets a different inode,
+# and so does a channel directory swapped underneath it.
+path_ident() { stat -f '%d:%i' "$1" 2>/dev/null || stat -c '%d:%i' "$1" 2>/dev/null; }
+outbox_intact() {  # $1 path, $2 the identity recorded when it was made
+  [ ! -L "$1" ] && [ -f "$1" ] && [ "$(path_ident "$1")" = "$2" ]
+}
+status_ident="$(path_ident "$status_outbox")"
+report_ident="$(path_ident "$report_outbox")"
+
 c_brief="$channel/brief.md"; c_settings="$channel/worker-settings.json"
 { cp "$brief" "$c_brief" && chmod 400 "$c_brief"; } || refuse "cannot stage the brief in the task channel"
 if [ -s "$settings" ]; then
@@ -211,6 +221,9 @@ import_proposals() {  # $1 "final" when nothing more is coming
   local -a lines
   [ -z "$violation" ] || return 0
   [ -f "$status_outbox" ] || return 0
+  if ! outbox_intact "$status_outbox" "$status_ident"; then
+    violation="the worker for $id replaced its status outbox"; return 0
+  fi
   size="$(wc -c < "$status_outbox" | tr -d ' ')"
   # Checked before a byte of the new region is read, so a worker cannot make
   # Dux hold its whole outbox in memory just by writing a big one.
@@ -338,6 +351,8 @@ fi
 
 import_proposals final
 [ -z "$violation" ] || refuse "$violation"
+outbox_intact "$report_outbox" "$report_ident" \
+  || refuse "the worker for $id replaced its report outbox"
 if [ -s "$report_outbox" ]; then
   # Measured before a byte of it is copied, for the same reason as the status cap.
   report_size="$(wc -c < "$report_outbox" | tr -d ' ')"

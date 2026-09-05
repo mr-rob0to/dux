@@ -256,6 +256,28 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | grep -c 'xxx' || true)" -eq 0 ]
 }
 
+@test "an outbox the worker replaced is refused, and its contents are not read" {
+  prepare scout
+  printf 'status working: a\nrun rm -f "$DUX_STATUS_LOG"; printf "done: swapped in\\n" > "$DUX_STATUS_LOG"\nexit 0\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the worker for $id replaced its status outbox"* ]]
+  [ "$(status_log | grep -c 'swapped in' || true)" -eq 0 ]
+
+  # Same guard on the other outbox: a fresh file at the same path is a
+  # different file, and a symlink is not an outbox at all.
+  # A refusal leaves this run's references for recovery; clear them by hand so
+  # the second half meets the outbox guard and not the leftover-reference one.
+  rm -f "$DUX_HOME/state/$id".run "$DUX_HOME/state/$id".portal \
+    "$DUX_HOME/state/$id".pgid "$DUX_HOME/state/$id".result-context
+  printf 'status done: report\nrun rm -f "$DUX_REPORT"; ln -s /dev/null "$DUX_REPORT"\nexit 0\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the worker for $id replaced its report outbox"* ]]
+}
+
 @test "a leftover run reference from an earlier run is refused, symlinks included" {
   prepare scout
   printf 'status done: report\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
