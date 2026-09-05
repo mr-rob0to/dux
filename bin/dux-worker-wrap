@@ -33,7 +33,11 @@ base="$("$DUX_ROOT/bin/dux-project" get "$project" base 2>&1)" || refuse "$base"
 
 harness="$(task_harness "$task")"
 why="$(harness_refusal "$harness")" || refuse "$why"
-command -v "$harness" >/dev/null 2>&1 || refuse "$harness is not on PATH inside the worker container"
+worker_path="$(strip_dux_bin "$PATH")"
+dux_path="$PATH"; PATH="$worker_path"
+command -v "$harness" >/dev/null 2>&1 \
+  || { PATH="$dux_path"; refuse "$harness is not on PATH inside the worker container"; }
+PATH="$dux_path"
 # shellcheck source=/dev/null
 source "$DUX_ROOT/bin/workers/$harness.sh"
 
@@ -54,11 +58,6 @@ echo $$ > "$pidfile" || refuse "cannot write $pidfile"
 # bash starts background children with INT ignored, so INT here becomes TERM to it.
 wpid=""; signalled=0
 trap 'signalled=1; if [ -n "$wpid" ]; then kill -TERM "$wpid" 2>/dev/null || true; fi' INT TERM
-# The Dux session's own harness variables must not reach the worker. Matched with
-# case, not a regex: BSD sed has no \| alternation, so a GNU pattern here unsets nothing.
-for v in $(env | cut -d= -f1); do
-  case "$v" in CLAUDECODE|CLAUDE_*) unset "$v" ;; esac
-done
 
 # ---- the task channel ----------------------------------------------------
 # The worker never writes canonical state. It proposes into a channel of its
@@ -124,9 +123,23 @@ cleanup_channel() {  # the channel and the references only this run owns
   rm -f "$portal"
 }
 
-export DUX_STATUS_LOG="$status_outbox"
-export DUX_REPORT="$report_outbox"
-export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$channel/hooks"
+# Nothing of Dux's session reaches the worker: not the orchestrator's own
+# harness variables, not the backend it runs under, not a git config the
+# operator set for themselves, and not the directory the dux commands live in.
+# It gets its task channel back, and the hook path for this run. Matched with
+# case, not a regex: BSD sed has no \| alternation, so a GNU pattern here would
+# unset nothing.
+scrub_worker_env() {
+  local v
+  for v in $(env | cut -d= -f1); do
+    case "$v" in
+      DUX_*|CLAUDECODE|CLAUDE_*|HERDR_*|TMUX|TMUX_*|GIT_CONFIG_*) unset "$v" ;;
+    esac
+  done
+  export PATH="$worker_path"
+  export DUX_STATUS_LOG="$status_outbox" DUX_REPORT="$report_outbox"
+  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$channel/hooks"
+}
 
 mirroring=1
 mirror() {  # $1 dux state. The pane says which state, never what the worker wrote.
@@ -185,7 +198,7 @@ intent_line="$(awk '/^## Intent$/ { f = 1; next } f && NF { print substr($0, 1, 
 [ "$signalled" = 0 ] || refuse "signalled before the harness started"
 # Tests only: widens the gap the trap cannot cover, so the re-check below is reachable.
 [ -z "${DUX_WRAP_FORK_PAUSE_SECS:-}" ] || sleep "$DUX_WRAP_FORK_PAUSE_SECS"
-( worker_run "$c_brief" "$model" "$effort" "$c_settings" ) < /dev/null > "$out" 2>&1 &
+( scrub_worker_env; worker_run "$c_brief" "$model" "$effort" "$c_settings" ) < /dev/null > "$out" 2>&1 &
 wpid=$!
 # A signal between the check above and this assignment found an empty wpid and did
 # nothing, and the harness would then run unsupervised. Deliver it now.

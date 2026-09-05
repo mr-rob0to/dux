@@ -145,13 +145,28 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ ! -e "$DUX_HOME/state/$id.pid" ]
 }
 
-@test "the Dux session's own harness variables never reach the worker" {
+@test "the worker inherits its task interfaces and nothing else of Dux's" {
   prepare scout
   printf 'dump-env %s\nstatus done: report\n' "$DUX_HOME/state/worker.env" > "$FAKE_WORKER_SCRIPT"
-  (cd "$wt" && CLAUDECODE=1 CLAUDE_PID=4242 CLAUDE_CODE_SESSION_ID=abc DUX_BACKEND=tmux dux-worker-wrap "$id")
-  [ "$(grep -c '^CLAUDECODE=' "$DUX_HOME/state/worker.env" || true)" -eq 0 ]
-  [ "$(grep -c '^CLAUDE_' "$DUX_HOME/state/worker.env" || true)" -eq 0 ]
-  grep -q "^DUX_STATUS_LOG=$DUX_HOME/state/channels/$id\." "$DUX_HOME/state/worker.env"
+  (cd "$wt" && CLAUDECODE=1 CLAUDE_PID=4242 CLAUDE_CODE_SESSION_ID=abc \
+     HERDR_PANE_ID=w1:p9 TMUX=/tmp/sock,1,0 TMUX_PANE=%3 GIT_CONFIG_GLOBAL=/nowhere \
+     DUX_BACKEND=tmux dux-worker-wrap "$id")
+  e="$DUX_HOME/state/worker.env"
+  [ "$(grep -c '^CLAUDECODE=' "$e" || true)" -eq 0 ]
+  [ "$(grep -c '^CLAUDE_' "$e" || true)" -eq 0 ]
+  [ "$(grep -c '^HERDR_' "$e" || true)" -eq 0 ]
+  [ "$(grep -c '^TMUX' "$e" || true)" -eq 0 ]
+  [ "$(grep -c '^DUX_ROOT=' "$e" || true)" -eq 0 ]
+  [ "$(grep -c '^DUX_HOME=' "$e" || true)" -eq 0 ]
+  [ "$(grep -c '^DUX_BACKEND=' "$e" || true)" -eq 0 ]
+  [ "$(grep -c '^GIT_CONFIG_GLOBAL=' "$e" || true)" -eq 0 ]
+  # The only DUX_ and GIT_CONFIG_ names left are the four this task hands back.
+  [ "$(grep -c '^DUX_' "$e" || true)" -eq 2 ]
+  grep -q "^DUX_STATUS_LOG=$DUX_HOME/state/channels/$id\." "$e"
+  [ "$(grep -c '^GIT_CONFIG_' "$e" || true)" -eq 3 ]
+  p="$(sed -n 's/^PATH=//p' "$e")"
+  case ":$p:" in *":$DUX_ROOT/bin:"*) false ;; esac
+  case ":$p:" in *":$DUX_ROOT/tests/fakes:"*) ;; *) false ;; esac
 }
 
 @test "a push to the base branch from inside the worker is refused by the channel's hook" {

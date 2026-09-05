@@ -66,6 +66,16 @@ harness_refusal() {  # $1 harness; prints why it cannot run a worker and returns
   return 1
 }
 
+strip_dux_bin() {  # $1 a PATH; prints it without Dux's own bin directory
+  local rest="$1" e out=""
+  while :; do
+    e="${rest%%:*}"
+    case "$e" in "$DUX_ROOT/bin") ;; *) out="${out:+$out:}$e" ;; esac
+    case "$rest" in *:*) rest="${rest#*:}" ;; *) break ;; esac
+  done
+  printf '%s' "$out"
+}
+
 require_cmd() {
   local c
   for c in "$@"; do
