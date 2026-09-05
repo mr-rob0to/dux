@@ -256,6 +256,20 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | grep -c 'xxx' || true)" -eq 0 ]
 }
 
+@test "more than 64 KiB of status proposals fails the task" {
+  prepare scout
+  # One poll, after the worker has written everything and gone, so the wrapper
+  # meets the whole file at once rather than a prefix of it.
+  export DUX_WRAP_POLL_SECS=5
+  printf 'run yes "working: filler line" | head -c 70000 >> "$DUX_STATUS_LOG"\nstatus done: report\nexit 0\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worker for $id wrote more than 65536 bytes of status proposals"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+  [ "$(status_log | grep -c 'filler line' || true)" -eq 0 ]
+}
+
 @test "a scout's report reaches report.md through the channel" {
   prepare scout
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"

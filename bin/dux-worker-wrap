@@ -184,6 +184,7 @@ mirror() {  # $1 dux state. The pane says which state, never what the worker wro
 
 # ---- reading the worker's proposals --------------------------------------
 LINE_CAP=200      # bytes of one cleaned status line
+STATUS_CAP=65536  # bytes of status.outbox over a whole run
 accepted=0        # bytes of status.outbox already read
 accepted_sum=""   # what those bytes were, so a rewrite of them is visible
 terminal=""       # the one terminal proposal, held back until the run is over
@@ -202,6 +203,11 @@ import_proposals() {  # $1 "final" when nothing more is coming
   [ -z "$violation" ] || return 0
   [ -f "$status_outbox" ] || return 0
   size="$(wc -c < "$status_outbox" | tr -d ' ')"
+  # Checked before a byte of the new region is read, so a worker cannot make
+  # Dux hold its whole outbox in memory just by writing a big one.
+  if [ "$size" -gt "$STATUS_CAP" ]; then
+    violation="the worker for $id wrote more than $STATUS_CAP bytes of status proposals"; return 0
+  fi
   # What Dux has already read is the worker's own record too, and it does not
   # get to change it. Checked before the "anything new?" test, because a rewrite
   # that keeps the length would otherwise never be looked at.
