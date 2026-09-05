@@ -132,17 +132,20 @@ cleanup_channel() {  # the channel and the references only this run owns
 group_alive() { [ -n "$pgid" ] && kill -0 -- "-$pgid" 2>/dev/null; }
 
 stop_group() {  # TERM, then KILL; returns 1 if anything is still there
-  local i limit
+  local i limit signals
+  # Tests only: nothing a test can start survives KILL, so without this the
+  # branch that refuses a survivor could never be seen to fail.
+  signals="${DUX_WRAP_STOP_SIGNALS:-on}"
   group_alive || return 0
   limit=$(( ${DUX_WRAP_STOP_GRACE_SECS:-10} * 5 ))
-  kill -TERM -- "-$pgid" 2>/dev/null || true
+  if [ "$signals" = on ]; then kill -TERM -- "-$pgid" 2>/dev/null || true; fi
   i=0
   while [ "$i" -lt "$limit" ]; do
     group_alive || return 0
     i=$((i + 1)); sleep 0.2
   done
   log "worker group $pgid for $id ignored TERM; killing it"
-  kill -KILL -- "-$pgid" 2>/dev/null || true
+  if [ "$signals" = on ]; then kill -KILL -- "-$pgid" 2>/dev/null || true; fi
   i=0
   while [ "$i" -lt 25 ]; do
     group_alive || return 0
