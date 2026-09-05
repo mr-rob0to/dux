@@ -10,7 +10,7 @@ description: Show the fleet digest. Use when the operator asks what is running, 
    operator, what is ready. No task ids unless asked.
 3. Every line under `unacknowledged` is a wake that happened while no Monitor
    was armed. Handle each as the wake rule in `AGENTS.md` says, then run
-   `bin/dux-ledger ack <id>`.
+   `bin/dux-ledger ack <id> <state>` using the state that line reported.
 4. `watcher: not running` while tasks are running means supervision is off. Say
    so and run `bin/dux-doctor`; do not dispatch until it passes.
 5. `note:` lines mean the status log and ledger disagree. Say what the status

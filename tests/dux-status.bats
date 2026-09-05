@@ -47,7 +47,7 @@ unacknowledged
 @test "acknowledged tasks leave the unacknowledged block" {
   setup_fleet
   task a1 api done https://example.invalid/pr/7
-  dux-ledger ack a1
+  dux-ledger ack a1 done
   run dux-status
   [ "$output" = $'watcher: not running\napi\n  ready 1\nios' ]
 }
@@ -55,7 +55,7 @@ unacknowledged
 @test "torn-down tasks are archived instead of ready or failed" {
   setup_fleet
   task a1 api done https://example.invalid/pr/7 -; task a2 api failed - -
-  dux-ledger ack a1; dux-ledger ack a2
+  dux-ledger ack a1 done; dux-ledger ack a2 failed
   run dux-status
   [ "$output" = $'watcher: not running\napi\nios' ]
 }

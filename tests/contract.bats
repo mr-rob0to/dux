@@ -46,7 +46,7 @@ load helpers/setup
 }
 
 @test "AGENTS.md wake rule acknowledges through dux-ledger ack and pushes for exactly three states" {
-  grep -q 'bin/dux-ledger ack <id>' "$DUX_ROOT/AGENTS.md"
+  grep -q 'bin/dux-ledger ack <id> <event-state>' "$DUX_ROOT/AGENTS.md"
   grep -q 'at most the last 5 lines' "$DUX_ROOT/AGENTS.md"
   grep -qE 'Push .*only for `done` with a PR, `needs-decision`, and `failed`' "$DUX_ROOT/AGENTS.md"
   [ "$(grep -c 'never edit `data/backlog.md`\|Never edit `data/backlog.md`' "$DUX_ROOT/AGENTS.md")" -ge 1 ]

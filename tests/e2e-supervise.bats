@@ -107,7 +107,7 @@ count_is() { [ "$(count "$1" "$2")" -eq "$3" ]; }
   [[ "$output" == *"watcher: running (pid $w2)"* ]]
   [[ "$output" == *"  ready 1"* ]]
   [[ "$output" == *"  done: $id (proj)"* ]]
-  dux-ledger ack "$id"
+  dux-ledger ack "$id" done
   run dux-status
   [ "$(grep -c 'unacknowledged' <<< "$output" || true)" -eq 0 ]
   wait_for_workers 10

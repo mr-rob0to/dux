@@ -171,7 +171,8 @@ backend started it and catches a worker in a server whose socket vanished.
    means the wake is a duplicate. Otherwise Dux reads at most five status lines.
 7. `dux-notify` formats the phone line for `done` with a PR, `needs-decision`,
    and `failed`. `dux-recover` handles the mechanical side of recovery.
-8. Dux runs `dux-ledger ack <id>` after handling the wake. `dux-status` lists
+8. Dux runs `dux-ledger ack <id> <event-state>` after handling the wake. The
+   command refuses if the task has moved to a newer state. `dux-status` lists
    every unacknowledged state after a session restart.
 
 | State | Recovery |
