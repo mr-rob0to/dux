@@ -40,6 +40,32 @@ Non-goals for v1
 - Writing task state back into GitHub beyond a start comment and a done comment.
 - Backends other than tmux and Herdr.
 - Polling GitHub. Issue intake is pull-on-demand only.
+- Containing a worker that is deliberately hostile. See section 2.1.
+
+## 2.1 Threat boundary
+
+Dux says plainly what it protects and what it does not.
+
+- The operator starts a worker. That worker, its harness, and the local commands it
+  launches run as the operator and are **trusted** with the operator's authority.
+  They can reach the operator's files, shared Git metadata, terminal services, the
+  network, credentials, and other same-user processes. Deliberate abuse of those
+  rights is outside Dux's protection claim, and no file mode, hidden path, random
+  nonce, or process-id check changes that. Those are correctness checks against
+  mistakes and stale writes, not authentication.
+- What a worker *reports* is **untrusted application data**: repository and issue
+  content, status and report text, PR URLs, result claims, and remote GitHub state.
+  Every one of them is checked for grammar, size, ownership, shape, and outside
+  evidence before it reaches canonical state or a word the operator reads.
+- Dux's own scripts, wrapper, watcher, installed `/ship` skill, and the operator are
+  trusted control code. A malicious project build or Git hook runs with worker
+  privileges and can bypass Dux; that is the same accepted boundary.
+- Stronger isolation, a virtual machine or a container, is optional future work. It
+  needs its own approved design, and it must fail closed: no isolation means no
+  worker, never a silent fallback to running unprotected.
+
+The practical consequence, carried through sections 5 and 6: a worker never declares
+its own completion. It *proposes*, and Dux proves.
 
 ## 3. Components
 
@@ -214,6 +240,23 @@ worker goes stale and a busy one does not. The brief requires the worker to
 write `working: waiting on <what> <url>` before any wait it expects to exceed
 10 minutes, such as `gh run watch`.
 Status lines are data. Dux never runs a command a status line names.
+
+**A status line is a proposal, not a verdict.** The worker writes into a private
+task channel, not into `status.log` directly. The wrapper imports cleaned `working:`
+progress as the run goes, and buffers at most one terminal proposal. That proposal
+becomes canonical only after two things are true: the direct worker and its ordinary
+process group are gone, and `dux-result` has proved the result from registered
+project facts, exact Git and GitHub evidence, and the `/ship` receipt. A worker that
+writes `done:` and keeps running has changed nothing.
+
+**Terminal state arrives as a handoff.** The proof is published under
+`state/<id>.handoffs/<n>`, built in a temporary directory beside it and moved into
+place with one rename, so a reader sees a whole handoff or none. The watcher accepts
+the next sequence in order, writes the status line, the event, the ledger state, and
+the verified PR URL exactly once, then marks it consumed. Sequences are **retained
+until teardown**, which owns their lifecycle: nothing else removes one, so a watcher
+killed part-way through replays the same handoff instead of losing it. A
+terminal-looking status line with no handoff behind it is ignored.
 
 ### 5.5 Spawn (`dux-spawn <id> [--harness claude]`)
 
