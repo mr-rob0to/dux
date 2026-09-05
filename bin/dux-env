@@ -17,6 +17,27 @@ die()     { printf 'dux: %s\n' "$*" >&2; exit 1; }
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 now()     { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
+mtime_epoch() {  # $1 path; one epoch timestamp on GNU and BSD stat
+  stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null
+}
+
+pid_runs() {  # $1 pid, $2 command-line needle ending at a word boundary
+  local command
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 "$1" 2>/dev/null || return 1
+  command="$(ps -ww -o command= -p "$1" 2>/dev/null)" || return 1
+  printf '%s\n' "$command" | awk -v needle="$2" '
+    { p = index($0, needle); while (p) {
+        r = substr($0, p + length(needle), 1)
+        if (r == "" || r == " ") found = 1
+        rest = substr($0, p + 1); q = index(rest, needle)
+        if (!q) break
+        p += q
+      }
+    }
+    END { exit !found }'
+}
+
 # The one place a task id is accepted, so every script that builds a path from one
 # reaches the same answer. "." and ".." would resolve $DUX_TASKS/$id to a parent.
 valid_task_id() {  # $1 id; a finding when it is not one

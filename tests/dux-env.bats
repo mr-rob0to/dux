@@ -41,3 +41,30 @@ load helpers/setup
   run bash -c 'source "$DUX_ROOT/bin/dux-env"; now'
   [[ "$output" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
 }
+
+@test "pid_runs matches a live pid and a whole command-line word" {
+  run bash -c '
+    source "$DUX_ROOT/bin/dux-env"
+    fifo="$DUX_HOME/state/fifo"; mkfifo "$fifo"
+    ( exec -a "dux-worker-wrap t1" cat ) <> "$fifo" >/dev/null 2>&1 & end=$!
+    ( exec -a "dux-worker-wrap t1" sleep 30 ) >/dev/null 2>&1 & mid=$!
+    sleep 0.2
+    pid_runs "$end" "dux-worker-wrap t1"; a=$?
+    pid_runs "$mid" "dux-worker-wrap t1"; b=$?
+    pid_runs "$end" "dux-worker-wrap t"; c=$?
+    pid_runs "$end" "dux-worker-wrap t10"; d=$?
+    pid_runs 999999 "dux-worker-wrap t1"; e=$?
+    pid_runs "" "dux-worker-wrap t1"; f=$?
+    kill "$end" "$mid"
+    echo "$a $b $c $d $e $f"'
+  [ "$output" = "0 0 1 1 1 1" ]
+}
+
+@test "mtime_epoch returns one portable timestamp" {
+  touch -t 202001010000 "$DUX_HOME/f"
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; mtime_epoch "$DUX_HOME/f"'
+  [ "$status" -eq 0 ]
+  [ "$(wc -l <<< "$output" | tr -d ' ')" -eq 1 ]
+  want="$(date -j -f %Y%m%d%H%M%S 20200101000000 +%s 2>/dev/null || date -d 2020-01-01T00:00:00 +%s)"
+  [ "$output" = "$want" ]
+}
