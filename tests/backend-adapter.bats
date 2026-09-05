@@ -52,6 +52,32 @@ teardown_file() {
   run dux-backend exists "$ep"; [ "$status" -eq 1 ]
 }
 
+@test "exists is a finding when the backend cannot answer, never a gone" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  ep="$(dux-backend open t30 "$DUX_HOME" "sleep 30")"
+  FAKE_TMUX_FAIL=list-windows run dux-backend exists "$ep"
+  [[ "$output" == *"finding: tmux could not list windows while checking $ep"* ]]
+  [ "$status" -eq 2 ]
+}
+
+@test "tmux exists reads a socket path holding a non-socket as a finding" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  sock="$(tmux_socket_path dux-test-notsock)"
+  : > "$sock"
+  DUX_TMUX_SOCKET=dux-test-notsock run dux-backend exists "tmux:duxtest:@1"
+  rm -f "$sock"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the tmux socket path"* ]]
+}
+
+@test "tmux exists reads a server that is not running as gone" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  tmux -L dux-test-stopped new-session -d -s gone -x 80 -y 24
+  tmux -L dux-test-stopped kill-server
+  DUX_TMUX_SOCKET=dux-test-stopped run dux-backend exists "tmux:gone:@1"
+  [ "$status" -eq 1 ]
+}
+
 @test "find names the task's container while it exists and prints nothing before and after" {
   [ -n "${DUX_BACKEND:-}" ] || skip
   run dux-backend find t20

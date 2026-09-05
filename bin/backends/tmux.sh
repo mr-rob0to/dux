@@ -19,6 +19,22 @@ _session() {
 # where <name> is what -L is given, or "default" when it is not.
 _socket_path() { printf '%s/tmux-%s/%s\n' "${TMUX_TMPDIR:-/tmp}" "$(id -u)" "${DUX_TMUX_SOCKET:-default}"; }
 
+# What the socket path is decides a failed listing, and tmux's error text only
+# refines it once the path is a socket. The text differs between platforms for
+# the same path, so it cannot safely decide whether a container is absent.
+_absent_or_finding() {  # $1 what was being checked, $2 error text, $3 exit code
+  local what="$1" err="$2" rc="$3" sock subject
+  sock="$(_socket_path)"
+  subject="${what#looking for }"
+  if [ ! -e "$sock" ] && [ ! -L "$sock" ]; then return 0; fi
+  [ -S "$sock" ] || finding \
+    "the tmux socket path $sock is not a socket, so nothing there can answer for $subject: ${err:-exit $rc}"
+  case "$err" in
+    *"no server running"*) return 0 ;;
+  esac
+  finding "tmux could not list windows while $what: ${err:-exit $rc}"
+}
+
 _win() { local ep="$1"; echo "${ep##*:}"; }          # window id (@N)
 _ses() { local ep="${1#tmux:}"; echo "${ep%%:*}"; }  # session name
 
@@ -36,14 +52,18 @@ backend_open() {  # id cwd cmd
   echo "tmux:$ses:$wid"
 }
 
-backend_exists() {  # endpoint
-  local wid; wid="$(_win "$1")"
-  _tmux list-windows -a -F '#{window_id}' 2>/dev/null | grep -q "^$wid$"
+backend_exists() {  # endpoint: 0 present, 1 gone, finding when tmux did not answer
+  local wid errfile out rc err; wid="$(_win "$1")"
+  errfile="$(mktemp "${TMPDIR:-/tmp}/dux-tmux-exists.XXXXXX")" || finding "cannot create a temp file to read tmux errors"
+  out="$(_tmux list-windows -a -F '#{window_id}' 2>"$errfile")"; rc=$?
+  err="$(cat "$errfile")"; rm -f "$errfile"
+  if [ "$rc" -ne 0 ]; then _absent_or_finding "checking $1" "$err" "$rc"; return 1; fi
+  printf '%s\n' "$out" | grep -q "^$wid$"
 }
 
 backend_find() {  # id: prints the endpoint of the window named dux-<id>, nothing when there is none
   # Never _session: that would start a server to answer a question about it.
-  local id="$1" errfile out rc err n sock
+  local id="$1" errfile out rc err n
   errfile="$(mktemp "${TMPDIR:-/tmp}/dux-tmux-find.XXXXXX")" || finding "cannot create a temp file to read tmux errors"
   out="$(_tmux list-windows -a -f "#{==:#{window_name},dux-$id}" -F '#{session_name}:#{window_id}' 2>"$errfile")"
   rc=$?
@@ -66,14 +86,7 @@ backend_find() {  # id: prints the endpoint of the window named dux-<id>, nothin
     #   anything else  something is wrong at the path and guessing is not allowed.
     # A worker in a server whose socket was removed outright reads as no
     # container here; dux-spawn's own pidfile check is the layer that catches it.
-    sock="$(_socket_path)"
-    if [ ! -e "$sock" ] && [ ! -L "$sock" ]; then return 0; fi
-    [ -S "$sock" ] || finding \
-      "the tmux socket path $sock is not a socket, so nothing there can answer for dux-$id: ${err:-exit $rc}"
-    case "$err" in
-      *"no server running"*) return 0 ;;
-    esac
-    finding "tmux could not list windows while looking for dux-$id: ${err:-exit $rc}"
+    _absent_or_finding "looking for dux-$id" "$err" "$rc"; return 0
   fi
   [ -n "$out" ] || return 0
   n="$(printf '%s\n' "$out" | wc -l | tr -d ' ')"
