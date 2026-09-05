@@ -67,6 +67,14 @@ trap 'signalled=1; if [ -n "$pgid" ]; then kill -TERM -- "-$pgid" 2>/dev/null ||
 # writes; they are not a boundary against the worker, which runs as we do.
 runfile="$DUX_STATE/$id.run"; portal="$DUX_STATE/$id.portal"
 context="$DUX_STATE/$id.result-context"; channels="$DUX_STATE/channels"
+# This run owns its references. One already there is an earlier run's, and
+# nothing here can tell a leftover from a live one, so it is the operator's to
+# clear through recovery. -L as well as -e: a dangling symlink is a reference
+# too, and writing through it would put this run's state somewhere else.
+for f in "$runfile" "$portal" "$pgidfile" "$context"; do
+  [ ! -e "$f" ] && [ ! -L "$f" ] \
+    || refuse "$id already has a reference from an earlier run at state/${f##*/}"
+done
 mkdir -p "$channels" 2>/dev/null || refuse "cannot create $channels"
 chmod 700 "$channels" || refuse "cannot restrict $channels"
 channel="$(mktemp -d "$channels/$id.XXXXXXXX" 2>/dev/null)" || refuse "cannot create a task channel for $id"

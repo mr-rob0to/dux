@@ -256,6 +256,27 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | grep -c 'xxx' || true)" -eq 0 ]
 }
 
+@test "a leftover run reference from an earlier run is refused, symlinks included" {
+  prepare scout
+  printf 'status done: report\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  for ref in run portal pgid result-context; do
+    printf 'stale\n' > "$DUX_HOME/state/$id.$ref"
+    run wrap
+    [ "$status" -eq 2 ]
+    [[ "$output" == *"finding: $id already has a reference from an earlier run at state/$id.$ref"* ]]
+    rm -f "$DUX_HOME/state/$id.$ref"
+  done
+  # A dangling symlink is a reference too: -e alone would walk straight past it.
+  ln -s "$DUX_HOME/state/gone" "$DUX_HOME/state/$id.portal"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: $id already has a reference from an earlier run at state/$id.portal"* ]]
+  rm -f "$DUX_HOME/state/$id.portal"
+  run wrap
+  [ "$status" -eq 0 ]
+  [ "$(status_log | tail -n 1)" = "done: report" ]
+}
+
 @test "more than 64 KiB of status proposals fails the task" {
   prepare scout
   # One poll, after the worker has written everything and gone, so the wrapper
