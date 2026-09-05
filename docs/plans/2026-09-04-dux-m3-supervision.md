@@ -549,7 +549,7 @@ Remove `[ $# -eq 2 ] || usage ...` from `get`. Run `bats tests/dux-project.bats`
 **Interfaces:**
 - Produces: `dux-project add <path> [--name <name>] [--base ...] [--issues ...] [--worktree ...]`. The name is the resolved path's last component unless `--name` is given. The derived name must match `[A-Za-z0-9._-]+` and not be all dots, else `finding: folder name '<n>' is not usable as a project name; pass --name`. A name already registered is the existing finding plus `; pass --name to register it under another name`. A second positional argument is `finding: usage: ...` (0(d)'s line), so the old two-positional form fails clearly. The registry line format is unchanged.
 
-- [ ] **Step 1: Amend the spec**
+- [x] **Step 1: Amend the spec**
 
 In section 4, after "`dux-project` detects it and the operator confirms." insert:
 

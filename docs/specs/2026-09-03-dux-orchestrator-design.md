@@ -115,6 +115,11 @@ and prints a finding. It never guesses.
 mechanism in the operator's precedence order: `make` (a `make worktree` target),
 `script` (a repo script), or `git` (`git worktree add` into `<repo>/.worktrees/`).
 `dux-project` detects it and the operator confirms.
+`dux-project add <path> [--name <name>]` takes the project name from the folder,
+which is what the operator reaches for first; `--name` is for two repos with the
+same folder name, a folder name outside the id charset, or a name too long to
+want in every branch. A derived name that is unusable or already registered is a
+finding that names the flag.
 `dux-project add --worktree make|script|git` records the mechanism explicitly; the
 flag is required when the project's `CLAUDE.md` or `AGENTS.md` carries a
 `Worktrees` heading, because prose is not something a script can follow.
