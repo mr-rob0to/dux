@@ -421,7 +421,7 @@ Interface, each a function in `bin/backends/<name>.sh`:
 |---|---|
 | `open <id> <cwd> <cmd>` | start `<cmd>` in a new visible container labelled `dux-<id>`, print an opaque endpoint, never steal focus |
 | `find <id>` | print the endpoint of the container labelled `dux-<id>`, or nothing when there is none; a backend that cannot tell raises a finding |
-| `exists <endpoint>` | exit 0 if the container still exists; process liveness is the wrapper pid's job |
+| `exists <endpoint>` | exit 0 if the container is present, 1 if the backend says it is gone, a finding when the backend did not answer; process liveness is the wrapper pid's job |
 | `tail <endpoint> <n>` | print the last n lines of output |
 | `close <endpoint>` | close only that container; refuse if it is the operator's focused pane |
 | `notify <title> <body>` | local visual notice, no-op if unsupported |
