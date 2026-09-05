@@ -123,6 +123,36 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | tail -n 1)" = "done: report" ]
 }
 
+@test "terminal state waits for the worker's whole group to be gone" {
+  prepare scout
+  # The harness proposes done and exits while a child of its own keeps running
+  # and ignores TERM, so the wrapper spends its grace period with the group
+  # still alive. Nothing terminal may appear in that window.
+  printf 'stubborn %s\nstatus done: PR https://example.invalid/pr/9\nexit 0\n' \
+    "$DUX_HOME/state/stubborn.pid" > "$FAKE_WORKER_SCRIPT"
+  export DUX_WRAP_STOP_GRACE_SECS=6
+  (cd "$wt" && DUX_BACKEND=tmux dux-worker-wrap "$id") & wp=$!
+  wait_until 20 test -s "$DUX_HOME/state/$id.pgid"
+  pgid="$(cat "$DUX_HOME/state/$id.pgid")"
+  wait_until 20 test -s "$DUX_HOME/state/stubborn.pid"
+  sp="$(cat "$DUX_HOME/state/stubborn.pid")"
+  # The harness is the group leader; once the wrapper has reaped it we are
+  # inside the stop, with its child still running.
+  wait_until 20 not_running "$pgid"
+  # Hold the invariant across the window, not at one instant: the wrapper writes
+  # terminal state within a poll of the harness exiting when the guard is gone.
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    kill -0 "$sp"
+    [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+    [ ! -e "$DUX_HOME/state/$id.handoffs" ]
+    sleep 0.2
+  done
+  wait "$wp" || true
+  run kill -0 "$sp"
+  [ "$status" -ne 0 ]
+  [ "$(status_log | tail -n 1)" = "done: PR https://example.invalid/pr/9" ]
+}
+
 @test "a scout's report reaches report.md through the channel" {
   prepare scout
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"

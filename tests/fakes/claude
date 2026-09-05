@@ -18,6 +18,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     dump-env\ *) env > "${line#dump-env }" ;;
     run\ *)      bash -c "${line#run }" ;;
     orphan\ *)   sleep 30 & echo $! > "${line#orphan }" ;;
+    stubborn\ *) bash -c 'trap "" TERM; while :; do sleep 1; done' & echo $! > "${line#stubborn }" ;;
     say\ *)      printf '{"type":"assistant","text":%s}\n' "$(printf '%s' "${line#say }" | jq -Rs .)" ;;
     exit\ *)     exit "${line#exit }" ;;
     *)           echo "fake $me: bad directive: $line" >&2; exit 99 ;;
