@@ -14,19 +14,25 @@ CLAUDE.md                  two-line import of AGENTS.md
 skills/
   dux-dispatch/SKILL.md    turn a goal into a running task, and tear it down after merge
   dux-project/SKILL.md     register a repo, install the PR template if absent
+  dux-status/SKILL.md      show the fleet digest and explain its next actions
+  dux-recover/SKILL.md     judge and handle stale, dead, ended, or failed work
   ship/SKILL.md            bundled delivery gate, installed by dux-install (milestone 1, task 8)
 bin/
   dux-env                  sourced by every script: paths, log, die, finding, now,
                            task_harness, harness_refusal, require_cmd
-  dux-lock                 single live session per DUX_HOME (pid file, exit 3 when held)
+  dux-lock                 single live session; starts and stops its watcher
   dux-project              registry add/list/get/resolve-base, PR template install, --worktree
-  dux-ledger               add/set/get/list over data/backlog.md; the only writer
+  dux-ledger               add/set/get/list/ack/unack over data/backlog.md; the only writer
   dux-task-new             allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, folder, queued line
   dux-brief                render tasks/<id>/brief.md and tasks/<id>/worker-settings.json
   dux-worktree             create/remove/discard a worktree per the project's mechanism
   dux-spawn                worktree plus backend container for a queued task; five refusals
   dux-worker-wrap          runs inside the container: pid, status mirroring, heartbeat, exit line
   dux-teardown             remove the worktree, close the container, mark done or failed
+  dux-watch                classify task events, record them, and raise local toasts
+  dux-status               recompute the fleet digest and missed wakes from files
+  dux-notify               format one action-first phone notification line
+  dux-recover              inspect or recover stale, dead, ended, and failed tasks
   dux-backend              selects a backend once and dispatches to its adapter
   backends/tmux.sh         window per task, remain-on-exit; endpoint tmux:<session>:<window_id>
   backends/herdr.sh        tab per task in the Dux workspace; endpoint herdr:<pane_id>
@@ -42,19 +48,18 @@ templates/
   hooks/pre-push           base-branch push guard, __BASE__ and __UPSTREAM__ rendered per task
   config/                  defaults dux-install copies into config/ (models, models-codex,
                            worker-harness, backend, reviewer, security-reviewer)
-data/         (gitignored) projects.md registry; backlog.md ledger;
-                           tasks/<id>/{brief.md,status.log,report.md,worker-settings.json,
-                           harness,hooks/,worktree.log}
-state/        (gitignored) dux.lock; <id>.endpoint; <id>.pid;
-                           <id>.out; events.log
+data/         (gitignored) projects.md registry; backlog.md ledger with acked state;
+                           tasks/<id>/{intent.md,criteria.md,brief.md,status.log,report.md,
+                           worker-settings.json,harness,hooks/,worktree.log,retry,retried-from}
+state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
+                           <id>.endpoint; <id>.pid; <id>.out; events.log
 config/       (gitignored) backend override, reviewer defaults, models, models-codex,
                            worker-harness
 tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash
 ```
 
-Planned for later milestones (spec section 16): `dux-watch`, `dux-status`,
-`dux-notify`, `dux-recover` (milestone 3); `dux-intake` (milestone 4); `/ship`
-port (milestone 5).
+Planned for later milestones (spec section 16): `dux-intake` (milestone 4) and
+the `/ship` port (milestone 5).
 
 Rules that shape every component:
 
@@ -146,24 +151,44 @@ backend started it and catches a worker in a server whose socket vanished.
 7. `dux-teardown <id>` (terminal, clean, pushed) removes the worktree, closes
    the container, and marks `done` or `failed` with the PR url.
 
-## Wake flow (milestone 3; scripts marked * exist today)
+## Wake flow (exists today)
 
-1. `dux-lock acquire`* (SessionStart hook) starts `dux-watch`, one bash process.
-2. Every 30 seconds the watcher reads the last status line of each non-terminal
-   task and checks liveness (`dux-backend exists`* plus the wrapper pid).
-3. It appends one line to `state/events.log` only on a change to `done`,
-   `failed`, `blocked`, `needs-decision`, or on `stale` and `dead`. `working`
-   never emits. It updates `data/backlog.md` so a restart re-emits nothing.
-4. Dux holds one Monitor on `tail -F state/events.log`. Each line wakes it once;
-   it reads that line plus at most five status lines and decides: notify,
-   recover, or acknowledge.
-5. `dux-notify` pushes `done`, `needs-decision`, and `failed`; `dux-recover`
-   handles `stale`, `dead`, `blocked`, and `ended`.
+1. The SessionStart hook runs `dux-lock acquire`, which starts one `dux-watch`
+   process and records it in `state/watch.pid`.
+2. Every 30 seconds, or the configured interval, the watcher reads the last
+   status line for each running or stale task and checks its wrapper pid.
+3. Liveness has three answers: `alive`, `gone`, or `unknown`. A matching
+   `dux-worker-wrap <id>` pid decides alive or gone in both directions. The
+   backend container only adds corroborating notes and never reverses that answer.
+4. A terminal status change emits `<time> <state>: <id>` to `state/events.log`.
+   Silence can emit `stale`; a gone wrapper can emit `dead`; a clean worker exit
+   without a terminal line can emit `ended`. The event is appended before the
+   ledger is updated, so a write failure repeats rather than loses the wake.
+   Every event also raises a local backend toast.
+5. Dux holds one persistent Monitor on `tail -n0 -F state/events.log`. Each line
+   wakes the session once.
+6. On a wake, Dux reads `dux-ledger line <id>`. A matching `acked=` and `state=`
+   means the wake is a duplicate. Otherwise Dux reads at most five status lines.
+7. `dux-notify` formats the phone line for `done` with a PR, `needs-decision`,
+   and `failed`. `dux-recover` handles the mechanical side of recovery.
+8. Dux runs `dux-ledger ack <id>` after handling the wake. `dux-status` lists
+   every unacknowledged state after a session restart.
+
+| State | Recovery |
+|---|---|
+| `stale` | Inspect a capped, fenced output tail; extend once when progressing, otherwise stop the matching wrapper. |
+| `dead` | Mark failed, save the last 20 output lines, and keep the worktree. |
+| `ended` | Use a branch PR or a non-failure report to classify done; otherwise ask the operator. |
+| `failed` | Show the saved failure and offer one retry or a scout. |
+| `blocked`, `needs-decision` | Relay the status verbatim; append the operator answer to one fresh retry. |
 
 ## Session lifecycle (exists today)
 
 SessionStart runs `dux-lock acquire` with the pid from `CLAUDE_PID`; exit 3
-means another live session holds the lock and this one is read-only.
-`dux-doctor` runs next and must be clean before anything is dispatched.
-SessionEnd runs `dux-lock release`, which removes the lock only when it holds
-this session's pid.
+means another live session holds the lock and this one is read-only. A successful
+acquire replaces any watcher recorded in `state/watch.pid`, starts a fresh one,
+and writes diagnostics to `state/watch.log`. `DUX_WATCHER=off` is the explicit
+test and maintenance switch. `dux-doctor` then requires the watcher while the
+switch is on, and `dux-status` reconstructs the fleet before the Monitor is armed.
+SessionEnd runs `dux-lock release`, which stops this session's watcher and removes
+the lock only when it holds this session's pid. Worker containers keep running.

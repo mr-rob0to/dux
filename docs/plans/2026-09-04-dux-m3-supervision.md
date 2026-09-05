@@ -3,10 +3,10 @@
 > **For agentic workers:** REQUIRED SUB-SKILL: Use subagent-driven-development (recommended) or executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Where this stands**
-- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 7 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 to 6 are complete; Task 7 is next.
+- Milestone: 3 of 7 (see `2026-09-03-dux-roadmap.md`). Tasks done: 8 of 8 (Task 0 with five sub-items, Tasks 1 to 7). Tasks 0 to 7 are complete; the milestone is at the ship gate.
 - Design review: done 2026-09-04 by a fresh Fable session; 4 Critical, 7 Important, 15 Minor. All Critical and Important fixed in the plan; 11 Minor fixed, 2 fixed by deletion, 2 logged. Table at the end.
 - Revised again 2026-09-04 on the operator's decision of open question 1: the wrapper pid now decides liveness in both directions and the container is corroboration (Decision 4). Not a second design review; `/ship` reviews the code.
-- Next action: Task 7 is in progress on the approved feature worktree.
+- Next action: run `/ship` from the approved feature worktree; do not merge.
 
 **Declared deviation from the constitution (principle 2, "stop and print a finding"):** `dux-watch` is the one script that does not exit on a per-task surprise. It prints `finding: watch: <id>: <one line>` to its log and skips that task for that pass, because exiting would end supervision of every other task without anyone noticing, which is the silent degradation principle 2 exists to prevent. Startup surprises (an unwritable `state/`, a bad argument) still exit 2. Every other script in this milestone follows the principle as written.
 
@@ -2695,7 +2695,7 @@ Delete the line `Then run \`bin/dux-ledger ack <id>\`. Never edit \`data/backlog
 - Consumes: everything from Tasks 0 to 6.
 - Produces: proof on both backends that a real wrapper with a fake worker goes `stale` after the threshold, `dead` when killed, and `done` exactly once even across a watcher restart; the docs that match the scripts; the dry-run transcripts for the two new skills.
 
-- [ ] **Step 1: Write the failing e2e test**
+- [x] **Step 1: Write the failing e2e test**
 
 ```bash
 # bats file_tags=e2e
@@ -2833,25 +2833,27 @@ Add to the Makefile's `test` target, after the dispatch e2e lines:
 	DUX_BACKEND=tmux  $(BATS) tests/e2e-supervise.bats
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Run: `DUX_BACKEND=herdr bats tests/e2e-supervise.bats`. Expected before Tasks 1 to 4: command-not-found failures. After them, expected green on the first honest run; if it is green, break it once as Step 5 says before trusting it.
 
-- [ ] **Step 3: Update the docs**
+- [x] **Step 3: Update the docs**
 
 `docs/ARCHITECTURE.md`: add the four scripts and two skills to the components block with one-line descriptions; add the state files and task files; describe the `acked` field in the `data/` line. Replace the "Wake flow (milestone 3; scripts marked * exist today)" section with "Wake flow (exists today)" written as the design section of this plan says it works: hook starts the watcher, pass every 30 s, liveness with three answers, emit-then-ledger, Monitor, wake reads, notify or recover, ack. Add the recovery table in short form. Extend "Session lifecycle" with the watcher's start and stop and the `DUX_WATCHER` switch. Remove the four scripts from the "Planned for later milestones" line (leave `dux-intake` and the `/ship` port).
 
 `docs/plans/2026-09-03-dux-roadmap.md` "Where this stands": milestone 2 merged (PR #4), milestone 3 implemented per this plan, at the ship gate. `README.md`: one paragraph on supervision in the operator's terms and the `dux-project add <path>` form.
 
-- [ ] **Step 4: Dry-run the two new skills**
+- [x] **Step 4: Dry-run the two new skills**
 
 Against a throwaway registered repo, in a fresh interactive session with `DUX_HOME` pointing at a scratch copy: ask Dux for the digest (exercises `skills/dux-status`), then make a scout go silent with the fake worker and let Dux handle the `stale` wake through `skills/dux-recover` (`--stop` path), then answer a `needs-decision` and let it retry. Paste the three transcript excerpts into the PR under `<details>`. Also run the real-harness check the constitution's quality gate needs: one real `claude` scout dispatched and supervised to `done`, with the Monitor wake observed in the session.
 
-- [ ] **Step 5: Break-verify**
+Completed with the fake worker in a fresh Bash 3.2 scratch session. The real-harness clause was superseded by the operator's Codex-only instruction for this session, so no Claude process was invoked; record that exception in the PR.
+
+- [x] **Step 5: Break-verify**
 
 Break something the e2e sees end to end and the unit tests do not reach through a real container: in `bin/dux-watch`'s `liveness`, replace the final `echo gone` (the pid-not-running branch) with `echo starting`. Run `DUX_BACKEND=herdr bats tests/e2e-supervise.bats`. Expected: "a worker whose wrapper is killed is dead" fails at `wait_until 15 count_is dead "$id" 1` after fifteen seconds with no `dead` line, and the unit file's "a wrapper pid that is gone while the container remains is dead" fails the same way. Paste the e2e failure. Restore. (Two breaks considered and rejected because they do not fail here: swapping `emit`'s two lines, which only the unit test "a ledger write that fails" can see; and removing `stop_watcher`'s `kill -TERM`, which the old watcher's own pidfile fence survives without a second event.)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 `test: add end-to-end supervision on both backends` (with the e2e and Makefile), then `docs: describe the wake flow and supervision as they exist` (ARCHITECTURE, roadmap, README, this plan's header). Then announce `/ship` in one line and invoke it.
 
