@@ -77,6 +77,19 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   run dux-recover "$id"; [[ "$output" == *"extended: yes (once; the next step is --stop)"* ]]
 }
 
+@test "--extend follows a terminal status that races ahead of its marker" {
+  task_in stale; status_is "working: slow"
+  ( sleep 0.2; status_is "done: PR https://example.invalid/pr/race" ) &
+  writer=$!
+  DUX_RECOVER_EXTEND_PAUSE_SECS=1 run dux-recover "$id" --extend
+  wait "$writer"
+  [ "$status" -eq 0 ]
+  [ "$output" = "worker for $id already wrote 'done: PR https://example.invalid/pr/race'; ledger set to done; nothing to recover" ]
+  [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "working: extended once by dux-recover" ]
+  [ "$(dux-ledger get "$id" state)" = done ]
+  [ "$(dux-ledger get "$id" pr)" = https://example.invalid/pr/race ]
+}
+
 @test "--stop refuses a process that is not the wrapper" {
   task_in stale; kill_worker
   stand_in bystander > "$DUX_HOME/state/$id.pid"

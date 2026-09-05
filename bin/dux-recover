@@ -46,6 +46,17 @@ shape="$("$ledger" get "$id" shape)" || exit $?
 [ -d "$task" ] || finding "no task folder for $id"
 
 last_status() { tail -n 1 "$status_log" 2>/dev/null; }
+latest_exit_status() {
+  awk '
+    {
+      kind = $0
+      sub(/:.*/, "", kind)
+      if (kind == "done" || kind == "failed" || kind == "blocked" ||
+          kind == "needs-decision" || kind == "ended") last = $0
+    }
+    END { if (last != "") print last }
+  ' "$status_log" 2>/dev/null
+}
 is_exit_line() { case "${1%%:*}" in done|failed|blocked|needs-decision|ended) return 0 ;; *) return 1 ;; esac; }
 
 print_tail() {
@@ -68,7 +79,7 @@ mark_failed() {
 
 reconcile_if_exited() {
   local last current pr
-  last="$(last_status)"; current="${last%%:*}"
+  last="$(latest_exit_status)"; current="${last%%:*}"
   is_exit_line "$last" || return 1
   [ "$current" != "$state" ] || return 1
   "$ledger" set "$id" state "$current" || exit $?
@@ -112,7 +123,9 @@ extend() {
   [ "$state" = stale ] || finding "$id is $state, not stale; --extend applies to stale tasks"
   reconcile_if_exited && return 0
   grep -qxF "$extend_marker" "$status_log" && finding "$id was already extended once; the next step is --stop"
+  [ -z "${DUX_RECOVER_EXTEND_PAUSE_SECS:-}" ] || sleep "$DUX_RECOVER_EXTEND_PAUSE_SECS"
   append_status "$extend_marker"
+  reconcile_if_exited && return 0
   "$ledger" set "$id" state running || exit $?
   "$ledger" unack "$id" || exit $?
   echo "extended $id once; stale again after ${stale_after}s of silence"
