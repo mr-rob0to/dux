@@ -1476,7 +1476,7 @@ The five commits above, each with its failure pasted in the body.
 - Consumes: `dux-ledger` (including `list --unacked` from Task 1), `dux-project list|get`, `state/watch.pid`, `state/wakes.base`, `state/events.log`, `state/dux.lock`, `gh pr view` (through `PATH`).
 - Produces: `dux-status [--prs] [--intake]` printing the digest in the exact shape of the design section. `dux-teardown` ends by setting the ledger `endpoint` to `-`.
 
-- [ ] **Step 1: Amend the spec**
+- [x] **Step 1: Amend the spec**
 
 Section 5.6, after "and marks `done` or `failed` in `backlog.md`.": "It then sets the ledger's `endpoint` to `-`, which is how the digest tells a torn-down task from one awaiting merge." Section 8, replace the paragraph with:
 
