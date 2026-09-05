@@ -74,6 +74,14 @@ start_loop() { DUX_WATCH_INTERVAL_SECS="${1:-1}" dux-watch >> "$watchlog" 2>&1 3
   [ "$(events_count)" -eq 0 ]
 }
 
+@test "a fresh pidfile keeps an old empty status log fresh" {
+  running_task t1
+  touch -t 202001010000 "$DUX_HOME/data/tasks/t1/status.log"
+  run --separate-stderr dux-watch --once
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "$(events_count)" -eq 0 ]; [ "$(dux-ledger get t1 state)" = running ]
+}
+
 @test "a stopped wrapper is dead even while the container remains" {
   running_task t1; status_is t1 "working: on it"
   kill -9 "$(cat "$DUX_HOME/state/t1.pid")"; worker_gone t1
