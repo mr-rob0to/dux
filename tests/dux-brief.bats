@@ -27,8 +27,10 @@ setup_task() {  # $1 shape; prints id
   grep -qxF -- "- Worktree: <set by dux-spawn>" "$b"
   grep -qF "Ship the login screen." "$b"
   grep -qF "2. Tests pass." "$b"
-  grep -qF "$DUX_HOME/data/tasks/$id/status.log" "$b"
-  grep -qF "$DUX_HOME/data/tasks/$id/report.md" "$b"
+  grep -qF '`$DUX_STATUS_LOG`' "$b"
+  grep -qF '`$DUX_REPORT`' "$b"
+  [ "$(grep -c "$DUX_HOME/data/tasks/$id/status.log" "$b" || true)" -eq 0 ]
+  [ "$(grep -c "$DUX_HOME/data/tasks/$id/report.md" "$b" || true)" -eq 0 ]
   grep -qF 'done: report' "$b"
   grep -qF 'waiting on <what> <url>' "$b"
   grep -qF 'exit' "$b"

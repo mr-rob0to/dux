@@ -29,7 +29,7 @@ shape="$("$DUX_ROOT/bin/dux-ledger" get "$id" shape)" || exit $?
 path="$("$DUX_ROOT/bin/dux-project" get "$project" path)" || exit $?
 base="$("$DUX_ROOT/bin/dux-project" get "$project" base)" || exit $?
 { [ -n "$path" ] && [ -n "$base" ]; } || finding "project $project has no path or base in the registry"
-branch="dux/$id"; status_log="$task/status.log"; report="$task/report.md"
+branch="dux/$id"
 
 text_file() {  # $1 flag, $2 path
   [ -n "$2" ] || finding "$1 is required"
@@ -55,7 +55,7 @@ done_line() {
   case "$shape" in
     plan)  echo "Spec and plan under docs/specs/ and docs/plans/ in the worktree, docs-only PR opened against $base; then append \`done: PR <url>\`." ;;
     ship)  echo "Tasks $tasks of $plan implemented, /ship run, CI green; then append \`done: PR <url>\`." ;;
-    scout) echo "Findings written to $report; then append \`done: report\`." ;;
+    scout) echo "Findings written to the file named by \`\$DUX_REPORT\`; then append \`done: report\`." ;;
   esac
 }
 issue_block() {
@@ -70,8 +70,8 @@ issue_block() {
 fill() {  # $1 template line with inline tokens
   local l="$1" t
   t='{{ID}}'; l="${l//$t/$id}"; t='{{BASE}}'; l="${l//$t/$base}"; t='{{BRANCH}}'; l="${l//$t/$branch}"
-  t='{{PROJECT_PATH}}'; l="${l//$t/$path}"; t='{{STATUS_LOG}}'; l="${l//$t/$status_log}"
-  t='{{REPORT}}'; l="${l//$t/$report}"; t='{{PLAN}}'; l="${l//$t/$plan}"; t='{{TASKS}}'; l="${l//$t/$tasks}"
+  t='{{PROJECT_PATH}}'; l="${l//$t/$path}"
+  t='{{PLAN}}'; l="${l//$t/$plan}"; t='{{TASKS}}'; l="${l//$t/$tasks}"
   printf '%s\n' "$l"
 }
 

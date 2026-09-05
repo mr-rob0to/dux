@@ -9,6 +9,9 @@ prepare() {  # $1 shape; sets $id and $wt
 }
 wrap() { (cd "$wt" && DUX_BACKEND="${DUX_BACKEND:-tmux}" dux-worker-wrap "$id"); }
 status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
+# The channel is random and goes away with the run, so tests read the name the
+# worker itself was given rather than guessing it.
+channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
 
 @test "happy path: status lines land, out and pid files exist, model and settings reach the harness" {
   prepare scout
@@ -19,7 +22,7 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   [[ "$(cat "$DUX_HOME/state/$id.pid")" =~ ^[0-9]+$ ]]
   grep -q '"type":"assistant"' "$DUX_HOME/state/$id.out"
   grep -q -- "--model claude-sonnet-5 --effort medium" "$FAKE_WORKER_LOG"
-  grep -q -- "--settings $DUX_HOME/data/tasks/$id/worker-settings.json" "$FAKE_WORKER_LOG"
+  grep -qE -- "--settings $DUX_HOME/state/channels/$id\.[A-Za-z0-9]+/worker-settings.json" "$FAKE_WORKER_LOG"
   [ ! -e "$DUX_HOME/data/tasks/$id/report.md" ]
 }
 
@@ -69,14 +72,49 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   [ "$(status_log | head -n 1)" = "working: heartbeat" ]
 }
 
-@test "the worker's environment carries the status log and the hooks dir" {
+@test "the worker's status log is its own channel outbox, never the task's status log" {
   prepare scout
   printf 'dump-env %s\nstatus done: report\n' "$DUX_HOME/state/worker.env" > "$FAKE_WORKER_SCRIPT"
   wrap
-  grep -qx "DUX_STATUS_LOG=$DUX_HOME/data/tasks/$id/status.log" "$DUX_HOME/state/worker.env"
-  grep -qx "GIT_CONFIG_COUNT=1" "$DUX_HOME/state/worker.env"
-  grep -qx "GIT_CONFIG_KEY_0=core.hooksPath" "$DUX_HOME/state/worker.env"
-  grep -qx "GIT_CONFIG_VALUE_0=$DUX_HOME/data/tasks/$id/hooks" "$DUX_HOME/state/worker.env"
+  env_file="$DUX_HOME/state/worker.env"
+  ch="$(channel_of "$env_file")"
+  [ -n "$ch" ]
+  [ "$ch" != "$DUX_HOME/data/tasks/$id" ]
+  case "$ch" in "$DUX_HOME/state/channels/$id."*) ;; *) false ;; esac
+  grep -qx "DUX_REPORT=$ch/report.outbox" "$env_file"
+  grep -qx "GIT_CONFIG_COUNT=1" "$env_file"
+  grep -qx "GIT_CONFIG_KEY_0=core.hooksPath" "$env_file"
+  # The proposal reached status.log by way of the wrapper, not the worker's hand.
+  [ "$(status_log)" = "done: report" ]
+}
+
+@test "the channel holds the worker's own copies and goes away with the run" {
+  prepare scout
+  printf 'run ls -ld "$(dirname "$DUX_STATUS_LOG")"/. "$(dirname "$DUX_STATUS_LOG")"/* > %s 2>&1\nrun printf %%s "$DUX_STATUS_LOG" > %s\nstatus done: report\n' \
+    "$DUX_HOME/state/chan.ls" "$DUX_HOME/state/chan.path" > "$FAKE_WORKER_SCRIPT"
+  wrap
+  ls="$DUX_HOME/state/chan.ls"
+  grep -qE '^drwx------.*/\.$' "$ls"
+  grep -qE '^-rw-------.*status\.outbox$' "$ls"
+  grep -qE '^-rw-------.*report\.outbox$' "$ls"
+  grep -qE '^-r--------.*brief\.md$' "$ls"
+  grep -qE '^-r--------.*worker-settings\.json$' "$ls"
+  ch="$(dirname "$(cat "$DUX_HOME/state/chan.path")")"
+  [ ! -e "$ch" ]
+  [ ! -e "$DUX_HOME/state/$id.portal" ]
+  # What a later result has to be proved against outlives the channel.
+  grep -qx "run=${ch##*.}" "$DUX_HOME/state/$id.run"
+  grep -qx "id=$id" "$DUX_HOME/state/$id.result-context"
+  grep -qx "branch=dux/$id" "$DUX_HOME/state/$id.result-context"
+  grep -qx "context=$(git hash-object "$DUX_HOME/state/$id.result-context")" "$DUX_HOME/state/$id.run"
+}
+
+@test "a scout's report reaches report.md through the channel" {
+  prepare scout
+  printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  wrap
+  [ "$(status_log)" = "done: report" ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/report.md")" = $'# Findings\nall clear' ]
 }
 
 @test "refusals are findings and are recorded as failed with a reason" {
@@ -111,7 +149,7 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   (cd "$wt" && CLAUDECODE=1 CLAUDE_PID=4242 CLAUDE_CODE_SESSION_ID=abc DUX_BACKEND=tmux dux-worker-wrap "$id")
   [ "$(grep -c '^CLAUDECODE=' "$DUX_HOME/state/worker.env" || true)" -eq 0 ]
   [ "$(grep -c '^CLAUDE_' "$DUX_HOME/state/worker.env" || true)" -eq 0 ]
-  grep -qx "DUX_STATUS_LOG=$DUX_HOME/data/tasks/$id/status.log" "$DUX_HOME/state/worker.env"
+  grep -q "^DUX_STATUS_LOG=$DUX_HOME/state/channels/$id\." "$DUX_HOME/state/worker.env"
 }
 
 @test "a push to the base branch from inside the worker is refused by the task's hook" {
@@ -142,8 +180,9 @@ status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
   printf 'status working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   (cd "$wt" && DUX_BACKEND=herdr HERDR_PANE_ID=w1:p9 dux-worker-wrap "$id")
   grep -qF "pane report-metadata w1:p9 --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
-  grep -qF "pane report-agent w1:p9 --source dux --agent dux-$id --state working --message working: starting" "$FAKE_HERDR_LOG"
-  grep -qF "pane report-agent w1:p9 --source dux --agent dux-$id --state idle --message done: report" "$FAKE_HERDR_LOG"
+  grep -qF "pane report-agent w1:p9 --source dux --agent dux-$id --state working --message dux $id: working" "$FAKE_HERDR_LOG"
+  grep -qF "pane report-agent w1:p9 --source dux --agent dux-$id --state idle --message dux $id: done" "$FAKE_HERDR_LOG"
+  [ "$(grep -c 'starting' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
   : > "$FAKE_HERDR_LOG"
   id2="$(dux-task-new proj scout)"
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"

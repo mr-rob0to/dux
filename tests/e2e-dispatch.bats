@@ -107,6 +107,6 @@ container_gone() {  # $1 endpoint
   printf 'status working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   id="$(fixture_task proj scout)"
   dux-spawn "$id" >/dev/null
-  wait_for "$FAKE_HERDR_LOG" "report-agent w1:p9 --source dux --agent dux-$id --state idle --message done: report" 30
+  wait_for "$FAKE_HERDR_LOG" "report-agent w1:p9 --source dux --agent dux-$id --state idle --message dux $id: done" 30
   grep -qF "pane report-metadata w1:p9 --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
 }
