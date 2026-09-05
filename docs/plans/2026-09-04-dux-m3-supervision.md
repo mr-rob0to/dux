@@ -687,7 +687,7 @@ Break: in the `*)` positional arm remove `[ -z "$path" ] || usage "$usage_add";`
 - Produces (ledger): the line gains `acked=<state|->` after `pr=` (a new optional field: MINOR under the constitution's contract versioning; old lines read as `acked=-`). `dux-ledger ack <id>` sets `acked` to the current state; `dux-ledger unack <id>` sets it to `-`; `dux-ledger get <id> acked` prints `-` for a line without the field; `dux-ledger list --unacked` prints ids whose state is an event state and whose `acked` differs from it. `set` refuses the key `acked`; `ack` and `unack` are its only writers. `set` on a key the line lacks inserts `key=value` before `(updated`.
 - Produces (helpers): `stand_in <needle>` starts a background `cat` whose command line is exactly `<needle>` (via `exec -a` and a fifo opened read-write, so it blocks without CPU and without a trailing argument), records its pid in `$DUX_HOME/state/stand-ins`, and prints the pid; the shared `teardown` kills every recorded stand-in. `wait_until <secs> <cmd...>` polls every 0.2 s and returns 1 on timeout.
 
-- [ ] **Step 1: Amend the spec**
+- [x] **Step 1: Amend the spec**
 
 Section 3: add `dux-watch --once | eval <id>` to the `dux-watch` line's description, and add `state/watch.pid`, `state/watch.log`, `state/wakes.base` lines under `state/`; the `backlog.md` line gains "each line carries `acked=<state|->`". Section 6.1: replace "`dux-lock acquire` kills any pid in `state/watch.pid`, then starts `nohup setsid dux-watch` and records its pid; `release` kills it." with:
 
