@@ -53,11 +53,24 @@ teardown_file() {
 }
 
 @test "exists is a finding when the backend cannot answer, never a gone" {
-  [ "${DUX_BACKEND:-}" = tmux ] || skip
-  ep="$(dux-backend open t30 "$DUX_HOME" "sleep 30")"
-  FAKE_TMUX_FAIL=list-windows run dux-backend exists "$ep"
-  [[ "$output" == *"finding: tmux could not list windows while checking $ep"* ]]
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  if [ "$DUX_BACKEND" = tmux ]; then
+    ep="$(dux-backend open t30 "$DUX_HOME" "sleep 30")"
+    FAKE_TMUX_FAIL=list-windows run dux-backend exists "$ep"
+    [[ "$output" == *"finding: tmux could not list windows while checking $ep"* ]]
+  else
+    export FAKE_HERDR_GET_FAIL="$DUX_HOME/state/getfail"; touch "$FAKE_HERDR_GET_FAIL"
+    run dux-backend exists "herdr:w1:p9"
+    [[ "$output" == *"finding: herdr pane get failed for w1:p9 with server_unreachable"* ]]
+  fi
   [ "$status" -eq 2 ]
+}
+
+@test "herdr exists reads only pane_not_found as gone" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  export FAKE_HERDR_DEAD="$DUX_HOME/state/dead"; touch "$FAKE_HERDR_DEAD"
+  run dux-backend exists "herdr:w1:p9"
+  [ "$status" -eq 1 ]
 }
 
 @test "tmux exists reads a socket path holding a non-socket as a finding" {

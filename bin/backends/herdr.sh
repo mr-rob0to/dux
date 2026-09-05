@@ -31,8 +31,13 @@ backend_open() {  # id cwd cmd
   echo "herdr:$pane"
 }
 
-backend_exists() {  # endpoint
-  herdr pane get "$(_pane "$1")" >/dev/null 2>&1
+backend_exists() {  # endpoint: 0 present, 1 gone, finding when herdr did not answer
+  local pane err rc code; pane="$(_pane "$1")"
+  err="$(herdr pane get "$pane" 2>&1 >/dev/null)"; rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  code="$(printf '%s' "$err" | jq -r '.error.code // empty' 2>/dev/null)"
+  [ "$code" = pane_not_found ] && return 1
+  finding "herdr pane get failed for $pane with ${code:-no error code}: $err"
 }
 
 backend_find() {  # id: prints the endpoint of the tab labelled dux-<id>, nothing when there is none

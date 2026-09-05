@@ -287,7 +287,7 @@ In section 9's interface table replace the `exists` row with:
 
 Commit: `docs: give backend exists three answers in the spec`
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 Append to `tests/backend-adapter.bats`:
 
@@ -332,12 +332,12 @@ Append to `tests/backend-adapter.bats`:
 }
 ```
 
-- [ ] **Step 3: Run to verify they fail**
+- [x] **Step 3: Run to verify they fail**
 
 Run: `DUX_BACKEND=tmux bats tests/backend-adapter.bats` and `DUX_BACKEND=herdr bats tests/backend-adapter.bats`
 Expected: the "cannot answer" test fails on both backends with `status` 1 instead of 2; the non-socket test fails with status 1; the two "gone" tests already pass (they pin the behaviour that must survive).
 
-- [ ] **Step 4: Fix the adapters**
+- [x] **Step 4: Fix the adapters**
 
 `bin/backends/tmux.sh`: extract the reading of a failed listing from `backend_find` into one helper both functions call, and rewrite `backend_exists`:
 
@@ -389,15 +389,15 @@ backend_exists() {  # endpoint: 0 present, 1 gone, finding when herdr did not an
     [ -e "${FAKE_HERDR_GET_FAIL:-/nonexistent}" ] && { echo '{"error":{"code":"server_unreachable"}}' >&2; exit 1; }
 ```
 
-- [ ] **Step 5: Run to verify they pass**
+- [x] **Step 5: Run to verify they pass**
 
 Run: `make check`. Expected: lint clean; both adapter runs green including the four new tests; `tests/dux-teardown.bats` unchanged (its "already gone" path still gets exit 1 from the fake's `pane_not_found`).
 
-- [ ] **Step 6: Break-verify**
+- [x] **Step 6: Break-verify**
 
 In `bin/backends/herdr.sh` change `[ "$code" = pane_not_found ] && return 1` to `return 1`. Run `DUX_BACKEND=herdr bats tests/backend-adapter.bats`. Expected: "exists is a finding when the backend cannot answer" fails with `status` 1. Restore. Then in `bin/backends/tmux.sh` change `_absent_or_finding "checking $1" "$err" "$rc"; return 1` to `return 1`. Run `DUX_BACKEND=tmux bats tests/backend-adapter.bats`. Expected: the same test and the non-socket test fail with `status` 1. Restore. Two breaks, two commits (one per adapter), each with its failure pasted.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 `fix: make backend exists a finding when tmux did not answer` and `fix: make backend exists a finding when herdr did not answer`, each with the break-verification pasted in the body.
 
