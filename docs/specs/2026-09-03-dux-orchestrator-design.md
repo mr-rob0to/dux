@@ -79,8 +79,12 @@ Non-goals for v1
     projects.md             registry: one line per project
     backlog.md              queued / running / awaiting / done, with acked=<state|-> per task
     tasks/<id>/brief.md     what the worker was told
+    tasks/<id>/intent.md    operator intent written by the dispatch skill
+    tasks/<id>/criteria.md  acceptance criteria written by the dispatch skill
     tasks/<id>/status.log   append-only "<state>: <line>" from the worker
     tasks/<id>/report.md    scout output or failure tail
+    tasks/<id>/retry        id of the task's one retry, when allocated
+    tasks/<id>/retried-from id of the first attempt, when this task is a retry
     tasks/<id>/worker-settings.json   rendered deny rules for the Claude harness
     tasks/<id>/harness      optional per-task harness override written by dux-spawn --harness
     tasks/<id>/hooks/       per-task git hooks dir (section 5.5)
@@ -406,19 +410,34 @@ a phone.
 
 ### 6.4 Recovery (`dux-recover`)
 
-- `stale`: read the last 40 lines of `state/<id>.out`. If progressing, extend 20
-  minutes once. Otherwise `SIGINT` the pid in `state/<id>.pid`, wait 60 seconds,
-  mark `failed`.
-- `dead`: mark `failed`, preserve worktree, save the last 20 lines of
-  `state/<id>.out` to `report.md`. The backend container may already be gone;
-  output is always read from the file, never the pane.
-- `failed`: report to operator with the tail. Offer retry (new task id, same
-  brief plus the failure) or scout. Never auto-retry more than once.
-- `blocked` and `needs-decision`: relay verbatim. The worker has exited. The
-  operator answers; Dux retries under a new task id with the answer appended to
-  the brief's Intent section. One retry per answer.
-- `ended`: check `gh pr list --head <branch>` and `report.md`; classify as `done`
-  when either shows the deliverable, else ask the operator.
+`dux-recover <id>` does the mechanical half; Dux keeps the judgment. Every call
+first re-reads the status log: an exit line written after the event wins, the
+ledger follows it, and nothing else happens.
+
+- `stale`: inspect prints whether the one extension was used, the last 5 status
+  lines, and the last 40 lines of `state/<id>.out` (each cut at 200 characters,
+  fenced as data), the only place worker output enters Dux's context. Dux judges
+  progress. `--extend` appends `working: extended once by dux-recover`, which
+  restarts the silence clock and is the record that forbids a second extension.
+  `--stop` checks the pid runs `dux-worker-wrap <id>` (a recycled pid is a
+  finding, never a signal), sends SIGINT, waits 60 seconds, and marks `failed`
+  with the last 20 output lines in `report.md`; a wrapper still alive after the
+  wait is a finding and nothing is marked.
+- `dead`: marks `failed`, saves the last 20 output lines to `report.md`, and
+  keeps the worktree. A wrapper pid found alive is a finding: the task is not
+  dead.
+- `ended`: a PR on `dux/<id>` (`gh pr list --head`) or a `report.md` without a
+  failure heading classifies it `done`; otherwise Dux asks the operator and
+  records the answer with `--classify done|failed`. A `gh` failure is a finding,
+  never evidence that no PR exists.
+- `failed`, `blocked`, `needs-decision`: inspect prints what to relay.
+  `--retry [--answer-file <f>]` allocates a new id, appends the answer (or the
+  failure) to a copy of the Intent, renders the brief, records
+  `tasks/<old>/retry` and `tasks/<new>/retried-from`, appends `failed:
+  superseded by <new>` to a blocked or needs-decision task so teardown accepts
+  it, and spawns. One retry per task; a failed task that is itself a retry is
+  never retried automatically. The answer is required after `blocked` or
+  `needs-decision`.
 
 ## 7. Session lifecycle
 
