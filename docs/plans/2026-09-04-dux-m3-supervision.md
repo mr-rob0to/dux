@@ -439,7 +439,7 @@ Break: in `bin/dux-worktree`'s `create`, add `log "probe"` as the first line of 
 **Interfaces:**
 - Produces: `/data/`, `/state/`, `/config/` ignored at the repo root only; `templates/config/` and any future `tests/config/` tracked normally. Today line 6 is `config/` with no leading slash, so it also matches `templates/config/` and new template files need `git add -f`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```bash
 @test "gitignore anchors the runtime dirs and leaves templates/config tracked" {
@@ -450,11 +450,11 @@ Break: in `bin/dux-worktree`'s `create`, add `log "probe"` as the first line of 
 }
 ```
 
-- [ ] **Step 2: Run to verify it fails**
+- [x] **Step 2: Run to verify it fails**
 
 Expected: the last line fails, because `config/` matches `templates/config/models`.
 
-- [ ] **Step 3: Fix**
+- [x] **Step 3: Fix**
 
 `.gitignore` becomes:
 
@@ -470,11 +470,11 @@ tests/personal-names.txt
 
 Confirm `git status` shows nothing new (the runtime dirs are still ignored) and `git ls-files templates/config | wc -l` is 6.
 
-- [ ] **Step 4: Break-verify**
+- [x] **Step 4: Break-verify**
 
 Change `/config/` back to `config/`. Run `bats tests/contract.bats`. Expected: `templates/config/models` reported as ignored, the test fails. Restore.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 `fix: anchor the runtime directories in gitignore`
 
