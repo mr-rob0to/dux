@@ -11,6 +11,8 @@ test:
 	DUX_WORKER_HARNESS=codex  $(BATS) tests/worker-adapter.bats
 	DUX_BACKEND=herdr DUX_WORKER_HARNESS=claude $(BATS) tests/e2e-dispatch.bats
 	DUX_BACKEND=tmux  DUX_WORKER_HARNESS=claude $(BATS) tests/e2e-dispatch.bats
+	DUX_BACKEND=herdr $(BATS) tests/e2e-supervise.bats
+	DUX_BACKEND=tmux  $(BATS) tests/e2e-supervise.bats
 
 # macOS only: run the whole suite with /bin/bash (3.2) first on PATH, since
 # every script's shebang resolves bash through PATH.
