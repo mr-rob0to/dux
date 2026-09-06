@@ -236,14 +236,15 @@ whole handoff or none of it.
   anything: a live group in `state/<id>.pgid`, or a file it cannot read as one,
   is a finding, because the folder those processes are working in is the
   worktree teardown is about to take away. Both go through the same step, which
-  requires the portal's stored path to be exactly what it resolves to and to sit
-  directly under `state/channels/`. A prefix check on its own is text, and text
-  walks back out or points elsewhere: `state/channels/../../<anything>` starts
-  with the directory without being in it, and a channel path that is a link to
-  another task's channel is that task's live channel. The wrapper records the
-  path the kernel agrees on, so anything that fails the rule is a broken
-  reference, left alone and logged rather than turned into a recursive delete of
-  something else.
+  requires the portal's stored path to name this task's own channel, directly
+  under `state/channels/`, and to be exactly what it resolves to. A prefix check
+  on its own is text, and text walks back out or points elsewhere:
+  `state/channels/../../<anything>` starts with the directory without being in
+  it, and a path that is a link to another task's channel, or simply that
+  task's own path written down, is that task's live channel. The wrapper makes
+  the channel as `state/channels/<id>.XXXXXXXX` and records the path the kernel
+  agrees on, so anything that fails the rule is a broken reference, left alone
+  and logged rather than turned into a recursive delete of something else.
 
 ## Retiring a task from before the upgrade
 
