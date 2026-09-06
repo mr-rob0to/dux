@@ -214,3 +214,13 @@ load helpers/setup
   [[ "$output" == "finding: task nope not in ledger"* ]]
   [ "$(dux-ledger get t1 state)" = queued ]
 }
+
+@test "a filter flag with nothing after it is a usage error, not a crash" {
+  # set -u makes $2 fatal before the case can speak, so the operator gets an
+  # unbound-variable line from inside the script instead of what to fix.
+  for flag in --state --project --source; do
+    run dux-ledger list "$flag"
+    [ "$status" -eq 1 ]
+    [[ "$output" == "dux: $flag needs a value" ]]
+  done
+}
