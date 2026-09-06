@@ -241,3 +241,12 @@ settled() {  # $1 state, [$2 pr]
   run dux-teardown "$id"
   [ "$status" -eq 0 ]; [ ! -d "$wt" ]; [ ! -e "$pf" ]
 }
+
+# Every script that builds a path from a task id checks it in the same place.
+# Teardown removes folders, so an id that could climb out of state/ must not
+# reach the ledger read, let alone anything after it.
+@test "an id that is not a task id is a finding" {
+  run dux-teardown ../../x
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task id must match [A-Za-z0-9._-]+: ../../x"* ]]
+}

@@ -286,3 +286,10 @@ codex_refused() {  # asserts the last `run` refused and started nothing for $id
   [[ "$output" == *"could not comment on gh:acme/widgets#13"* ]]
   [ "$(dux-ledger get "$id2" state)" = running ]
 }
+
+# Spawn builds a task path, a branch name and a worktree path from the id.
+@test "an id that is not a task id is a finding" {
+  run dux-spawn ../../x
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task id must match [A-Za-z0-9._-]+: ../../x"* ]]
+}

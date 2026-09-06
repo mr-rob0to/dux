@@ -6,6 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 usage="usage: dux-spawn <id> [--harness claude]"
 id="${1:-}"; [ -n "$id" ] || die "$usage"
+valid_task_id "$id"
 shift
 harness=""
 while [ $# -gt 0 ]; do
