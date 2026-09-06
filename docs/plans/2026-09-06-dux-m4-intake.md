@@ -4,9 +4,9 @@
 
 **Where this stands**
 
-- Milestone: 4 of 7. Plan drafted 2026-09-06 on `plan/m4-intake` from `main` at 9a7e524 (Milestone 3 merged as PR #6). Tasks 1 to 4, 0 of 4 implemented.
+- Milestone: 4 of 7. Implementing on `feat/m4-intake` from `main` at 40ce32a (this plan merged as PR #7). Tasks 1 to 4, 1 of 4 implemented.
 - Design review: one independent review from a fresh Fable session is recorded at the bottom; all 25 findings are verified and folded into the tasks, none disputed.
-- Next action: the operator approves this plan (docs-only PR, no `/ship` gate). Implementation starts in a new session on a `feat/m4-intake` worktree cut from `origin/main`; the kickoff text is at the bottom of this file.
+- Next action: Task 2, the issue-aware brief, the retry copy, and the teardown comment. Task 1 landed in 13 commits with 11 break-verified failures, two more than the plan named.
 
 **Known limitation carried forward, not fixed here.** The `/ship` receipt written by `dux-result record-ship` ties only the `ci` phase to the head SHA, and it cannot represent fix-and-re-review: a second review of new commits has nowhere to go. So the receipt proves the five phases ran in order, not that a review covered the final code. Milestone 5 Task 1 (`ship-guard`, `reviewed_sha`, bounded fix passes) is where that lands. Nothing in this milestone touches the receipt.
 
@@ -243,7 +243,7 @@ Task 2 depends on Task 1 for `issue.md` in the retry test. Task 3 depends on Tas
 - Consumes: `dux-project get <p> issues|path`, `dux-lock mine`, `gh issue list`, `gh issue view`, `dux-task-new`, `dux-ledger list|get|set-if`, `cap_line`, `valid_task_id`.
 - Produces: the commands in the Interfaces table; `tasks/<id>/issue.md`; `tasks/<id>/report.md` note on drop; `FAKE_GH_ISSUE_LIST`, `FAKE_GH_ISSUE_LIST_FILE`, `FAKE_GH_ISSUE_STATE` in the fake.
 
-- [ ] **Step 1: Amend the spec** (`docs:` commit)
+- [x] **Step 1: Amend the spec** (`docs:` commit)
 
 Section 10, replace the `dux-intake <project>` paragraph with:
 
@@ -270,7 +270,7 @@ Section 15, the intake bullet becomes: `- Intake: a fixture of gh issue list JSO
 
 Commit: `docs: pin intake's query, key, and reconciliation in the spec`
 
-- [ ] **Step 2: `github_slug` in `dux-env`, and the wrapper uses it**
+- [x] **Step 2: `github_slug` in `dux-env`, and the wrapper uses it**
 
 Test first, in `tests/dux-env.bats`:
 
@@ -314,7 +314,7 @@ Break, wrapper test: make the helper call `github_slug /` instead of `github_slu
 
 Commits: `feat: read a project's GitHub slug in one place` (env test and its break), then `test: pin the repo slug the wrapper records` (the two wrapper assertions and their break).
 
-- [ ] **Step 3: `dux-ledger list --source <key>`**
+- [x] **Step 3: `dux-ledger list --source <key>`**
 
 Test first, in `tests/dux-ledger.bats`:
 
@@ -336,13 +336,13 @@ Break: leave `fsrc` out of the awk condition. Expected: the new test fails at `[
 
 Commit: `feat: filter the ledger by source key`
 
-- [ ] **Step 4: The fake `gh` and the fixture** (`test:` commit, no break: the fake has no guard; every branch is reached by Task 1 Step 5's tests, which is where the breaks are)
+- [x] **Step 4: The fake `gh` and the fixture** (`test:` commit, no break: the fake has no guard; every branch is reached by Task 1 Step 5's tests, which is where the breaks are)
 
 Add the two cases from the Design section. Write `tests/fixtures/gh-issues.json` as described (generate the 5,000-character body with a script and paste; the file is committed as data). Add `tests/fixtures/*.json` to nothing in the Makefile: shellcheck does not read it and the identifier lint reads every tracked file already.
 
 Commit: `test: teach the fake gh issue list and issue view, with a fixture`
 
-- [ ] **Step 5: Write the failing intake tests**
+- [x] **Step 5: Write the failing intake tests**
 
 `tests/dux-intake.bats`:
 
@@ -531,11 +531,11 @@ The view failures need `FAKE_GH_VIEW_FAIL` from the Design section's fake (`FAKE
 
 Note on `${lines[${#lines[@]}-1]}`: bash 3.2 has no negative index, so the last line is read by arithmetic on the count. No existing test file uses this form yet; it is plain bash 3.2 and shellcheck accepts it.
 
-- [ ] **Step 6: Run to verify they fail**
+- [x] **Step 6: Run to verify they fail**
 
 Expected: every test fails with `dux-intake: command not found` (the env and ledger tests from Steps 2 and 3 already pass).
 
-- [ ] **Step 7: Write the script**
+- [x] **Step 7: Write the script**
 
 ```bash
 #!/usr/bin/env bash
@@ -664,7 +664,7 @@ echo "intake $project: $queued queued, $dropped dropped, $unlabelled unlabelled"
 
 Notes for the implementer: `finding` inside `$( )` exits the subshell only, so every `$( )` that can raise one is followed by `|| exit $?` as the other scripts do, and a `$( )` in a `for` list gets captured into a variable first for the same reason. `jq -j` prints no trailing newline, so `wc -c` on `field body` is the body's own length: `null` and `""` are both 0 bytes and skip the body block (the `#14` case: two lines, no marker), a body of exactly 3,700 bytes is written whole with no marker, and 3,701 bytes gets the marker. The `field` helper re-parses the JSON per call; at 100 issues that is a few hundred `jq` runs, well under a second.
 
-- [ ] **Step 8: Run, then break-verify**
+- [x] **Step 8: Run, then break-verify**
 
 Run `bats tests/dux-intake.bats`. Expected: all green. Then, one guard per commit, in this order; the implementer may split Step 7 into the same three commits (queueing, reconciliation, `--show`) if the script lands incrementally:
 
@@ -680,7 +680,7 @@ Break E: remove the `"$DUX_ROOT/bin/dux-lock" mine ||` line. Expected: "intake r
 
 Break F: in the queueing loop, change `[ ! -e "$DUX_TASKS/$id/brief.md" ]` to `true`. Expected: "a second run queues nothing" fails at its last line, `grep -qxF sharpened`, because the file now says `sharper`. Paste. Restore.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 Committing the script with a guard broken and fixing it afterwards is not allowed, so the script lands in pieces, each piece with the one test that guards it: `feat: pull labelled issues into the ledger as queued tasks` (the usage, refusal, three-issues, and shape tests; Break A), `test: refresh a queued issue only until its brief exists` (the second-run test; Break F), `test: refuse to queue without the session lock` (Break E), `feat: reconcile a closed issue's queued task to dropped` (the closed-issue, running-task, and failure tests; Break B), `test: queue a reopened issue again after a drop` (Break C), `feat: show a saved issue fenced as data` (Break D). Six commits, six distinct failures, plus the two from Step 2 and one from Step 3: nine for the task.
 
