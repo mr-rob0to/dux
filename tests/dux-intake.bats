@@ -47,7 +47,10 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
 @test "three labelled issues become three queued ship tasks with the issue saved as data" {
   labelled_project
   FAKE_GH_ISSUE_LIST_FILE="$FIX" run --separate-stderr dux-intake proj
-  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  # Say what went wrong, not just that something did: a bare status check here
+  # leaves whoever reads the run with nothing to go on.
+  [ "$status" -eq 0 ] || { echo "intake exited $status"; echo "stdout: $output"; echo "stderr: $stderr"; return 1; }
+  [ -z "$stderr" ] || { echo "intake wrote to stderr: $stderr"; return 1; }
   grep -qxF 'issue list --repo acme/proj --state open --label dux --limit 100 --json number,title,body' "$FAKE_GH_LOG"
   [ "$(grep -c '^issue ' "$FAKE_GH_LOG")" -eq 1 ]
   [ "$(grep -c '^queued proj-ship-' <<< "$output")" -eq 3 ]
