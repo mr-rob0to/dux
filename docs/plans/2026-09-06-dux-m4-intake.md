@@ -6,6 +6,7 @@
 
 - Milestone: 4 of 7. Implementing on `feat/m4-intake` from `main` at 40ce32a (this plan merged as PR #7). Tasks 1 to 4, 3 of 4 implemented.
 - Design review: one independent review from a fresh Fable session is recorded at the bottom; all 25 findings are verified and folded into the tasks, none disputed.
+- Divergence: Task 4 Step 2's dry run found that no worker could be spawned on this machine at all. The Herdr backend waited for a prompt ending in $ % > or #, and the operator's prompt ends in a chevron, so every spawn timed out. Fixed in one commit outside the milestone's file list (`bin/backends/herdr.sh`, `tests/fakes/herdr`, `tests/backend-adapter.bats`), because the dry run is milestone acceptance and nothing could run without it.
 - Next action: Task 4 Step 2, the dry run against a throwaway GitHub repository. Task 3 landed in 4 commits with 2 break-verified failures, the number the plan named; Task 4 Step 1 added one break the plan listed under milestone acceptance rather than in a step, the unreadable issue file on retry.
 
 **Known limitation carried forward, not fixed here.** The `/ship` receipt written by `dux-result record-ship` ties only the `ci` phase to the head SHA, and it cannot represent fix-and-re-review: a second review of new commits has nowhere to go. So the receipt proves the five phases ran in order, not that a review covered the final code. Milestone 5 Task 1 (`ship-guard`, `reviewed_sha`, bounded fix passes) is where that lands. Nothing in this milestone touches the receipt.

@@ -251,6 +251,15 @@ teardown_file() {
   if [ "$DUX_BACKEND" = herdr ]; then grep -q '^notification show Dux --body hello' "$FAKE_HERDR_LOG"; fi
 }
 
+@test "herdr open waits for the operator's own prompt, not just a dollar sign" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  # Starship and oh-my-zsh draw a chevron. A pattern that only knows $ % > #
+  # times out on every open, and no worker can be dispatched on that machine.
+  FAKE_HERDR_PROMPT='~/code/demo   main ❯ ' run dux-backend open t5 "$DUX_HOME" "sleep 5"
+  [ "$status" -eq 0 ]; [ "$output" = herdr:w1:p9 ]
+  grep -q '^pane run w1:p9 sleep 5' "$FAKE_HERDR_LOG"
+}
+
 @test "herdr open is a finding when no shell prompt appears, and the command is never sent" {
   [ "${DUX_BACKEND:-}" = herdr ] || skip
   export FAKE_HERDR_NO_PROMPT=1

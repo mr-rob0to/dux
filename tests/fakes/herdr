@@ -79,6 +79,13 @@ case "$1 ${2:-}" in
     echo '{"result":{}}' ;;
   "pane wait-output")
     [ -n "${FAKE_HERDR_NO_PROMPT:-}" ] && { echo '{"error":{"code":"timeout"}}' >&2; exit 1; }
+    # The real pane matches the caller's regex against what the shell has drawn.
+    # Matching it here too is what puts the adapter's prompt pattern under test:
+    # FAKE_HERDR_PROMPT stands in for the operator's own prompt.
+    re=""; while [ $# -gt 0 ]; do [ "$1" = "--regex" ] && re="$2"; shift; done
+    if [ -n "$re" ] && ! printf '%s' "${FAKE_HERDR_PROMPT:-bash-3.2$ }" | grep -qE "$re"; then
+      echo '{"error":{"code":"timeout"}}' >&2; exit 1
+    fi
     echo '{"result":{}}' ;;
   "pane run")
     # A test's own command, run at the moment the container takes the worker's
