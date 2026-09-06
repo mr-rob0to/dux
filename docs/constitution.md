@@ -208,8 +208,10 @@ that edits this file, bumps the version, and updates Last Amended: MAJOR for a r
 removed principle, MINOR for a new principle, PATCH for a clarification. A plan that must
 deviate from a principle says so in its header and names the principle.
 
-**Version**: 2.0.0 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-05
+**Version**: 2.0.1 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-05
 
-Version 2.0.0 redefines principle 6. Worker containment by file mode, hidden path, and process
-id is replaced by a declared trust boundary: the local worker carries the operator's authority,
-and everything it reports is checked against outside evidence before it counts.
+Version 2.0.1 redefines principle 6 and keeps the principle 3 clarification that break-
+verification belongs to the task that added the assertion. Worker containment by file mode,
+hidden path, and process id is replaced by a declared trust boundary: the local worker carries
+the operator's authority, and everything it reports is checked against outside evidence before
+it counts.
