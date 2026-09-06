@@ -1,3 +1,4 @@
+bats_require_minimum_version 1.5.0
 load helpers/setup
 
 @test "add appends a queued line in the exact format" {
@@ -86,6 +87,16 @@ load helpers/setup
   run dux-ledger list --state queued; [ "$output" = $'a1\nb1' ]
   run dux-ledger list --project proj --state running; [ "$output" = "a2" ]
   run dux-ledger list --state done; [ "$output" = "" ]
+}
+
+@test "list --source returns every line with that source, whatever its state" {
+  dux-ledger add t1 proj ship 'gh:acme/proj#12'; dux-ledger add t2 proj plan 'gh:acme/proj#12'
+  dux-ledger add t3 proj ship 'gh:acme/proj#13'; dux-ledger add t4 proj ship local
+  dux-ledger set t1 state dropped
+  run --separate-stderr dux-ledger list --source 'gh:acme/proj#12'
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]; [ "$output" = $'t1\nt2' ]
+  run dux-ledger list --source 'gh:acme/proj#12' --state dropped; [ "$output" = t1 ]
+  run dux-ledger list --source 'gh:acme/proj#99'; [ -z "$output" ]
 }
 
 @test "six parallel sets all land" {
