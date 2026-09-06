@@ -176,7 +176,7 @@ Rationale: agents re-read documents every session; duplication is where drift st
 
 ### 9. Code Review
 
-- Every milestone PR goes through `/ship`: base verification, `make check`, one independent
+- Every milestone PR goes through `/ship`: base verification, `make check-branch`, one independent
   code review by Codex, one security pass, the PR, and green CI. No manual review outside the
   gate; no second review.
 - Every finding is verified against the code before it is acted on. Critical and Important are
@@ -192,7 +192,7 @@ Rationale: one gate, run every time, beats several gates run sometimes.
 A milestone is done when all of the following hold:
 
 - Every task checkbox in the milestone plan is ticked and the plan header says so.
-- `make check` is green on a clean checkout.
+- `make check-branch` is green on a clean checkout: the suite, the lint, and the bash 3.2 pass.
 - Every new test was break-verified at the task that added it, not at the ship gate, and the
   failure is in a commit body.
 - The pull request reports the milestone's fix-to-feature commit ratio and the time spent
@@ -208,7 +208,11 @@ that edits this file, bumps the version, and updates Last Amended: MAJOR for a r
 removed principle, MINOR for a new principle, PATCH for a clarification. A plan that must
 deviate from a principle says so in its header and names the principle.
 
-**Version**: 2.0.1 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-05
+**Version**: 2.0.2 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-06
+
+Version 2.0.2 names `make check-branch` where the gate used to say `make check`. The suite now
+runs its files side by side, so `make check` is the loop to run after a task and
+`make check-branch` adds the bash 3.2 pass once before `/ship`. No principle changes.
 
 Version 2.0.1 redefines principle 6 and keeps the principle 3 clarification that break-
 verification belongs to the task that added the assertion. Worker containment by file mode,

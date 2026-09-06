@@ -35,4 +35,5 @@ Verified orchestrator harness: Claude Code. Worker harnesses: Claude Code and Co
 ## Develop
 
     brew install bats-core shellcheck
-    make check
+    make check         # after a task, about two minutes
+    make check-branch  # once before /ship, adds the bash 3.2 pass
