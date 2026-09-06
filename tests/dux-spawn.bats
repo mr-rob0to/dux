@@ -293,3 +293,16 @@ codex_refused() {  # asserts the last `run` refused and started nothing for $id
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: task id must match [A-Za-z0-9._-]+: ../../x"* ]]
 }
+
+# The worker starts when the container opens, and a worker that refuses at once
+# leaves a proved terminal handoff the watcher can apply within milliseconds. A
+# state written after the container opens can land on top of that result and
+# show a finished task as running for good, so it is written before.
+@test "the ledger says running before the container opens" {
+  id="$(fixture_task proj scout)"
+  export FAKE_HERDR_RUN_HOOK="dux-ledger get $id state > $DUX_HOME/state/at-open"
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$DUX_HOME/state/at-open")" = running ]
+  wait_result "$id"
+}

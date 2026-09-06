@@ -81,6 +81,9 @@ case "$1 ${2:-}" in
     [ -n "${FAKE_HERDR_NO_PROMPT:-}" ] && { echo '{"error":{"code":"timeout"}}' >&2; exit 1; }
     echo '{"result":{}}' ;;
   "pane run")
+    # A test's own command, run at the moment the container takes the worker's
+    # command, so it can see the state the rest of Dux is in right then.
+    [ -z "${FAKE_HERDR_RUN_HOOK:-}" ] || bash -c "$FAKE_HERDR_RUN_HOOK"
     [ -n "${FAKE_HERDR_RUN_FAIL:-}" ] && { echo '{"error":{"code":"run_failed"}}' >&2; exit 1; }
     if [ -n "${FAKE_HERDR_RUN:-}" ]; then
       cwd="$(cat "${FAKE_HERDR_LOG:-/dev/null}.cwd")"
