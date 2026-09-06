@@ -4,10 +4,10 @@
 
 **Where this stands**
 
-- Milestone: 4 of 7. Implementing on `feat/m4-intake` from `main` at 40ce32a (this plan merged as PR #7). Tasks 1 to 4, 3 of 4 implemented.
+- Milestone: 4 of 7. Implemented on `feat/m4-intake` from `main` at 40ce32a (this plan merged as PR #7). Tasks 1 to 4, 4 of 4 implemented.
 - Design review: one independent review from a fresh Fable session is recorded at the bottom; all 25 findings are verified and folded into the tasks, none disputed.
 - Divergence: Task 4 Step 2's dry run found that no worker could be spawned on this machine at all. The Herdr backend waited for a prompt ending in $ % > or #, and the operator's prompt ends in a chevron, so every spawn timed out. Fixed in one commit outside the milestone's file list (`bin/backends/herdr.sh`, `tests/fakes/herdr`, `tests/backend-adapter.bats`), because the dry run is milestone acceptance and nothing could run without it.
-- Next action: Task 4 Step 2, the dry run against a throwaway GitHub repository. Task 3 landed in 4 commits with 2 break-verified failures, the number the plan named; Task 4 Step 1 added one break the plan listed under milestone acceptance rather than in a step, the unreadable issue file on retry.
+- Next action: the ship gate, then the operator merges. Task 3 landed in 4 commits with 2 break-verified failures, the number the plan named; Task 4 added two, the one the plan named plus the unreadable issue file on retry, which the plan listed under milestone acceptance rather than in a step. The dry run ran end to end against a real repository and is written up in the PR.
 
 **Known limitation carried forward, not fixed here.** The `/ship` receipt written by `dux-result record-ship` ties only the `ci` phase to the head SHA, and it cannot represent fix-and-re-review: a second review of new commits has nowhere to go. So the receipt proves the five phases ran in order, not that a review covered the final code. Milestone 5 Task 1 (`ship-guard`, `reviewed_sha`, bounded fix passes) is where that lands. Nothing in this milestone touches the receipt.
 
@@ -863,7 +863,7 @@ Break 3: remove the `"https://github.com/$slug/pull/"*` check so any URL is post
 - Consumes: `dux-project list|get`, `dux-intake <project>`.
 - Produces: the `intake` block; the session-start rule; the dispatch skill's intake-task path.
 
-- [ ] **Step 1: Amend the spec** (`docs:` commit)
+- [x] **Step 1: Amend the spec** (`docs:` commit)
 
 Section 7: "run `dux-intake` for every project with issues enabled plus `dux-status`" becomes "run `dux-status --intake`, which runs `dux-intake` for every project with issues enabled and then prints the digest". Section 8: its opening "Files and the backend only, no network." becomes "Files and the backend only; no network unless `--prs` or `--intake` is given." Then replace "`--intake` runs `dux-intake` first in milestone 4 and is a finding until then." with "`--intake` prints an `intake` block first: each labelled project's intake output, or one `skipped:` line carrying the finding when that project's intake failed, so one bad project never hides the digest (section 14)."
 
@@ -995,7 +995,7 @@ Break: remove the paragraph. Expected: the test fails at its first assertion. Pa
 
 Commit: `feat: close the brief's issue from the /ship PR body`
 
-- [ ] **Step 2: The dry run (and the Milestone 2 leftover, per Open question 1)**
+- [x] **Step 2: The dry run (and the Milestone 2 leftover, per Open question 1)**
 
 Against a throwaway GitHub repository the operator has allowed (Open question 3), registered with `--issues label:dux`, with a real `claude` and the real `data/`:
 
