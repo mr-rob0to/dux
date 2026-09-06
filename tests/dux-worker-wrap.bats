@@ -9,21 +9,71 @@ prepare() {  # $1 shape; sets $id and $wt
 }
 wrap() { (cd "$wt" && DUX_BACKEND="${DUX_BACKEND:-tmux}" dux-worker-wrap "$id"); }
 status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
+# A terminal state no longer reaches status.log from the wrapper. It is a
+# handoff the watcher consumes, so tests read the handoff instead.
+handoff_status() { cat "$DUX_HOME/state/$id.handoffs/${1:-1}/status"; }
+handoff_event() { cat "$DUX_HOME/state/$id.handoffs/${1:-1}/event"; }
+handoff_run() { cat "$DUX_HOME/state/$id.handoffs/${1:-1}/run"; }
+# A second run of the same id needs this run's own references cleared first.
+clear_refs() {
+  rm -rf "$DUX_HOME/state/$id".run "$DUX_HOME/state/$id".portal \
+    "$DUX_HOME/state/$id".pgid "$DUX_HOME/state/$id".result-context \
+    "$DUX_HOME/state/$id".handoffs
+}
 # The channel is random and goes away with the run, so tests read the name the
 # worker itself was given rather than guessing it.
 channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
 
-@test "happy path: status lines land, out and pid files exist, model and settings reach the harness" {
+@test "happy path: progress lands, the proved result is the handoff, and the worker's url is not" {
   prepare scout
-  printf 'status working: starting\nstatus done: PR https://example.invalid/pr/1\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  # The worker proposes a pull request. A scout is proved by its report and by
+  # nothing else, so the url it named reaches no file Dux keeps.
+  printf 'report all clear\nstatus working: starting\nstatus done: PR https://example.invalid/pr/1\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
   run wrap
   [ "$status" -eq 0 ]
-  [ "$(status_log)" = $'working: starting\ndone: PR https://example.invalid/pr/1' ]
+  [ "$(status_log)" = "working: starting" ]
+  [ "$(handoff_status)" = "done: report" ]
+  [ "$(handoff_event)" = done ]
+  [ "$(handoff_run)" = "$(sed -n 's/^run=//p' "$DUX_HOME/state/$id.run")" ]
+  [ "$(grep -rl 'example.invalid' "$DUX_HOME/state/$id.handoffs" | wc -l | tr -d ' ')" -eq 0 ]
   [[ "$(cat "$DUX_HOME/state/$id.pid")" =~ ^[0-9]+$ ]]
   grep -q '"type":"assistant"' "$DUX_HOME/state/$id.out"
   grep -q -- "--model claude-sonnet-5 --effort medium" "$FAKE_WORKER_LOG"
   grep -qE -- "--settings $DUX_HOME/state/channels/$id\.[A-Za-z0-9]+/worker-settings.json" "$FAKE_WORKER_LOG"
-  [ ! -e "$DUX_HOME/data/tasks/$id/report.md" ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/report.md")" = "all clear" ]
+}
+
+@test "a done a run cannot prove ends the task instead of completing it" {
+  prepare scout
+  # Nothing wrote a report, so no evidence says this scout finished. The task
+  # ends; it is never guessed done, and the url the worker named is not kept.
+  printf 'status done: PR https://example.invalid/pr/1\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 0 ]
+  [ "$(handoff_event)" = ended ]
+  [ "$(handoff_status)" = "ended: the result was not proved: no report was proposed for this scout task" ]
+}
+
+@test "a terminal state that is not done is the worker's own line, published as a handoff" {
+  prepare scout
+  printf 'status needs-decision: A or B? recommend A\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 0 ]
+  [ "$(handoff_event)" = needs-decision ]
+  [ "$(handoff_status)" = "needs-decision: A or B? recommend A" ]
+  [ -z "$(status_log)" ]
+}
+
+@test "the handoff is built beside its home and moved into place whole" {
+  prepare scout
+  printf 'report all clear\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  wrap
+  d="$DUX_HOME/state/$id.handoffs"
+  # Nothing half-built is left where a reader looks, and the sequence stays put:
+  # the wrapper never removes one, so a watcher killed part-way replays it.
+  [ "$(ls -A "$d")" = 1 ]
+  [ -d "$d/1" ]
+  [ "$(ls "$d/1" | sort | tr '\n' ' ')" = "event run status " ]
 }
 
 @test "non-zero exit without an exit line appends failed and writes a failure tail" {
@@ -31,7 +81,8 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   printf 'status working: starting\nexit 7\n' > "$FAKE_WORKER_SCRIPT"
   run wrap
   [ "$status" -eq 0 ]
-  [ "$(status_log | tail -n 1)" = "failed: worker exited 7" ]
+  [ "$(handoff_status)" = "failed: worker exited 7" ]
+  [ "$(handoff_event)" = failed ]
   grep -q '^## Failure tail' "$DUX_HOME/data/tasks/$id/report.md"
   grep -q 'starting' "$DUX_HOME/data/tasks/$id/report.md"
 }
@@ -40,19 +91,19 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   prepare scout
   printf 'status working: starting\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
   wrap
-  [ "$(status_log | tail -n 1)" = "ended: exit 0 without terminal status" ]
+  [ "$(handoff_status)" = "ended: exit 0 without terminal status" ]
   id2="$(dux-task-new proj scout)"
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
   dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
   id="$id2"; wt="$(dux-worktree create "$id")"
   printf 'status blocked: cannot reach the API, tried twice\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
   wrap
-  [ "$(status_log)" = "blocked: cannot reach the API, tried twice" ]
+  [ "$(handoff_status)" = "blocked: cannot reach the API, tried twice" ]
 }
 
 @test "heartbeat appears only while the out file grows" {
   prepare scout
-  printf 'status working: a\nsleep 2\nstatus working: b\nsleep 3\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus working: a\nsleep 2\nstatus working: b\nsleep 3\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   wrap
   [ "$(status_log | grep -c '^working: heartbeat$')" -ge 1 ]
   [ "$(status_log | grep -c '^working: heartbeat$')" -le 3 ]
@@ -60,13 +111,13 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
   dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
   id="$id2"; wt="$(dux-worktree create "$id")"
-  printf 'sleep 3\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nsleep 3\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   wrap
   [ "$(status_log | grep -c heartbeat || true)" -eq 0 ]
   id3="$(dux-task-new proj scout)"
   dux-brief "$id3" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
   id="$id3"; wt="$(dux-worktree create "$id")"
-  printf 'say thinking\nsleep 2\nsay still thinking\nsleep 2\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nsay thinking\nsleep 2\nsay still thinking\nsleep 2\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   wrap
   [ "$(status_log | grep -c '^working: heartbeat$')" -ge 1 ]
   [ "$(status_log | head -n 1)" = "working: heartbeat" ]
@@ -74,7 +125,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
 
 @test "the worker's status log is its own channel outbox, never the task's status log" {
   prepare scout
-  printf 'dump-env %s\nstatus done: report\n' "$DUX_HOME/state/worker.env" > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\ndump-env %s\nstatus done: report\n' "$DUX_HOME/state/worker.env" > "$FAKE_WORKER_SCRIPT"
   wrap
   env_file="$DUX_HOME/state/worker.env"
   ch="$(channel_of "$env_file")"
@@ -85,13 +136,15 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   grep -qx "GIT_CONFIG_COUNT=1" "$env_file"
   grep -qx "GIT_CONFIG_KEY_0=core.hooksPath" "$env_file"
   grep -qx "GIT_CONFIG_VALUE_0=$ch/hooks" "$env_file"
-  # The proposal reached status.log by way of the wrapper, not the worker's hand.
-  [ "$(status_log)" = "done: report" ]
+  # The proposal reached a handoff by way of the wrapper, not the worker's hand,
+  # and status.log holds nothing the worker asked for.
+  [ "$(handoff_status)" = "done: report" ]
+  [ -z "$(status_log)" ]
 }
 
 @test "the channel holds the worker's own copies and goes away with the run" {
   prepare scout
-  printf 'run ls -ld "$(dirname "$DUX_STATUS_LOG")"/. "$(dirname "$DUX_STATUS_LOG")"/* > %s 2>&1\nrun printf %%s "$DUX_STATUS_LOG" > %s\nstatus done: report\n' \
+  printf 'report all clear\nrun ls -ld "$(dirname "$DUX_STATUS_LOG")"/. "$(dirname "$DUX_STATUS_LOG")"/* > %s 2>&1\nrun printf %%s "$DUX_STATUS_LOG" > %s\nstatus done: report\n' \
     "$DUX_HOME/state/chan.ls" "$DUX_HOME/state/chan.path" > "$FAKE_WORKER_SCRIPT"
   wrap
   ls="$DUX_HOME/state/chan.ls"
@@ -114,13 +167,13 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
 
 @test "a child the harness leaves behind is stopped with the harness" {
   prepare scout
-  printf 'orphan %s\nstatus done: report\nexit 0\n' "$DUX_HOME/state/orphan.pid" > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\norphan %s\nstatus done: report\nexit 0\n' "$DUX_HOME/state/orphan.pid" > "$FAKE_WORKER_SCRIPT"
   wrap
   op="$(cat "$DUX_HOME/state/orphan.pid")"
   [[ "$op" =~ ^[0-9]+$ ]]
   run kill -0 "$op"
   [ "$status" -ne 0 ]
-  [ "$(status_log | tail -n 1)" = "done: report" ]
+  [ "$(handoff_status)" = "done: report" ]
 }
 
 @test "terminal state waits for the worker's whole group to be gone" {
@@ -128,7 +181,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   # The harness proposes done and exits while a child of its own keeps running
   # and ignores TERM, so the wrapper spends its grace period with the group
   # still alive. Nothing terminal may appear in that window.
-  printf 'stubborn %s\nstatus done: PR https://example.invalid/pr/9\nexit 0\n' \
+  printf 'report all clear\nstubborn %s\nstatus done: PR https://example.invalid/pr/9\nexit 0\n' \
     "$DUX_HOME/state/stubborn.pid" > "$FAKE_WORKER_SCRIPT"
   export DUX_WRAP_STOP_GRACE_SECS=6
   (cd "$wt" && DUX_BACKEND=tmux dux-worker-wrap "$id") & wp=$!
@@ -150,7 +203,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   wait "$wp" || true
   run kill -0 "$sp"
   [ "$status" -ne 0 ]
-  [ "$(status_log | tail -n 1)" = "done: PR https://example.invalid/pr/9" ]
+  [ "$(handoff_status)" = "done: report" ]
 }
 
 @test "a worker group that will not stop blocks terminal state" {
@@ -161,7 +214,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   run wrap
   [ "$status" -eq 2 ]
   [[ "$output" == *"survived TERM and KILL"* ]]
-  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+  [ ! -e "$DUX_HOME/state/$id.handoffs" ]
   sp="$(cat "$DUX_HOME/state/stubborn.pid")"
   kill -0 "$sp"
   # Everything a recovery would need to find the survivor is still on disk.
@@ -178,7 +231,9 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   run wrap
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: the worker for $id rewrote a status proposal it had already made"* ]]
-  [ "$(status_log | tail -n 1)" = "failed: wrapper: the worker for $id rewrote a status proposal it had already made" ]
+  # A refusal once the run record exists is a result too, so it is a handoff.
+  [ "$(handoff_status)" = "failed: wrapper: the worker for $id rewrote a status proposal it had already made" ]
+  [ "$(handoff_event)" = failed ]
   [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
   id2="$(dux-task-new proj scout)"
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
@@ -201,7 +256,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [[ "$output" == "finding: the worker for $id proposed a line that is not a status line"* ]]
   [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
   [ "$(status_log | grep -c 'ready to go' || true)" -eq 0 ]
-  [ "$(status_log | tail -n 1)" = "failed: wrapper: the worker for $id proposed a line that is not a status line" ]
+  [ "$(handoff_status)" = "failed: wrapper: the worker for $id proposed a line that is not a status line" ]
 }
 
 @test "a status line the worker never finished fails the task" {
@@ -240,10 +295,10 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   # "working: " is 9 bytes, so 191 x's is exactly the limit and 192 is over it.
   at="$(printf 'x%.0s' $(seq 1 191))"
   over="$(printf 'x%.0s' $(seq 1 192))"
-  printf 'status working: %s\nstatus done: report\nexit 0\n' "$at" > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus working: %s\nstatus done: report\nexit 0\n' "$at" > "$FAKE_WORKER_SCRIPT"
   run wrap
   [ "$status" -eq 0 ]
-  [ "$(status_log | tail -n 1)" = "done: report" ]
+  [ "$(handoff_status)" = "done: report" ]
   id2="$(dux-task-new proj scout)"
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
   dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
@@ -260,7 +315,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   prepare scout
   # The worker's environment no longer names any Dux path, so the fixture is
   # given the one it rewrites; a real worker would have to find it.
-  printf 'run printf %%s\\n /elsewhere > %s/state/%s.portal\nstatus done: report\nexit 0\n' \
+  printf 'report all clear\nrun printf %%s\\n /elsewhere > %s/state/%s.portal\nstatus done: report\nexit 0\n' \
     "$DUX_HOME" "$id" > "$FAKE_WORKER_SCRIPT"
   run wrap
   [ "$status" -eq 2 ]
@@ -281,8 +336,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   # different file, and a symlink is not an outbox at all.
   # A refusal leaves this run's references for recovery; clear them by hand so
   # the second half meets the outbox guard and not the leftover-reference one.
-  rm -f "$DUX_HOME/state/$id".run "$DUX_HOME/state/$id".portal \
-    "$DUX_HOME/state/$id".pgid "$DUX_HOME/state/$id".result-context
+  clear_refs
   printf 'status done: report\nrun rm -f "$DUX_REPORT"; ln -s /dev/null "$DUX_REPORT"\nexit 0\n' \
     > "$FAKE_WORKER_SCRIPT"
   run wrap
@@ -292,8 +346,10 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
 
 @test "a leftover run reference from an earlier run is refused, symlinks included" {
   prepare scout
-  printf 'status done: report\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
-  for ref in run portal pgid result-context; do
+  printf 'report all clear\nstatus done: report\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  # handoffs belongs here too: a sequence from an earlier run would be numbered
+  # behind this run's, so a reader could not tell whose result it was reading.
+  for ref in run portal pgid result-context handoffs; do
     printf 'stale\n' > "$DUX_HOME/state/$id.$ref"
     run wrap
     [ "$status" -eq 2 ]
@@ -308,7 +364,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   rm -f "$DUX_HOME/state/$id.portal"
   run wrap
   [ "$status" -eq 0 ]
-  [ "$(status_log | tail -n 1)" = "done: report" ]
+  [ "$(handoff_status)" = "done: report" ]
 }
 
 @test "more than 64 KiB of status proposals fails the task" {
@@ -316,7 +372,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   # One poll, after the worker has written everything and gone, so the wrapper
   # meets the whole file at once rather than a prefix of it.
   export DUX_WRAP_POLL_SECS=5
-  printf 'run yes "working: filler line" | head -c 70000 >> "$DUX_STATUS_LOG"\nstatus done: report\nexit 0\n' \
+  printf 'report all clear\nrun yes "working: filler line" | head -c 70000 >> "$DUX_STATUS_LOG"\nstatus done: report\nexit 0\n' \
     > "$FAKE_WORKER_SCRIPT"
   run wrap
   [ "$status" -eq 2 ]
@@ -337,11 +393,11 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(grep -c 'filler line' "$DUX_HOME/data/tasks/$id/report.md" || true)" -eq 0 ]
 }
 
-@test "a scout's report reaches report.md through the channel" {
+@test "a scout's report reaches report.md through the channel and proves the result" {
   prepare scout
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   wrap
-  [ "$(status_log)" = "done: report" ]
+  [ "$(handoff_status)" = "done: report" ]
   [ "$(cat "$DUX_HOME/data/tasks/$id/report.md")" = $'# Findings\nall clear' ]
 }
 
@@ -373,7 +429,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
 
 @test "the worker inherits its task interfaces and nothing else of Dux's" {
   prepare scout
-  printf 'dump-env %s\nstatus done: report\n' "$DUX_HOME/state/worker.env" > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\ndump-env %s\nstatus done: report\n' "$DUX_HOME/state/worker.env" > "$FAKE_WORKER_SCRIPT"
   (cd "$wt" && CLAUDECODE=1 CLAUDE_PID=4242 CLAUDE_CODE_SESSION_ID=abc \
      HERDR_PANE_ID=w1:p9 TMUX=/tmp/sock,1,0 TMUX_PANE=%3 GIT_CONFIG_GLOBAL=/nowhere \
      DUX_BACKEND=tmux dux-worker-wrap "$id")
@@ -413,12 +469,15 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   grep -qx "run=${ch##*.}" "$r"
   grep -qx "branch=dux/$id" "$r"
   grep -q "^phase=checks sha=$(git -C "$wt" rev-parse HEAD) " "$r"
+  # One phase is not five and no pull request answers for this branch, so the
+  # ship this worker called done ends rather than completing.
+  [ "$(handoff_event)" = ended ]
 }
 
 @test "a push to the base branch from inside the worker is refused by the channel's hook" {
   prepare scout
   before="$(git -C "$DUX_HOME/proj.origin" rev-parse main)"
-  printf 'run git commit -q --allow-empty -m work\nrun git push origin HEAD:refs/heads/main\nrun git push -q -u origin dux/%s\nstatus done: report\n' "$id" > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nrun git commit -q --allow-empty -m work\nrun git push origin HEAD:refs/heads/main\nrun git push -q -u origin dux/%s\nstatus done: report\n' "$id" > "$FAKE_WORKER_SCRIPT"
   wrap
   [ "$(git -C "$DUX_HOME/proj.origin" rev-parse main)" = "$before" ]
   grep -q 'refusing to push to main from a Dux worktree' "$DUX_HOME/state/$id.out"
@@ -427,11 +486,12 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
 
 @test "config/worker-harness selects the harness and a codex value never reaches the adapter" {
   prepare scout
-  printf 'status done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   echo claude > "$DUX_HOME/config/worker-harness"
   run wrap
   [ "$status" -eq 0 ]
   grep -q '^claude ' "$FAKE_WORKER_LOG"
+  clear_refs
   echo codex > "$DUX_HOME/config/worker-harness"
   run wrap
   [ "$status" -eq 2 ]; [[ "$output" == "finding: codex workers are not available"* ]]
@@ -440,7 +500,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
 
 @test "on herdr every status line is mirrored and the title is set; on tmux nothing is" {
   prepare scout
-  printf 'status working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   (cd "$wt" && DUX_BACKEND=herdr HERDR_PANE_ID=w1:p9 dux-worker-wrap "$id")
   grep -qF "pane report-metadata w1:p9 --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
   grep -qF "pane report-agent w1:p9 --source dux --agent dux-$id --state working --message dux $id: working" "$FAKE_HERDR_LOG"
@@ -457,10 +517,10 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
 
 @test "on herdr without HERDR_PANE_ID the wrapper logs once and finishes" {
   prepare scout
-  printf 'status working: a\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus working: a\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   run env -u HERDR_PANE_ID bash -c 'cd "$1" && DUX_BACKEND=herdr dux-worker-wrap "$2"' _ "$wt" "$id"
   [ "$status" -eq 0 ]
-  [ "$(status_log | tail -n 1)" = "done: report" ]
+  [ "$(handoff_status)" = "done: report" ]
   [ "$(grep -c 'status mirroring unavailable' <<< "$output")" -eq 1 ]
 }
 
@@ -478,7 +538,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   grep -q '^pane report-metadata' "$FAKE_HERDR_LOG"
   kill -TERM "$wp"
   wait "$wp" || true
-  [ "$(status_log | tail -n 1)" = "failed: wrapper: signalled before the harness started" ]
+  [ "$(handoff_status)" = "failed: wrapper: signalled before the harness started" ]
   [ ! -s "$FAKE_WORKER_LOG" ]
 }
 
@@ -504,7 +564,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   done
   wait "$wp" || true
   [ "$gone" -eq 1 ]
-  [ "$(status_log | tail -n 1)" = "failed: worker exited 143" ]
+  [ "$(handoff_status)" = "failed: worker exited 143" ]
   [ "$(status_log | grep -c '^done: report' || true)" -eq 0 ]
 }
 
@@ -529,5 +589,5 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   bash -c 'cd "$1" && DUX_BACKEND=tmux exec dux-worker-wrap "$2"' _ "$wt" "$id" & wp=$!
   sleep 2; kill -TERM "$wp"
   wait "$wp" || true
-  [ "$(status_log | tail -n 1)" = "failed: worker exited 143" ]
+  [ "$(handoff_status)" = "failed: worker exited 143" ]
 }

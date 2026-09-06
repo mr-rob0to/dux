@@ -121,3 +121,38 @@ fixture_task() {  # $1 project name, $2 shape; prints the task id. Needs Tasks 2
   fi
   echo "$id"
 }
+
+# The two files dux-worker-wrap writes before a worker starts. A test that needs
+# a run record without running a wrapper builds it here, the same way.
+fake_run() {  # $1 id, $2 run, $3 shape, [$4 repo slug], [$5 worktree]
+  local ctx="$DUX_HOME/state/$1.result-context" tree="${5:-$DUX_HOME}"
+  {
+    echo "version=1"; echo "id=$1"; echo "run=$2"; echo "shape=$3"
+    echo "project=proj"; echo "repo=${4:-acme/proj}"; echo "base=main"
+    echo "branch=dux/$1"; echo "worktree=$tree"
+    echo "plan="; echo "tasks="
+  } > "$ctx"
+  {
+    echo "version=1"; echo "id=$1"; echo "run=$2"; echo "wrapper=$$"
+    echo "shape=$3"; echo "worktree=$tree"
+    echo "channel=$DUX_HOME/state/channels/$1.$2"
+    echo "context=$(git hash-object "$ctx")"
+  } > "$DUX_HOME/state/$1.run"
+}
+
+# A terminal handoff, put where a wrapper would have put it. dux-env is sourced
+# once, before a setup() moves DUX_HOME, so the paths it derived point at the
+# repository; the subshell re-derives them rather than writing outside the
+# test's home.
+handoff() {  # $1 id, $2 status line, $3 event, [$4 run]
+  ( DUX_STATE="$DUX_HOME/state"; publish_handoff "$1" "${4:-r00}" "$2" "$3" ) > /dev/null
+}
+
+# The five /ship phases a ship result needs behind it.
+fake_receipt() {  # $1 id, $2 run
+  local r="$DUX_HOME/state/$1.ship-receipt" p
+  { echo "version=1"; echo "id=$1"; echo "run=$2"; echo "branch=dux/$1"; } > "$r"
+  for p in checks review security pr ci; do
+    printf 'phase=%s sha=deadbeef at=2026-09-05T00:00:00Z\n' "$p" >> "$r"
+  done
+}

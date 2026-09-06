@@ -4,13 +4,21 @@
 
 - Original Milestone 3 Tasks 0 to 7 are implemented; `/ship` remains paused after its security audit.
 - The one independent design review is complete. The operator chose the lightweight, trusted-local-worker boundary; every review finding is recorded below.
-- Tasks 0, 1 and 2 are implemented on `feat/m3-supervision`; `make check` is green. Next action: Task 3.
+- Tasks 0, 1, 2 and 3 are implemented on `feat/m3-supervision`; `make check` is green. Next action: Task 4.
 - Divergence: the constitution landed as 2.0.1, not 2.0.0. The branch was cut before `main` added
   the principle 3 bullets that put break-verification at the task, and the 2.0.0 rewrite would have
   dropped them. 2.0.1 keeps both changes and `AGENTS.md` points at it.
 - Divergence: Task 2 leaves the wrapper still writing the worker's own terminal line to
   `status.log`. Swapping it for the proved result belongs with the handoff, so it lands in Task 3
   alongside "ignore terminal-looking status without a handoff", where the watcher tests move with it.
+- Divergence: Task 3 moved `needs-decision` off the notification and onto recovery. Making every
+  push fixed by state means the notification can no longer carry the question, so `AGENTS.md` and
+  the contract guard now route the decision text through `dux-recover`, which fences it as data.
+- Decision, recorded here so Task 4 does not reopen it: a plan task may not supersede an old spec
+  by deleting it. `dux-result`'s plan shape asks for positive evidence, a regular non-executable
+  Markdown file, and a deletion carries no file mode to show. Allowing one would let a plan PR
+  remove a spec on a worker's say-so, which is the operator's call. The rule only ever refuses a
+  real deletion; it never wrongly completes one, so the safe reading stands.
 
 **Goal:** Dux treats repository content and worker messages as untrusted data, accepts task completion only from independently checked evidence, and prevents accidental cross-task control without claiming to contain a deliberately malicious process running as the operator.
 
@@ -122,11 +130,11 @@
 
 **Interfaces:** Consumes Task 2's canonical line; creates and consumes `state/<id>.handoffs/<n>` without trusting a terminal-looking status line.
 
-- [ ] Build each sequence in a same-filesystem temporary directory and rename it once. Never remove a sequence at wrapper exit or watcher transition; teardown is its lifecycle owner.
-- [ ] Validate id, run, sequence, grammar, shape, and receipt before status, stable event, ledger, and URL writes. Replay interruptions without duplicates.
-- [ ] Ignore terminal-looking status without a handoff. Recovery may prove a late result into the next sequence; remove `--classify done`.
-- [ ] Make push, toast, digest, and backend messages fixed by state. Only `dux-recover` may show status/output text, after control stripping, fence neutralization, 200-byte lines, and the existing 40-line cap.
-- [ ] Break-verify the run match, atomic rename, retained sequence, restart replay after each consumption step, duplicate event guard, fixed notification, and recovery fence separately.
+- [x] Build each sequence in a same-filesystem temporary directory and rename it once. Never remove a sequence at wrapper exit or watcher transition; teardown is its lifecycle owner.
+- [x] Validate id, run, sequence, grammar, shape, and receipt before status, stable event, ledger, and URL writes. Replay interruptions without duplicates.
+- [x] Ignore terminal-looking status without a handoff. Recovery may prove a late result into the next sequence; remove `--classify done`.
+- [x] Make push, toast, digest, and backend messages fixed by state. Only `dux-recover` may show status/output text, after control stripping, fence neutralization, 200-byte lines, and the existing 40-line cap.
+- [x] Break-verify the run match, atomic rename, retained sequence, restart replay after each consumption step, duplicate event guard, fixed notification, and recovery fence separately.
 
 **Done when:** `bats tests/dux-watch.bats tests/dux-notify.bats tests/dux-status.bats tests/dux-recover.bats tests/dux-teardown.bats` passes; watcher restart at every handoff step yields one terminal status, one event, one ledger result, and one retained consumed sequence.
 

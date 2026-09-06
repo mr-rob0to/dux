@@ -58,9 +58,11 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
   [ "$(count stale "$id")" -eq 1 ]
   [ "$(wc -l < "$events" | tr -d ' ')" -eq 1 ]
   if [ "$DUX_BACKEND" = herdr ]; then grep -qF "notification show Dux --body stale: $id" "$FAKE_HERDR_LOG"; fi
-  # Recovering stops the wrapper. The watcher and recover may record failure in
-  # either order, so only duplicate events are wrong.
+  # Recovering stops the wrapper, which publishes its own ending on the way out.
+  # Recovery reports that and leaves it; the watcher is what applies it.
   dux-recover "$id" --stop >/dev/null
+  wait_until 15 count_is failed "$id" 1
+  wait_until 10 ledger_is "$id" failed
   [ "$(dux-ledger get "$id" state)" = failed ]
   sleep 3
   [ "$(count failed "$id")" -le 1 ]
@@ -97,7 +99,9 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
 @test "a worker that finishes produces exactly one done event, even across a watcher restart" {
   ready || skip
   supervised_env
-  printf 'status working: starting\nsleep 2\nstatus done: PR https://example.invalid/pr/1\n' > "$FAKE_WORKER_SCRIPT"
+  # The worker proposes a pull request. It is a scout, so the proof answers with
+  # the report it actually wrote, and the url it named never reaches Dux.
+  printf 'report all clear\nstatus working: starting\nsleep 2\nstatus done: PR https://example.invalid/pr/1\n' > "$FAKE_WORKER_SCRIPT"
   id="$(fixture_task proj scout)"
   dux-spawn "$id" >/dev/null
   wait_until 20 count_is done "$id" 1
@@ -109,8 +113,9 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
   [ "$w1" != "$w2" ]
   sleep 3
   [ "$(count done "$id")" -eq 1 ]
+  [ "$(dux-ledger get "$id" pr)" = - ]
   run dux-notify "$id"
-  [ "$output" = "Review and merge: https://example.invalid/pr/1 (proj scout)" ]
+  [ "$output" = "Read the report: proj scout finished ($id)" ]
   run dux-status
   [[ "$output" == *"watcher: running (pid $w2)"* ]]
   [[ "$output" == *"  ready 1"* ]]
@@ -127,7 +132,7 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
 @test "release stops the watcher and the next acquire starts a fresh one that emits nothing already recorded" {
   ready || skip
   supervised_env
-  printf 'status done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   id="$(fixture_task proj scout)"
   dux-spawn "$id" >/dev/null
   wait_until 20 count_is done "$id" 1

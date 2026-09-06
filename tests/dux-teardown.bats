@@ -16,7 +16,8 @@ setup() {
   dux-lock acquire >/dev/null
 }
 
-# A spawned task whose worker never ran (FAKE_HERDR_RUN unset), so the test writes the status itself.
+# A spawned task whose worker never ran (FAKE_HERDR_RUN unset), so the test
+# settles the task itself.
 spawned() {  # $1 shape; sets $id and $wt
   id="$(fixture_task proj "$1")"
   dux-spawn "$id" >/dev/null
@@ -24,25 +25,35 @@ spawned() {  # $1 shape; sets $id and $wt
   : > "$FAKE_HERDR_LOG"
 }
 status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
+# What the watcher does with a proved handoff, done by hand. Teardown reads the
+# ledger, so this is the only thing that makes a task terminal.
+settled() {  # $1 state, [$2 pr]
+  dux-ledger set "$id" state "$1"
+  [ -z "${2:-}" ] || dux-ledger set "$id" pr "$2"
+}
 
-@test "refuses a non-terminal task" {
+# The ledger is the only thing that settles a task. A status log saying done is
+# a worker talking about itself, and tearing a worktree down on its word would
+# throw away work nothing had proved was finished.
+@test "refuses a task the ledger has not settled, whatever its status log says" {
   spawned scout
-  status_is "working: still going"
+  status_is "done: PR https://example.invalid/pr/9"
   run dux-teardown "$id"
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: task $id is not terminal (ledger: running; last status: working: still going)"* ]]
+  [[ "$output" == "finding: task $id is not terminal (ledger: running)"* ]]
   [ -d "$wt" ]; [ ! -s "$FAKE_HERDR_LOG" ]
+  [ "$(dux-ledger get "$id" pr)" = - ]
 }
 
 @test "refuses when the lock is not this session's" {
-  spawned scout; status_is "done: report"
+  spawned scout; settled done
   DUX_SESSION_PID=424242 run dux-teardown "$id"
   [ "$status" -eq 2 ]; [[ "$output" == "finding: the Dux lock is not held by this session"* ]]
   [ -d "$wt" ]
 }
 
 @test "refuses a dirty worktree and an unpushed branch, closing nothing" {
-  spawned scout; status_is "done: report"
+  spawned scout; settled done
   echo scratch > "$wt/scratch"
   run dux-teardown "$id"
   [ "$status" -eq 2 ]; [[ "$output" == "finding: worktree $wt has uncommitted changes"* ]]
@@ -50,11 +61,13 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
   run dux-teardown "$id"
   [ "$status" -eq 2 ]; [[ "$output" == "finding: branch dux/$id has 1 commit(s) and no upstream"* ]]
   [ ! -s "$FAKE_HERDR_LOG" ]
-  [ "$(dux-ledger get "$id" state)" = running ]
+  [ "$(dux-ledger get "$id" endpoint)" != - ]
 }
 
 @test "done with a PR: worktree removed, pane closed, ledger done with the url, folder kept" {
-  spawned scout; status_is "done: PR https://example.invalid/pr/9"
+  spawned scout; settled done https://example.invalid/pr/9
+  # A different url in the status log. The one teardown reports is the ledger's.
+  status_is "done: PR https://example.invalid/pr/impostor"
   echo 999999 > "$DUX_HOME/state/$id.pid"
   run dux-teardown "$id"
   [ "$status" -eq 0 ]
@@ -69,8 +82,21 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
   git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$id"
 }
 
+# Handoff sequences are kept for the whole run so a restarted watcher can replay
+# the one it was applying. Teardown is the one place they are cleared.
+@test "teardown is where a run's retained references go" {
+  spawned scout; settled done
+  fake_run "$id" r00 scout; fake_receipt "$id" r00
+  handoff "$id" "done: report" done; : > "$DUX_HOME/state/$id.handoffs/1/consumed"
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  for f in handoffs run result-context ship-receipt; do
+    [ ! -e "$DUX_HOME/state/$id.$f" ] || { echo "state/$id.$f survived teardown"; false; }
+  done
+}
+
 @test "failed: ledger failed, pr stays empty" {
-  spawned scout; status_is "failed: worker exited 3"
+  spawned scout; settled failed
   run dux-teardown "$id"
   [ "$status" -eq 0 ]
   [ "$(printf '%s\n' "$output" | tail -n 1)" = "torn down $id state=failed pr=-" ]
@@ -78,7 +104,7 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
 }
 
 @test "a live worker pid is a refusal even after done" {
-  spawned scout; status_is "done: report"
+  spawned scout; settled done
   sleep 30 3>&- & live=$!
   echo "$live" > "$DUX_HOME/state/$id.pid"
   run dux-teardown "$id"
@@ -88,7 +114,7 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
 }
 
 @test "a pidfile that cannot be read or holds no pid refuses; an absent one does not" {
-  spawned scout; status_is "done: report"
+  spawned scout; settled done
   pf="$DUX_HOME/state/$id.pid"
   # Spawn refuses both of these readings. Teardown pulls the worktree out from
   # under whatever is running, so it must not read either one as "no worker".
@@ -96,7 +122,7 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
   run dux-teardown "$id"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: $pf does not hold a pid"* ]]
-  [ -d "$wt" ]; [ "$(dux-ledger get "$id" state)" = running ]
+  [ -d "$wt" ]; [ "$(dux-ledger get "$id" endpoint)" != - ]
   printf '999999\n' > "$pf"; chmod 000 "$pf"
   run dux-teardown "$id"
   # Best effort: a teardown that wrongly went ahead has already deleted the file,
@@ -104,7 +130,7 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
   chmod 600 "$pf" 2>/dev/null || true
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: cannot read $pf; cannot tell whether a worker for $id is alive"* ]]
-  [ -d "$wt" ]; [ "$(dux-ledger get "$id" state)" = running ]
+  [ -d "$wt" ]; [ "$(dux-ledger get "$id" endpoint)" != - ]
   # No pidfile at all is an answer: nothing ever recorded a worker for this task.
   rm -f "$pf"
   run dux-teardown "$id"
@@ -120,18 +146,18 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
 }
 
 @test "a focused pane is a finding; the rerun completes once it is not focused" {
-  spawned scout; status_is "done: report"
+  spawned scout; settled done
   export FAKE_HERDR_FOCUSED="$DUX_HOME/state/focused"; touch "$FAKE_HERDR_FOCUSED"
   run dux-teardown "$id"
   [ "$status" -eq 2 ]; [[ "$output" == *"finding: refusing to close focused pane"* ]]
-  [ "$(dux-ledger get "$id" state)" = running ]
+  [ "$(dux-ledger get "$id" endpoint)" != - ]
   rm "$FAKE_HERDR_FOCUSED"
   run dux-teardown "$id"
   [ "$status" -eq 0 ]; [[ "$output" == *"torn down $id state=done"* ]]
 }
 
 @test "a container that is already gone is logged, not refused" {
-  spawned scout; status_is "done: report"
+  spawned scout; settled done
   export FAKE_HERDR_DEAD="$DUX_HOME/state/dead"; touch "$FAKE_HERDR_DEAD"
   run dux-teardown "$id"
   [ "$status" -eq 0 ]
@@ -141,9 +167,9 @@ status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
 }
 
 @test "a failed close is a finding and the ledger is not updated" {
-  spawned scout; status_is "done: report"
+  spawned scout; settled done
   FAKE_HERDR_CLOSE_FAIL=1 run dux-teardown "$id"
   [ "$status" -eq 2 ]; [[ "$output" == *"finding: herdr pane close failed"* ]]
-  [ "$(dux-ledger get "$id" state)" = running ]
+  [ "$(dux-ledger get "$id" endpoint)" != - ]
   [ -e "$DUX_HOME/state/$id.endpoint" ]
 }

@@ -39,33 +39,52 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   local i=0
   until grep -q "$2" "$1" 2>/dev/null; do i=$((i + 1)); [ "$i" -ge "$3" ] && return 1; sleep 1; done
 }
+wait_file() {  # $1 path, $2 seconds
+  local i=0
+  until [ -e "$1" ]; do i=$((i + 1)); [ "$i" -ge "$2" ] && return 1; sleep 1; done
+}
 
 container_gone() {  # $1 endpoint
   if [ "$DUX_BACKEND" = tmux ]; then run dux-backend exists "$1"; [ "$status" -eq 1 ]
   else grep -qx 'pane close w1:p9' "$FAKE_HERDR_LOG"; fi
 }
 
-@test "spawn, done with a PR, teardown" {
+# The worker proposes a pull request. It is a scout, so what it is proved to
+# have done is write a report, and the url it named never reaches Dux at all.
+@test "spawn, a proved result the worker did not choose, teardown" {
   ready || skip "set DUX_BACKEND and DUX_WORKER_HARNESS"
   worker_env
-  printf 'status working: starting\nstatus done: PR https://example.invalid/pr/1\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus working: starting\nstatus done: PR https://example.invalid/pr/1\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
   id="$(fixture_task proj scout)"
   run dux-spawn "$id"
   [ "$status" -eq 0 ]
   [ "$(dux-ledger get "$id" state)" = running ]
   log="$DUX_HOME/data/tasks/$id/status.log"
-  wait_for "$log" '^done: PR' 30
-  [ "$(tail -n 1 "$log")" = "done: PR https://example.invalid/pr/1" ]
-  [ "$(head -n 1 "$log")" = "working: starting" ]
+  hand="$DUX_HOME/state/$id.handoffs"
+  wait_file "$hand/1/status" 30
+  [ "$(cat "$hand/1/status")" = "done: report" ]
+  [ "$(cat "$hand/1/event")" = done ]
+  [ "$(cat "$hand/1/run")" = "$(sed -n 's/^run=//p' "$DUX_HOME/state/$id.run")" ]
+  ! grep -rq example.invalid "$hand"
+  # Nothing terminal reached the status log from the wrapper.
+  [ "$(cat "$log")" = "working: starting" ]
   grep -q '"type":"assistant"' "$DUX_HOME/state/$id.out"
   grep -q "^$DUX_WORKER_HARNESS " "$FAKE_WORKER_LOG"
   [[ "$(cat "$DUX_HOME/state/$id.pid")" =~ ^[0-9]+$ ]]
   sleep 3
   ep="$(dux-ledger get "$id" endpoint)"
+  # Teardown reads the ledger, and only the watcher moves it.
+  run dux-teardown "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == *"is not terminal (ledger: running)"* ]]
+  dux-watch --once
+  [ "$(tail -n 1 "$log")" = "done: report" ]
+  [ "$(dux-ledger get "$id" state)" = done ]
+  [ "$(dux-ledger get "$id" pr)" = - ]
+  [ -e "$hand/1/consumed" ]
   run dux-teardown "$id"
   [ "$status" -eq 0 ]
   [ "$(dux-ledger get "$id" state)" = done ]
-  [ "$(dux-ledger get "$id" pr)" = "https://example.invalid/pr/1" ]
+  [ ! -e "$hand" ]; [ ! -e "$DUX_HOME/state/$id.run" ]
   [ ! -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
   [ ! -e "$DUX_HOME/state/$id.endpoint" ]
   container_gone "$ep"
@@ -78,9 +97,12 @@ container_gone() {  # $1 endpoint
   id="$(fixture_task proj scout)"
   dux-spawn "$id" >/dev/null
   log="$DUX_HOME/data/tasks/$id/status.log"
-  wait_for "$log" '^failed: worker exited 3' 30
+  wait_file "$DUX_HOME/state/$id.handoffs/1/status" 30
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/status")" = "failed: worker exited 3" ]
   grep -q '^## Failure tail' "$DUX_HOME/data/tasks/$id/report.md"
   sleep 3
+  dux-watch --once
+  [ "$(tail -n 1 "$log")" = "failed: worker exited 3" ]
   run dux-teardown "$id"
   [ "$status" -eq 0 ]
   [ "$(dux-ledger get "$id" state)" = failed ]
@@ -104,7 +126,7 @@ container_gone() {  # $1 endpoint
   ready || skip
   [ "$DUX_BACKEND" = herdr ] || skip "tmux has no agent state"
   worker_env
-  printf 'status working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   id="$(fixture_task proj scout)"
   dux-spawn "$id" >/dev/null
   wait_for "$FAKE_HERDR_LOG" "report-agent w1:p9 --source dux --agent dux-$id --state idle --message dux $id: done" 30

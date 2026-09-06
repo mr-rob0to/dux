@@ -363,15 +363,18 @@ otherwise a one-line system-prompt instruction in the brief.
 
 ### 5.6 Teardown (`dux-teardown <id>`)
 
-Refuses when the lock is not held by this session, the task is not terminal
-(last status line `done` or `failed`, or ledger `done` or `failed`), or the
+Refuses when the lock is not held by this session, the ledger does not say
+`done` or `failed` (a status line saying so is the worker talking about itself
+and settles nothing), or the
 worktree has uncommitted changes or unpushed commits. It reads `state/<id>.pid`
 exactly as `dux-spawn` does, so the two agree about the same worker: absent is
 the only reading that means no worker, while a file that cannot be read, one that
 does not hold a pid, and one whose pid `kill -0` reaches all refuse. Otherwise
 removes the worktree (`git worktree remove`, branch kept), closes the container
-when it still exists, deletes `state/<id>.endpoint` and `state/<id>.pid`, records
-the PR url from `done: PR <url>`, and marks `done` or `failed` in `backlog.md`.
+when it still exists, deletes `state/<id>.endpoint` and `state/<id>.pid`, clears
+the run's retained references (`state/<id>.handoffs`, `state/<id>.run`,
+`state/<id>.result-context`, `state/<id>.ship-receipt`), and marks `done` or
+`failed` in `backlog.md` with the url the ledger already holds.
 It then sets the ledger's `endpoint` to `-`, which is how the digest tells a
 torn-down task from one awaiting merge. A worktree or container that is already gone is logged, not refused, so an
 interrupted teardown completes on rerun. The task folder is kept.
@@ -453,7 +456,10 @@ last 40 lines.
 `dux-notify <id>` formats one line of at most 200 characters that leads with
 what the operator would do (`Review and merge:`, `Decide:`, `Unblock:`, `Retry
 or drop:`, `Check:`, `Classify:`) and prints it for Dux to pass to
-PushNotification. Dux pushes for `done` with a PR link, `needs-decision`, and
+PushNotification. Every word of it comes from the ledger: the state, the
+project, the shape, the task id, and the PR url the ledger holds. A push has no
+way to mark where a worker's words start and end, so it carries none of them;
+the operator reads the worker's own account through `dux-recover`. Dux pushes for `done` with a PR link, `needs-decision`, and
 `failed`. `blocked`, `stale`, and `dead` go to the digest, and push only if they
 persist past one recovery attempt. The watcher raises the backend's local toast
 when it emits; `dux-notify --toast` raises it again only where a push is
@@ -463,8 +469,9 @@ a phone.
 ### 6.4 Recovery (`dux-recover`)
 
 `dux-recover <id>` does the mechanical half; Dux keeps the judgment. Every call
-first re-reads the status log: an exit line written after the event wins, the
-ledger follows it, and nothing else happens.
+first looks for a handoff the watcher has not consumed: a result that arrived
+while the wake was in flight is reported and left exactly where it is, because
+applying one is the watcher's job alone.
 
 - `stale`: inspect prints whether the one extension was used, the last 5 status
   lines, and the last 40 lines of `state/<id>.out`. Worker-controlled lines have
@@ -475,16 +482,21 @@ ledger follows it, and nothing else happens.
   was appended after it. Otherwise the extension restarts the silence clock and
   is the record that forbids a second extension.
   `--stop` checks the pid runs `dux-worker-wrap <id>` (a recycled pid is a
-  finding, never a signal), sends SIGINT, waits 60 seconds, and marks `failed`
-  with the last 20 output lines in `report.md`; a wrapper still alive after the
-  wait is a finding and nothing is marked.
+  finding, never a signal), sends SIGINT, and waits 60 seconds. A wrapper that
+  published its result on the way out has spoken for the run and that stands;
+  one that published nothing is marked `failed` with the last 20 output lines in
+  `report.md`. A wrapper still alive after the wait is a finding and nothing is
+  marked.
 - `dead`: marks `failed`, saves the last 20 output lines to `report.md`, and
   keeps the worktree. A wrapper pid found alive is a finding: the task is not
   dead.
-- `ended`: a PR on `dux/<id>` (`gh pr list --head`) or a `report.md` without a
-  failure heading classifies it `done`; otherwise Dux asks the operator and
-  records the answer with `--classify done|failed`. A `gh` failure is a finding,
-  never evidence that no PR exists.
+- `ended`: recovery runs the same `dux-result verify <id> <run>` the wrapper
+  would have run, offering `report.md` as scout evidence only when it holds
+  something other than a failure tail. What that proves is published into the
+  next handoff sequence for the watcher to apply; recovery never writes the
+  ledger or a url itself. An unproved result publishes nothing and says why,
+  fenced as data. `--classify` takes `failed` and nothing else: `done` comes
+  from the proof or not at all.
 - `failed`, `blocked`, `needs-decision`: inspect prints capped, stripped, fenced
   status and failure text for Dux to relay.
   `--retry [--answer-file <f>]` allocates a new id, appends the answer (or the
@@ -518,8 +530,9 @@ queued; running, with stale and long-running counts in a suffix; awaiting you
 (needs-decision, blocked); needs recovery (dead, ended); ready (done with a PR
 or a report, not yet torn down); failed (not yet torn down). Long-running means
 the task's `brief.md` is older than `DUX_LONG_RUNNING_SECS`, which defaults to
-four hours. For a running or stale task whose status log already holds an exit
-line, the count follows the status log and a `note:` line says so. Then an
+four hours. Every count comes from the ledger; a status log that reads finished
+is a worker talking about itself and moves nothing until a proved handoff does.
+Then an
 `unacknowledged` block prints one `<state>: <id> (<project>)` line per task Dux
 has not acknowledged. `--prs` adds `gh pr view` state per ready PR; a failed
 `gh` is a warning, not a finding. `--intake` runs `dux-intake` first in

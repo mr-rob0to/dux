@@ -152,10 +152,12 @@ backend started it and catches a worker in a server whose socket vanished.
 6. `dux-worker-wrap <id>` writes `state/<id>.pid`, makes the task channel (below),
    runs `worker_run` from `bin/workers/<harness>.sh` in a process group of its own
    with output to `state/<id>.out`, heartbeats while that output grows, mirrors the
-   dux state to the pane as fixed text, and appends `failed:` or `ended:` when the
-   harness exits without a terminal proposal.
-7. `dux-teardown <id>` (terminal, clean, pushed) removes the worktree, closes
-   the container, and marks `done` or `failed` with the PR url.
+   dux state to the pane as fixed text, and publishes the run's result as a
+   handoff (below). A `done` proposal goes through `dux-result verify` first; a
+   harness that exits without a terminal proposal gets `failed:` or `ended:`.
+7. `dux-teardown <id>` (the ledger says terminal, worktree clean, branch pushed)
+   removes the worktree, closes the container, clears the run's retained
+   references, and reports the ledger's own state and PR url.
 
 ## The task channel
 
@@ -183,12 +185,44 @@ and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
   rewritten or truncated, every line is `<state>: <text>` with a known state, a
   line is at most 200 bytes, the whole status outbox at most 64 KiB and the
   report at most 1 MiB, and after one terminal line nothing more may be written.
-  Control characters are stripped. Only `working:` lines reach `status.log`
-  during the run; the terminal line is held until the run is over and the
-  references still name this run's channel.
-- The pane shows `dux <id>: <state>`, fixed text chosen by the state. Worker
-  text never reaches the operator except through `dux-notify` and
-  `dux-recover`, capped and fenced as data.
+  Control characters are stripped. Only `working:` lines reach `status.log` from
+  the wrapper; the terminal state is held until the run is over and leaves as a
+  handoff, never as a line the wrapper appends.
+- The pane shows `dux <id>: <state>`, fixed text chosen by the state. Every
+  notification, toast and digest line is likewise fixed by state, with the url
+  the ledger holds; `dux-recover` is the only place worker text reaches the
+  operator, capped, cleaned and fenced as data.
+
+## The terminal handoff
+
+A run's ending is a directory, not a line. `dux-worker-wrap` builds
+`state/<id>.handoffs/.tmp.<run>.<n>.<pid>` holding `run`, `status` and `event`,
+then renames it to `state/<id>.handoffs/<n>` in one move, so a reader sees a
+whole handoff or none of it.
+
+- `done` is never the worker's to declare. The wrapper runs
+  `bin/dux-result verify <id> <run>`, and the line it publishes is the one that
+  came back: exit 0 publishes the canonical result, exit 1 publishes
+  `ended: the result was not proved: <reason>`, exit 2 is a finding. A worker's
+  own url, report claim and shape are not inputs. Any other terminal word is the
+  worker reporting on itself, which only ever moves a task away from `done`, so
+  its own line stands.
+- The watcher takes the lowest sequence with no `consumed` marker and stops at
+  the first gap, so sequences apply in order. It refuses a handoff that names
+  another run, is not exactly three one-line regular files, does not parse as a
+  status line, does not match the shape the run recorded, carries a url outside
+  the registered repository, or is a ship result with no five-phase receipt
+  behind it.
+- Applying one writes `status.log`, then `events.log`, then the ledger state,
+  then the ledger url, then `consumed`; the first two are guarded by their own
+  markers, so a watcher killed part-way through replays without duplicating
+  anything. A ledger write that fails leaves the sequence pending and the
+  watcher retries it on the next pass.
+- A terminal-looking status line with no handoff behind it proves nothing and is
+  ignored by the watcher, the digest and teardown alike.
+- Sequences are retained for the whole run. `dux-teardown` is their lifecycle
+  owner, and clears them with `state/<id>.run`, `state/<id>.result-context` and
+  `state/<id>.ship-receipt`.
 
 ## Wake flow (exists today)
 
@@ -199,11 +233,11 @@ and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
 3. Liveness has three answers: `alive`, `gone`, or `unknown`. A matching
    `dux-worker-wrap <id>` pid decides alive or gone in both directions. The
    backend container only adds corroborating notes and never reverses that answer.
-4. A terminal status change emits `<time> <state>: <id>` to `state/events.log`.
+4. A consumed handoff emits `<time> <state>: <id>` to `state/events.log`.
    Silence can emit `stale`; a gone wrapper can emit `dead`; a clean worker exit
-   without a terminal line can emit `ended`. The event is appended before the
-   ledger is updated, so a write failure repeats rather than loses the wake.
-   Every event also raises a local backend toast.
+   without a terminal proposal reaches the watcher as an `ended` handoff. The
+   event is appended before the ledger is updated, so a write failure repeats
+   rather than loses the wake. Every event also raises a local backend toast.
 5. Dux holds one persistent Monitor on `tail -n0 -F state/events.log`. Each line
    wakes the session once.
 6. On a wake, Dux reads only the ledger state and acknowledgement. A matching
@@ -220,7 +254,7 @@ and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
 |---|---|
 | `stale` | Inspect a capped, fenced output tail; extend once when progressing, otherwise stop the matching wrapper. |
 | `dead` | Mark failed, save the last 20 output lines, and keep the worktree. |
-| `ended` | Use a branch PR or a non-failure report to classify done; otherwise ask the operator. |
+| `ended` | Run the same proof the wrapper would have run and publish what it proves into the next sequence; otherwise ask the operator, whose only classification is `failed`. |
 | `failed` | Show the saved failure and offer one retry or a scout. |
 | `blocked`, `needs-decision` | Relay the meaning of fenced status data; append the operator answer to one fresh retry. |
 

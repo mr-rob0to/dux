@@ -82,3 +82,58 @@ require_cmd() {
     command -v "$c" >/dev/null 2>&1 || die "required command not found: $c"
   done
 }
+
+# ---- terminal handoffs ---------------------------------------------------
+# A run's terminal state reaches the watcher as one directory under
+# state/<id>.handoffs/<n>, built beside its home and moved into place with a
+# single rename, so a reader sees a whole handoff or none of it. Sequences are
+# retained until teardown: a watcher killed part-way through replays the one it
+# was applying instead of losing it.
+HANDOFF_LINE_CAP=200
+
+cap_line() {  # $1 text; one clean line of at most 200 characters
+  local s
+  s="$(printf '%s' "$1" | LC_ALL=C tr -d '\000-\010\013-\037\177' | tr '\t' ' ' | tr -d '\n')"
+  [ "${#s}" -le "$HANDOFF_LINE_CAP" ] || s="${s:0:197}..."
+  printf '%s' "$s"
+}
+
+handoff_home() { printf '%s' "$DUX_STATE/$1.handoffs"; }
+
+# The lowest sequence with no consumed marker. Stops at the first gap, so a
+# sequence can never be applied before the one in front of it.
+next_handoff() {  # $1 id; prints the sequence, or returns 1
+  local d n=1
+  d="$(handoff_home "$1")"
+  [ -d "$d" ] || return 1
+  while [ -d "$d/$n" ]; do
+    [ -e "$d/$n/consumed" ] || { printf '%s' "$n"; return 0; }
+    n=$((n + 1))
+  done
+  return 1
+}
+
+# The sequence a new handoff takes: one past the highest that exists, consumed
+# or not. Recovery proving a late result lands behind whatever the run left.
+handoff_next_seq() {  # $1 id
+  local d n=1
+  d="$(handoff_home "$1")"
+  [ -d "$d" ] || { printf 1; return 0; }
+  while [ -d "$d/$n" ]; do n=$((n + 1)); done
+  printf '%s' "$n"
+}
+
+publish_handoff() {  # $1 id, $2 run, $3 status line, $4 event; prints the sequence
+  local d tmp n
+  d="$(handoff_home "$1")"
+  mkdir -p "$d" 2>/dev/null || return 1
+  n="$(handoff_next_seq "$1")"
+  tmp="$d/.tmp.$2.$n.$$"
+  rm -rf "$tmp" 2>/dev/null
+  mkdir "$tmp" 2>/dev/null || return 1
+  { printf '%s\n' "$2" > "$tmp/run" \
+    && printf '%s\n' "$3" > "$tmp/status" \
+    && printf '%s\n' "$4" > "$tmp/event"; } || { rm -rf "$tmp"; return 1; }
+  mv "$tmp" "$d/$n" 2>/dev/null || { rm -rf "$tmp"; return 1; }
+  printf '%s' "$n"
+}

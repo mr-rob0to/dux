@@ -31,8 +31,6 @@ if [ -f "$DUX_STATE/dux.lock" ] && [ -f "$DUX_STATE/wakes.base" ]; then
   echo "wakes this session: $((total - base)) (restart after 40)"
 fi
 
-is_exit() { case "$1" in done|failed|blocked|needs-decision|ended) return 0 ;; *) return 1 ;; esac; }
-
 pr_state() {  # $1 URL
   local state
   if state="$(gh pr view "$1" --json state -q .state 2>/dev/null)" && [ -n "$state" ]; then
@@ -52,25 +50,16 @@ is_long_running() {  # $1 id; the spawn-written brief is the age anchor
   [ "$age" -ge "$long_after" ]
 }
 
-notes=""
 for project in $("$projects" list); do
   queued=0; running=0; stale=0; long=0; awaiting=0; recovery=0; ready=0; failed=0; ready_urls=""
   for id in $("$ledger" list --project "$project"); do
     state="$("$ledger" get "$id" state)"
     endpoint="$("$ledger" get "$id" endpoint)"
     pr="$("$ledger" get "$id" pr)"
-    case "$state" in
-      running|stale)
-        last="$(tail -n 1 "$DUX_TASKS/$id/status.log" 2>/dev/null)"
-        last_state="${last%%:*}"
-        if is_exit "$last_state" && [ "$last_state" != "$state" ]; then
-          notes="${notes}note: $id status log says $last_state, ledger says $state; the watcher will reconcile"$'\n'
-          state="$last_state"
-          case "$last" in
-            "done: PR https://"*) pr="${last#done: PR }"; pr="${pr%% *}" ;;
-          esac
-        fi ;;
-    esac
+    # The ledger is the whole picture. A status log that looks finished is a
+    # worker talking about itself, and until a handoff proves it the task is
+    # still running; counting it as anything else would put a worker's own
+    # ending, and its own url, in the operator's digest.
     case "$state" in
       queued) queued=$((queued + 1)) ;;
       running) running=$((running + 1)); is_long_running "$id" && long=$((long + 1)) ;;
@@ -107,7 +96,6 @@ for project in $("$projects" list); do
   [ "$failed" = 0 ] || echo "  failed $failed"
 done
 
-[ -z "$notes" ] || printf '%s' "$notes"
 unacked="$("$ledger" list --unacked)"
 if [ -n "$unacked" ]; then
   echo unacknowledged

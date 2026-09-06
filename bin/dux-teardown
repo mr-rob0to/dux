@@ -5,19 +5,19 @@ set -u
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 id="${1:-}"; [ -n "$id" ] || die "usage: dux-teardown <id>"
-task="$DUX_TASKS/$id"; status_log="$task/status.log"; epfile="$DUX_STATE/$id.endpoint"
+epfile="$DUX_STATE/$id.endpoint"
 pidfile="$DUX_STATE/$id.pid"
 ledger="$DUX_ROOT/bin/dux-ledger"; backend="$DUX_ROOT/bin/dux-backend"
 
 is_terminal() { case "$1" in done|failed) return 0 ;; *) return 1 ;; esac; }
 
 "$DUX_ROOT/bin/dux-lock" mine || finding "the Dux lock is not held by this session; refusing to tear down"
+# The ledger, and nothing else. A status log that reads done is a worker talking
+# about itself; only a proved handoff the watcher applied puts a task here, and
+# removing a worktree on anything less would throw away unproved work.
 lstate="$("$ledger" get "$id" state)" || exit $?
-last="$(tail -n 1 "$status_log" 2>/dev/null || true)"
-final="${last%%:*}"
-if is_terminal "$final"; then :
-elif is_terminal "$lstate"; then final="$lstate"
-else finding "task $id is not terminal (ledger: $lstate; last status: ${last:-none})"; fi
+is_terminal "$lstate" || finding "task $id is not terminal (ledger: $lstate)"
+final="$lstate"
 # Read the same file as strictly as dux-spawn does, or the two disagree about the
 # same worker. No pidfile is the only reading that means no worker: one that
 # cannot be read and one that does not hold a pid are both "could not tell", and
@@ -47,9 +47,13 @@ else
 fi
 rm -f "$pidfile"
 
-pr="-"
-case "$last" in "done: PR "*) pr="${last#done: PR }"; pr="${pr%% *}" ;; esac
-case "$pr" in https://*) "$ledger" set "$id" pr "$pr" || exit $? ;; *) pr="-" ;; esac
+# A run's references outlive the run on purpose: the handoff sequences so a
+# restarted watcher can replay the one it was applying, the run record and the
+# receipt so a late result can still be proved. Teardown owns their end.
+rm -rf "$DUX_STATE/$id.handoffs"
+rm -f "$DUX_STATE/$id.run" "$DUX_STATE/$id.result-context" "$DUX_STATE/$id.ship-receipt"
+
+pr="$("$ledger" get "$id" pr)" || exit $?
 "$ledger" set "$id" state "$final" || exit $?
 "$ledger" set "$id" endpoint - || exit $?
 echo "torn down $id state=$final pr=$pr"
