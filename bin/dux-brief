@@ -11,6 +11,12 @@ id="${1:-}"; [ -n "$id" ] || die "$usage"
 shift
 intent=""; criteria=""; plan=""; tasks=""; issue=""
 while [ $# -gt 0 ]; do
+  # Every one of these takes a value. Without the count check, set -u turns a
+  # flag at the end of the line into an unbound-variable crash instead of the
+  # usage line, and the caller sees a stack trace rather than what to fix.
+  case "$1" in
+    --intent-file|--criteria-file|--plan|--tasks|--issue-file) [ $# -ge 2 ] || die "$usage" ;;
+  esac
   case "$1" in
     --intent-file)   intent="$2"; shift 2 ;;
     --criteria-file) criteria="$2"; shift 2 ;;
