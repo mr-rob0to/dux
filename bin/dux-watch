@@ -48,7 +48,7 @@ liveness() {  # $1 id
   if [ -e "$pidfile" ] || [ -L "$pidfile" ]; then
     wpid="$(cat "$pidfile" 2>/dev/null)" || { echo "unknown:cannot read $pidfile"; return 0; }
     case "$wpid" in
-      ''|*[!0-9]*) echo "unknown:$pidfile does not hold a pid ('$wpid')"; return 0 ;;
+      ''|*[!0-9]*) echo "unknown:$pidfile does not hold a pid ('$(cap_line "$wpid")')"; return 0 ;;
     esac
     if pid_runs "$wpid" "dux-worker-wrap $id"; then
       echo alive

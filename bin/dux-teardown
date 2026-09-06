@@ -27,7 +27,7 @@ if [ -e "$pidfile" ] || [ -L "$pidfile" ]; then
   wpid="$(cat "$pidfile" 2>/dev/null)" \
     || finding "cannot read $pidfile; cannot tell whether a worker for $id is alive"
   case "$wpid" in
-    ''|*[!0-9]*) finding "$pidfile does not hold a pid ('$wpid'); cannot tell whether a worker for $id is alive" ;;
+    ''|*[!0-9]*) finding "$pidfile does not hold a pid ('$(cap_line "$wpid")'); cannot tell whether a worker for $id is alive" ;;
     *) if kill -0 "$wpid" 2>/dev/null; then finding "worker $wpid for $id is still running"; fi ;;
   esac
 fi
@@ -39,7 +39,7 @@ if [ -e "$pgidfile" ] || [ -L "$pgidfile" ]; then
   pg="$(cat "$pgidfile" 2>/dev/null)" \
     || finding "cannot read $pgidfile; cannot tell whether the worker's own processes for $id are gone"
   case "$pg" in
-    ''|*[!0-9]*) finding "$pgidfile does not hold a process group ('$pg'); cannot tell whether the worker's own processes for $id are gone" ;;
+    ''|*[!0-9]*) finding "$pgidfile does not hold a process group ('$(cap_line "$pg")'); cannot tell whether the worker's own processes for $id are gone" ;;
     *) if kill -0 -- "-$pg" 2>/dev/null; then finding "the worker's own processes for $id are still running as group $pg"; fi ;;
   esac
 fi

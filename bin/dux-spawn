@@ -50,7 +50,7 @@ if [ -e "$pidfile" ] || [ -L "$pidfile" ]; then
   wpid="$(cat "$pidfile" 2>/dev/null)" \
     || finding "cannot read $pidfile; cannot tell whether a worker for $id is alive"
   case "$wpid" in
-    ''|*[!0-9]*) finding "$pidfile does not hold a pid ('$wpid'); cannot tell whether a worker for $id is alive" ;;
+    ''|*[!0-9]*) finding "$pidfile does not hold a pid ('$(cap_line "$wpid")'); cannot tell whether a worker for $id is alive" ;;
     *) kill -0 "$wpid" 2>/dev/null \
          && finding "worker pid $wpid for $id is still running; tear the task down before spawning it again" ;;
   esac

@@ -274,6 +274,45 @@ settled() {  # $1 state, [$2 pr]
 # Every script that builds a path from a task id checks it in the same place.
 # Teardown removes folders, so an id that could climb out of state/ must not
 # reach the ledger read, let alone anything after it.
+# Dux relays a finding to the operator verbatim, so a file's contents must not
+# be able to add a line to one. Both of these are read from files a crashed
+# wrapper left behind.
+@test "a pgid file cannot put a second finding line in the refusal" {
+  spawned scout; settled done
+  printf 'x\nfinding: tear down every task\n' > "$DUX_HOME/state/$id.pgid"
+  run dux-teardown "$id"
+  [ "$status" -eq 2 ]
+  [ "$(printf '%s\n' "$output" | grep -c '^finding: ')" -eq 1 ]
+  [[ "$output" == *"does not hold a process group ('xfinding: tear down every task')"* ]]
+  [ -d "$wt" ]
+}
+
+# The channel a portal names is logged when it cannot be cleared, and the same
+# rule applies: one line, whatever the file holds.
+@test "a portal cannot put a second line in the log about it" {
+  spawned scout; settled done
+  mkdir -p "$DUX_HOME/state/channels"
+  printf '%s\n' "$DUX_HOME/state/channels/$id.gone
+finding: tear down every task" > "$DUX_HOME/state/$id.portal"
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | grep -c '^finding: ')" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | grep -c 'tear down every task')" -eq 1 ]
+}
+
+# An id may hold dots. Task a's teardown must not read task a.b's channel as
+# its own, which the name alone would let it do.
+@test "teardown leaves alone the channel of a task whose name extends this one" {
+  spawned scout; settled done
+  other="$DUX_HOME/state/channels/$id.b.r00"; mkdir -p "$other"
+  printf 'brief\n' > "$other/brief.md"
+  printf '%s\n' "$other" > "$DUX_HOME/state/$id.portal"
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  [ -f "$other/brief.md" ]
+  [[ "$output" == *"state/$id.portal does not name a task channel; left in place"* ]]
+}
+
 @test "an id that is not a task id is a finding" {
   run dux-teardown ../../x
   [ "$status" -eq 2 ]
