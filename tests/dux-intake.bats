@@ -128,6 +128,15 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   grep -q "^dropped: issue acme/proj#12 was closed; seen by intake at " "$DUX_HOME/data/tasks/$id12/report.md"
   [[ "$output" == *"dropped $id12 acme/proj#12"* ]]; [[ "$output" == *"0 queued, 2 dropped, 0 unlabelled" ]]
   grep -qxF 'issue view 12 --repo acme/proj --json state -q .state' "$FAKE_GH_LOG"
+  # Reopened: the dropped line stays and a new task is queued.
+  FAKE_GH_ISSUE_LIST_FILE="$FIX" run dux-intake proj
+  [ "$status" -eq 0 ]; [ "$(grep -c '^queued ' <<< "$output")" -eq 2 ]
+  [ "$(dux-ledger list --source 'gh:acme/proj#12' | wc -l | tr -d ' ')" -eq 2 ]
+  # Label removed while open: left queued, reported once.
+  id12b="$(dux-ledger list --source 'gh:acme/proj#12' --state queued)"
+  FAKE_GH_ISSUE_LIST_FILE="$DUX_HOME/only14.json" FAKE_GH_ISSUE_STATE=OPEN run dux-intake proj
+  [ "$status" -eq 0 ]; [ "$(dux-ledger get "$id12b" state)" = queued ]
+  [[ "$output" == *"unlabelled $id12b acme/proj#12 (open, label removed; left queued)"* ]]
 }
 
 @test "a failed list, a malformed list, a failed view, and an unknown state are findings that leave the ledger alone" {
