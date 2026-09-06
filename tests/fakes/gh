@@ -11,6 +11,14 @@ case "$1 ${2:-}" in
   "pr list")
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr list failed" >&2; exit 1; fi
     echo "${FAKE_GH_PR_LIST:-[]}" ;;
+  "pr checks")
+    if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr checks failed" >&2; exit 1; fi
+    echo "${FAKE_GH_PR_CHECKS:-[]}"
+    # Real gh exits 8 when a pull request has no checks and 1 when one failed.
+    case "${FAKE_GH_PR_CHECKS:-[]}" in
+      '[]') exit 8 ;;
+      *FAILURE*|*PENDING*|*CANCELLED*) exit 1 ;;
+    esac ;;
   "pr view")
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr view failed" >&2; exit 1; fi
     echo "${FAKE_GH_PR_STATE:-OPEN}" ;;

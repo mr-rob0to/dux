@@ -1,0 +1,352 @@
+#!/usr/bin/env bash
+# Proves what a task actually delivered. Nothing a worker says is evidence: the
+# only inputs are Dux's own run record, the repository as Git reads it, and the
+# pull request as GitHub reports it. Spec sections 5.6 and 6.4.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+PHASES="checks review security pr ci"
+CHECK_CAP=200        # checks read from one pull request
+REPORT_CAP=1048576   # bytes of a scout report
+usage="usage: dux-result record-ship <id> <run> <phase> | dux-result verify <id> <run> [--report <path>]"
+
+# Exit 1 is "the evidence does not add up", which leaves a task ended rather
+# than done. Exit 2 is a finding: Dux's own state is not what it should be.
+no_result() { printf 'dux: %s\n' "$*" >&2; exit 1; }
+# record-ship is called from inside /ship, where "the evidence does not add up"
+# means the skill recorded a phase it had not finished. That is a finding.
+fail_mode=no_result
+reject() { case "$fail_mode" in finding) finding "$@" ;; *) no_result "$@" ;; esac; }
+
+tab="$(printf '\t')"
+kv() { sed -n "s/^$1=//p" "$2" | head -1; }
+
+# ---- the run record ------------------------------------------------------
+# Written before the worker could change anything, and hashed into the run so a
+# later edit is visible. This catches a stale or half-written run, not a worker
+# that rewrites both files; that one runs with our own rights and is outside
+# what Dux claims to stop.
+load_run() {  # $1 id, $2 run
+  local f ctx_id
+  runfile="$DUX_STATE/$1.run"; context="$DUX_STATE/$1.result-context"
+  for f in "$runfile" "$context"; do
+    { [ ! -L "$f" ] && [ -f "$f" ]; } || finding "no run record for $1 at state/${f##*/}"
+  done
+  [ "$(kv version "$runfile")" = 1 ] || finding "unknown run record version for $1"
+  [ "$(kv id "$runfile")" = "$1" ] || finding "the run record at state/$1.run names another task"
+  [ "$(kv run "$runfile")" = "$2" ] || finding "run $2 is not the run recorded for $1"
+  ctx_id="$(git hash-object --stdin < "$context" 2>/dev/null)" \
+    || finding "cannot hash state/$1.result-context"
+  [ "$ctx_id" = "$(kv context "$runfile")" ] \
+    || finding "the result context for $1 changed after the run started"
+  [ "$(kv version "$context")" = 1 ] || finding "unknown result context version for $1"
+  [ "$(kv id "$context")" = "$1" ] || finding "the result context for $1 names another task"
+  [ "$(kv run "$context")" = "$2" ] || finding "the result context for $1 names another run"
+  shape="$(kv shape "$context")"; repo="$(kv repo "$context")"; base="$(kv base "$context")"
+  branch="$(kv branch "$context")"; worktree="$(kv worktree "$context")"
+  plan_path="$(kv plan "$context")"; task_range="$(kv tasks "$context")"
+  case "$shape" in plan|ship|scout) ;; *) finding "unknown shape '$shape' in the result context for $1" ;; esac
+  case "$worktree" in /*) ;; *) finding "the result context for $1 records no absolute worktree path" ;; esac
+  [ -d "$worktree" ] || finding "the worktree recorded for $1 is gone: $worktree"
+}
+
+# Every Git read below answers a question about this run, so it must not run the
+# repository's hooks or obey a config the operator set for themselves. This
+# stops accidents. A worker set on lying to us can rewrite the repository, and
+# no flag here changes that.
+dgit() {
+  GIT_CONFIG_COUNT=0 GIT_CONFIG_NOSYSTEM=1 \
+  GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_SYSTEM=/dev/null \
+  GIT_OPTIONAL_LOCKS=0 GIT_TERMINAL_PROMPT=0 \
+  git -C "$worktree" -c core.hooksPath=/dev/null -c core.fsmonitor=false \
+      -c diff.external= -c core.pager=cat -c core.quotePath=true "$@"
+}
+
+# ---- the pull request ----------------------------------------------------
+pr_number=""; pr_url=""; head_local=""
+find_pr() {
+  local out n want_url got
+  { [ -n "$repo" ] && [ "$repo" != - ]; } \
+    || reject "no GitHub repository is recorded for this task, so no pull request can be proved"
+  command -v gh >/dev/null 2>&1 || reject "gh is not available, so the pull request cannot be proved"
+  head_local="$(dgit rev-parse "refs/heads/$branch" 2>/dev/null)" \
+    || reject "$branch does not exist in the worktree for this task"
+  # Two is enough to tell "exactly one" from "more than one", and it bounds what
+  # a branch with many pull requests can make Dux read.
+  out="$(gh pr list --repo "$repo" --head "$branch" --state open --limit 2 \
+    --json number,url,isDraft,state,baseRefName,headRefName,headRefOid,headRepository,headRepositoryOwner 2>&1)" \
+    || reject "GitHub did not answer for $repo"
+  printf '%s' "$out" | jq -e 'type == "array"' >/dev/null 2>&1 \
+    || reject "GitHub did not answer for $repo with a pull request list"
+  n="$(printf '%s' "$out" | jq 'length')"
+  [ "$n" = 1 ] || reject "expected exactly one open pull request for $branch in $repo, found $n"
+
+  pr_number="$(printf '%s' "$out" | jq -r '.[0].number')"
+  case "$pr_number" in ''|*[!0-9]*) reject "GitHub reported a pull request with no number" ;; esac
+  [ "$(printf '%s' "$out" | jq -r '.[0].state')" = OPEN ] \
+    || reject "pull request $pr_number of $repo is not open"
+  [ "$(printf '%s' "$out" | jq -r '.[0].isDraft')" = false ] \
+    || reject "pull request $pr_number of $repo is a draft"
+  got="$(printf '%s' "$out" | jq -r '.[0].headRepositoryOwner.login + "/" + .[0].headRepository.name')"
+  [ "$got" = "$repo" ] \
+    || reject "pull request $pr_number is headed from $got, not from $repo"
+  got="$(printf '%s' "$out" | jq -r '.[0].baseRefName')"
+  [ "$got" = "$base" ] || reject "pull request $pr_number of $repo is not based on $base, but on $got"
+  got="$(printf '%s' "$out" | jq -r '.[0].headRefName')"
+  [ "$got" = "$branch" ] || reject "pull request $pr_number of $repo is headed by $got, not by $branch"
+  got="$(printf '%s' "$out" | jq -r '.[0].headRefOid')"
+  [ "$got" = "$head_local" ] \
+    || reject "the head of pull request $pr_number of $repo is not the tip of $branch"
+  # The url is built from facts Dux registered and then matched, so a url that
+  # points anywhere else is refused without ever being repeated back.
+  want_url="https://github.com/$repo/pull/$pr_number"
+  [ "$(printf '%s' "$out" | jq -r '.[0].url')" = "$want_url" ] \
+    || reject "the url GitHub reported does not name pull request $pr_number of $repo"
+  pr_url="$want_url"
+}
+
+require_green_checks() {
+  local out n bad
+  out="$(gh pr checks "$pr_number" --repo "$repo" --json name,state 2>&1)" || true
+  printf '%s' "$out" | jq -e 'type == "array"' >/dev/null 2>&1 \
+    || reject "GitHub did not report the checks of pull request $pr_number of $repo"
+  n="$(printf '%s' "$out" | jq 'length')"
+  [ "$n" -gt 0 ] || reject "pull request $pr_number of $repo reported no checks"
+  [ "$n" -le "$CHECK_CAP" ] || reject "pull request $pr_number of $repo reported more than $CHECK_CAP checks"
+  bad="$(printf '%s' "$out" \
+    | jq -r '[.[] | select(.state != "SUCCESS" and .state != "NEUTRAL" and .state != "SKIPPED")
+             | .name + " (" + .state + ")"] | join(", ")')"
+  [ -z "$bad" ] || reject "pull request $pr_number of $repo has checks that are not green: $bad"
+  [ "$(printf '%s' "$out" | jq '[.[] | select(.state == "SUCCESS")] | length')" -gt 0 ] \
+    || reject "no check succeeded on pull request $pr_number of $repo"
+}
+
+require_clean_worktree() {
+  local dirty on
+  on="$(dgit rev-parse --abbrev-ref HEAD 2>/dev/null)" \
+    || reject "cannot read the worktree recorded for this task"
+  [ "$on" = "$branch" ] || reject "the worktree for this task is not on $branch any more, but on $on"
+  dirty="$(dgit status --porcelain 2>/dev/null)" \
+    || reject "cannot read the state of the worktree for this task"
+  [ -z "$dirty" ] || reject "the worktree for this task has uncommitted changes"
+}
+
+# ---- what the branch changed ---------------------------------------------
+# Read from Git, not from GitHub's file list: the head oid is already pinned to
+# this branch tip, so the local diff is the pull request's diff and it costs no
+# extra query.
+entries=0; outside=0; first_outside=""; has_spec=0; has_plan=0
+plan_entry_ok() {  # $1 mode, $2 path
+  [ "$1" = 100644 ] || return 1        # regular and not executable; a deletion has no mode
+  case "$2" in
+    docs/*.md) return 0 ;;
+    docs/plans/*.html) case "${2#docs/plans/}" in */*) return 1 ;; *) return 0 ;; esac ;;
+  esac
+  return 1
+}
+read_changes() {
+  local mb raw line mode path
+  mb="$(dgit merge-base "refs/remotes/origin/$base" "refs/heads/$branch" 2>/dev/null)" \
+    || reject "there is no merge base between origin/$base and $branch in the worktree"
+  raw="$(dgit diff --raw --no-renames "$mb" "refs/heads/$branch" 2>/dev/null)" \
+    || reject "cannot read what $branch changed since $base"
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in :*"$tab"?*) ;; *) reject "cannot read what $branch changed since $base" ;; esac
+    mode="$(printf '%s' "${line%%"$tab"*}" | awk '{ print $2 }')"
+    path="${line#*"$tab"}"
+    # git quotes a path holding a control byte or a quote. Nothing a shape below
+    # allows can need one, so an entry Dux cannot name plainly is not allowed.
+    case "$path" in \"*) reject "$branch changes a file whose name Dux cannot read plainly" ;; esac
+    entries=$((entries + 1))
+    if plan_entry_ok "$mode" "$path"; then
+      case "$path" in
+        docs/specs/*.md) has_spec=1 ;;
+      esac
+      case "$path" in
+        docs/plans/*.md) has_plan=1 ;;
+      esac
+    else
+      outside=$((outside + 1))
+      [ -n "$first_outside" ] || first_outside="$path"
+    fi
+  done <<EOF
+$raw
+EOF
+  [ "$entries" -gt 0 ] || reject "$branch changes nothing since $base"
+}
+
+check_plan_shape() {
+  [ "$outside" -eq 0 ] \
+    || reject "a plan result may only change documents, and $branch changes $first_outside"
+  [ "$has_spec" -eq 1 ] || reject "a plan result needs a Markdown file below docs/specs/"
+  [ "$has_plan" -eq 1 ] || reject "a plan result needs a Markdown file below docs/plans/"
+}
+
+# ---- the plan the brief named --------------------------------------------
+expand_range() {  # $1 "1-3,5"; prints "1 2 3 5"
+  local part a b i out=""
+  local IFS=,
+  for part in $1; do
+    case "$part" in
+      ''|-*|*-|*-*-*|*[!0-9-]*) return 1 ;;
+      *-*)
+        a="${part%%-*}"; b="${part##*-}"
+        [ "$a" -le "$b" ] 2>/dev/null || return 1
+        [ $((b - a)) -le 64 ] || return 1
+        i="$a"; while [ "$i" -le "$b" ]; do out="$out $i"; i=$((i + 1)); done ;;
+      *) out="$out $part" ;;
+    esac
+  done
+  [ -n "$out" ] || return 1
+  printf '%s' "${out# }"
+}
+
+check_plan_tasks() {
+  local f nums n section
+  { [ -n "$plan_path" ] && [ -n "$task_range" ]; } \
+    || finding "the brief for this ship task names no plan or no task range"
+  case "$plan_path" in /*|*..*) finding "the plan the brief names is not inside the worktree: $plan_path" ;; esac
+  f="$worktree/$plan_path"
+  { [ ! -L "$f" ] && [ -f "$f" ]; } \
+    || reject "the plan the brief names is not a regular file in the worktree: $plan_path"
+  nums="$(expand_range "$task_range")" \
+    || finding "the task range in the brief is not a list of numbers or ranges: $task_range"
+  for n in $nums; do
+    # "## Task 1" must not answer for "## Task 10", so the character after the
+    # number has to end the heading or introduce its title.
+    section="$(awk -v want="## Task $n" '
+      /^## / { inside = 0
+               if (index($0, want) == 1) {
+                 c = substr($0, length(want) + 1, 1)
+                 if (c == "" || c == ":" || c == " ") inside = 1
+               } }
+      inside { print }' "$f")"
+    [ -n "$section" ] || reject "task $n is not in $plan_path"
+    printf '%s\n' "$section" | grep -qE '^ *- \[[ xX]\]' \
+      || reject "task $n in $plan_path has no checkboxes to prove it was done"
+    printf '%s\n' "$section" | grep -qE '^ *- \[ \]' \
+      && reject "task $n in $plan_path still has an unchecked box"
+  done
+  return 0
+}
+
+recorded_phases() { sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$1" | tr '\n' ' '; }
+
+next_phase() {  # $1 the phases already recorded; prints the one that may follow
+  local rest="$1" p
+  for p in $PHASES; do
+    case "$rest" in
+      "$p "*) rest="${rest#"$p" }" ;;
+      '') printf '%s' "$p"; return 0 ;;
+      *) return 1 ;;
+    esac
+  done
+  [ -z "$rest" ] || return 1
+  printf ''
+}
+
+check_receipt() {
+  local receipt got sha
+  receipt="$DUX_STATE/$id.ship-receipt"
+  { [ ! -L "$receipt" ] && [ -f "$receipt" ]; } \
+    || reject "no /ship receipt for this task; the gate did not run under Dux"
+  [ "$(kv run "$receipt")" = "$run_id" ] || reject "the /ship receipt for this task belongs to another run"
+  [ "$(kv branch "$receipt")" = "$branch" ] || reject "the /ship receipt for this task names another branch"
+  got="$(recorded_phases "$receipt")"
+  [ "$got" = "checks review security pr ci " ] \
+    || reject "the /ship receipt for this task is not the five phases in order: ${got:-none recorded}"
+  sha="$(sed -n 's/^phase=ci sha=\([0-9a-f]*\).*/\1/p' "$receipt" | head -1)"
+  [ "$sha" = "$head_local" ] \
+    || reject "the /ship receipt for this task was recorded against another commit"
+}
+
+check_ship_shape() {
+  [ "$outside" -gt 0 ] \
+    || reject "a ship result needs an implementation file, and $branch changes no file outside the plan documents"
+  check_plan_tasks
+  check_receipt
+  require_green_checks
+}
+
+# ---- commands ------------------------------------------------------------
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  record-ship)
+    [ $# -eq 3 ] || finding "$usage"
+    id="$1"; run_id="$2"; phase="$3"
+    valid_task_id "$id"
+    fail_mode=finding
+    load_run "$id" "$run_id"
+    [ "$shape" = ship ] || finding "only ship tasks record /ship phases; this one is a $shape task"
+    case " $PHASES " in
+      *" $phase "*) ;;
+      *) finding "unknown /ship phase '$phase' (checks, review, security, pr, ci)" ;;
+    esac
+    receipt="$DUX_STATE/$id.ship-receipt"
+    [ ! -L "$receipt" ] || finding "state/$id.ship-receipt is a symlink, not a receipt"
+    if [ -f "$receipt" ]; then
+      [ "$(kv run "$receipt")" = "$run_id" ] || finding "the /ship receipt for $id belongs to another run"
+      [ "$(kv branch "$receipt")" = "$branch" ] || finding "the /ship receipt for $id names another branch"
+    else
+      { echo "version=1"; echo "id=$id"; echo "run=$run_id"; echo "branch=$branch"; } > "$receipt" \
+        || finding "cannot write state/$id.ship-receipt"
+    fi
+    # The next phase is the one after everything already filed, so a skipped,
+    # repeated, or reordered call is refused rather than filed under a name it
+    # did not earn.
+    got="$(recorded_phases "$receipt")"
+    want="$(next_phase "$got")" \
+      || finding "the /ship receipt for $id is not in the recorded order: ${got:-none recorded}"
+    [ "$phase" = "$want" ] \
+      || finding "/ship phase '$phase' is out of order; expected '${want:-nothing: all five are recorded}'"
+    # The last phase is the only claim GitHub can settle, so it is settled here
+    # rather than taken from the skill that is making it.
+    if [ "$phase" = ci ]; then
+      require_clean_worktree
+      find_pr
+      require_green_checks
+    fi
+    sha="$(dgit rev-parse "refs/heads/$branch" 2>/dev/null)" \
+      || finding "cannot read $branch in the worktree for $id"
+    printf 'phase=%s sha=%s at=%s\n' "$phase" "$sha" "$(now)" >> "$receipt" \
+      || finding "cannot append to state/$id.ship-receipt"
+    ;;
+
+  verify)
+    [ $# -ge 2 ] || finding "$usage"
+    id="$1"; run_id="$2"; shift 2
+    report=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --report) [ $# -ge 2 ] || finding "$usage"; report="$2"; shift 2 ;;
+        *) finding "$usage" ;;
+      esac
+    done
+    valid_task_id "$id"
+    load_run "$id" "$run_id"
+    case "$shape" in
+      scout)
+        # A scout has no branch to prove and never completes from a pull
+        # request, however many the repository happens to have open.
+        [ -n "$report" ] || no_result "no report was proposed for this scout task"
+        { [ ! -L "$report" ] && [ -f "$report" ]; } \
+          || no_result "the report for this scout task is not a regular file"
+        size="$(wc -c < "$report" | tr -d ' ')"
+        [ "$size" -le "$REPORT_CAP" ] || no_result "the report for this scout task is larger than 1 MiB"
+        [ -n "$(LC_ALL=C tr -d '[:space:]' < "$report" | head -c 1)" ] \
+          || no_result "the report for this scout task has no text in it"
+        echo "done: report" ;;
+      plan|ship)
+        [ -z "$report" ] || finding "--report is evidence for a scout task only"
+        require_clean_worktree
+        find_pr
+        read_changes
+        if [ "$shape" = plan ]; then check_plan_shape; else check_ship_shape; fi
+        printf 'done: PR %s\n' "$pr_url" ;;
+    esac
+    ;;
+
+  *) finding "$usage" ;;
+esac
