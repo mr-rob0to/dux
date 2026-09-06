@@ -9,6 +9,11 @@ shows missed events in the next session's fleet digest. Register a repository
 with `bin/dux-project add <path>`; its folder name becomes the project name unless
 you pass `--name <name>`.
 
+Register with `--issues label:<name>` and every open issue carrying that label
+becomes a queued task at the next session start; the issue text rides in the
+brief as data, the PR closes the issue, and a closed issue that was never
+started is dropped.
+
 A worker is trusted to act with your account, so what it writes is treated as
 untrusted text rather than as evidence: a task is done when Dux has proved it
 against the repository, GitHub and the `/ship` receipt, never because a worker

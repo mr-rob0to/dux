@@ -5,7 +5,10 @@ description: Show the fleet digest. Use when the operator asks what is running, 
 
 # dux-status
 
-1. Run `bin/dux-status` (add `--prs` when the operator asks about merge state).
+1. Run `bin/dux-status --intake` at session start (it pulls the labelled issues
+   first); plain `bin/dux-status` otherwise, and add `--prs` when the operator
+   asks about merge state. Relay the `intake` block as what arrived, and a
+   `skipped:` line as a finding for that project.
 2. Relay the digest in plain words, per project: what is running, what needs the
    operator, what is ready. No task ids unless asked.
 3. Every line under `unacknowledged` is a wake that happened while no Monitor
