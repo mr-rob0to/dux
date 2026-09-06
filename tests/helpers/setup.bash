@@ -11,29 +11,26 @@ source "$DUX_ROOT/bin/dux-env"
 # socket at $TMUX_TMPDIR/tmux-<uid>/<name>, so a directory of our own isolates
 # the run and no socket name has to change. It sits under /tmp because a unix
 # socket path is capped near 104 bytes and $TMPDIR on macOS spends most of
-# that on its own. An operator who set TMUX_TMPDIR keeps it.
+# that on its own.
+#
+# A TMUX_TMPDIR the caller already set is overridden rather than honoured. It
+# was honoured at first, and that gave back both halves of the bug: two runs
+# under one inherited directory collide exactly as before, and teardown would
+# be removing a directory it did not create. Tests have no business on the
+# operator's tmux server, so the run always uses its own.
 DUX_TEST_TMUX_TMPDIR="/tmp/dux-tmux.$(basename "${BATS_RUN_TMPDIR:-run-$$}")"
-if [ -z "${TMUX_TMPDIR:-}" ]; then
-  TMUX_TMPDIR="$DUX_TEST_TMUX_TMPDIR"
-  export TMUX_TMPDIR
-fi
+TMUX_TMPDIR="$DUX_TEST_TMUX_TMPDIR"
+export TMUX_TMPDIR
 
 # Called by setup_file in the files that start a tmux server; tmux will not
 # create $TMUX_TMPDIR itself. Kept out of setup() so the files that never
-# touch tmux leave nothing behind. It fills in the run's own directory when
-# nothing else set one, so isolation cannot be lost by an edit somewhere else
-# in this file.
-use_tmux_tmpdir() {
-  : "${TMUX_TMPDIR:=$DUX_TEST_TMUX_TMPDIR}"
-  export TMUX_TMPDIR
-  mkdir -p "$TMUX_TMPDIR"
-}
+# touch tmux leave nothing behind.
+use_tmux_tmpdir() { mkdir -p "$DUX_TEST_TMUX_TMPDIR"; }
 
 # The pair of use_tmux_tmpdir, called by teardown_file once the server is gone.
-# The case guard means an operator's own TMUX_TMPDIR is never removed.
-drop_tmux_tmpdir() {
-  case "$TMUX_TMPDIR" in /tmp/dux-tmux.*) rm -rf "$TMUX_TMPDIR" ;; esac
-}
+# It names the directory this run built rather than testing $TMUX_TMPDIR, so it
+# can only ever remove that one.
+drop_tmux_tmpdir() { rm -rf "$DUX_TEST_TMUX_TMPDIR"; }
 
 setup() {
   # Physical path: git prints worktree paths resolved through symlinks (/private/tmp on macOS).
