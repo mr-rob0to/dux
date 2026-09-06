@@ -83,7 +83,7 @@ context="$DUX_STATE/$id.result-context"; channels="$DUX_STATE/channels"
 # clear through recovery. -L as well as -e: a dangling symlink is a reference
 # too, and writing through it would put this run's state somewhere else.
 for f in "$runfile" "$portal" "$pgidfile" "$context" "$(handoff_home "$id")"; do
-  [ ! -e "$f" ] && [ ! -L "$f" ] \
+  { [ ! -e "$f" ] && [ ! -L "$f" ]; } \
     || refuse "$id already has a reference from an earlier run at state/${f##*/}"
 done
 mkdir -p "$channels" 2>/dev/null || refuse "cannot create $channels"
