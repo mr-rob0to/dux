@@ -22,7 +22,7 @@ bin/
                            task_harness, harness_refusal, require_cmd
   dux-lock                 single live session; starts and stops its watcher
   dux-project              registry add/list/get/resolve-base, PR template install, --worktree
-  dux-ledger               add/set/get/list/ack/unack over data/backlog.md; the only writer
+  dux-ledger               add/set/set-if/get/list/ack/unack over data/backlog.md; the only writer
   dux-task-new             allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, folder, queued line
   dux-brief                render tasks/<id>/brief.md and tasks/<id>/worker-settings.json
   dux-worktree             create/remove/discard a worktree per the project's mechanism
@@ -142,18 +142,20 @@ backend started it and catches a worker in a server whose socket vanished.
    is created with `O_EXCL` so it cannot follow a committed symlink. An
    uncommitted example, or a destination name the project does not ignore, is a
    finding; no example at all is a log line.
-5. Spawn marks the task `running`, then calls
-   `dux-backend open <id> <wt> <abs>/bin/dux-worker-wrap <id>`, which starts the
-   wrapper in a new container; the command is composed as shell words because
-   both backends hand it to a shell. The order matters: the open starts the
-   worker, a worker that refuses at once leaves a proved terminal handoff the
-   watcher can apply straight away, and a `running` written after the open would
-   land on top of that result. Spawn then records the endpoint in
-   `state/<id>.endpoint` and the ledger, and comments on a `gh:` issue. After a
-   failed `open` the task goes back to `queued` and the brief's worktree line
-   back to its placeholder either way, and the worktree is discarded only when
-   `find` shows no container; a container that outlived the failed `open` is a
-   finding naming it, never a silent cleanup around a live worker.
+5. Spawn calls `dux-backend open <id> <wt> <abs>/bin/dux-worker-wrap <id>`, which
+   starts the wrapper in a new container; the command is composed as shell words
+   because both backends hand it to a shell. Spawn records the endpoint in
+   `state/<id>.endpoint` and the ledger, marks `running`, and comments on a `gh:`
+   issue. The `running` write is `dux-ledger set-if <id> state queued running`:
+   the open has already started the worker, a worker that refuses at once leaves
+   a proved terminal handoff the watcher can apply before that line runs, and an
+   unconditional write would put a finished task back to `running` for good.
+   `set-if` compares and writes under the ledger's own lock, so nothing can move
+   between the two, and a refusal is a finding naming the state that won. After
+   a failed `open` the brief's worktree line goes back to its placeholder either
+   way, and the worktree is discarded only when `find` shows no container; a
+   container that outlived the failed `open` is a finding naming it, never a
+   silent cleanup around a live worker.
 6. `dux-worker-wrap <id>` writes `state/<id>.pid`, makes the task channel (below),
    runs `worker_run` from `bin/workers/<harness>.sh` in a process group of its own
    with output to `state/<id>.out`, heartbeats while that output grows, mirrors the
@@ -234,11 +236,14 @@ whole handoff or none of it.
   anything: a live group in `state/<id>.pgid`, or a file it cannot read as one,
   is a finding, because the folder those processes are working in is the
   worktree teardown is about to take away. Both go through the same step, which
-  resolves the portal's path and requires the resolved one to be under
-  `state/channels/`: a stored path that walks back out matches the directory as
-  text without being in it, and a broken reference must never turn into a
-  recursive delete of something else. Anything that fails that check is left
-  alone and logged.
+  requires the portal's stored path to be exactly what it resolves to and to sit
+  directly under `state/channels/`. A prefix check on its own is text, and text
+  walks back out or points elsewhere: `state/channels/../../<anything>` starts
+  with the directory without being in it, and a channel path that is a link to
+  another task's channel is that task's live channel. The wrapper records the
+  path the kernel agrees on, so anything that fails the rule is a broken
+  reference, left alone and logged rather than turned into a recursive delete of
+  something else.
 
 ## Retiring a task from before the upgrade
 
