@@ -87,8 +87,13 @@ if [ "$final" = "done" ] && [ "$pr" != - ] && [ "$ep_before" != - ]; then
   case "$src" in
     gh:*)
       ref="${src#gh:}"; slug="${ref%%#*}"; n="${ref##*#}"
-      gh issue comment "$n" --repo "$slug" --body "Dux delivered PR $pr." >/dev/null 2>&1 \
-        || log "could not comment on $src; the task is torn down regardless" ;;
+      # Only a PR in the issue's own repository. A url anywhere else is not this
+      # issue's delivery, and posting it would point readers at another repo.
+      case "${pr#https://github.com/"$slug"/pull/}" in
+        ''|*[!0-9]*) log "PR $pr is not in $slug; no issue comment" ;;
+        *) gh issue comment "$n" --repo "$slug" --body "Dux delivered PR $pr." >/dev/null 2>&1 \
+             || log "could not comment on $src; the task is torn down regardless" ;;
+      esac ;;
   esac
 fi
 echo "torn down $id state=$final pr=$pr"
