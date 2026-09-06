@@ -25,7 +25,7 @@
 
 ## Global Constraints
 
-- Every script under `bin/` sources `bin/dux-env`, is bash 3.2 compatible (no `mapfile`, `declare -A`, negative array indices, associative arrays), and passes `shellcheck -s bash` (constitution principle 2).
+- Every script under `bin/` sources `bin/dux-env`, is bash 3.2 compatible (no `mapfile`, `declare -A`, negative array indices, associative arrays), and passes `shellcheck -s bash` (constitution principle 2). No bracket range in a `case` pattern either: a range like `[ -~]` or `[a-z]` matches by the locale's collation, and bash 3.2 in a UTF-8 locale reads it differently from bash 5. Compare against the writer's own helper, or use a named class.
 - A surprise is `finding: <one line>` on stderr with exit 2. Exit codes: 0 success, 1 unexpected error (`die`), 2 finding, 3 lock held. Never guess, never degrade silently. The one declared exception is in the header.
 - Nothing outside an adapter calls `tmux`, `herdr`, `claude`, or `codex`. The watcher asks `bin/dux-backend exists` and `bin/dux-backend notify`; it never touches a backend CLI (constitution principle 4).
 - Dux never reads `state/<id>.out` except through `dux-recover`, and then at most 40 lines, each cut at 200 characters, fenced as data (constitution principle 5; spec section 13).
