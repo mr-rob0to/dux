@@ -388,11 +388,31 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(grep -c '^GIT_CONFIG_GLOBAL=' "$e" || true)" -eq 0 ]
   # The only DUX_ and GIT_CONFIG_ names left are the four this task hands back.
   [ "$(grep -c '^DUX_' "$e" || true)" -eq 2 ]
+  [ "$(grep -c '^DUX_SHIP_RECORD=' "$e" || true)" -eq 0 ]
   grep -q "^DUX_STATUS_LOG=$DUX_HOME/state/channels/$id\." "$e"
   [ "$(grep -c '^GIT_CONFIG_' "$e" || true)" -eq 3 ]
   p="$(sed -n 's/^PATH=//p' "$e")"
   case ":$p:" in *":$DUX_ROOT/bin:"*) false ;; esac
   case ":$p:" in *":$DUX_ROOT/tests/fakes:"*) ;; *) false ;; esac
+}
+
+@test "a ship worker gets a recorder bound to its own task and run; no other shape does" {
+  prepare ship
+  printf 'dump-env %s\nrun "$DUX_SHIP_RECORD" checks\nstatus done: PR https://example.invalid/pr/1\n' \
+    "$DUX_HOME/state/worker.env" > "$FAKE_WORKER_SCRIPT"
+  wrap
+  e="$DUX_HOME/state/worker.env"
+  ch="$(channel_of "$e")"
+  grep -qx "DUX_SHIP_RECORD=$ch/ship-record" "$e"
+  # The recorder is the only interface a ship gets beyond the two every worker has.
+  [ "$(grep -c '^DUX_' "$e" || true)" -eq 3 ]
+  # The phase it filed is bound to this task, this run, and this branch, and the
+  # worker chose none of the three.
+  r="$DUX_HOME/state/$id.ship-receipt"
+  grep -qx "id=$id" "$r"
+  grep -qx "run=${ch##*.}" "$r"
+  grep -qx "branch=dux/$id" "$r"
+  grep -q "^phase=checks sha=$(git -C "$wt" rev-parse HEAD) " "$r"
 }
 
 @test "a push to the base branch from inside the worker is refused by the channel's hook" {

@@ -112,6 +112,24 @@ cp -R "$hooks" "$channel/hooks" || refuse "cannot stage the task hooks in the ta
 chmod 700 "$channel/hooks" || refuse "cannot restrict $channel/hooks"
 [ ! -f "$channel/hooks/pre-push" ] || chmod 500 "$channel/hooks/pre-push" \
   || refuse "cannot restrict $channel/hooks/pre-push"
+# A ship worker records each /ship phase through a recorder made for this task
+# and this run. It is a script in the channel rather than a variable because the
+# worker's environment carries no Dux path of any kind, and the id and run are
+# baked in so a worker cannot file a phase against a sibling task.
+ship_record=""
+if [ "$shape" = ship ]; then
+  for q in "$DUX_HOME" "$DUX_ROOT" "$id" "$run"; do
+    case "$q" in *\'*) refuse "cannot build a ship recorder for $id: a path or id holds a quote" ;; esac
+  done
+  ship_record="$channel/ship-record"
+  {
+    echo '#!/bin/sh'
+    echo '# Records one /ship phase. Made for one task and one run; do not reuse.'
+    printf "exec env DUX_HOME='%s' '%s/bin/dux-result' record-ship '%s' '%s' \"\$@\"\n" \
+      "$DUX_HOME" "$DUX_ROOT" "$id" "$run"
+  } > "$ship_record" || refuse "cannot stage the ship recorder in the task channel"
+  chmod 500 "$ship_record" || refuse "cannot restrict $ship_record"
+fi
 printf '%s\n' "$channel" > "$portal" || refuse "cannot write $portal"
 
 # What a result has to be checked against, written before the worker can
@@ -187,6 +205,7 @@ scrub_worker_env() {
   done
   export PATH="$worker_path"
   export DUX_STATUS_LOG="$status_outbox" DUX_REPORT="$report_outbox"
+  [ -z "$ship_record" ] || export DUX_SHIP_RECORD="$ship_record"
   export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$channel/hooks"
 }
 
