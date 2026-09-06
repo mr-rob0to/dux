@@ -87,12 +87,28 @@ settled() {  # $1 state, [$2 pr]
 @test "teardown is where a run's retained references go" {
   spawned scout; settled done
   fake_run "$id" r00 scout; fake_receipt "$id" r00
+  # A wrapper that crashed leaves its channel, portal and pgid behind too.
+  ch="$DUX_HOME/state/channels/$id.r00"; mkdir -p "$ch"; printf 'brief\n' > "$ch/brief.md"
+  printf '%s\n' "$ch" > "$DUX_HOME/state/$id.portal"
+  printf '999999\n' > "$DUX_HOME/state/$id.pgid"
   handoff "$id" "done: report" done; : > "$DUX_HOME/state/$id.handoffs/1/consumed"
   run dux-teardown "$id"
   [ "$status" -eq 0 ]
-  for f in handoffs run result-context ship-receipt; do
+  for f in handoffs run result-context ship-receipt portal pgid; do
     [ ! -e "$DUX_HOME/state/$id.$f" ] || { echo "state/$id.$f survived teardown"; false; }
   done
+  [ ! -e "$ch" ]
+}
+
+@test "teardown leaves alone a portal that does not name a task channel" {
+  spawned scout; settled done
+  other="$DUX_HOME/not-a-channel"; mkdir -p "$other"
+  printf '%s\n' "$other" > "$DUX_HOME/state/$id.portal"
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  [ -d "$other" ]
+  [[ "$output" == *"state/$id.portal does not name a task channel; left in place"* ]]
+  [ ! -e "$DUX_HOME/state/$id.portal" ]
 }
 
 @test "failed: ledger failed, pr stays empty" {
