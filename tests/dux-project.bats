@@ -91,6 +91,22 @@ load helpers/setup
   [ "$(dux-project get repoC issues)" = "label:dux" ]
 }
 
+@test "add refuses an issue label with a space and one with no name" {
+  # The registry is one line per project, read by splitting on spaces. Stored
+  # whole, "ready for dux" reads back as "label:ready" and intake pulls the
+  # issues of a label the operator never asked for.
+  make_repo "$DUX_HOME/repoS" main
+  run dux-project add "$DUX_HOME/repoS" --issues 'label:ready for dux'
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --issues label must not contain spaces: label:ready for dux" ]]
+  run dux-project list
+  # Single brackets compare literally; this has to be [[ ]] to glob at all.
+  [[ "$output" != *repoS* ]]
+  run dux-project add "$DUX_HOME/repoS" --issues 'label:'
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --issues must be off or label:<name>" ]]
+}
+
 @test "add refuses a duplicate name with a finding" {
   make_repo "$DUX_HOME/repoD" main
   dux-project add "$DUX_HOME/repoD"
