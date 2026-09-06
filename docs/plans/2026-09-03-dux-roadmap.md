@@ -3,7 +3,7 @@
 **Where this stands**
 - Milestone 1 (skeleton) is merged 2026-09-03: plan `2026-09-03-dux-m1-skeleton.md`, 8 of 8 tasks, reviewed_sha a3288cc.
 - Milestone 2 (dispatch) is merged in PR #4: plan `2026-09-03-dux-m2-dispatch.md`, 12 of 12 tasks.
-- Current milestone: 3 (supervision), plan `2026-09-04-dux-m3-supervision.md`, approved and implemented, 8 of 8 tasks; at the ship gate.
+- Current milestone: 3 (supervision), plan `2026-09-04-dux-m3-supervision.md`, approved and implemented, 8 of 8 tasks, plus the 5-task security amendment; gate complete, PR #6 open with CI green, awaiting merge.
 - Milestones 4 to 7 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
 - Spec: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
 

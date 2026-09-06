@@ -2,10 +2,12 @@
 
 **Where this stands**
 
-- Original Milestone 3 Tasks 0 to 7 are implemented; `/ship` remains paused after its security audit.
+- Original Milestone 3 Tasks 0 to 7 are implemented; the `/ship` gate has since run to completion for the whole branch.
 - The one independent design review is complete. The operator chose the lightweight, trusted-local-worker boundary; every review finding is recorded below.
-- Tasks 0, 1, 2, 3 and 4 are implemented on `feat/m3-supervision`; `make check` is green. Next
-  action: the `/ship` gate for the whole milestone. There is no further planning here.
+- Tasks 0, 1, 2, 3 and 4 are implemented on `feat/m3-supervision`; `make check` and
+  `make check-bash32` are green at 495 tests. The gate ran: correctness review, security audit,
+  PR #6 (https://github.com/mr-rob0to/dux/pull/6), CI green on both jobs. Next action: the
+  operator merges PR #6. There is no further planning here.
 - Divergence: the constitution landed as 2.0.1, not 2.0.0. The branch was cut before `main` added
   the principle 3 bullets that put break-verification at the task, and the 2.0.0 rewrite would have
   dropped them. 2.0.1 keeps both changes and `AGENTS.md` points at it.
