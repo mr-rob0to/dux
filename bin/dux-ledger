@@ -112,6 +112,11 @@ case "$cmd" in
   list)
     fstate=""; fproject=""; fsource=""; funacked=0
     while [ $# -gt 0 ]; do
+      # A filter flag with nothing after it is a usage error, not a crash:
+      # set -u would otherwise fail on $2 before this case could say so.
+      case "$1" in
+        --state|--project|--source) [ $# -ge 2 ] || die "$1 needs a value" ;;
+      esac
       case "$1" in
         --state) fstate="$2"; shift 2 ;;
         --project) fproject="$2"; shift 2 ;;
