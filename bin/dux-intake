@@ -20,7 +20,7 @@ show() {  # $1 id
   f="$DUX_TASKS/$1/issue.md"
   { [ ! -L "$f" ] && [ -f "$f" ]; } || finding "no issue file for $1; only intake-created tasks have one"
   echo "<untrusted-issue>"
-  head -c 4000 "$f" | LC_ALL=C tr -d '\000-\010\013-\037\177' \
+  head -c 4000 "$f" | LC_ALL=C tr -d '\000-\010\013-\037\177' | strip_format_chars \
     | sed 's#</untrusted-issue>#<\\/untrusted-issue>#g; s#<untrusted-issue>#<\\untrusted-issue>#g'
   echo "</untrusted-issue>"
 }
@@ -76,7 +76,7 @@ write_issue_file() {  # $1 id, $2 number; title and body cleaned and capped, one
   {
     printf '%s#%s: %s\n\n' "$slug" "$2" "$title"
     if [ "$bytes" -gt 0 ]; then
-      field body "$2" | head -c "$BODY_BYTES" | LC_ALL=C tr -d '\000-\010\013-\037\177'
+      field body "$2" | head -c "$BODY_BYTES" | LC_ALL=C tr -d '\000-\010\013-\037\177' | strip_format_chars
       echo
     fi
     [ "$bytes" -le "$BODY_BYTES" ] || echo "[truncated at $BODY_BYTES bytes]"
