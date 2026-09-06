@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 id="${1:-}"; [ -n "$id" ] || die "usage: dux-teardown <id>"
 epfile="$DUX_STATE/$id.endpoint"
-pidfile="$DUX_STATE/$id.pid"
+pidfile="$DUX_STATE/$id.pid"; pgidfile="$DUX_STATE/$id.pgid"
 ledger="$DUX_ROOT/bin/dux-ledger"; backend="$DUX_ROOT/bin/dux-backend"
 
 is_terminal() { case "$1" in done|failed) return 0 ;; *) return 1 ;; esac; }
@@ -28,6 +28,18 @@ if [ -e "$pidfile" ] || [ -L "$pidfile" ]; then
   case "$wpid" in
     ''|*[!0-9]*) finding "$pidfile does not hold a pid ('$wpid'); cannot tell whether a worker for $id is alive" ;;
     *) if kill -0 "$wpid" 2>/dev/null; then finding "worker $wpid for $id is still running"; fi ;;
+  esac
+fi
+# The wrapper's pid is not the worker. A wrapper that crashed leaves the worker's
+# own processes running as their own group, and the folder they are working in is
+# the worktree this is about to remove. Read the file exactly as recovery does:
+# only "no file" and "the group is gone" mean no worker.
+if [ -e "$pgidfile" ] || [ -L "$pgidfile" ]; then
+  pg="$(cat "$pgidfile" 2>/dev/null)" \
+    || finding "cannot read $pgidfile; cannot tell whether the worker's own processes for $id are gone"
+  case "$pg" in
+    ''|*[!0-9]*) finding "$pgidfile does not hold a process group ('$pg'); cannot tell whether the worker's own processes for $id are gone" ;;
+    *) if kill -0 -- "-$pg" 2>/dev/null; then finding "the worker's own processes for $id are still running as group $pg"; fi ;;
   esac
 fi
 
@@ -62,7 +74,7 @@ case "$channel" in
   "$DUX_STATE/channels/"?*) rm -rf "$channel" 2>/dev/null || log "task channel $channel left in place" ;;
   ?*) log "state/$id.portal does not name a task channel; left in place" ;;
 esac
-rm -f "$portal" "$DUX_STATE/$id.pgid"
+rm -f "$portal" "$pgidfile"
 
 pr="$("$ledger" get "$id" pr)" || exit $?
 "$ledger" set "$id" state "$final" || exit $?

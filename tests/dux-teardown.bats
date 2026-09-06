@@ -189,3 +189,40 @@ settled() {  # $1 state, [$2 pr]
   [ "$(dux-ledger get "$id" endpoint)" != - ]
   [ -e "$DUX_HOME/state/$id.endpoint" ]
 }
+
+# The wrapper's pid is not the worker. A wrapper that crashed leaves the
+# worker's own processes running as their own group, and the worktree teardown
+# removes is the folder those processes are working in. Recovery already reads
+# this file before it clears a channel; teardown throws away more.
+@test "a live worker process group is a refusal even with no wrapper pid" {
+  spawned scout; settled done
+  rm -f "$DUX_HOME/state/$id.pid"
+  pg="$(ps -o pgid= -p $$ | tr -d ' ')"
+  printf '%s\n' "$pg" > "$DUX_HOME/state/$id.pgid"
+  run dux-teardown "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worker's own processes for $id are still running as group $pg"* ]]
+  [ -d "$wt" ]
+  [ -e "$DUX_HOME/state/$id.pgid" ]
+  [ "$(dux-ledger get "$id" endpoint)" != - ]
+}
+
+@test "a pgid file that cannot be read or holds no group refuses; a gone group does not" {
+  spawned scout; settled done
+  pf="$DUX_HOME/state/$id.pgid"
+  printf 'not-a-group\n' > "$pf"
+  run dux-teardown "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $pf does not hold a process group"* ]]
+  [ -d "$wt" ]
+  printf '999999\n' > "$pf"; chmod 000 "$pf"
+  run dux-teardown "$id"
+  chmod 600 "$pf" 2>/dev/null || true
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: cannot read $pf; cannot tell whether the worker's own processes for $id are gone"* ]]
+  [ -d "$wt" ]
+  # A group that is gone is an answer, and the file is the run's to clear.
+  printf '999999\n' > "$pf"
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]; [ ! -d "$wt" ]; [ ! -e "$pf" ]
+}
