@@ -90,3 +90,20 @@ load helpers/setup
   d="$DUX_HOME/deep"; git init -q "$d"; git -C "$d" remote add origin https://github.com/acme/widgets/extra
   run github_slug "$d"; [ "$status" -eq 1 ]
 }
+
+@test "github_slug refuses a host that only ends in github.com" {
+  # A substring test reads these as the real acme/widgets on GitHub. Intake
+  # would then list issues and comment on a repository the operator never
+  # registered, with the operator's own token.
+  for url in https://notgithub.com/acme/widgets git@evilgithub.com:acme/widgets \
+             https://github.com.evil.example/acme/widgets \
+             https://evil.example/x@github.com/acme/widgets; do
+    d="$DUX_HOME/look-$RANDOM"; git init -q "$d"; git -C "$d" remote add origin "$url"
+    run github_slug "$d"
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+  done
+  # A token in the url is still github.com, and still the same repository.
+  d="$DUX_HOME/tok"; git init -q "$d"; git -C "$d" remote add origin https://tok@github.com/acme/widgets.git
+  run github_slug "$d"; [ "$status" -eq 0 ]; [ "$output" = acme/widgets ]
+}
