@@ -82,7 +82,16 @@ case "$cmd" in
     grep -q "^- $name " "$registry" && finding "project $name already registered; pass --name to register it under another name"
     other="$(grep -F -- " path=$path " "$registry" | sed -n 's/^- \([^ ]*\) .*/\1/p')"
     [ -z "$other" ] || finding "path $path already registered as $other"
-    case "$issues" in off|label:*) ;; *) finding "--issues must be off or label:<name>" ;; esac
+    # One project is one line, and the line is read by splitting on spaces. A
+    # label with a space in it would be stored whole and read back cut at the
+    # space, so intake would quietly pull the wrong issues. Refuse it here.
+    case "$issues" in
+      off) ;;
+      label:?*) case "${issues#label:}" in
+                  *[[:space:]]*) finding "--issues label must not contain spaces: $issues" ;;
+                esac ;;
+      *) finding "--issues must be off or label:<name>" ;;
+    esac
     if [ -z "$base" ]; then base="$(resolve_base "$path")" || exit $?; fi
     valid_branch "$base" || finding "base branch name is not valid: $base"
     if [ -n "$wt_flag" ]; then
