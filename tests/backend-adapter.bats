@@ -88,12 +88,14 @@ teardown_file() {
 @test "this run's tmux server stands on a socket of its own, not the machine's" {
   [ "${DUX_BACKEND:-}" = tmux ] || skip
   # Socket names here are fixed strings, so before the suite took a TMUX_TMPDIR
-  # of its own every run on the machine opened this one path, and two runs at
-  # once killed each other's servers. The socket this run's adapter reaches has
-  # to be somewhere else, and the server has to really be there.
-  shared="/tmp/tmux-$(id -u)/dux-test"
-  if [ "$(tmux_socket_path dux-test)" = "$shared" ]; then
-    echo "this run is on the machine-wide socket $shared; a second run would fight it"
+  # of its own every run on the machine opened one shared path, and two runs at
+  # once killed each other's servers. Any directory this run did not build for
+  # itself is that bug again, whether it is the machine default or one the
+  # caller exported, so the test is that the directory is this run's own and
+  # the server is really in it.
+  if [ "$TMUX_TMPDIR" != "$DUX_TEST_TMUX_TMPDIR" ]; then
+    echo "this run's tmux is at $TMUX_TMPDIR, not its own $DUX_TEST_TMUX_TMPDIR;"
+    echo "a second run sharing that directory would fight this one"
     return 1
   fi
   [ -S "$(tmux_socket_path dux-test)" ]

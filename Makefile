@@ -26,14 +26,16 @@ MATRIX_JOBS := \
   job-m/e2e-dispatch-herdr job-m/e2e-dispatch-tmux \
   job-m/e2e-supervise-herdr job-m/e2e-supervise-tmux
 
-LOGS := tests/tmp/logs
+# One directory per run, so two runs in the same worktree cannot erase or
+# overwrite each other's output. `test` picks the name and passes it down.
+LOGS ?= tests/tmp/logs/adhoc
 
 # One job: run a bats file with an environment, quietly. A passing file prints
 # one line. A failing file prints its whole log, so a parallel run still reads
 # like a serial one at the point where it matters.
 # $(1) job name, $(2) environment, $(3) bats arguments
 define run_bats
-@mkdir -p $(LOGS); \
+@mkdir -p "$$(dirname "$(LOGS)/$(1).log")"; \
 if env $(2) $(BATS) $(3) > "$(LOGS)/$(1).log" 2>&1; then \
   printf '  ok    %-26s %3s tests\n' "$(1)" "$$(grep -c '^ok ' "$(LOGS)/$(1).log")"; \
 else \
@@ -45,8 +47,8 @@ endef
         $(UNIT_JOBS) $(MATRIX_JOBS)
 
 test:
-	@rm -rf $(LOGS)
-	@$(MAKE) --no-print-directory -j$(JOBS) unit matrix
+	@$(MAKE) --no-print-directory -j$(JOBS) \
+	  LOGS=tests/tmp/logs/$$(date +%Y%m%d-%H%M%S)-$$$$ unit matrix
 
 unit:   $(UNIT_JOBS)
 matrix: $(MATRIX_JOBS)
