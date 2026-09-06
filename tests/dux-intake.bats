@@ -108,3 +108,11 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   grep -qxF sharpened "$DUX_HOME/data/tasks/$id12/issue.md"
 }
 
+
+@test "intake refuses without the lock and leaves the ledger alone" {
+  labelled_project; dux-lock release >/dev/null
+  FAKE_GH_ISSUE_LIST_FILE="$FIX" run dux-intake proj
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: the Dux lock is not held by this session; refusing to queue tasks"* ]]
+  [ ! -s "$DUX_HOME/data/backlog.md" ]
+}
+
