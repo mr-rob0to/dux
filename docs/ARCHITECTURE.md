@@ -142,14 +142,18 @@ backend started it and catches a worker in a server whose socket vanished.
    is created with `O_EXCL` so it cannot follow a committed symlink. An
    uncommitted example, or a destination name the project does not ignore, is a
    finding; no example at all is a log line.
-5. Spawn calls `dux-backend open <id> <wt> <abs>/bin/dux-worker-wrap <id>`, which
-   starts the wrapper in a new container; the command is composed as shell words
-   because both backends hand it to a shell. Spawn records the endpoint in
-   `state/<id>.endpoint` and the ledger, marks `running`, and comments on a `gh:`
-   issue. After a failed `open` the brief's worktree line goes back to its
-   placeholder either way, and the worktree is discarded only when `find` shows
-   no container; a container that outlived the failed `open` is a finding naming
-   it, never a silent cleanup around a live worker.
+5. Spawn marks the task `running`, then calls
+   `dux-backend open <id> <wt> <abs>/bin/dux-worker-wrap <id>`, which starts the
+   wrapper in a new container; the command is composed as shell words because
+   both backends hand it to a shell. The order matters: the open starts the
+   worker, a worker that refuses at once leaves a proved terminal handoff the
+   watcher can apply straight away, and a `running` written after the open would
+   land on top of that result. Spawn then records the endpoint in
+   `state/<id>.endpoint` and the ledger, and comments on a `gh:` issue. After a
+   failed `open` the task goes back to `queued` and the brief's worktree line
+   back to its placeholder either way, and the worktree is discarded only when
+   `find` shows no container; a container that outlived the failed `open` is a
+   finding naming it, never a silent cleanup around a live worker.
 6. `dux-worker-wrap <id>` writes `state/<id>.pid`, makes the task channel (below),
    runs `worker_run` from `bin/workers/<harness>.sh` in a process group of its own
    with output to `state/<id>.out`, heartbeats while that output grows, mirrors the
