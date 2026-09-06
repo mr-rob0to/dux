@@ -49,16 +49,17 @@ valid_task_id() {  # $1 id; a finding when it is not one
 # The one place a task channel is deleted, so recovery and teardown draw the same
 # line. A prefix check on its own is text, and text walks back out or points
 # somewhere else: state/channels/../../<anything> starts with the channel
-# directory without being in it, and a channels/<a> that is a link to
-# channels/<b> is another task's live channel. The wrapper records the path the
-# kernel agrees on, so the rule is that the stored path must be exactly what it
-# resolves to, and that must be a directory directly under state/channels/. A
-# channel already gone is an answer, not a failure.
+# directory without being in it, a channels/<a> that is a link to channels/<b>
+# is another task's live channel, and so is <b>'s own path written down here.
+# The wrapper makes the channel with mktemp -d state/channels/<id>.XXXXXXXX and
+# records the path the kernel agrees on, so the rule is all three of that: this
+# task's name, directly under state/channels/, and exactly what it resolves to.
+# A channel already gone is an answer, not a failure.
 clear_channel() {  # $1 id, $2 portal file; removes the channel the portal names
   local channel real
   channel="$(cat "$2" 2>/dev/null)"
   case "$channel" in
-    "$DUX_STATE/channels/"?*) ;;
+    "$DUX_STATE/channels/$1."?*) ;;
     ?*) log "state/$1.portal does not name a task channel; left in place"; return 0 ;;
     *) return 0 ;;
   esac
