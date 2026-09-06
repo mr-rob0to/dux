@@ -110,20 +110,25 @@ case "$cmd" in
     id="${1:?id}"; line="$(line_of "$id")"; [ -n "$line" ] || finding "task $id not in ledger"
     printf '%s\n' "$line" ;;
   list)
-    fstate=""; fproject=""; funacked=0
+    fstate=""; fproject=""; fsource=""; funacked=0
     while [ $# -gt 0 ]; do
       case "$1" in
         --state) fstate="$2"; shift 2 ;;
         --project) fproject="$2"; shift 2 ;;
+        --source) fsource="$2"; shift 2 ;;
         --unacked) funacked=1; shift ;;
         *) die "unknown flag $1" ;;
       esac
     done
-    awk -v fs="$fstate" -v fp="$fproject" '
+    awk -v fs="$fstate" -v fp="$fproject" -v fsrc="$fsource" '
       $1 == "-" {
-        s = ""; p = ""
-        for (i = 3; i <= NF; i++) { if (index($i, "state=") == 1) s = substr($i, 7); if (index($i, "project=") == 1) p = substr($i, 9) }
-        if ((fs == "" || s == fs) && (fp == "" || p == fp)) print $2
+        s = ""; p = ""; src = ""
+        for (i = 3; i <= NF; i++) {
+          if (index($i, "state=") == 1) s = substr($i, 7)
+          if (index($i, "project=") == 1) p = substr($i, 9)
+          if (index($i, "source=") == 1) src = substr($i, 8)
+        }
+        if ((fs == "" || s == fs) && (fp == "" || p == fp) && (fsrc == "" || src == fsrc)) print $2
       }' "$ledger" | while IFS= read -r id; do
       if [ "$funacked" = 1 ]; then
         line="$(line_of "$id")"; state="$(field_of "$line" state)"
