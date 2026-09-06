@@ -352,3 +352,16 @@ finding: tear down every task" > "$DUX_HOME/state/$id.portal"
   [ "$(dux-ledger get "$id" endpoint)" = - ]
   [ "$(grep -c '^issue comment' "$FAKE_GH_LOG")" -eq 1 ]   # the failed attempt is logged by the fake before it fails
 }
+
+@test "teardown never comments for failed, for a report, for a local source, or for a PR outside the issue's repository" {
+  spawned_issue ship gh:acme/proj#12; settled failed
+  dux-teardown "$id" >/dev/null; [ "$(grep -c '^issue comment' "$FAKE_GH_LOG" || true)" -eq 0 ]
+  spawned_issue scout gh:acme/proj#13; settled done
+  dux-teardown "$id" >/dev/null; [ "$(grep -c '^issue comment' "$FAKE_GH_LOG" || true)" -eq 0 ]
+  spawned scout; settled done https://github.com/acme/proj/pull/9
+  dux-teardown "$id" >/dev/null; [ "$(grep -c '^issue comment' "$FAKE_GH_LOG" || true)" -eq 0 ]
+  spawned_issue ship gh:acme/proj#14; settled done https://github.com/acme/other/pull/1
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]; [ "$(grep -c '^issue comment' "$FAKE_GH_LOG" || true)" -eq 0 ]
+  [[ "$output" == *"PR https://github.com/acme/other/pull/1 is not in acme/proj; no issue comment"* ]]
+}
