@@ -43,3 +43,32 @@ load helpers/setup
   grep -qx "$DUX_HOME/cwd" "$FAKE_HERDR_OUTPUT"
   grep -qx "pane=w1:p9" "$FAKE_HERDR_OUTPUT"
 }
+
+@test "use_tmux_tmpdir builds its own directory and refuses one it did not build" {
+  DUX_TEST_TMUX_TMPDIR="$DUX_HOME/tmux.own"
+  use_tmux_tmpdir
+  [ -d "$DUX_TEST_TMUX_TMPDIR" ]
+
+  # A symlink somebody left at the name. The link is the one shape this test can
+  # build without a second account on the machine, and it is the shape that gets
+  # past an ownership test on its own, since that test follows the link.
+  mkdir -p "$DUX_HOME/planted"
+  DUX_TEST_TMUX_TMPDIR="$DUX_HOME/tmux.linked"
+  ln -s "$DUX_HOME/planted" "$DUX_TEST_TMUX_TMPDIR"
+  run use_tmux_tmpdir
+  [ "$status" -ne 0 ]
+  case "$output" in finding:*) ;; *) echo "no finding on the symlink: $output"; return 1 ;; esac
+
+  # A real directory this account does not own, which needs no second account
+  # either: / is one on every machine the suite runs on. It has to be a real
+  # directory and not a link, or the check above answers first and this one is
+  # never reached. That is what /tmp did here at first, since on macOS /tmp is a
+  # link to /private/tmp. Nothing is unowned when the run is root, so there the
+  # case has nothing to say.
+  if [ "$(id -u)" -ne 0 ]; then
+    DUX_TEST_TMUX_TMPDIR=/
+    run use_tmux_tmpdir
+    [ "$status" -ne 0 ]
+    case "$output" in finding:*) ;; *) echo "no finding on a directory we do not own: $output"; return 1 ;; esac
+  fi
+}
