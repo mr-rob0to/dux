@@ -5,11 +5,11 @@
 **Where this stands**
 
 - Milestone: 3 of 7. Tasks 0 to 7 are implemented on the feature branch; the original implementation work is complete.
-- Ship gate: paused after its security audit. The operator chose the lightweight boundary where local same-user workers are trusted and application-channel data is not.
+- Ship gate: run and complete. Checks green, correctness review and security audit done, PR #6 open, CI green on both jobs. The operator chose the lightweight boundary where local same-user workers are trusted and application-channel data is not.
 - Amendment: `2026-09-05-dux-m3-security-amendment.md` is implemented, Tasks 0 to 4, on the same
   branch. A worker's word is no longer a result, a run's ending is a retained handoff, and a
   task that was running before the amendment is retired once with `dux-recover --retire-legacy`.
-- Next action: resume `/ship` for the whole branch; do not merge this milestone first.
+- Next action: the operator merges PR #6 (https://github.com/mr-rob0to/dux/pull/6). Nothing merges without their word.
 
 **Declared deviation from the constitution (principle 2, "stop and print a finding"):** `dux-watch` is the one script that does not exit on a per-task surprise. It prints `finding: watch: <id>: <one line>` to its log and skips that task for that pass, because exiting would end supervision of every other task without anyone noticing, which is the silent degradation principle 2 exists to prevent. Startup surprises (an unwritable `state/`, a bad argument) still exit 2. Every other script in this milestone follows the principle as written.
 
