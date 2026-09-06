@@ -77,3 +77,13 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   [ "$(dux-ledger list --source 'gh:acme/proj#12')" = "$id" ]
 }
 
+
+@test "exactly the limit logs a warning that the list may be cut" {
+  labelled_project
+  jq -n '[range(1; 101) | {number: ., title: "t\(.)", body: "b"}]' > "$DUX_HOME/hundred.json"
+  FAKE_GH_ISSUE_LIST_FILE="$DUX_HOME/hundred.json" run --separate-stderr dux-intake proj
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"dux: intake: acme/proj has 100 or more open 'dux' issues; only the first 100 were read"* ]]
+  [ "$(grep -c '^queued ' <<< "$output")" -eq 100 ]
+}
+
