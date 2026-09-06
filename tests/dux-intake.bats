@@ -151,3 +151,14 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   for n in 12 13 14; do [ "$(dux-ledger get "$(dux-ledger list --source "gh:acme/proj#$n")" state)" = queued ]; done
 }
 
+
+@test "a running task is never looked up or moved when its issue vanishes" {
+  labelled_project
+  FAKE_GH_ISSUE_LIST_FILE="$FIX" dux-intake proj >/dev/null
+  id12="$(dux-ledger list --source 'gh:acme/proj#12')"; dux-ledger set "$id12" state running
+  : > "$FAKE_GH_LOG"
+  FAKE_GH_ISSUE_LIST='[]' FAKE_GH_ISSUE_STATE=CLOSED run dux-intake proj
+  [ "$status" -eq 0 ]; [ "$(dux-ledger get "$id12" state)" = running ]
+  [ "$(grep -c '^issue view 12 ' "$FAKE_GH_LOG" || true)" -eq 0 ]
+}
+
