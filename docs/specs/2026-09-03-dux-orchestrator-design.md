@@ -667,7 +667,9 @@ Dispatching an issue task:
 - `dux-spawn` posts one comment: "Dux started on branch `<name>`."
 - On teardown after `done`, `dux-teardown` posts one comment with the PR link.
   `/ship` step 8 adds `Closes #<n>` to the PR body when the brief carries an
-  issue key.
+  issue key. GitHub closes the issue only when the PR merges into the
+  repository's default branch; on another base the line links the issue and the
+  teardown comment is the record.
 - `dux-recover --retry` carries `issue.md` into the retry.
 
 Labels on the issue are never changed. The issue is not the state; the ledger is.
