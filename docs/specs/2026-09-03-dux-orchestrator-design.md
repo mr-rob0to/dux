@@ -517,8 +517,9 @@ applying one is the watcher's job alone.
 
 A `SessionStart` hook runs `dux-lock acquire` (pid from `CLAUDE_PID`) and prints
 the result, including whether the watcher started, into context. AGENTS.md then
-has Dux run `dux-doctor`, arm the Monitor, and run `dux-intake` for every project
-with issues enabled plus `dux-status`.
+has Dux run `dux-doctor`, arm the Monitor, and run `dux-status --intake`, which
+runs `dux-intake` for every project with issues enabled and then prints the
+digest.
 If the lock is held by a live pid, Dux announces it is read-only and skips spawn,
 teardown, and recover. A `SessionEnd` hook releases the lock and kills the
 watcher; workers keep running under the backend and are reconciled next start.
@@ -530,8 +531,8 @@ wakes, whichever comes first. The digest at start makes the restart a non-event.
 
 ## 8. Fleet digest (`dux-status`)
 
-Files and the backend only, no network. First a watcher line and the wake count
-since session start. Per project, six lines, with zero-count lines omitted:
+Files and the backend only; no network unless `--prs` or `--intake` is given.
+First a watcher line and the wake count since session start. Per project, six lines, with zero-count lines omitted:
 queued; running, with stale and long-running counts in a suffix; awaiting you
 (needs-decision, blocked); needs recovery (dead, ended); ready (done with a PR
 or a report, not yet torn down); failed (not yet torn down). Long-running means
@@ -541,8 +542,10 @@ is a worker talking about itself and moves nothing until a proved handoff does.
 Then an
 `unacknowledged` block prints one `<state>: <id> (<project>)` line per task Dux
 has not acknowledged. `--prs` adds `gh pr view` state per ready PR; a failed
-`gh` is a warning, not a finding. `--intake` runs `dux-intake` first in
-milestone 4 and is a finding until then.
+`gh` is a warning, not a finding. `--intake` prints an `intake` block first:
+each labelled project's intake output, or one `skipped:` line carrying the
+finding when that project's intake failed, so one bad project never hides the
+digest (section 14).
 
 ## 9. Runtime backends
 

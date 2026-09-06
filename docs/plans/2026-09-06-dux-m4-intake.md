@@ -4,9 +4,9 @@
 
 **Where this stands**
 
-- Milestone: 4 of 7. Implementing on `feat/m4-intake` from `main` at 40ce32a (this plan merged as PR #7). Tasks 1 to 4, 1 of 4 implemented.
+- Milestone: 4 of 7. Implementing on `feat/m4-intake` from `main` at 40ce32a (this plan merged as PR #7). Tasks 1 to 4, 2 of 4 implemented.
 - Design review: one independent review from a fresh Fable session is recorded at the bottom; all 25 findings are verified and folded into the tasks, none disputed.
-- Next action: Task 2, the issue-aware brief, the retry copy, and the teardown comment. Task 1 landed in 13 commits with 11 break-verified failures, two more than the plan named.
+- Next action: Task 3, `dux-status --intake` and the session-start wiring. Task 2 landed in 6 commits with 5 break-verified failures, the number the plan named.
 
 **Known limitation carried forward, not fixed here.** The `/ship` receipt written by `dux-result record-ship` ties only the `ci` phase to the head SHA, and it cannot represent fix-and-re-review: a second review of new commits has nowhere to go. So the receipt proves the five phases ran in order, not that a review covered the final code. Milestone 5 Task 1 (`ship-guard`, `reviewed_sha`, bounded fix passes) is where that lands. Nothing in this milestone touches the receipt.
 
@@ -693,7 +693,7 @@ Committing the script with a guard broken and fixing it afterwards is not allowe
 - Consumes: `dux-ledger get <id> source|pr`, `tasks/<id>/issue.md`, `gh issue comment`.
 - Produces: the `- Issue:` brief line; the `--issue-file` requirement for `gh:` tasks; `issue.md` copied on retry; `Dux delivered PR <url>.` on teardown.
 
-- [ ] **Step 1: Amend the spec** (`docs:` commit)
+- [x] **Step 1: Amend the spec** (`docs:` commit)
 
 Section 5.3, after "excluded from the 60-line count.": `A task whose source is an issue must be given --issue-file, and its Project section carries `- Issue: <owner>/<repo>#<n>` rendered from the ledger source, never from the issue text; that line is what /ship reads for Closes #<n>.`
 
@@ -703,7 +703,7 @@ Section 10, replace "On `done`, Dux posts one comment with the PR link." with "O
 
 Commit: `docs: pin the issue line, the retry copy, and the teardown comment`
 
-- [ ] **Step 2: Brief tests, then the change**
+- [x] **Step 2: Brief tests, then the change**
 
 In `tests/dux-brief.bats`:
 
@@ -762,7 +762,7 @@ Break: remove the `gh:*)` requirement case. Expected: the first new test fails a
 
 Commit: `feat: carry the issue key into the brief and require its text`
 
-- [ ] **Step 3: Retry copies the issue file**
+- [x] **Step 3: Retry copies the issue file**
 
 In `tests/dux-recover.bats`, beside "--retry after failed preserves ship scope":
 
@@ -787,7 +787,7 @@ Break: remove the `cp` and the `set --` addition. Expected: the test fails at `[
 
 Commit: `feat: carry the issue file into a retry`
 
-- [ ] **Step 4: The teardown comment**
+- [x] **Step 4: The teardown comment**
 
 The file's `spawned` helper builds its task through `fixture_task`, which cannot pass a source key, so add a sibling next to it. `dux-spawn` itself posts "Dux started" for a `gh:` source, which is the reason the log is cleared after the spawn: every `issue comment` line a test then counts is teardown's.
 
