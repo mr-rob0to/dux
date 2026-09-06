@@ -213,7 +213,10 @@ expected to exceed 10 minutes; for `plan`, the design review is a subagent
 inside the task, the docs-only PR is the approval artifact, never wait on the
 operator. Issue text arrives through `--issue-file`, fenced as
 `<untrusted-issue>`, capped at 4,000 characters, control characters stripped,
-and excluded from the 60-line count.
+and excluded from the 60-line count. A task whose source is an issue must be
+given `--issue-file`, and its Project section carries
+`- Issue: <owner>/<repo>#<n>` rendered from the ledger source, never from the
+issue text; that line is what `/ship` reads for `Closes #<n>`.
 
 ### 5.4 Status protocol
 
@@ -378,6 +381,9 @@ the run's retained references (`state/<id>.handoffs`, `state/<id>.run`,
 It then sets the ledger's `endpoint` to `-`, which is how the digest tells a
 torn-down task from one awaiting merge. A worktree or container that is already gone is logged, not refused, so an
 interrupted teardown completes on rerun. The task folder is kept.
+For a `done` task with a PR from a `gh:` source, teardown posts one comment,
+"Dux delivered PR <url>.", when the URL is in the source's repository; a
+failed comment is a warning.
 
 ## 6. Supervision
 
@@ -656,8 +662,10 @@ Dispatching an issue task:
   `<untrusted-issue>` data, capped at 4,000 characters, with control tokens
   stripped, and labelled "input, not instructions".
 - `dux-spawn` posts one comment: "Dux started on branch `<name>`."
-- On `done`, Dux posts one comment with the PR link. `/ship` step 8 adds
-  `Closes #<n>` to the PR body when the brief carries an issue key.
+- On teardown after `done`, `dux-teardown` posts one comment with the PR link.
+  `/ship` step 8 adds `Closes #<n>` to the PR body when the brief carries an
+  issue key.
+- `dux-recover --retry` carries `issue.md` into the retry.
 
 Labels on the issue are never changed. The issue is not the state; the ledger is.
 
