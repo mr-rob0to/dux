@@ -117,11 +117,18 @@ make_repo() {  # $1 dir, $2 default branch; creates a bare origin and a clone
 # A project whose origin url reads as https://github.com/acme/<name>, so a run
 # records repo=acme/<name> while every fetch stays inside the test's home.
 make_github_repo() {  # $1 project dir name under $DUX_HOME
-  local d="$DUX_HOME/$1" o="$DUX_HOME/github.com/acme/$1.git"
-  mkdir -p "$DUX_HOME/github.com/acme"
+  local d="$DUX_HOME/$1" o="$DUX_HOME/acme/$1.git" u="https://github.com/acme/$1.git"
+  mkdir -p "$DUX_HOME/acme"
   git init -q -b main "$d.seed" && (cd "$d.seed" && git commit -q --allow-empty -m init)
   git clone -q --bare "$d.seed" "$o" && rm -rf "$d.seed"
   git clone -q "$o" "$d"
+  # The remote says what a real GitHub clone says, so github_slug is reading the
+  # same shape of url in the tests as on the operator's machine. insteadOf sends
+  # the actual fetches and pushes to the bare repo beside it, so nothing here
+  # touches the network. A local path with github.com in it would read as GitHub
+  # only because the old substring test was wrong, and it is not wrong now.
+  git -C "$d" config "url.$o.insteadOf" "$u"
+  git -C "$d" remote set-url origin "$u"
   (cd "$d" && git remote set-head origin main)
   printf '.worktrees/\n' > "$d/.gitignore"
   (cd "$d" && git add .gitignore && git commit -q -m "ignore worktrees" && git push -q origin main)

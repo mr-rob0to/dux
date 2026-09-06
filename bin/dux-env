@@ -142,9 +142,22 @@ require_cmd() {
 # was applying instead of losing it.
 HANDOFF_LINE_CAP=200
 
+# Deleting the ASCII control bytes kills terminal escape sequences, but the
+# characters that reorder what a terminal draws are multi-byte and survive it:
+# the direction overrides and isolates, the zero-width characters, the byte
+# order mark and the Arabic letter mark. An issue author can use them to make a
+# line render as something other than what it says, and the reader is the
+# operator deciding whether to dispatch. Strip exactly those and nothing else,
+# so accented, non-Latin and emoji text still reads as itself.
+# The byte patterns are built with octal escapes on purpose: no invisible
+# character ever appears in this file, where nobody could see it.
+strip_format_chars() {  # filter; stdin to stdout
+  LC_ALL=C sed "$(printf 's/\342\200[\213-\217\252-\256]//g; s/\342\201[\246-\251]//g; s/\357\273\277//g; s/\330\234//g')"
+}
+
 cap_line() {  # $1 text; one clean line of at most 200 characters
   local s
-  s="$(printf '%s' "$1" | LC_ALL=C tr -d '\000-\010\013-\037\177' | tr '\t' ' ' | tr -d '\n')"
+  s="$(printf '%s' "$1" | LC_ALL=C tr -d '\000-\010\013-\037\177' | strip_format_chars | tr '\t' ' ' | tr -d '\n')"
   [ "${#s}" -le "$HANDOFF_LINE_CAP" ] || s="${s:0:197}..."
   printf '%s' "$s"
 }

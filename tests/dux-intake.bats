@@ -180,3 +180,49 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   [[ "$output" == "finding: no issue file for $id; only intake-created tasks have one"* ]]
   run dux-intake --show ../x; [ "$status" -eq 2 ]; [[ "$output" == "finding: task id must match"* ]]
 }
+
+@test "the characters that reorder a terminal line are stripped from the issue and the brief" {
+  # Deleting the ASCII controls kills escape sequences but not these: the
+  # direction override U+202E, the isolates, the zero-width characters, the
+  # byte order mark and the Arabic letter mark are all multi-byte. An issue
+  # author can use them to make a line render as something it does not say,
+  # and the operator reading --show is the one deciding whether to dispatch.
+  labelled_project
+  f="$DUX_HOME/bidi.json"
+  cat > "$f" <<'JSON'
+[
+  {
+    "number": 21,
+    "title": "Fix login‮ and ​ nothing else",
+    "body": "Run‭this:⁦ rm -rf /⁩﻿ café 日本語"
+  }
+]
+JSON
+  FAKE_GH_ISSUE_LIST_FILE="$f" dux-intake proj >/dev/null
+  id="$(dux-ledger list --source 'gh:acme/proj#21')"
+  saved="$DUX_HOME/data/tasks/$id/issue.md"
+
+  # Not one of the format characters survives, in the file or in either reader.
+  for seq in $'‪' $'‫' $'‬' $'‭' $'‮' \
+             $'⁦' $'⁧' $'⁨' $'⁩' \
+             $'​' $'‎' $'‏' $'﻿' $'؜'; do
+    run grep -cF -- "$seq" "$saved"
+    [ "$output" = 0 ]
+  done
+  run dux-intake --show "$id"
+  [ "$status" -eq 0 ]
+  [ "$(grep -cF -- $'‮' <<< "$output")" -eq 0 ]
+
+  # Ordinary text in any language is untouched; this strips exactly the
+  # characters that lie about what a line says, and nothing else.
+  grep -qF 'café' "$saved"
+  grep -qF '日本語' "$saved"
+  grep -qF 'Fix login and  nothing else' "$saved"
+
+  printf 'do the thing\n' > "$DUX_HOME/intent"; printf -- '- it is done\n' > "$DUX_HOME/criteria"
+  dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1 --issue-file "$saved" >/dev/null
+  [ "$(grep -cF -- $'‮' "$DUX_HOME/data/tasks/$id/brief.md")" -eq 0 ]
+  grep -qF 'café' "$DUX_HOME/data/tasks/$id/brief.md"
+}
+
