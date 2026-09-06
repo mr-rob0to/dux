@@ -47,10 +47,18 @@ load helpers/setup
 
 @test "AGENTS.md arms before its digest and repeats the digest after re-arming" {
   monitor_line="$(grep -nF 'Monitor(command: "tail -n0 -F state/events.log", persistent: true)' "$DUX_ROOT/AGENTS.md" | head -n 1 | cut -d: -f1)"
-  status_line="$(grep -nF 'Run `bin/dux-status` and show the digest.' "$DUX_ROOT/AGENTS.md" | head -n 1 | cut -d: -f1)"
+  status_line="$(grep -nF 'Run `bin/dux-status --intake` and show the digest.' "$DUX_ROOT/AGENTS.md" | head -n 1 | cut -d: -f1)"
   [ "$monitor_line" -lt "$status_line" ]
   rearm="$(sed -n '/^At the start of every turn:/,/^## Task lifecycle/p' "$DUX_ROOT/AGENTS.md")"
   [[ "$rearm" == *'arm it again, then run `bin/dux-status`'* ]]
+}
+
+@test "AGENTS.md pulls issues at session start and lets issue text in only through dux-intake --show" {
+  start="$(unwrapped '/^## Session start/,/^## Task lifecycle/p' "$DUX_ROOT/AGENTS.md")"
+  [[ "$start" == *'Run `bin/dux-status --intake` and show the digest.'* ]]
+  [[ "$start" == *'arm it again, then run `bin/dux-status` and'* ]]   # the per-turn rule stays plain
+  rules="$(unwrapped '/^## Hard rules/,/^## Session start/p' "$DUX_ROOT/AGENTS.md")"
+  [[ "$rules" == *'`bin/dux-intake --show <id>` is the only way it enters your context'* ]]
 }
 
 @test "AGENTS.md wake rule acknowledges through dux-ledger ack and pushes for exactly three states" {
