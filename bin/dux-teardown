@@ -52,6 +52,17 @@ rm -f "$pidfile"
 # receipt so a late result can still be proved. Teardown owns their end.
 rm -rf "$DUX_STATE/$id.handoffs"
 rm -f "$DUX_STATE/$id.run" "$DUX_STATE/$id.result-context" "$DUX_STATE/$id.ship-receipt"
+# A wrapper that reached its own ending cleared its task channel on the way out,
+# and dead recovery clears one a crashed wrapper left as soon as the worker's own
+# process group has gone. Neither ran here, so teardown is the last owner. The
+# worker is proved gone above, and the worktree is already removed.
+portal="$DUX_STATE/$id.portal"
+channel="$(cat "$portal" 2>/dev/null)"
+case "$channel" in
+  "$DUX_STATE/channels/"?*) rm -rf "$channel" 2>/dev/null || log "task channel $channel left in place" ;;
+  ?*) log "state/$id.portal does not name a task channel; left in place" ;;
+esac
+rm -f "$portal" "$DUX_STATE/$id.pgid"
 
 pr="$("$ledger" get "$id" pr)" || exit $?
 "$ledger" set "$id" state "$final" || exit $?
