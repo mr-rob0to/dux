@@ -21,6 +21,19 @@ mtime_epoch() {  # $1 path; one epoch timestamp on GNU and BSD stat
   stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null
 }
 
+# One reading of "which GitHub repository is this", shared by the result context
+# and intake, so a source key and a PR url are compared under the same rule.
+github_slug() {  # $1 repo path; prints owner/name, or returns 1
+  local url slug
+  url="$(git -C "$1" config --get remote.origin.url 2>/dev/null)" || return 1
+  case "$url" in
+    *github.com[:/]*) slug="${url#*github.com}"; slug="${slug#[:/]}"; slug="${slug%/}"; slug="${slug%.git}" ;;
+    *) return 1 ;;
+  esac
+  printf '%s' "$slug" | grep -qE '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' || return 1
+  printf '%s' "$slug"
+}
+
 pid_runs() {  # $1 pid, $2 command-line needle ending at a word boundary
   local command
   case "$1" in ''|*[!0-9]*) return 1 ;; esac

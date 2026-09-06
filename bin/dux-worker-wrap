@@ -167,11 +167,7 @@ printf '%s\n' "$channel" > "$portal" || refuse "cannot write $portal"
 # What a result has to be checked against, written before the worker can
 # change anything: the run it belongs to and the project facts Dux registered.
 worktree_path="$(pwd -P)"
-origin_url="$(git config --get remote.origin.url 2>/dev/null || true)"
-slug="-"
-case "$origin_url" in
-  *github.com[:/]*) slug="${origin_url#*github.com}"; slug="${slug#[:/]}"; slug="${slug%.git}" ;;
-esac
+slug="$(github_slug .)" || slug="-"
 {
   echo "version=1"; echo "id=$id"; echo "run=$run"; echo "shape=$shape"
   echo "project=$project"; echo "repo=$slug"; echo "base=$base"; echo "branch=$branch"
