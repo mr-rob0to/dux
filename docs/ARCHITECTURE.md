@@ -226,9 +226,12 @@ whole handoff or none of it.
   `state/<id>.ship-receipt`, `state/<id>.portal`, `state/<id>.pgid` and the task
   channel the portal names. A wrapper that died without cleaning up leaves those
   last three behind; recovery clears them only once the worker's own process
-  group is proved gone, and teardown is the last owner either way. A portal that
-  does not name a path under `state/channels/` is left alone and logged, so a
-  broken reference never turns into a recursive delete of something else.
+  group is proved gone, and teardown asks the same question before it removes
+  anything: a live group in `state/<id>.pgid`, or a file it cannot read as one,
+  is a finding, because the folder those processes are working in is the
+  worktree teardown is about to take away. A portal that does not name a path
+  under `state/channels/` is left alone and logged, so a broken reference never
+  turns into a recursive delete of something else.
 
 ## Retiring a task from before the upgrade
 
