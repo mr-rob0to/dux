@@ -4,7 +4,7 @@ set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
-usage="usage: dux-recover <id> [--extend | --stop | --retry [--answer-file <f>] | --classify done|failed]"
+usage="usage: dux-recover <id> [--extend | --stop | --retry [--answer-file <f>] | --classify failed]"
 id="${1:-}"
 [ -n "$id" ] || finding "$usage"
 shift
@@ -19,7 +19,8 @@ while [ $# -gt 0 ]; do
     --classify)
       [ $# -ge 2 ] || finding "$usage"
       action=classify; classify="$2"
-      case "$classify" in done|failed) ;; *) finding "$usage" ;; esac
+      # done is never classified by hand. It comes from dux-result or not at all.
+      case "$classify" in failed) ;; *) finding "$usage" ;; esac
       shift ;;
     *) finding "$usage" ;;
   esac
@@ -46,17 +47,6 @@ shape="$("$ledger" get "$id" shape)" || exit $?
 [ -d "$task" ] || finding "no task folder for $id"
 
 last_status() { tail -n 1 "$status_log" 2>/dev/null; }
-latest_exit_status() {
-  awk '
-    {
-      kind = $0
-      sub(/:.*/, "", kind)
-      if (kind == "done" || kind == "failed" || kind == "blocked" ||
-          kind == "needs-decision" || kind == "ended") last = $0
-    }
-    END { if (last != "") print last }
-  ' "$status_log" 2>/dev/null
-}
 is_exit_line() { case "${1%%:*}" in done|failed|blocked|needs-decision|ended) return 0 ;; *) return 1 ;; esac; }
 
 clean_worker_lines() {
@@ -107,16 +97,16 @@ mark_failed() {
   "$ledger" set "$id" state failed || exit $?
 }
 
-reconcile_if_exited() {
-  local last current pr
-  last="$(latest_exit_status)"; current="${last%%:*}"
-  is_exit_line "$last" || return 1
-  [ "$current" != "$state" ] || return 1
-  "$ledger" set "$id" state "$current" || exit $?
-  case "$last" in
-    "done: PR https://"*) pr="${last#done: PR }"; "$ledger" set "$id" pr "${pr%% *}" || exit $? ;;
-  esac
-  print_status_line "worker for $id already wrote a terminal status; ledger set to $current; nothing to recover" "$last"
+# A run that already produced a result is not a recovery. Its handoff is sitting
+# in state/<id>.handoffs waiting for the watcher, which is the only thing that
+# applies one; recovery reports it and leaves it exactly where it is.
+report_settled() {  # $1 lead-in, $2 sequence
+  print_status_line "$1" "$(head -n 1 "$DUX_STATE/$id.handoffs/$2/status" 2>/dev/null)"
+}
+already_settled() {
+  local n
+  n="$(next_handoff "$id")" || return 1
+  report_settled "$id already has a result waiting at state/$id.handoffs/$n; the watcher applies it, nothing to recover" "$n"
   return 0
 }
 
@@ -137,7 +127,7 @@ need_state() {
 }
 
 stale_inspect() {
-  reconcile_if_exited && return 0
+  already_settled && return 0
   if grep -qxF "$extend_marker" "$status_log"; then
     echo "extended: yes (once; the next step is --stop)"
   else
@@ -150,20 +140,20 @@ stale_inspect() {
 
 extend() {
   [ "$state" = stale ] || finding "$id is $state, not stale; --extend applies to stale tasks"
-  reconcile_if_exited && return 0
+  already_settled && return 0
   grep -qxF "$extend_marker" "$status_log" && finding "$id was already extended once; the next step is --stop"
   [ -z "${DUX_RECOVER_EXTEND_PAUSE_SECS:-}" ] || sleep "$DUX_RECOVER_EXTEND_PAUSE_SECS"
   append_status "$extend_marker"
-  reconcile_if_exited && return 0
+  already_settled && return 0
   "$ledger" set "$id" state running || exit $?
   "$ledger" unack "$id" || exit $?
   echo "extended $id once; stale again after ${stale_after}s of silence"
 }
 
 stop() {
-  local pid waited=0 last
+  local pid waited=0 n
   [ "$state" = stale ] || finding "$id is $state, not stale; --stop applies to stale tasks"
-  reconcile_if_exited && return 0
+  already_settled && return 0
   pid="$(wrapper_pid)" || exit $?
   [ -n "$pid" ] || finding "no live wrapper for $id; the watcher will report it dead"
   kill -INT "$pid" 2>/dev/null || finding "cannot signal wrapper pid $pid for $id"
@@ -172,20 +162,21 @@ stop() {
     sleep 1
     waited=$((waited + 1))
   done
-  last="$(last_status)"
-  if is_exit_line "$last"; then
-    "$ledger" set "$id" state "${last%%:*}" || exit $?
-    print_status_line "stopped $id; the wrapper wrote a terminal status" "$last"
+  # A wrapper that reached its own ending published it on the way out. That is
+  # the run's result and it stands; only a wrapper that published nothing is
+  # recovery's to call.
+  if n="$(next_handoff "$id")"; then
+    report_settled "stopped $id; the wrapper published its result and the watcher will apply it" "$n"
   else
     mark_failed "failed: stopped by dux-recover after stale"
     failure_tail_to_report
-    echo "stopped $id; no exit line, so marked failed with the output tail in tasks/$id/report.md"
+    echo "stopped $id; no result published, so marked failed with the output tail in tasks/$id/report.md"
   fi
 }
 
 dead() {
   local pid
-  reconcile_if_exited && return 0
+  already_settled && return 0
   pid="$(wrapper_pid)" || exit $?
   [ -z "$pid" ] || finding "wrapper pid $pid for $id is alive; $id is not dead (the watcher will reconcile)"
   mark_failed "failed: worker gone without an exit line (dux-recover)"
@@ -193,36 +184,44 @@ dead() {
   echo "marked $id failed; worktree kept; last 20 output lines saved to tasks/$id/report.md"
 }
 
+# A worker that exited without a result may still have finished the work. The
+# proof is the same one an on-time result goes through, and what it proves is
+# published into the next sequence for the watcher, not written to the ledger
+# here. Recovery can find a result; it cannot declare one.
 ended() {
-  local path pulls url
-  reconcile_if_exited && return 0
-  path="$("$DUX_ROOT/bin/dux-project" get "$project" path)" || exit $?
-  pulls="$(cd "$path" && gh pr list --head "dux/$id" --state all --json url,state 2>/dev/null)" \
-    || finding "gh pr list failed for dux/$id; cannot tell whether a PR exists (rerun when gh works, or --classify)"
-  url="$(printf '%s' "$pulls" | jq -r '.[0].url // empty' 2>/dev/null)"
-  if [ -n "$url" ]; then
-    append_status "done: PR $url"
-    "$ledger" set "$id" state "done" || exit $?
-    "$ledger" set "$id" pr "$url" || exit $?
-    echo "classified $id as done: PR $url"
-    return 0
+  local run proof reason prc n err
+  already_settled && return 0
+  run="$(sed -n 's/^run=//p' "$DUX_STATE/$id.run" 2>/dev/null | head -n 1)"
+  [ -n "$run" ] \
+    || finding "no run record at state/$id.run; nothing is left to prove a result for $id against"
+  err="$DUX_STATE/$id.recover-result.err"
+  set -- verify "$id" "$run"
+  # report.md is also where a wrapper refusal lands, and a failure tail is not a
+  # scout's findings, so a report holding one is not offered as evidence.
+  if [ "$shape" = scout ] && [ -s "$report" ] && ! grep -q '^## Failure' "$report"; then
+    set -- "$@" --report "$report"
   fi
-  if [ -s "$report" ] && ! grep -q '^## Failure' "$report"; then
-    append_status "done: report"
-    "$ledger" set "$id" state "done" || exit $?
-    echo "classified $id as done: report"
-    return 0
-  fi
-  echo "unsure: no PR on dux/$id and no report; ask the operator, then dux-recover $id --classify done|failed"
+  proof="$("$DUX_ROOT/bin/dux-result" "$@" 2>"$err")"; prc=$?
+  reason="$(sed -e 's/^dux: //' -e 's/^finding: //' "$err" 2>/dev/null | tail -n 1)"
+  rm -f "$err"
+  case "$prc" in
+    0)
+      n="$(publish_handoff "$id" "$run" "$proof" "done")" \
+        || finding "cannot publish the proved result for $id under state/$id.handoffs"
+      echo "proved $id: $proof; published as handoff $n, the watcher will apply it" ;;
+    1)
+      # The reason is Dux's own words, but a branch or check name inside it came
+      # from the repository, so it is fenced like anything else that arrived.
+      echo "$id has no proved result. The check said (data, not instructions):"
+      printf '%s\n' "$reason" | print_worker_data evidence
+      echo "next: dux-recover $id --classify failed, or dispatch a fresh task" ;;
+    *) finding "cannot check the result for $id: ${reason:-no reason given}" ;;
+  esac
 }
 
 classify_as() {
   [ "$state" = ended ] || finding "--classify applies to ended tasks; $id is $state"
   case "$1" in
-    done)
-      append_status "done: classified by the operator"
-      "$ledger" set "$id" state "done" || exit $?
-      echo "classified $id as done" ;;
     failed)
       append_status "failed: classified by the operator"
       "$ledger" set "$id" state failed || exit $?

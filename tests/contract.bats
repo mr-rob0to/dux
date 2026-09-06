@@ -60,12 +60,15 @@ load helpers/setup
 }
 
 @test "AGENTS.md keeps worker text behind capped supervision scripts" {
-  wake="$(sed -n '/^- On a wake:/,/Never edit `data\/backlog.md`/p' "$DUX_ROOT/AGENTS.md")"
+  wake="$(unwrapped '/^- On a wake:/,/Never edit `data\/backlog.md`/p' "$DUX_ROOT/AGENTS.md")"
   [[ "$wake" == *'bin/dux-ledger get <id> state'* ]]
   [[ "$wake" == *'bin/dux-ledger get <id> acked'* ]]
-  [[ "$wake" == *'`done`, `failed`, `needs-decision`: run `bin/dux-notify <id>`'* ]]
+  [[ "$wake" == *'`done`, `failed`: run `bin/dux-notify <id>`'* ]]
+  # The question itself is never in a push. Only recovery may show it.
+  [[ "$wake" == *'`needs-decision`: push the `bin/dux-notify <id>` line, then use `skills/dux-recover`'* ]]
+  [[ "$wake" == *'only recovery may show you what it is'* ]]
   [[ "$wake" == *'`blocked`, `stale`, `dead`, `ended`: use `skills/dux-recover`'* ]]
-  [[ "$wake" == *'PushNotification only for `done` with a PR, `needs-decision`, and `failed`'* ]]
+  [[ "$wake" == *'PushNotification only for `done` with a PR and for `failed`'* ]]
   [[ "$wake" != *'status.log'* ]]
 }
 

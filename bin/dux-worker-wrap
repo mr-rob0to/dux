@@ -17,9 +17,20 @@ poll="${DUX_WRAP_POLL_SECS:-5}"; beat="${DUX_HEARTBEAT_SECS:-300}"
 branch="dux/$id"
 
 [ -d "$task" ] || finding "no task folder for $id"
-# From here on a refusal is a failed task with a reason, not a silent pane.
+# From here on a refusal is a failed task with a reason, not a silent pane. Once
+# this run has a record to name, that reason travels as a handoff like any other
+# result; before it has one there is no run for a handoff to belong to, so the
+# line goes straight to the status log and the watcher reads a dead task.
+run=""; handoff_ready=0
 refuse() {
-  printf 'failed: wrapper: %s\n' "$*" >> "$status_log" 2>/dev/null
+  local line
+  line="$(cap_line "failed: wrapper: $*")"
+  if [ "$handoff_ready" = 1 ]; then
+    publish_handoff "$id" "$run" "$line" failed >/dev/null \
+      || log "cannot publish the refusal for $id; state/$id.handoffs holds nothing"
+  else
+    printf '%s\n' "$line" >> "$status_log" 2>/dev/null
+  fi
   { echo "## Failure"; echo "wrapper: $*"; } >> "$task/report.md" 2>/dev/null
   finding "$*"
 }
@@ -71,7 +82,7 @@ context="$DUX_STATE/$id.result-context"; channels="$DUX_STATE/channels"
 # nothing here can tell a leftover from a live one, so it is the operator's to
 # clear through recovery. -L as well as -e: a dangling symlink is a reference
 # too, and writing through it would put this run's state somewhere else.
-for f in "$runfile" "$portal" "$pgidfile" "$context"; do
+for f in "$runfile" "$portal" "$pgidfile" "$context" "$(handoff_home "$id")"; do
   [ ! -e "$f" ] && [ ! -L "$f" ] \
     || refuse "$id already has a reference from an earlier run at state/${f##*/}"
 done
@@ -154,6 +165,9 @@ context_id="$(git hash-object --stdin < "$context" 2>/dev/null)" \
   echo "shape=$shape"; echo "worktree=$worktree_path"; echo "channel=$channel"
   echo "context=$context_id"
 } > "$runfile" || refuse "cannot write $runfile"
+# From here a result can name the run it belongs to, so every terminal state
+# this wrapper reaches, its own refusals included, leaves as a handoff.
+handoff_ready=1
 
 cleanup_channel() {  # the channel and the references only this run owns
   rm -rf "$channel" 2>/dev/null || log "task channel $channel left in place"
@@ -338,8 +352,6 @@ echo "$pgid" > "$pgidfile" \
 # nothing, and the harness would then run unsupervised. Deliver it now.
 [ "$signalled" = 0 ] || kill -TERM -- "-$pgid" 2>/dev/null || true
 
-last_status() { grep -v '^working: heartbeat$' "$status_log" 2>/dev/null | tail -n 1; }
-
 last_size=0; last_beat="$(date +%s)"
 while kill -0 "$wpid" 2>/dev/null; do
   sleep "$poll"
@@ -389,17 +401,53 @@ if [ -s "$report_outbox" ]; then
   clean_text < "$report_outbox" >> "$task/report.md" || refuse "cannot write $task/report.md"
 fi
 
+# ---- the result ----------------------------------------------------------
+# A terminal proposal is a request. For done the answer comes from dux-result,
+# which reads Dux's own run record, the repository and GitHub and never the
+# worker's word for any of it; the worker's own url, report claim and shape are
+# not inputs. Every other terminal word is the worker reporting on itself, which
+# only ever moves the task away from done, so its line stands.
+result_line=""; result_event=""
+prove_done() {
+  local proof reason prc err="$channel/result.err"
+  set -- verify "$id" "$run"
+  [ ! -s "$report_outbox" ] || set -- "$@" --report "$report_outbox"
+  proof="$("$DUX_ROOT/bin/dux-result" "$@" 2>"$err")"; prc=$?
+  # dux-result's own words, not the worker's, but a check name inside them came
+  # from GitHub, so they are cleaned and capped like anything else that arrived.
+  reason="$(clean_text < "$err" 2>/dev/null | tail -n 1)"
+  reason="${reason#dux: }"; reason="${reason#finding: }"
+  rm -f "$err"
+  case "$prc" in
+    0)
+      case "$proof" in
+        done:\ ?*) result_line="$proof"; result_event="done" ;;
+        *) refuse "dux-result answered this, which is not a result line: $proof" ;;
+      esac ;;
+    1)
+      # Evidence that does not add up leaves the task ended. Dux never guesses done.
+      result_line="$(cap_line "ended: the result was not proved: ${reason:-no reason given}")"
+      result_event=ended ;;
+    *) refuse "dux-result could not check the result for $id: ${reason:-no reason given}" ;;
+  esac
+}
+
 if [ -n "$terminal" ]; then
-  printf '%s\n' "$terminal" >> "$status_log"; mirror "${terminal%%:*}"
+  case "${terminal%%:*}" in
+    done) prove_done ;;
+    *) result_line="$terminal"; result_event="${terminal%%:*}" ;;
+  esac
 elif [ "$rc" -ne 0 ]; then
-  echo "failed: worker exited $rc" >> "$status_log"; mirror failed
+  result_line="failed: worker exited $rc"; result_event=failed
 else
-  echo "ended: exit 0 without terminal status" >> "$status_log"; mirror ended
+  result_line="ended: exit 0 without terminal status"; result_event=ended
 fi
-last="$(last_status)"
-if [ "${last%%:*}" = failed ]; then
+if [ "$result_event" = failed ]; then
   { echo "## Failure tail"; tail -n 20 "$out"; } >> "$task/report.md"
 fi
+publish_handoff "$id" "$run" "$result_line" "$result_event" >/dev/null \
+  || finding "cannot publish the result for $id; state/$id.handoffs holds nothing"
+mirror "$result_event"
 cleanup_channel
-log "worker for $id exited $rc; last status: $last"
+log "worker for $id exited $rc; result: $result_line"
 exit 0

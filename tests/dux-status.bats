@@ -60,14 +60,16 @@ unacknowledged
   [ "$output" = $'watcher: not running\napi\nios' ]
 }
 
-@test "an exit status log overrides a lagging ledger with a note" {
+# The digest counts the ledger. A worker writing its own ending into the status
+# log used to move the count and put its url on the screen; now the task stays
+# running until a proved handoff moves it, and the url comes with that.
+@test "a terminal status line the ledger has not followed changes nothing" {
   setup_fleet
   task a1 api running
   echo "done: PR https://example.invalid/pr/3" >> "$DUX_HOME/data/tasks/a1/status.log"
-  run dux-status
-  [[ "$output" == *$'api\n  ready 1\n'* ]]
-  [[ "$output" == *"note: a1 status log says done, ledger says running; the watcher will reconcile"* ]]
-  [ "$(grep -c '  running' <<< "$output" || true)" -eq 0 ]
+  run dux-status --prs
+  [[ "$output" == *$'api\n  running 1\n'* ]]
+  [[ "$output" != *ready* ]]; [[ "$output" != *example.invalid* ]]; [[ "$output" != *note:* ]]
 }
 
 @test "running suffix reports stale and long-running counts" {

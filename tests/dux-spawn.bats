@@ -15,7 +15,7 @@ setup() {
   : > "$FAKE_HERDR_LOG"; : > "$FAKE_HERDR_OUTPUT"; : > "$FAKE_WORKER_LOG"; : > "$FAKE_GH_LOG"
   export DUX_BACKEND=herdr HERDR_WORKSPACE_ID=w1 FAKE_HERDR_RUN=1
   export FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1
-  printf 'status working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   export DUX_SESSION_PID=$$
   dux-lock acquire >/dev/null
 }
@@ -23,6 +23,12 @@ setup() {
 wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   local i=0
   until grep -q "$2" "$1" 2>/dev/null; do i=$((i + 1)); [ "$i" -ge "$3" ] && return 1; sleep 1; done
+}
+# A run ends by publishing a handoff, not by writing a terminal status line, so
+# "the worker is finished" is that sequence appearing.
+wait_result() {  # $1 id
+  local i=0 f="$DUX_HOME/state/$1.handoffs/1/status"
+  until [ -e "$f" ]; do i=$((i + 1)); [ "$i" -ge 15 ] && return 1; sleep 1; done
 }
 
 @test "refuses when the lock is not this session's, and touches nothing" {
@@ -98,7 +104,7 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   # The container is what this test asks about, so the other signal is settled
   # first: once the wrapper has exited its pidfile names a dead pid and stops
   # deciding the answer. The pidfile's own refusal has its own test.
-  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+  wait_result "$id"
   wait_for_workers 30
   # Exactly the disk state a spawn killed between backend open and the endpoint
   # write leaves: a live container, no endpoint file, the ledger still queued.
@@ -156,7 +162,7 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   bash -c 'echo $$' > "$pf"
   run dux-spawn "$id"
   [ "$status" -eq 0 ]
-  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+  wait_result "$id"
 }
 
 @test "a spawn that died after the worktree and before the container is spawnable again" {
@@ -175,7 +181,7 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   [ "$(printf '%s\n' "$output" | tail -n 1)" = "spawned $id endpoint=herdr:w1:p9 worktree=$wt" ]
   [ "$(dux-ledger get "$id" state)" = running ]
   grep -qxF -- "- Worktree: $wt" "$b"
-  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+  wait_result "$id"
 }
 
 @test "an open that fails with the container alive refuses to discard the worktree" {
@@ -202,7 +208,7 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   ln -s "$DUX_ROOT" "$DUX_HOME/dux root/dux"
   run env DUX_ROOT="$DUX_HOME/dux root/dux" dux-spawn "$id"
   [ "$status" -eq 0 ]
-  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+  wait_result "$id"
   [[ "$(cat "$DUX_HOME/state/$id.pid")" =~ ^[0-9]+$ ]]
   grep -q '^claude ' "$FAKE_WORKER_LOG"
 }
@@ -228,7 +234,7 @@ wait_for() {  # $1 file, $2 grep pattern, $3 seconds
   grep -qxF -- "- Worktree: $wt" "$DUX_HOME/data/tasks/$id/brief.md"
   grep -qF "tab create --workspace w1 --cwd $wt --label dux-$id --no-focus" "$FAKE_HERDR_LOG"
   grep -qxF "pane run w1:p9 $DUX_ROOT/bin/dux-worker-wrap $id" "$FAKE_HERDR_LOG"
-  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+  wait_result "$id"
   grep -q '^claude ' "$FAKE_WORKER_LOG"
   [ ! -s "$FAKE_GH_LOG" ]
 }
@@ -258,7 +264,7 @@ codex_refused() {  # asserts the last `run` refused and started nothing for $id
   run dux-spawn "$id" --harness claude
   [ "$status" -eq 0 ]
   [ "$(cat "$DUX_HOME/data/tasks/$id/harness")" = claude ]
-  wait_for "$DUX_HOME/data/tasks/$id/status.log" '^done: report' 15
+  wait_result "$id"
   grep -q '^claude ' "$FAKE_WORKER_LOG"
   [ "$(grep -c '^codex ' "$FAKE_WORKER_LOG" || true)" -eq 0 ]
 }

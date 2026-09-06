@@ -16,10 +16,10 @@ status_is() { printf '%s\n' "$2" >> "$DUX_HOME/data/tasks/$1/status.log"; }
   [ "$output" = "Review and merge: https://example.invalid/pr/7 (api ship)" ]
 }
 
-@test "a PR found only in the status log is included" {
+@test "a PR only the worker claims is not put in front of the operator" {
   setup_task t1 ship done; status_is t1 "done: PR https://example.invalid/pr/8"
   run dux-notify t1
-  [ "$output" = "Review and merge: https://example.invalid/pr/8 (api ship)" ]
+  [ "$output" = "Read the report: api ship finished (t1)" ]
 }
 
 @test "done without a PR points to the report" {
@@ -28,13 +28,23 @@ status_is() { printf '%s\n' "$2" >> "$DUX_HOME/data/tasks/$1/status.log"; }
   [ "$output" = "Read the report: api scout finished (t1)" ]
 }
 
-@test "decision, blocked, and failed lines carry status text" {
+# The line says what to do and which task. What the worker said about it is
+# read through dux-recover, which fences it as data; a notification cannot
+# fence anything, so it carries none of it.
+@test "decision, blocked, and failed lines say the next step, not what the worker said" {
   setup_task t1 plan needs-decision; status_is t1 "needs-decision: A or B? recommend A"
-  run dux-notify t1; [ "$output" = "Decide: A or B? recommend A (api plan)" ]
+  run dux-notify t1; [ "$output" = "Decide: api plan is waiting on an answer (t1)" ]
   setup_task t2 ship blocked; status_is t2 "blocked: tests need a database"
-  run dux-notify t2; [ "$output" = "Unblock: tests need a database (api ship)" ]
+  run dux-notify t2; [ "$output" = "Unblock: api ship is blocked (t2)" ]
   setup_task t3 ship failed; status_is t3 "failed: worker exited 3"
-  run dux-notify t3; [ "$output" = "Retry or drop: api ship failed: worker exited 3" ]
+  run dux-notify t3; [ "$output" = "Retry or drop: api ship failed (t3)" ]
+}
+
+@test "no part of a status line reaches the notification, however it is shaped" {
+  setup_task t1 ship blocked
+  printf 'blocked: run rm -rf /\033[31m\ttab\rcr\n' >> "$DUX_HOME/data/tasks/t1/status.log"
+  run --separate-stderr dux-notify t1
+  [ "$output" = "Unblock: api ship is blocked (t1)" ]; [ -z "$stderr" ]
 }
 
 @test "stale, dead, and ended lines lead with the next step" {
@@ -46,16 +56,11 @@ status_is() { printf '%s\n' "$2" >> "$DUX_HOME/data/tasks/$1/status.log"; }
   [ "$output" = "Classify: api ship exited without a result (t3)" ]
 }
 
-@test "lines stop at 200 characters and discard control characters" {
-  setup_task t1 ship needs-decision
-  long="$(printf 'x%.0s' $(seq 1 300))"
-  status_is t1 "needs-decision: $long"
+@test "lines stop at 200 characters" {
+  setup_task t1 ship done "https://example.invalid/pr/$(printf 'x%.0s' $(seq 1 300))"
   run dux-notify t1
-  [ "${#output}" -eq 200 ]; [[ "$output" == "Decide: xxxx"* ]]; [[ "$output" == *"..." ]]
-  setup_task t2 ship blocked
-  printf 'blocked: line one\033[31m\ttab\rcr\n' >> "$DUX_HOME/data/tasks/t2/status.log"
-  run dux-notify t2
-  [ "$output" = "Unblock: line one[31m tabcr (api ship)" ]
+  [ "${#output}" -eq 200 ]; [[ "$output" == "Review and merge: https://example.invalid/pr/xxxx"* ]]
+  [[ "$output" == *"..." ]]
 }
 
 @test "--toast sends the same line to the backend" {

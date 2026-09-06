@@ -91,16 +91,117 @@ last_activity() {  # $1 id; newer of the status log and wrapper pidfile
   if [ "$a" -ge "$b" ]; then echo "$a"; else echo "$b"; fi
 }
 
+# ---- terminal handoffs ---------------------------------------------------
+# A task finishes when a run publishes a handoff Dux itself built from proved
+# evidence. Everything below checks that the handoff belongs to this task's run
+# and says something Dux is willing to write, before any of it is written.
+run_of() {  # $1 id; the run recorded for the task, or nothing
+  local f="$DUX_STATE/$1.run"
+  { [ ! -L "$f" ] && [ -f "$f" ]; } || return 0
+  sed -n 's/^run=//p' "$f" | head -1
+}
+
+context_field() {  # $1 id, $2 key
+  local f="$DUX_STATE/$1.result-context"
+  { [ ! -L "$f" ] && [ -f "$f" ]; } || return 0
+  sed -n "s/^$2=//p" "$f" | head -1
+}
+
+receipt_complete() {  # $1 id; the five /ship phases, in order, and nothing else
+  local f="$DUX_STATE/$1.ship-receipt"
+  { [ ! -L "$f" ] && [ -f "$f" ]; } || return 1
+  [ "$(sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$f" | tr '\n' ' ')" = "checks review security pr ci " ]
+}
+
+# Prints "<event> <status line>", or reject:<why>. Nothing is written here.
+read_handoff() {  # $1 id, $2 sequence
+  local d f run want status event repo
+  d="$DUX_STATE/$1.handoffs/$2"
+  for f in run status event; do
+    { [ ! -L "$d/$f" ] && [ -f "$d/$f" ]; } || { echo "reject:handoff $2 has no $f file"; return 0; }
+    [ "$(wc -l < "$d/$f" | tr -d " ")" -eq 1 ] || { echo "reject:handoff $2 does not hold one $f line"; return 0; }
+  done
+  run="$(cat "$d/run")"; status="$(cat "$d/status")"; event="$(cat "$d/event")"
+  want="$(run_of "$1")"
+  if [ -n "$want" ]; then
+    [ "$run" = "$want" ] || { echo "reject:handoff $2 names run $run, not this task's run"; return 0; }
+  else
+    [ "$run" = - ] || { echo "reject:handoff $2 names a run but $1 recorded none"; return 0; }
+  fi
+  # One clean line, in the grammar, inside the cap. A handoff Dux built is
+  # already all three; one that is not did not come from a run of this task.
+  case "$status" in
+    *[!\ -~]*) echo "reject:handoff $2 does not hold one status line"; return 0 ;;
+    done:\ ?*|failed:\ ?*|blocked:\ ?*|needs-decision:\ ?*|ended:\ ?*) ;;
+    *) echo "reject:handoff $2 does not hold one status line"; return 0 ;;
+  esac
+  [ "${#status}" -le "$HANDOFF_LINE_CAP" ] \
+    || { echo "reject:handoff $2 does not hold one status line"; return 0; }
+  [ "$event" = "${status%%:*}" ] \
+    || { echo "reject:handoff $2 records event $event for a ${status%%:*} status"; return 0; }
+  if [ "$event" = "done" ]; then
+    repo="$(context_field "$1" repo)"
+    case "$(context_field "$1" shape)" in
+      scout)
+        [ "$status" = "done: report" ] \
+          || { echo "reject:a pull request does not complete a scout task"; return 0; } ;;
+      plan|ship)
+        case "$status" in
+          "done: PR https://github.com/"*) ;;
+          *) echo "reject:a report does not complete a $(context_field "$1" shape) task"; return 0 ;;
+        esac
+        # The url Dux stores names the repository Dux registered, or none.
+        case "${status#done: PR https://github.com/}" in
+          "$repo"/pull/*) ;;
+          *) echo "reject:handoff $2 names a pull request outside $repo"; return 0 ;;
+        esac
+        if [ "$(context_field "$1" shape)" = ship ] && ! receipt_complete "$1"; then
+          echo "reject:no complete /ship receipt behind the result for $1"; return 0
+        fi ;;
+      *) echo "reject:handoff $2 completes $1, which recorded no shape"; return 0 ;;
+    esac
+  fi
+  printf '%s %s\n' "$event" "$status"
+}
+
+# Each step leaves its own mark, so a watcher killed part-way through writes the
+# rest and nothing twice. The sequence itself is never removed; teardown owns it.
+consume_handoff() {  # $1 id, $2 sequence, $3 event, $4 status line
+  local d
+  d="$DUX_STATE/$1.handoffs/$2"
+  if [ ! -e "$d/did-status" ]; then
+    printf '%s\n' "$4" >> "$DUX_TASKS/$1/status.log" \
+      || { log "watch: cannot append to the status log for $1"; return 1; }
+    : > "$d/did-status"
+  fi
+  if [ ! -e "$d/did-event" ]; then
+    printf '%s %s: %s\n' "$(now)" "$3" "$1" >> "$events" \
+      || { log "watch: cannot append to $events"; return 1; }
+    : > "$d/did-event"
+  fi
+  "$ledger" set "$1" state "$3" \
+    || { log "watch: ledger not updated for $1; the handoff stays until it is"; return 1; }
+  case "$4" in
+    "done: PR "*)
+      "$ledger" set "$1" pr "${4#done: PR }" \
+        || { log "watch: ledger url not updated for $1; the handoff stays until it is"; return 1; } ;;
+  esac
+  : > "$d/consumed"
+  "$backend" notify Dux "$3: $1" >/dev/null 2>&1 || true
+}
+
 # The first line is the ledger target or skip:<why>. Any later note: lines are
 # observations to log without changing the target.
 target_for() {  # $1 id
-  local id st live verdict notes age target
+  local id st live verdict notes age target n
   id="$1"; st="$(status_state "$id")"
   case "$st" in
-    done|failed|blocked|needs-decision|ended) echo "$st"; return 0 ;;
-    ''|working) ;;
+    # A terminal-looking line proves nothing on its own. Either a handoff put it
+    # there, in which case the ledger already followed it, or nothing did.
+    ''|working|done|failed|blocked|needs-decision|ended) ;;
     *) echo "skip:status log ends in an unknown state '$st'"; return 0 ;;
   esac
+  if n="$(next_handoff "$id")"; then echo "handoff:$n"; return 0; fi
   live="$(liveness "$id")"
   verdict="$(printf '%s\n' "$live" | sed -n '1p')"
   notes="$(printf '%s\n' "$live" | sed -n '2,$p')"
@@ -122,10 +223,27 @@ emit() {  # $1 id, $2 state; record first so a crash cannot lose the wake
   "$backend" notify Dux "$2: $1" >/dev/null 2>&1 || true
 }
 
+# Running and stale are the tasks a watcher normally looks at. A task whose
+# ledger already moved but whose handoff is not marked consumed is the crash
+# case, and only this list brings the watcher back to finish it.
+watched_ids() {
+  local id d
+  "$ledger" list --state running
+  "$ledger" list --state stale
+  for d in "$DUX_STATE"/*.handoffs; do
+    [ -d "$d" ] || continue
+    id="${d##*/}"; id="${id%.handoffs}"
+    next_handoff "$id" >/dev/null || continue
+    printf '%s\n' "$id"
+  done
+}
+
 observations=""
 pass() {
-  local id lstate result target line seen=""
-  for id in $("$ledger" list --state running) $("$ledger" list --state stale); do
+  local id lstate result target line seen="" done_ids="" handed event status
+  for id in $(watched_ids); do
+    case " $done_ids " in *" $id "*) continue ;; esac
+    done_ids="$done_ids $id"
     lstate="$("$ledger" get "$id" state 2>/dev/null)" || continue
     result="$(target_for "$id")"
     target="$(printf '%s\n' "$result" | sed -n '1p')"
@@ -139,6 +257,14 @@ $(printf '%s\n' "$result" | sed -n '2,$p')
 EOF
     case "$target" in
       skip:*) seen="${seen}finding: watch: $id: ${target#skip:}"$'\n'; continue ;;
+      handoff:*)
+        handed="$(read_handoff "$id" "${target#handoff:}")"
+        case "$handed" in
+          reject:*) seen="${seen}finding: watch: $id: ${handed#reject:}"$'\n'; continue ;;
+        esac
+        event="${handed%% *}"; status="${handed#* }"
+        consume_handoff "$id" "${target#handoff:}" "$event" "$status" || true
+        continue ;;
     esac
     [ "$target" != "$lstate" ] || continue
     if [ "$target" = running ]; then
@@ -158,7 +284,18 @@ case "${1:-}" in
     [ $# -eq 2 ] || finding "$usage"
     valid_task_id "$2"
     "$ledger" get "$2" state >/dev/null || exit $?
-    target_for "$2"
+    # Reads and reports; a pending handoff is resolved to what it would write,
+    # never consumed. Only a pass consumes one.
+    result="$(target_for "$2")"
+    case "$result" in
+      handoff:*)
+        handed="$(read_handoff "$2" "${result#handoff:}")"
+        case "$handed" in
+          reject:*) printf 'skip:%s\n' "${handed#reject:}" ;;
+          *) printf '%s\n' "${handed%% *}" ;;
+        esac ;;
+      *) printf '%s\n' "$result" ;;
+    esac
     exit 0 ;;
   --once) [ $# -eq 1 ] || finding "$usage"; pass; exit 0 ;;
   '') ;;

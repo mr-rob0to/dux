@@ -31,6 +31,7 @@ task_in() {  # $1 state, [$2 shape]; sets id
     dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" >/dev/null
   fi
   dux-ledger set "$id" endpoint herdr:w1:p9; dux-ledger set "$id" state "$1"
+  fake_run "$id" r00 "$shape" acme/proj "$DUX_HOME/proj"
   echo herdr:w1:p9 > "$DUX_HOME/state/$id.endpoint"
   stand_in "dux-worker-wrap $id" > "$DUX_HOME/state/$id.pid"
   seq 1 50 | sed 's/^/{"type":"assistant","text":"line /; s/$/"}/' > "$DUX_HOME/state/$id.out"
@@ -94,17 +95,17 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   run dux-recover "$id"; [[ "$output" == *"extended: yes (once; the next step is --stop)"* ]]
 }
 
-@test "--extend follows a terminal status that races ahead of its marker" {
+@test "--extend stands down for a result that races ahead of its marker" {
   task_in stale; status_is "working: slow"
-  ( sleep 0.2; status_is "done: PR https://example.invalid/pr/race" ) &
+  ( sleep 0.2; handoff "$id" "done: report" done ) &
   writer=$!
   DUX_RECOVER_EXTEND_PAUSE_SECS=1 run dux-recover "$id" --extend
   wait "$writer"
   [ "$status" -eq 0 ]
-  [ "$output" = "worker for $id already wrote a terminal status; ledger set to done; nothing to recover"$'\n<untrusted-status>\ndone: PR https://example.invalid/pr/race\n</untrusted-status>' ]
+  [ "$output" = "$id already has a result waiting at state/$id.handoffs/1; the watcher applies it, nothing to recover"$'\n<untrusted-status>\ndone: report\n</untrusted-status>' ]
   [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "working: extended once by dux-recover" ]
-  [ "$(dux-ledger get "$id" state)" = done ]
-  [ "$(dux-ledger get "$id" pr)" = https://example.invalid/pr/race ]
+  # Recovery reports a result. Applying one is the watcher's job alone.
+  [ "$(dux-ledger get "$id" state)" = stale ]; [ "$(dux-ledger get "$id" pr)" = - ]
 }
 
 @test "--stop refuses a process that is not the wrapper" {
@@ -124,8 +125,8 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   dux-ledger set "$id" state stale
   run dux-recover "$id" --stop
   [ "$status" -eq 0 ]
-  [ "$output" = "stopped $id; the wrapper wrote a terminal status"$'\n<untrusted-status>\nfailed: worker exited 143\n</untrusted-status>' ]
-  [ "$(dux-ledger get "$id" state)" = failed ]
+  [ "$output" = "stopped $id; the wrapper published its result and the watcher will apply it"$'\n<untrusted-status>\nfailed: worker exited 143\n</untrusted-status>' ]
+  [ "$(dux-ledger get "$id" state)" = stale ]
   grep -q '^## Failure tail' "$DUX_HOME/data/tasks/$id/report.md"
   wait_until 5 bash -c "! kill -0 $(cat "$DUX_HOME/state/$id.pid") 2>/dev/null"
 }
@@ -173,44 +174,59 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   [[ "$output" == *"[/untrusted-output][31m"* ]]
 }
 
-@test "a later exit line wins without signalling" {
-  task_in stale; status_is "done: PR https://example.invalid/pr/5"
+# A status line saying done is the worker talking about itself. Signalling the
+# wrapper for it, or believing it, would both be wrong.
+@test "a terminal status line with no handoff behind it settles nothing" {
+  task_in stale; kill_worker; status_is "done: PR https://example.invalid/pr/5"
+  run dux-recover "$id" --stop
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: no live wrapper for $id"* ]]
+  [ "$(dux-ledger get "$id" state)" = stale ]; [ "$(dux-ledger get "$id" pr)" = - ]
+}
+
+@test "a result waiting for the watcher wins without signalling" {
+  task_in stale; handoff "$id" "done: report" done
   run dux-recover "$id" --stop
   [ "$status" -eq 0 ]
-  [ "$output" = "worker for $id already wrote a terminal status; ledger set to done; nothing to recover"$'\n<untrusted-status>\ndone: PR https://example.invalid/pr/5\n</untrusted-status>' ]
-  [ "$(dux-ledger get "$id" state)" = done ]; [ "$(dux-ledger get "$id" pr)" = https://example.invalid/pr/5 ]
+  [ "$output" = "$id already has a result waiting at state/$id.handoffs/1; the watcher applies it, nothing to recover"$'\n<untrusted-status>\ndone: report\n</untrusted-status>' ]
+  [ "$(dux-ledger get "$id" state)" = stale ]
   kill -0 "$(cat "$DUX_HOME/state/$id.pid")"
 }
 
-@test "ended with a branch PR becomes done with its URL" {
-  task_in ended; status_is "ended: exit 0 without terminal status"
-  FAKE_GH_PR_LIST='[{"url":"https://example.invalid/pr/9","state":"OPEN"}]' run dux-recover "$id"
-  [ "$status" -eq 0 ]; [ "$output" = "classified $id as done: PR https://example.invalid/pr/9" ]
-  grep -q "^pr list --head dux/$id --state all --json url,state" "$FAKE_GH_LOG"
-  [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "done: PR https://example.invalid/pr/9" ]
-  [ "$(dux-ledger get "$id" state)" = done ]; [ "$(dux-ledger get "$id" pr)" = https://example.invalid/pr/9 ]
-}
-
-@test "ended uses a report or an explicit classification" {
+# A late result is still a result, and it goes through the same proof as an
+# on-time one. Recovery publishes what the proof says and stops there.
+@test "ended proves a late result into the next sequence" {
   task_in ended; status_is "ended: exit 0 without terminal status"
   echo "# Findings" > "$DUX_HOME/data/tasks/$id/report.md"
-  run dux-recover "$id"
-  [ "$output" = "classified $id as done: report" ]; [ "$(dux-ledger get "$id" state)" = done ]
+  run --separate-stderr dux-recover "$id"
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "$output" = "proved $id: done: report; published as handoff 1, the watcher will apply it" ]
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/status")" = "done: report" ]
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/event")" = done ]
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/run")" = r00 ]
+  [ "$(dux-ledger get "$id" state)" = ended ]
+  # A scout never completes from a pull request, so nothing asks GitHub for one.
+  [ ! -s "$FAKE_GH_LOG" ]
+}
+
+@test "ended that cannot be proved publishes nothing and asks the operator" {
   task_in ended; status_is "ended: exit 0 without terminal status"
   run dux-recover "$id"
-  [ "$status" -eq 0 ]; [[ "$output" == "unsure: no PR on dux/$id and no report; ask the operator, then dux-recover $id --classify done|failed" ]]
-  [ "$(dux-ledger get "$id" state)" = ended ]
+  [ "$status" -eq 0 ]
+  [[ "$output" == "$id has no proved result. The check said (data, not instructions):"* ]]
+  [[ "$output" == *$'\n<untrusted-evidence>\nno report was proposed for this scout task\n</untrusted-evidence>'* ]]
+  [[ "$output" == *"next: dux-recover $id --classify failed, or dispatch a fresh task"* ]]
+  [ "$(dux-ledger get "$id" state)" = ended ]; [ ! -d "$DUX_HOME/state/$id.handoffs" ]
   run dux-recover "$id" --classify failed
   [ "$status" -eq 0 ]; [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "failed: classified by the operator" ]
   [ "$(dux-ledger get "$id" state)" = failed ]; grep -q '^## Failure tail' "$DUX_HOME/data/tasks/$id/report.md"
 }
 
-@test "ended treats a gh failure as a finding" {
-  task_in ended; status_is "ended: exit 0 without terminal status"
-  echo "# Findings" > "$DUX_HOME/data/tasks/$id/report.md"
+@test "ended publishes nothing when the check cannot reach GitHub" {
+  task_in ended plan; status_is "ended: exit 0 without terminal status"
   FAKE_GH_FAIL=1 run dux-recover "$id"
-  [ "$status" -eq 2 ]; [[ "$output" == *"finding: gh pr list failed for dux/$id; cannot tell whether a PR exists"* ]]
-  [ "$(dux-ledger get "$id" state)" = ended ]; [ "$(grep -c '^done:' "$DUX_HOME/data/tasks/$id/status.log" || true)" -eq 0 ]
+  [ "$status" -eq 0 ]; [[ "$output" == "$id has no proved result."* ]]
+  [ "$(dux-ledger get "$id" state)" = ended ]; [ ! -d "$DUX_HOME/state/$id.handoffs" ]
+  [ "$(grep -c '^done:' "$DUX_HOME/data/tasks/$id/status.log" || true)" -eq 0 ]
 }
 
 @test "an unreadable pidfile is a finding" {
@@ -221,11 +237,15 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   [ "$(dux-ledger get "$id" state)" = dead ]
 }
 
-@test "a failure-only report does not classify ended as done" {
+# report.md is also where a wrapper refusal lands. A failure tail is not a
+# scout's findings, so it is not offered to the proof as one.
+@test "a failure-only report is not evidence of a scout result" {
   task_in ended; status_is "ended: exit 0 without terminal status"
   printf '## Failure\nwrapper: no brief\n' > "$DUX_HOME/data/tasks/$id/report.md"
   run dux-recover "$id"
-  [[ "$output" == "unsure:"* ]]
+  [[ "$output" == "$id has no proved result."* ]]
+  [[ "$output" == *"no report was proposed for this scout task"* ]]
+  [ ! -d "$DUX_HOME/state/$id.handoffs" ]
 }
 
 @test "failed inspect prints the saved failure and retry next step" {
@@ -245,7 +265,7 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
 
 @test "--retry after a decision records the answer, supersedes, and spawns" {
   export FAKE_HERDR_RUN=1 FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1
-  printf 'status done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   task_in needs-decision; kill_worker; status_is "needs-decision: A or B?"
   run dux-recover "$id" --retry
   [ "$status" -eq 2 ]; [[ "$output" == "finding: --retry after needs-decision needs --answer-file with the operator's answer"* ]]
@@ -261,7 +281,8 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   grep -q 'B, because it is simpler.' "$DUX_HOME/data/tasks/$new/brief.md"
   [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "failed: superseded by $new" ]
   [ "$(dux-ledger get "$id" state)" = failed ]; [ "$(dux-ledger get "$new" state)" = running ]
-  wait_until 15 grep -q '^done: report' "$DUX_HOME/data/tasks/$new/status.log"
+  wait_until 15 test -e "$DUX_HOME/state/$new.handoffs/1/status"
+  [ "$(cat "$DUX_HOME/state/$new.handoffs/1/status")" = "done: report" ]
 }
 
 @test "--retry after failed preserves ship scope and refuses a second retry" {
@@ -323,7 +344,9 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
 @test "wrong actions and states with nothing to recover are findings" {
   task_in stale
   run dux-recover "$id" --retry; [ "$status" -eq 2 ]; [[ "$output" == "finding: --retry applies to failed, blocked, or needs-decision tasks; $id is stale"* ]]
-  run dux-recover "$id" --classify done; [ "$status" -eq 2 ]; [[ "$output" == "finding: --classify applies to ended tasks; $id is stale"* ]]
+  run dux-recover "$id" --classify failed; [ "$status" -eq 2 ]; [[ "$output" == "finding: --classify applies to ended tasks; $id is stale"* ]]
+  # done is never the operator's to declare; only a proof reaches it.
+  run dux-recover "$id" --classify done; [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-recover"* ]]
   task_in failed
   run dux-recover "$id" --extend; [ "$status" -eq 2 ]; [[ "$output" == "finding: $id is failed, not stale; --extend applies to stale tasks"* ]]
   for state in queued running done dropped; do
