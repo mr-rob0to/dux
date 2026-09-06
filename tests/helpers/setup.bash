@@ -56,6 +56,12 @@ stand_in() {  # $1 command-line needle
 
 not_running() { ! kill -0 "$1" 2>/dev/null; }
 
+# A bare `! cmd` can never fail a bats test: bash ignores errexit for a command
+# whose return value is being inverted. An assertion that something is absent
+# goes through this instead, so that the inversion happens inside a function
+# and the call itself is an ordinary command that can fail.
+refute() { ! "$@"; }
+
 wait_until() {  # $1 seconds, $2.. command; polls every 0.2 seconds
   local i=0 max=$(( $1 * 5 )); shift
   until "$@"; do i=$((i + 1)); [ "$i" -ge "$max" ] && return 1; sleep 0.2; done
@@ -108,16 +114,31 @@ make_repo() {  # $1 dir, $2 default branch; creates a bare origin and a clone
   (cd "$d" && git add .gitignore && git commit -q -m "ignore worktrees" && git push -q origin "$b")
 }
 
-fixture_task() {  # $1 project name, $2 shape; prints the task id. Needs Tasks 2 and 3.
-  make_repo "$DUX_HOME/$1" main
+# A project whose origin url reads as https://github.com/acme/<name>, so a run
+# records repo=acme/<name> while every fetch stays inside the test's home.
+make_github_repo() {  # $1 project dir name under $DUX_HOME
+  local d="$DUX_HOME/$1" o="$DUX_HOME/github.com/acme/$1.git"
+  mkdir -p "$DUX_HOME/github.com/acme"
+  git init -q -b main "$d.seed" && (cd "$d.seed" && git commit -q --allow-empty -m init)
+  git clone -q --bare "$d.seed" "$o" && rm -rf "$d.seed"
+  git clone -q "$o" "$d"
+  (cd "$d" && git remote set-head origin main)
+  printf '.worktrees/\n' > "$d/.gitignore"
+  (cd "$d" && git add .gitignore && git commit -q -m "ignore worktrees" && git push -q origin main)
+}
+
+fixture_task() {  # $1 project name, $2 shape, [$3 github]; prints the task id. Needs Tasks 2 and 3.
+  if [ "${3:-}" = github ]; then make_github_repo "$1"; else make_repo "$DUX_HOME/$1" main; fi
   dux-project add "$DUX_HOME/$1" --base main >/dev/null
   local id; id="$(dux-task-new "$1" "$2")"
-  printf 'Do the thing the operator asked for.\n' > "$DUX_HOME/intent.$id"
-  printf '1. The thing is done.\n' > "$DUX_HOME/criteria.$id"
+  # Where the dispatch skill puts them, so that a retry finds them there too.
+  local task="$DUX_HOME/data/tasks/$id"
+  printf 'Do the thing the operator asked for.\n' > "$task/intent.md"
+  printf '1. The thing is done.\n' > "$task/criteria.md"
   if [ "$2" = ship ]; then
-    dux-brief "$id" --intent-file "$DUX_HOME/intent.$id" --criteria-file "$DUX_HOME/criteria.$id" --plan docs/plan.md --tasks 1-2 >/dev/null
+    dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" --plan docs/plan.md --tasks 1-2 >/dev/null
   else
-    dux-brief "$id" --intent-file "$DUX_HOME/intent.$id" --criteria-file "$DUX_HOME/criteria.$id" >/dev/null
+    dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" >/dev/null
   fi
   echo "$id"
 }

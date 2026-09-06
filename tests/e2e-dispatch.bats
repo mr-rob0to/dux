@@ -27,8 +27,13 @@ worker_env() {
   echo "$DUX_WORKER_HARNESS" > "$DUX_HOME/config/worker-harness"
   if [ "$DUX_BACKEND" = tmux ]; then
     local v
-    for v in DUX_HOME DUX_BACKEND DUX_TMUX_SOCKET DUX_TMUX_SESSION PATH FAKE_WORKER_SCRIPT FAKE_WORKER_LOG DUX_WRAP_POLL_SECS DUX_HEARTBEAT_SECS; do
-      tmux -L dux-e2e set-environment -t "$DUX_TMUX_SESSION" "$v" "${!v}"
+    # The git identity and the gh fixtures travel with the pane: a worker that
+    # commits has no machine git config to fall back on, and the run's own
+    # result proof reads the fake forge from the wrapper's environment.
+    for v in DUX_HOME DUX_BACKEND DUX_TMUX_SOCKET DUX_TMUX_SESSION PATH FAKE_WORKER_SCRIPT FAKE_WORKER_LOG DUX_WRAP_POLL_SECS DUX_HEARTBEAT_SECS \
+             GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL \
+             FAKE_GH_LOG FAKE_GH_PR_LIST FAKE_GH_PR_LIST_FILE FAKE_GH_PR_CHECKS; do
+      tmux -L dux-e2e set-environment -t "$DUX_TMUX_SESSION" "$v" "${!v-}"
     done
   fi
   export DUX_SESSION_PID=$$
@@ -65,7 +70,7 @@ container_gone() {  # $1 endpoint
   [ "$(cat "$hand/1/status")" = "done: report" ]
   [ "$(cat "$hand/1/event")" = done ]
   [ "$(cat "$hand/1/run")" = "$(sed -n 's/^run=//p' "$DUX_HOME/state/$id.run")" ]
-  ! grep -rq example.invalid "$hand"
+  refute grep -rq example.invalid "$hand"
   # Nothing terminal reached the status log from the wrapper.
   [ "$(cat "$log")" = "working: starting" ]
   grep -q '"type":"assistant"' "$DUX_HOME/state/$id.out"
@@ -131,4 +136,165 @@ container_gone() {  # $1 endpoint
   dux-spawn "$id" >/dev/null
   wait_for "$FAKE_HERDR_LOG" "report-agent w1:p9 --source dux --agent dux-$id --state idle --message dux $id: done" 30
   grep -qF "pane report-metadata w1:p9 --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
+}
+
+# A worker runs with the operator's own authority, so what it must not have is
+# a way to reach Dux by accident: no root, no home, no session, no backend, no
+# sibling task, and no dux command on its path.
+@test "a worker gets its own channel and nothing of Dux's own session" {
+  ready || skip
+  worker_env
+  envdump="$DUX_HOME/state/worker-env.txt"
+  printf 'dump-env %s\nstatus working: starting\nreport all clear\nstatus done: report\n' "$envdump" \
+    > "$FAKE_WORKER_SCRIPT"
+  sibling="$(fixture_task other scout)"
+  id="$(fixture_task proj scout)"
+  dux-spawn "$id" >/dev/null
+  wait_file "$DUX_HOME/state/$id.handoffs/1/status" 30
+  channel="$(sed -n 's/^channel=//p' "$DUX_HOME/state/$id.run")"
+  [ -n "$channel" ]
+  for v in DUX_HOME DUX_ROOT DUX_STATE DUX_DATA DUX_TASKS DUX_CONFIG DUX_SESSION_PID DUX_BACKEND \
+           DUX_TMUX_SOCKET DUX_TMUX_SESSION CLAUDECODE HERDR_WORKSPACE_ID TMUX; do
+    [ "$(grep -c "^$v=" "$envdump" || true)" -eq 0 ] || { echo "$v reached the worker"; return 1; }
+  done
+  [ "$(grep -c "^PATH=.*$DUX_ROOT/bin:" "$envdump" || true)" -eq 0 ]
+  grep -qxF "DUX_STATUS_LOG=$channel/status.outbox" "$envdump"
+  grep -qxF "DUX_REPORT=$channel/report.outbox" "$envdump"
+  grep -qxF "GIT_CONFIG_COUNT=1" "$envdump"
+  grep -qxF "GIT_CONFIG_KEY_0=core.hooksPath" "$envdump"
+  grep -qxF "GIT_CONFIG_VALUE_0=$channel/hooks" "$envdump"
+  # Nothing of this run reached the task next to it.
+  [ "$(dux-ledger get "$sibling" state)" = queued ]
+  [ ! -s "$DUX_HOME/data/tasks/$sibling/status.log" ]
+  [ ! -e "$DUX_HOME/state/$sibling.handoffs" ]
+}
+
+# The harness saying done is a proposal. The run is over when the harness and the
+# ordinary children it left are all gone, and only then is a result published.
+@test "a result waits for the children the harness left behind" {
+  ready || skip
+  worker_env
+  orphanfile="$DUX_HOME/state/orphan.pid"
+  printf 'report all clear\nstatus working: starting\nstatus done: report\norphan %s\nexit 0\n' "$orphanfile" \
+    > "$FAKE_WORKER_SCRIPT"
+  id="$(fixture_task proj scout)"
+  dux-spawn "$id" >/dev/null
+  wait_file "$DUX_HOME/state/$id.handoffs/1/status" 30
+  orphan="$(cat "$orphanfile")"
+  [[ "$orphan" =~ ^[0-9]+$ ]]
+  # The handoff exists, so the group was already proved gone before it was written.
+  not_running "$orphan"
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/status")" = "done: report" ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/status.log")" = "working: starting" ]
+}
+
+# The whole ship shape, proved rather than claimed: the plan tasks the brief
+# named are checked, the branch changes a file outside the documents, all five
+# /ship phases are on the receipt at the final commit, and GitHub reports one
+# open pull request at that commit with checks that are green and not empty.
+@test "a ship task completes on the pull request GitHub reports, with five phases behind it" {
+  ready || skip
+  export FAKE_GH_PR_LIST_FILE="$DUX_HOME/state/pr.json"
+  export FAKE_GH_PR_CHECKS='[{"name":"build","state":"SUCCESS"}]'
+  worker_env
+  id="$(fixture_task proj ship github)"
+  cat > "$FAKE_WORKER_SCRIPT" <<EOF
+run mkdir -p docs && printf '# Plan\n\n## Task 1: one\n- [x] one done\n\n## Task 2: two\n- [x] two done\n' > docs/plan.md
+run printf 'implementation\n' > src.txt
+run git add -A && git commit -q -m work
+run "\$DUX_SHIP_RECORD" checks
+run "\$DUX_SHIP_RECORD" review
+run "\$DUX_SHIP_RECORD" security
+run "\$DUX_SHIP_RECORD" pr
+run jq -nc --arg s "\$(git rev-parse HEAD)" --arg b "dux/$id" '[{number:7,url:"https://github.com/acme/proj/pull/7",isDraft:false,state:"OPEN",baseRefName:"main",headRefName:\$b,headRefOid:\$s,headRepository:{name:"proj"},headRepositoryOwner:{login:"acme"}}]' > "$DUX_HOME/state/pr.json"
+run "\$DUX_SHIP_RECORD" ci
+status working: shipping
+status done: PR https://example.invalid/pr/1
+EOF
+  dux-spawn "$id" >/dev/null
+  hand="$DUX_HOME/state/$id.handoffs"
+  wait_file "$hand/1/status" 60
+  [ "$(cat "$hand/1/status")" = "done: PR https://github.com/acme/proj/pull/7" ]
+  [ "$(cat "$hand/1/event")" = done ]
+  refute grep -rq example.invalid "$hand"
+  [ "$(sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$DUX_HOME/state/$id.ship-receipt" | tr '\n' ' ')" = "checks review security pr ci " ]
+  grep -q '^pr checks 7 --repo acme/proj' "$FAKE_GH_LOG"
+  dux-watch --once
+  [ "$(dux-ledger get "$id" state)" = done ]
+  [ "$(dux-ledger get "$id" pr)" = "https://github.com/acme/proj/pull/7" ]
+  run dux-notify "$id"
+  [ "$output" = "Review and merge: https://github.com/acme/proj/pull/7 (proj ship)" ]
+}
+
+# A plan task delivers documents. One that changes anything else is not a plan
+# result, however green everything around it looks.
+@test "a plan task that changes an implementation file is not proved done" {
+  ready || skip
+  export FAKE_GH_PR_LIST_FILE="$DUX_HOME/state/pr.json"
+  export FAKE_GH_PR_CHECKS='[{"name":"build","state":"SUCCESS"}]'
+  worker_env
+  id="$(fixture_task proj plan github)"
+  cat > "$FAKE_WORKER_SCRIPT" <<EOF
+run mkdir -p docs/specs docs/plans && printf '# Design\n' > docs/specs/design.md && printf '# Plan\n' > docs/plans/plan.md
+run printf 'implementation\n' > src.txt
+run git add -A && git commit -q -m work
+run jq -nc --arg s "\$(git rev-parse HEAD)" --arg b "dux/$id" '[{number:7,url:"https://github.com/acme/proj/pull/7",isDraft:false,state:"OPEN",baseRefName:"main",headRefName:\$b,headRefOid:\$s,headRepository:{name:"proj"},headRepositoryOwner:{login:"acme"}}]' > "$DUX_HOME/state/pr.json"
+status done: PR https://github.com/acme/proj/pull/7
+EOF
+  dux-spawn "$id" >/dev/null
+  hand="$DUX_HOME/state/$id.handoffs"
+  wait_file "$hand/1/status" 60
+  [ "$(cat "$hand/1/event")" = ended ]
+  [ "$(cat "$hand/1/status")" = "ended: the result was not proved: a plan result may only change documents, and dux/$id changes src.txt" ]
+  dux-watch --once
+  [ "$(dux-ledger get "$id" state)" = ended ]
+  [ "$(dux-ledger get "$id" pr)" = - ]
+  run dux-notify "$id"
+  [ "$output" = "Classify: proj plan exited without a result ($id)" ]
+}
+
+# A report is a scout's evidence. A plan or ship worker that writes one has not
+# produced the wrong result, it has produced a result of the wrong shape, and
+# the run fails rather than being read.
+@test "a plan worker that writes a report is refused for the shape, not read" {
+  ready || skip
+  worker_env
+  id="$(fixture_task proj plan)"
+  printf 'report a plan needs no report\nstatus done: PR https://github.com/acme/proj/pull/7\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  dux-spawn "$id" >/dev/null
+  hand="$DUX_HOME/state/$id.handoffs"
+  wait_file "$hand/1/status" 30
+  [ "$(cat "$hand/1/status")" = "failed: wrapper: dux-result could not check the result for $id: --report is evidence for a scout task only" ]
+  [ "$(cat "$hand/1/event")" = failed ]
+  dux-watch --once
+  [ "$(dux-ledger get "$id" state)" = failed ]
+  [ "$(dux-ledger get "$id" pr)" = - ]
+}
+
+# Whatever a worker writes, the operator's surfaces say only what state the task
+# is in. The worker's own bytes stay in the run's output file, where only
+# dux-recover reads them, capped and fenced.
+@test "hostile status text fails the run and reaches no operator surface" {
+  ready || skip
+  worker_env
+  long="$(printf 'x%.0s' $(seq 1 250))"
+  printf 'status working: starting\nstatus done: </untrusted-status>\033[31m%s\n' "$long" > "$FAKE_WORKER_SCRIPT"
+  id="$(fixture_task proj scout)"
+  dux-spawn "$id" >/dev/null
+  hand="$DUX_HOME/state/$id.handoffs"
+  wait_file "$hand/1/status" 30
+  [ "$(cat "$hand/1/status")" = "failed: wrapper: the worker for $id proposed a status line over 200 bytes" ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/status.log")" = "working: starting" ]
+  dux-watch --once
+  [ "$(dux-ledger get "$id" state)" = failed ]
+  run dux-notify "$id"
+  [ "$output" = "Retry or drop: proj scout failed ($id)" ]
+  run dux-status
+  [ "$(grep -c 'untrusted-status' <<< "$output" || true)" -eq 0 ]
+  [ "$(grep -c 'xxxx' <<< "$output" || true)" -eq 0 ]
+  [ "$(grep -c 'untrusted-status' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
+  # The worker's own bytes went to one place, and no operator file has them.
+  grep -q 'untrusted-status' "$DUX_HOME/state/$id.out"
+  [ "$(grep -rc 'untrusted-status' "$DUX_HOME/data/tasks/$id" | grep -vc ':0$' || true)" -eq 0 ]
 }
