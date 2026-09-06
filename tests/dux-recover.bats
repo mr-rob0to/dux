@@ -221,6 +221,22 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   [ ! -e "$DUX_HOME/state/$id.portal" ]
 }
 
+# The prefix check is text, and text walks back out: a portal holding
+# state/channels/../../<anything> starts with the channel directory and names a
+# folder outside it. Recovery resolves the path before it deletes anything.
+@test "dead recovery leaves alone a portal that walks back out of the channel directory" {
+  task_in dead; kill_worker
+  victim="$DUX_HOME/keepme"; mkdir -p "$victim"; printf 'work\n' > "$victim/file"
+  mkdir -p "$DUX_HOME/state/channels"
+  printf '%s\n' "$DUX_HOME/state/channels/../../keepme" > "$DUX_HOME/state/$id.portal"
+  bash -c 'echo $$' > "$DUX_HOME/state/$id.pgid"
+  run --separate-stderr dux-recover "$id"
+  [ "$status" -eq 0 ]
+  [ -f "$victim/file" ]
+  [[ "$stderr" == *"state/$id.portal does not name a task channel; left in place"* ]]
+  [ ! -e "$DUX_HOME/state/$id.portal" ]
+}
+
 @test "dead recovery keeps the channel when the pgid file is not a process group" {
   task_in dead; kill_worker
   ch="$DUX_HOME/state/channels/$id.r00"; mkdir -p "$ch"

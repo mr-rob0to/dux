@@ -111,6 +111,21 @@ settled() {  # $1 state, [$2 pr]
   [ ! -e "$DUX_HOME/state/$id.portal" ]
 }
 
+# The prefix check is text, and text walks back out: a portal holding
+# state/channels/../../<anything> starts with the channel directory and names a
+# folder outside it. Teardown resolves the path before it deletes anything.
+@test "teardown leaves alone a portal that walks back out of the channel directory" {
+  spawned scout; settled done
+  victim="$DUX_HOME/keepme"; mkdir -p "$victim"; printf 'work\n' > "$victim/file"
+  mkdir -p "$DUX_HOME/state/channels"
+  printf '%s\n' "$DUX_HOME/state/channels/../../keepme" > "$DUX_HOME/state/$id.portal"
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  [ -f "$victim/file" ]
+  [[ "$output" == *"state/$id.portal does not name a task channel; left in place"* ]]
+  [ ! -e "$DUX_HOME/state/$id.portal" ]
+}
+
 @test "failed: ledger failed, pr stays empty" {
   spawned scout; settled failed
   run dux-teardown "$id"
