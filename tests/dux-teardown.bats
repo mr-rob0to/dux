@@ -114,6 +114,21 @@ settled() {  # $1 state, [$2 pr]
 # The prefix check is text, and text walks back out: a portal holding
 # state/channels/../../<anything> starts with the channel directory and names a
 # folder outside it. Teardown resolves the path before it deletes anything.
+# A channel path that is a link to another task's channel resolves under
+# state/channels/ and passes any prefix check. Following it would delete a live
+# channel belonging to another task.
+@test "teardown leaves alone a portal that links to another task's channel" {
+  spawned scout; settled done
+  other="$DUX_HOME/state/channels/t-other.r00"; mkdir -p "$other"
+  printf 'brief\n' > "$other/brief.md"
+  link="$DUX_HOME/state/channels/$id.r00"; ln -s "$other" "$link"
+  printf '%s\n' "$link" > "$DUX_HOME/state/$id.portal"
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  [ -f "$other/brief.md" ]
+  [[ "$output" == *"state/$id.portal does not name a task channel; left in place"* ]]
+}
+
 @test "teardown leaves alone a portal that walks back out of the channel directory" {
   spawned scout; settled done
   victim="$DUX_HOME/keepme"; mkdir -p "$victim"; printf 'work\n' > "$victim/file"
