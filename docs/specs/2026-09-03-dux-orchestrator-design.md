@@ -633,11 +633,20 @@ tab shows the raw worker output. Nothing about supervision requires looking.
 `data/backlog.md` is the only ledger. Each line carries a `source` key:
 `local` for tasks created in conversation, `gh:<owner>/<repo>#<n>` for issues.
 
-`dux-intake <project>` runs `gh issue list --state open --label <label> --json number,title,body,url,labels,updatedAt`
-and appends a `queued` line for every issue not already present by source key.
-It never removes or reorders lines; a closed issue is reconciled to `dropped`
-with a note. It runs at session start and on `dux-status --intake`. Nothing
-polls.
+`dux-intake <project> [--shape plan|ship|scout]` runs
+`gh issue list --repo <owner>/<repo> --state open --label <label> --limit 100 --json number,title,body`
+once, with the repository read from the project's origin URL, and appends a
+`queued` line for every issue whose source key `gh:<owner>/<repo>#<n>` has no
+ledger line outside `dropped`. The shape defaults to `ship`. It writes
+`tasks/<id>/issue.md` (title and body, control characters removed, under 4,000
+bytes) and rewrites it on later runs while the task is still `queued`. It never
+removes or reorders lines. A `queued` task whose issue is no longer in the list
+is looked up once: a closed issue is reconciled to `dropped` with a note in
+`tasks/<id>/report.md`; an open issue that lost the label stays queued and is
+reported. Tasks in any other state are never touched. It needs the session lock,
+runs at session start through `dux-status --intake` and on request, and never in
+the watcher. Nothing polls. `dux-intake --show <id>` prints the saved issue text
+fenced as `<untrusted-issue>` and is the only way that text enters Dux's context.
 
 Dispatching an issue task:
 
@@ -757,6 +766,7 @@ receiving anything beyond the brief file and their project's own instructions.
 | Dux restarted mid-task | reconcile from files and backend; workers unaffected |
 | Backend unreachable | spawn and teardown refuse; watcher uses the wrapper verdict and logs the changed open-question set once |
 | Issue intake fails | skip with one warning; backlog unchanged |
+| Issue intake finds a closed issue that was already dispatched | nothing; the PR closes or references it |
 | Second Dux session | read-only, announced |
 | Monitor dies | AGENTS.md start-of-turn rule: if no monitor is armed and tasks are running, re-arm |
 
@@ -773,7 +783,9 @@ receiving anything beyond the brief file and their project's own instructions.
 - Each test is break-verified once: the guarded condition is broken, the failure
   is pasted into the commit, then restored.
 - Skills are dry-run against the throwaway repo before the milestone closes.
-- Intake: a fixture of `gh issue list` JSON; idempotence test runs intake twice.
+- Intake: a fixture of `gh issue list` JSON drives it; idempotence runs intake
+  twice; reconciliation runs it with an issue removed and the fake `gh`
+  answering CLOSED, then OPEN.
 - `/ship` additions: each new guard broken once with the failure pasted into the
   commit.
 
