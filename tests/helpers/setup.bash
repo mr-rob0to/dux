@@ -25,7 +25,29 @@ export TMUX_TMPDIR
 # Called by setup_file in the files that start a tmux server; tmux will not
 # create $TMUX_TMPDIR itself. Kept out of setup() so the files that never
 # touch tmux leave nothing behind.
-use_tmux_tmpdir() { mkdir -p "$DUX_TEST_TMUX_TMPDIR"; }
+#
+# It builds the directory rather than accepting one that is already there. /tmp
+# is writable by everyone, and the name is derived from BATS_RUN_TMPDIR, which
+# on Linux is a /tmp path any account can read the moment bats starts. So a
+# second account on the machine can create the path first, and `mkdir -p` would
+# have taken it: this run's tmux server ends up inside a directory somebody
+# else owns, where they can swap the socket underneath it and feed the suite
+# whatever pane text they like. Nobody else is on a personal Mac or a CI runner,
+# which is why this was worth a few lines and not a redesign.
+use_tmux_tmpdir() {
+  mkdir -m 700 "$DUX_TEST_TMUX_TMPDIR" 2>/dev/null && return 0
+  # Already there. It is still this run's own if it is a real directory this
+  # account owns: /tmp's sticky bit means no one else can leave one of those
+  # behind under our name. Symlinks are asked about separately because -O
+  # follows them, so a link pointing at a directory we own would pass -O while
+  # the attacker still controls where writes land.
+  if [ ! -L "$DUX_TEST_TMUX_TMPDIR" ] && [ -d "$DUX_TEST_TMUX_TMPDIR" ] &&
+     [ -O "$DUX_TEST_TMUX_TMPDIR" ]; then
+    return 0
+  fi
+  echo "finding: $DUX_TEST_TMUX_TMPDIR exists and is not this run's own directory" >&2
+  return 1
+}
 
 # The pair of use_tmux_tmpdir, called by teardown_file once the server is gone.
 # It names the directory this run built rather than testing $TMUX_TMPDIR, so it
