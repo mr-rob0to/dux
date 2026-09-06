@@ -12,6 +12,7 @@
 - Branch: {{BRANCH}}
 - Worktree: <set by dux-spawn>
 {{PLAN_LINES}}
+{{ISSUE_LINE}}
 
 ## Rules
 - Work alone. Never address the operator; nobody reads your terminal.

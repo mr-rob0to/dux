@@ -274,13 +274,16 @@ codex_refused() {  # asserts the last `run` refused and started nothing for $id
   dux-project add "$DUX_HOME/proj" --base main >/dev/null
   id="$(dux-task-new proj scout --source 'gh:acme/widgets#12')"
   printf 'x\n' > "$DUX_HOME/i"; printf '1. y\n' > "$DUX_HOME/c"
-  dux-brief "$id" --intent-file "$DUX_HOME/i" --criteria-file "$DUX_HOME/c" >/dev/null
+  # A gh-sourced task is never briefed without its issue text beside it.
+  printf 'acme/widgets#12: A title\n\nBody\n' > "$DUX_HOME/data/tasks/$id/issue.md"
+  dux-brief "$id" --intent-file "$DUX_HOME/i" --criteria-file "$DUX_HOME/c" --issue-file "$DUX_HOME/data/tasks/$id/issue.md" >/dev/null
   run dux-spawn "$id"
   [ "$status" -eq 0 ]
   grep -qxF "issue comment 12 --repo acme/widgets --body Dux started on branch \`dux/$id\`." "$FAKE_GH_LOG"
   [ "$(grep -c '^issue comment' "$FAKE_GH_LOG")" -eq 1 ]
   id2="$(dux-task-new proj scout --source 'gh:acme/widgets#13')"
-  dux-brief "$id2" --intent-file "$DUX_HOME/i" --criteria-file "$DUX_HOME/c" >/dev/null
+  printf 'acme/widgets#13: A title\n\nBody\n' > "$DUX_HOME/data/tasks/$id2/issue.md"
+  dux-brief "$id2" --intent-file "$DUX_HOME/i" --criteria-file "$DUX_HOME/c" --issue-file "$DUX_HOME/data/tasks/$id2/issue.md" >/dev/null
   FAKE_GH_FAIL=1 run dux-spawn "$id2"
   [ "$status" -eq 0 ]
   [[ "$output" == *"could not comment on gh:acme/widgets#13"* ]]

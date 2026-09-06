@@ -26,6 +26,7 @@ task="$DUX_TASKS/$id"; out="$task/brief.md"; settings="$task/worker-settings.jso
 [ -e "$out" ] && finding "brief already exists for $id; retries use a new task id"
 project="$("$DUX_ROOT/bin/dux-ledger" get "$id" project)" || exit $?
 shape="$("$DUX_ROOT/bin/dux-ledger" get "$id" shape)" || exit $?
+source_key="$("$DUX_ROOT/bin/dux-ledger" get "$id" source)" || exit $?
 path="$("$DUX_ROOT/bin/dux-project" get "$project" path)" || exit $?
 base="$("$DUX_ROOT/bin/dux-project" get "$project" base)" || exit $?
 { [ -n "$path" ] && [ -n "$base" ]; } || finding "project $project has no path or base in the registry"
@@ -43,6 +44,11 @@ case "$shape" in
   *)    { [ -z "$plan" ] && [ -z "$tasks" ]; } || finding "--plan and --tasks are for ship briefs only" ;;
 esac
 [ -z "$issue" ] || [ -s "$issue" ] || finding "--issue-file $issue is missing or empty"
+# The brief is what /ship reads for Closes #<n>, so a task that came from an
+# issue is never briefed without the issue text beside it.
+case "$source_key" in
+  gh:*) [ -n "$issue" ] || finding "task $id comes from $source_key; pass --issue-file data/tasks/$id/issue.md" ;;
+esac
 
 shape_rules() {
   case "$shape" in
@@ -81,6 +87,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     '{{INTENT}}')      cat "$intent" ;;
     '{{CRITERIA}}')    cat "$criteria" ;;
     '{{PLAN_LINES}}')  if [ "$shape" = ship ]; then printf -- '- Plan: %s\n- Tasks: %s\n' "$plan" "$tasks"; fi ;;
+    '{{ISSUE_LINE}}')  case "$source_key" in gh:*) printf -- '- Issue: %s\n' "${source_key#gh:}" ;; esac ;;
     '{{SHAPE_RULES}}') shape_rules ;;
     '{{DONE}}')        done_line ;;
     '{{ISSUE_BLOCK}}') issue_block ;;
