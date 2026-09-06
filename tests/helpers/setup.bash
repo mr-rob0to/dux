@@ -4,6 +4,37 @@ export DUX_ROOT
 # shellcheck source=bin/dux-env
 source "$DUX_ROOT/bin/dux-env"
 
+# Every tmux socket a test names lives under this directory. Socket names are
+# fixed strings (dux-test, dux-e2e), so without this two bats runs on one
+# machine share one tmux server: files running side by side, or a second
+# session running the suite, each kill the other's windows. tmux puts the
+# socket at $TMUX_TMPDIR/tmux-<uid>/<name>, so a directory of our own isolates
+# the run and no socket name has to change. It sits under /tmp because a unix
+# socket path is capped near 104 bytes and $TMPDIR on macOS spends most of
+# that on its own. An operator who set TMUX_TMPDIR keeps it.
+DUX_TEST_TMUX_TMPDIR="/tmp/dux-tmux.$(basename "${BATS_RUN_TMPDIR:-run-$$}")"
+if [ -z "${TMUX_TMPDIR:-}" ]; then
+  TMUX_TMPDIR="$DUX_TEST_TMUX_TMPDIR"
+  export TMUX_TMPDIR
+fi
+
+# Called by setup_file in the files that start a tmux server; tmux will not
+# create $TMUX_TMPDIR itself. Kept out of setup() so the files that never
+# touch tmux leave nothing behind. It fills in the run's own directory when
+# nothing else set one, so isolation cannot be lost by an edit somewhere else
+# in this file.
+use_tmux_tmpdir() {
+  : "${TMUX_TMPDIR:=$DUX_TEST_TMUX_TMPDIR}"
+  export TMUX_TMPDIR
+  mkdir -p "$TMUX_TMPDIR"
+}
+
+# The pair of use_tmux_tmpdir, called by teardown_file once the server is gone.
+# The case guard means an operator's own TMUX_TMPDIR is never removed.
+drop_tmux_tmpdir() {
+  case "$TMUX_TMPDIR" in /tmp/dux-tmux.*) rm -rf "$TMUX_TMPDIR" ;; esac
+}
+
 setup() {
   # Physical path: git prints worktree paths resolved through symlinks (/private/tmp on macOS).
   DUX_HOME="$(cd "$(mktemp -d "${BATS_TMPDIR:-/tmp}/dux-home.XXXXXX")" && pwd -P)"

@@ -6,6 +6,7 @@ load helpers/setup
 # real container, a fake worker replaying a script.
 setup_file() {
   if [ "${DUX_BACKEND:-}" = tmux ]; then
+    use_tmux_tmpdir
     export DUX_TMUX_SOCKET=dux-e2e-sup DUX_TMUX_SESSION=duxe2esup
     tmux -L dux-e2e-sup kill-server 2>/dev/null || true
     tmux -L dux-e2e-sup new-session -d -s duxe2esup -x 80 -y 24
@@ -14,7 +15,10 @@ setup_file() {
 }
 
 teardown_file() {
-  if [ "${DUX_BACKEND:-}" = tmux ]; then tmux -L dux-e2e-sup kill-server 2>/dev/null || true; fi
+  if [ "${DUX_BACKEND:-}" = tmux ]; then
+    tmux -L dux-e2e-sup kill-server 2>/dev/null || true
+    drop_tmux_tmpdir
+  fi
 }
 
 ready() { [ -n "${DUX_BACKEND:-}" ]; }

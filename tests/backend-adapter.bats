@@ -11,6 +11,7 @@ setup_file() {
     export HERDR_WORKSPACE_ID=w1
   fi
   if [ "${DUX_BACKEND:-}" = tmux ]; then
+    use_tmux_tmpdir
     export DUX_TMUX_SOCKET=dux-test DUX_TMUX_SESSION=duxtest
     tmux -L dux-test kill-server 2>/dev/null || true
     tmux -L dux-test new-session -d -s duxtest -x 80 -y 24
@@ -22,6 +23,7 @@ teardown_file() {
   tmux -L dux-test-stopped kill-server 2>/dev/null || true
   tmux -L dux-test-stale kill-server 2>/dev/null || true
   rm -f "$(tmux_socket_path dux-test-stale)" "$(tmux_socket_path dux-test-notsock)"
+  drop_tmux_tmpdir
 }
 
 @test "open returns an endpoint for this backend and runs the command" {
@@ -81,6 +83,20 @@ teardown_file() {
   rm -f "$sock"
   [ "$status" -eq 2 ]
   [[ "$output" == *"finding: the tmux socket path"* ]]
+}
+
+@test "this run's tmux server stands on a socket of its own, not the machine's" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip
+  # Socket names here are fixed strings, so before the suite took a TMUX_TMPDIR
+  # of its own every run on the machine opened this one path, and two runs at
+  # once killed each other's servers. The socket this run's adapter reaches has
+  # to be somewhere else, and the server has to really be there.
+  shared="/tmp/tmux-$(id -u)/dux-test"
+  if [ "$(tmux_socket_path dux-test)" = "$shared" ]; then
+    echo "this run is on the machine-wide socket $shared; a second run would fight it"
+    return 1
+  fi
+  [ -S "$(tmux_socket_path dux-test)" ]
 }
 
 @test "tmux exists reads a server that is not running as gone" {
