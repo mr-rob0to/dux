@@ -24,12 +24,19 @@ mtime_epoch() {  # $1 path; one epoch timestamp on GNU and BSD stat
 # One reading of "which GitHub repository is this", shared by the result context
 # and intake, so a source key and a PR url are compared under the same rule.
 github_slug() {  # $1 repo path; prints owner/name, or returns 1
-  local url slug
+  local url rest auth host slug
   url="$(git -C "$1" config --get remote.origin.url 2>/dev/null)" || return 1
-  case "$url" in
-    *github.com[:/]*) slug="${url#*github.com}"; slug="${slug#[:/]}"; slug="${slug%/}"; slug="${slug%.git}" ;;
-    *) return 1 ;;
-  esac
+  # The host has to be github.com itself, not a name that merely ends in it.
+  # A substring test reads notgithub.com/acme/widgets as the real acme/widgets,
+  # and intake would then query and comment on a repository with the operator's
+  # own credentials that the operator never registered. Take the authority
+  # apart instead: scheme off, then the part before the first / or :, then any
+  # user info off that, and require what is left to be exactly github.com.
+  rest="${url#*://}"
+  auth="${rest%%[/:]*}"
+  host="${auth#*@}"
+  [ "$host" = github.com ] || return 1
+  slug="${rest#"$auth"}"; slug="${slug#[:/]}"; slug="${slug%/}"; slug="${slug%.git}"
   printf '%s' "$slug" | grep -qE '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' || return 1
   printf '%s' "$slug"
 }
