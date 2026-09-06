@@ -163,6 +163,13 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   grep -qx "id=$id" "$DUX_HOME/state/$id.result-context"
   grep -qx "branch=dux/$id" "$DUX_HOME/state/$id.result-context"
   grep -qx "context=$(git hash-object "$DUX_HOME/state/$id.result-context")" "$DUX_HOME/state/$id.run"
+  # Which repository the run belongs to is read by github_slug, the same helper
+  # intake builds a source key with. No GitHub origin records "-".
+  grep -qx "repo=-" "$DUX_HOME/state/$id.result-context"
+  id="$(fixture_task proj2 scout github)"
+  wt="$(dux-worktree create "$id")"
+  wrap
+  grep -qx "repo=acme/proj2" "$DUX_HOME/state/$id.result-context"
 }
 
 @test "a child the harness leaves behind is stopped with the harness" {
