@@ -247,6 +247,51 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
 }
 
+# GNU stat spells the format -c and reads -f as --file-system: handed a format
+# string it prints a whole filesystem report to stdout and then fails. Asking it
+# the BSD way first and keeping whatever came out gave the outbox a different
+# identity on every call, which failed every run on Linux and nothing on macOS.
+# The shim answers the way GNU stat does, on either kind of machine.
+@test "the outbox identity survives a stat that answers the GNU way" {
+  prepare scout
+  shim="$DUX_HOME/shim"; mkdir -p "$shim"
+  cat > "$shim/stat" <<'SH'
+#!/usr/bin/env bash
+case "${1:-}" in
+  -c) case "${2:-}" in
+        '%d:%i'|'%Y') /usr/bin/stat -c "$2" "$3" 2>/dev/null && exit 0
+                      case "$2" in '%d:%i') exec /usr/bin/stat -f '%d:%i' "$3" ;; *) exec /usr/bin/stat -f %m "$3" ;; esac ;;
+        *) exit 1 ;;
+      esac ;;
+  -f) printf '  File: "%s"\n' "${3:-}"
+      printf 'Blocks: Total: 100 Free: %s\n' "$RANDOM"
+      printf "stat: cannot read file system information for '%s'\n" "${2:-}" >&2
+      exit 1 ;;
+esac
+exec /usr/bin/stat "$@"
+SH
+  chmod +x "$shim/stat"
+  export PATH="$shim:$PATH"
+  printf 'report all clear\nstatus working: one\nstatus done: report\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 0 ]
+  [ "$(handoff_status)" = "done: report" ]
+  [ "$(status_log)" = "working: one" ]
+}
+
+# The pin is a second name for the outbox, so its inode cannot be freed and
+# handed to a replacement. Losing the pin is a replacement too: without it the
+# question "is this still the same file" has nothing to answer with.
+@test "a worker that removes the outbox's pin fails the task" {
+  prepare scout
+  printf 'status working: a\nrun rm -f "$(dirname "$DUX_STATUS_LOG")/.status.pin"\nsleep 2\nstatus done: report\nexit 0\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the worker for $id replaced its status outbox"* ]]
+  [ "$(status_log | grep -c '^done:' || true)" -eq 0 ]
+}
+
 @test "a status proposal that is not a state line fails the task" {
   prepare scout
   printf 'run printf "ready to go\\n" >> "$DUX_STATUS_LOG"\nsleep 3\nstatus done: report\n' \
