@@ -179,6 +179,13 @@ and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
   run, and `state/<id>.result-context` records the facts a result is later
   proved against. This run refuses to start if any of those four already exists,
   including as a symlink.
+- Each outbox is pinned: a second hard link, `.status.pin` and `.report.pin`,
+  kept for the whole run. An outbox is "still the same file" when it and its pin
+  are the same inode. The pin is what makes that true, because Linux frees an
+  inode as soon as a file is removed and hands the same number to the file
+  written in its place, so the number alone would read a replacement as the
+  original. Removing the pin is a replacement too: the question then has nothing
+  to answer with. Both readings fail the task.
 - The worker's environment is scrubbed of `DUX_*`, `CLAUDE_*`, `HERDR_*`,
   `TMUX*` and `GIT_CONFIG_*`, and of Dux's own `PATH` entry. Only
   `DUX_STATUS_LOG`, `DUX_REPORT` and the three `GIT_CONFIG_*` values that point

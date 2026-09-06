@@ -101,12 +101,33 @@ done
 # The file this run made, not whatever is at that name later. A worker that
 # removes an outbox and writes a new one in its place gets a different inode,
 # and so does a channel directory swapped underneath it.
-path_ident() { stat -f '%d:%i' "$1" 2>/dev/null || stat -c '%d:%i' "$1" 2>/dev/null; }
-outbox_intact() {  # $1 path, $2 the identity recorded when it was made
-  [ ! -L "$1" ] && [ -f "$1" ] && [ "$(path_ident "$1")" = "$2" ]
+# GNU first, then BSD. The order is not a preference: GNU stat reads -f as
+# --file-system, so the BSD spelling makes it print a whole filesystem report to
+# stdout and then fail, and taking both answers would give this file a different
+# identity every time it was asked. Only digits and one colon get through, so a
+# report that leaked in is not mistaken for an identity either.
+path_ident() {  # $1 path; "<device>:<inode>"
+  local s
+  s="$(stat -c '%d:%i' "$1" 2>/dev/null)" || s="$(stat -f '%d:%i' "$1" 2>/dev/null)"
+  case "$s" in ''|*[!0-9:]*) return 1 ;; esac
+  printf '%s' "$s"
 }
-status_ident="$(path_ident "$status_outbox")"
-report_ident="$(path_ident "$report_outbox")"
+# A pin is a second name for the outbox, kept for the whole run. Without one the
+# inode is not evidence: Linux frees it the moment the outbox is removed and
+# hands the same number to the file written in its place, so the replacement
+# reads as the original. A pinned inode cannot be handed out, so a replacement
+# always differs. Removing the pin is a replacement too, since the comparison
+# then has nothing to answer with.
+status_pin="$channel/.status.pin"; report_pin="$channel/.report.pin"
+ln "$status_outbox" "$status_pin" || refuse "cannot pin the status outbox for $id"
+ln "$report_outbox" "$report_pin" || refuse "cannot pin the report outbox for $id"
+outbox_intact() {  # $1 outbox, $2 its pin
+  local a b
+  [ ! -L "$1" ] && [ -f "$1" ] || return 1
+  a="$(path_ident "$1")" || return 1
+  b="$(path_ident "$2")" || return 1
+  [ "$a" = "$b" ]
+}
 
 c_brief="$channel/brief.md"; c_settings="$channel/worker-settings.json"
 { cp "$brief" "$c_brief" && chmod 400 "$c_brief"; } || refuse "cannot stage the brief in the task channel"
@@ -254,7 +275,7 @@ import_proposals() {  # $1 "final" when nothing more is coming
   local -a lines
   [ -z "$violation" ] || return 0
   [ -f "$status_outbox" ] || return 0
-  if ! outbox_intact "$status_outbox" "$status_ident"; then
+  if ! outbox_intact "$status_outbox" "$status_pin"; then
     violation="the worker for $id replaced its status outbox"; return 0
   fi
   size="$(wc -c < "$status_outbox" | tr -d ' ')"
@@ -391,7 +412,7 @@ fi
 
 import_proposals final
 [ -z "$violation" ] || refuse "$violation"
-outbox_intact "$report_outbox" "$report_ident" \
+outbox_intact "$report_outbox" "$report_pin" \
   || refuse "the worker for $id replaced its report outbox"
 if [ -s "$report_outbox" ]; then
   # Measured before a byte of it is copied, for the same reason as the status cap.
