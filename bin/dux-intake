@@ -6,20 +6,35 @@ set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
-usage="usage: dux-intake <project> [--shape plan|ship|scout]"
+usage="usage: dux-intake <project> [--shape plan|ship|scout] | dux-intake --show <id>"
 LIMIT=100         # issues read per run; gh's own default is 30
 TITLE_BYTES=200
 BODY_BYTES=3700   # title line plus body stays under the brief's 4,000-byte cap
 ledger="$DUX_ROOT/bin/dux-ledger"; projects="$DUX_ROOT/bin/dux-project"
 
-project=""; shape=ship
+# The only way issue text enters Dux's context: fenced and escaped, like worker
+# text through dux-recover. The file is data at rest; the reader fences it.
+show() {  # $1 id
+  local f
+  valid_task_id "$1"
+  f="$DUX_TASKS/$1/issue.md"
+  { [ ! -L "$f" ] && [ -f "$f" ]; } || finding "no issue file for $1; only intake-created tasks have one"
+  echo "<untrusted-issue>"
+  head -c 4000 "$f" | LC_ALL=C tr -d '\000-\010\013-\037\177' \
+    | sed 's#</untrusted-issue>#<\\/untrusted-issue>#g; s#<untrusted-issue>#<\\untrusted-issue>#g'
+  echo "</untrusted-issue>"
+}
+
+project=""; shape=ship; show_id=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --shape) [ $# -ge 2 ] || finding "$usage"; shape="$2"; shift 2 ;;
+    --show)  [ $# -ge 2 ] || finding "$usage"; show_id="$2"; shift 2 ;;
     -*) finding "$usage" ;;
     *) [ -z "$project" ] || finding "$usage"; project="$1"; shift ;;
   esac
 done
+if [ -n "$show_id" ]; then [ -z "$project" ] || finding "$usage"; show "$show_id"; exit 0; fi
 [ -n "$project" ] || finding "$usage"
 case "$shape" in plan|ship|scout) ;; *) finding "--shape must be plan, ship, or scout: $shape" ;; esac
 
