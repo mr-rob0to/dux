@@ -502,6 +502,18 @@ retire_line="failed: stopped for security-boundary upgrade; worktree kept"
   [ "$(dux-ledger get "$new" source)" = 'gh:acme/proj#12' ]
 }
 
+@test "a retry whose issue file cannot be read is a finding, not a retry without it" {
+  task_in failed ship 'gh:acme/proj#12'; kill_worker; status_is 'failed: worker exited 3'
+  chmod 000 "$DUX_HOME/data/tasks/$id/issue.md"
+  run dux-recover "$id" --retry
+  chmod 644 "$DUX_HOME/data/tasks/$id/issue.md"
+  [ "$status" -eq 2 ]
+  # cp writes its own permission line first; the finding is the last line.
+  [[ "$output" == *"finding: cannot copy $DUX_HOME/data/tasks/$id/issue.md" ]]
+  [ ! -f "$DUX_HOME/data/tasks/$id/retry" ]
+  [ "$(dux-ledger get "$id" state)" = failed ]
+}
+
 @test "a retry fences and caps the prior worker status in its new brief" {
   task_in failed; kill_worker
   long="$(printf 'x%.0s' $(seq 1 100))"
