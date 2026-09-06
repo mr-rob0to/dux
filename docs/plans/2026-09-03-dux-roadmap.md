@@ -3,8 +3,9 @@
 **Where this stands**
 - Milestone 1 (skeleton) is merged 2026-09-03: plan `2026-09-03-dux-m1-skeleton.md`, 8 of 8 tasks, reviewed_sha a3288cc.
 - Milestone 2 (dispatch) is merged in PR #4: plan `2026-09-03-dux-m2-dispatch.md`, 12 of 12 tasks.
-- Current milestone: 3 (supervision), plan `2026-09-04-dux-m3-supervision.md`, approved and implemented, 8 of 8 tasks, plus the 5-task security amendment; gate complete, PR #6 open with CI green, awaiting merge.
-- Milestones 4 to 7 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
+- Milestone 3 (supervision) is merged 2026-09-06 as PR #6, rebased onto `main` at 9a7e524: plan `2026-09-04-dux-m3-supervision.md`, 8 of 8 tasks, plus the 5-task security amendment `2026-09-05-dux-m3-security-amendment.md`.
+- Current milestone: 4 (intake), plan `2026-09-06-dux-m4-intake.md`, drafted and reviewed, awaiting the operator's approval; 0 of 4 tasks.
+- Milestones 5 to 7 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
 - Spec: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
 
 One milestone is one session and one PR. After a milestone's PR merges, the next session starts from its plan file.
