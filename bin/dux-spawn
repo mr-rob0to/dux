@@ -70,10 +70,6 @@ set_worktree_line() {  # $1: replaces the brief's first "- Worktree: " line
 undo() {  # after a failed open. The brief line goes back either way, so no retry is
           # blocked by it; the worktree goes only when nothing is running in it.
   local alive
-  # The task was marked running before the open, so putting that back is part of
-  # undoing it. queued is the truth here: the open failed, so no worker of this
-  # spawn's is at work, and the operator's next move is to spawn it again.
-  "$ledger" set "$id" state queued || log "task $id is still marked running in the ledger"
   alive="$("$backend" find "$id")" || exit $?
   set_worktree_line "$placeholder" || log "could not restore the worktree line in $brief"
   [ -z "$alive" ] || finding "backend open failed for $id but a container for it is alive at $alive; close it before spawning $id again"
@@ -84,17 +80,19 @@ if ! set_worktree_line "- Worktree: $wt"; then
   "$worktree" discard "$id" >/dev/null 2>&1 || true
   finding "cannot fill the worktree line in $brief"
 fi
-# Before the open, not after it. The open starts the worker, and a worker that
-# refuses at once leaves a proved terminal handoff the watcher can apply within
-# milliseconds; a state written afterwards would land on top of that result and
-# show a finished task as running for good. undo puts it back.
-"$ledger" set "$id" state running || { rc=$?; undo; exit $rc; }
 # Both backends hand this string to a shell, so it is composed as shell words.
 wrapcmd="$(printf '%q %q' "$DUX_ROOT/bin/dux-worker-wrap" "$id")"
 ep="$("$backend" open "$id" "$wt" "$wrapcmd")" || { rc=$?; undo; exit $rc; }
 
 echo "$ep" > "$epfile" || finding "cannot write $epfile; the worker is running at $ep"
 "$ledger" set "$id" endpoint "$ep" || exit $?
+# From queued, and only from queued. The open above starts the worker, and a
+# worker that refuses at once leaves a proved terminal handoff the watcher can
+# apply before this line runs. Writing running whatever the ledger holds would
+# put a finished task back to running for good, and reading the state first
+# would leave the same window open; the ledger compares and sets under its own
+# lock instead, and a refusal is a finding naming the state that won.
+"$ledger" set-if "$id" state queued running || exit $?
 case "$source_key" in
   gh:*)
     ref="${source_key#gh:}"; slug="${ref%%#*}"; n="${ref##*#}"

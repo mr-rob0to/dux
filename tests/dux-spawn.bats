@@ -294,15 +294,18 @@ codex_refused() {  # asserts the last `run` refused and started nothing for $id
   [[ "$output" == "finding: task id must match [A-Za-z0-9._-]+: ../../x"* ]]
 }
 
-# The worker starts when the container opens, and a worker that refuses at once
-# leaves a proved terminal handoff the watcher can apply within milliseconds. A
-# state written after the container opens can land on top of that result and
-# show a finished task as running for good, so it is written before.
-@test "the ledger says running before the container opens" {
+# The open starts the worker, and a worker that refuses at once leaves a proved
+# terminal handoff the watcher can apply before spawn writes running. The hook
+# stands in for that watcher: it settles the task while the container is
+# opening. Spawn asks for the change from queued, so the proved state wins.
+@test "a result proved while the container opens is not put back to running" {
   id="$(fixture_task proj scout)"
-  export FAKE_HERDR_RUN_HOOK="dux-ledger get $id state > $DUX_HOME/state/at-open"
+  export FAKE_HERDR_RUN_HOOK="dux-ledger set $id state failed"
   run dux-spawn "$id"
-  [ "$status" -eq 0 ]
-  [ "$(cat "$DUX_HOME/state/at-open")" = running ]
-  wait_result "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: task $id has state=failed, not queued; refusing to set it to running"* ]]
+  [ "$(dux-ledger get "$id" state)" = failed ]
+  # The endpoint is recorded either way: the container is open and the worker
+  # in it is this spawn's, whatever the ledger now says about the task.
+  [ "$(dux-ledger get "$id" endpoint)" = herdr:w1:p9 ]
 }

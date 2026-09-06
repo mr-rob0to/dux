@@ -174,3 +174,32 @@ load helpers/setup
   run dux-ledger list --unacked
   [ "$output" = $'t-needs-decision\nt-blocked\nt-failed\nt-ended\nt-stale\nt-dead' ]
 }
+
+# Two scripts can reach the same row: spawn writes running while the watcher is
+# applying a proved result. Reading the state and then writing it leaves the
+# window open, so the comparison happens under the ledger's own lock.
+@test "set-if writes only when the field still holds what the caller saw" {
+  dux-ledger add t1 proj scout local
+  dux-ledger set-if t1 state queued running
+  [ "$(dux-ledger get t1 state)" = running ]
+  dux-ledger set t1 state failed
+  run dux-ledger set-if t1 state queued running
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task t1 has state=failed, not queued; refusing to set it to running"* ]]
+  [ "$(dux-ledger get t1 state)" = failed ]
+}
+
+@test "set-if refuses bad arguments, keys, states and unknown tasks" {
+  dux-ledger add t1 proj scout local
+  run dux-ledger set-if t1 state queued; [ "$status" -eq 2 ]
+  [[ "$output" == "finding: usage: dux-ledger set-if <id> <key> <expected> <value>"* ]]
+  run dux-ledger set-if ../x state queued running; [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task id must match"* ]]
+  run dux-ledger set-if t1 acked queued running; [ "$status" -eq 2 ]
+  [[ "$output" == "finding: unknown ledger key acked"* ]]
+  run dux-ledger set-if t1 state queued nonsense; [ "$status" -eq 2 ]
+  [[ "$output" == "finding: unknown state nonsense"* ]]
+  run dux-ledger set-if nope state queued running; [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task nope not in ledger"* ]]
+  [ "$(dux-ledger get t1 state)" = queued ]
+}

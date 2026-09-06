@@ -75,6 +75,17 @@ case "$cmd" in
     lock_ledger
     [ -n "$(line_of "$id")" ] || finding "task $id not in ledger"
     write_field "$id" "$key" "$val" ;;
+  set-if)
+    [ $# -eq 4 ] || finding "usage: dux-ledger set-if <id> <key> <expected> <value>"
+    id="$1"; key="$2"; expected="$3"; val="$4"
+    valid_task_id "$id"; valid_key "$key"; valid_value "$expected"; valid_value "$val"
+    if [ "$key" = state ]; then valid_state "$expected"; valid_state "$val"; fi
+    lock_ledger
+    line="$(line_of "$id")"; [ -n "$line" ] || finding "task $id not in ledger"
+    current="$(field_of "$line" "$key")"
+    [ "$current" = "$expected" ] \
+      || finding "task $id has $key=$current, not $expected; refusing to set it to $val"
+    write_field "$id" "$key" "$val" ;;
   ack)
     [ $# -eq 2 ] || finding "usage: dux-ledger ack <id> <handled-state>"
     id="$1"; expected="$2"; valid_task_id "$id"; valid_state "$expected"
@@ -124,5 +135,5 @@ case "$cmd" in
       fi
       echo "$id"
     done ;;
-  *) die "usage: dux-ledger add|set|get|line|list|ack|unack" ;;
+  *) die "usage: dux-ledger add|set|set-if|get|line|list|ack|unack" ;;
 esac
