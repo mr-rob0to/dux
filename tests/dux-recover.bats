@@ -176,6 +176,162 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
 
 # A status line saying done is the worker talking about itself. Signalling the
 # wrapper for it, or believing it, would both be wrong.
+# A wrapper that was killed leaves its task channel behind. Recovery owns
+# clearing it, and only once the wrapper and the worker's own process group are
+# both gone; a live group is still writing into that channel.
+@test "dead recovery clears the crashed run's channel once its process group is gone" {
+  task_in dead; kill_worker
+  ch="$DUX_HOME/state/channels/$id.r00"
+  mkdir -p "$ch"; printf 'brief\n' > "$ch/brief.md"
+  printf '%s\n' "$ch" > "$DUX_HOME/state/$id.portal"
+  # A pid that has certainly exited: $() reaps the shell that printed it.
+  bash -c 'echo $$' > "$DUX_HOME/state/$id.pgid"
+  run dux-recover "$id"
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked $id failed; worktree kept; last 20 output lines saved to tasks/$id/report.md" ]
+  [ ! -e "$ch" ]
+  [ ! -e "$DUX_HOME/state/$id.portal" ]; [ ! -e "$DUX_HOME/state/$id.pgid" ]
+}
+
+@test "dead recovery keeps the channel while the worker's own group is still running" {
+  task_in dead; kill_worker
+  ch="$DUX_HOME/state/channels/$id.r00"
+  mkdir -p "$ch"; printf 'brief\n' > "$ch/brief.md"
+  printf '%s\n' "$ch" > "$DUX_HOME/state/$id.portal"
+  set -m; sleep 300 & orphan=$!; set +m
+  echo "$orphan" >> "$DUX_HOME/state/stand-ins"
+  pg="$(ps -o pgid= -p "$orphan" | tr -d ' ')"
+  [ "$pg" != "$(ps -o pgid= -p $$ | tr -d ' ')" ]
+  printf '%s\n' "$pg" > "$DUX_HOME/state/$id.pgid"
+  run dux-recover "$id"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"the worker's own processes for $id are still running as group $pg"* ]]
+  [ -d "$ch" ]; [ -e "$DUX_HOME/state/$id.portal" ]; [ -e "$DUX_HOME/state/$id.pgid" ]
+  reap "$orphan"
+}
+
+@test "dead recovery leaves alone a portal that does not name a task channel" {
+  task_in dead; kill_worker
+  other="$DUX_HOME/not-a-channel"; mkdir -p "$other"
+  printf '%s\n' "$other" > "$DUX_HOME/state/$id.portal"
+  run --separate-stderr dux-recover "$id"
+  [ "$status" -eq 0 ]
+  [ -d "$other" ]
+  [[ "$stderr" == *"state/$id.portal does not name a task channel; left in place"* ]]
+  [ ! -e "$DUX_HOME/state/$id.portal" ]
+}
+
+@test "dead recovery keeps the channel when the pgid file is not a process group" {
+  task_in dead; kill_worker
+  ch="$DUX_HOME/state/channels/$id.r00"; mkdir -p "$ch"
+  printf '%s\n' "$ch" > "$DUX_HOME/state/$id.portal"
+  printf 'nonsense\n' > "$DUX_HOME/state/$id.pgid"
+  run dux-recover "$id"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"state/$id.pgid does not hold a process group"* ]]
+  [ -d "$ch" ]; [ -e "$DUX_HOME/state/$id.portal" ]
+}
+
+# ---- retiring a worker from before the amendment --------------------------
+# A pre-amendment task has no run record, so nothing it does can produce a
+# handoff of its own. Retirement is what gives it one.
+legacy_task_in() {  # $1 state, [$2 shape]
+  task_in "$1" "${2:-scout}"
+  rm -f "$DUX_HOME/state/$id.run" "$DUX_HOME/state/$id.result-context"
+}
+retire_line="failed: stopped for security-boundary upgrade; worktree kept"
+
+@test "--retire-legacy stops the old worker and hands the watcher a failure" {
+  legacy_task_in stale; status_is "working: from before the upgrade"
+  pid="$(cat "$DUX_HOME/state/$id.pid")"
+  run dux-recover "$id" --retire-legacy
+  [ "$status" -eq 0 ]
+  [ "$output" = "retired $id; its worker is stopped and the watcher will record it failed. The branch and the worktree are kept." ]
+  not_running "$pid"
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/status")" = "$retire_line" ]
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/event")" = failed ]
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/run")" = "$(sed -n 's/^run=//p' "$DUX_HOME/state/$id.run")" ]
+  # Recovery hands over a result. Recording one is the watcher's job alone.
+  [ "$(dux-ledger get "$id" state)" = stale ]
+  [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "working: from before the upgrade" ]
+  dux-watch --once
+  [ "$(dux-ledger get "$id" state)" = failed ]
+  [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "$retire_line" ]
+}
+
+@test "a task with a run record is not a legacy task, and nothing is signalled" {
+  task_in stale
+  pid="$(cat "$DUX_HOME/state/$id.pid")"
+  run dux-recover "$id" --retire-legacy
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $id has a run record, so it is not a task from before the security-boundary upgrade; recover it the ordinary way"* ]]
+  kill -0 "$pid"
+  [ ! -e "$DUX_HOME/state/$id.handoffs" ]
+}
+
+@test "a second retirement is a finding" {
+  legacy_task_in stale
+  run dux-recover "$id" --retire-legacy
+  [ "$status" -eq 0 ]
+  run dux-recover "$id" --retire-legacy
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $id was already retired; the watcher applies its result, and then one --retry or a teardown"* ]]
+  [ ! -e "$DUX_HOME/state/$id.handoffs/2" ]
+  dux-watch --once
+  run dux-recover "$id" --retire-legacy
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --retire-legacy applies to running, stale, dead, or ended tasks; $id is failed"* ]]
+}
+
+@test "--retire-legacy refuses a worker that will not stop, and writes nothing" {
+  legacy_task_in stale; kill_worker
+  ( trap '' INT; exec -a "dux-worker-wrap $id" sleep 300 ) 3>&- &
+  echo $! > "$DUX_HOME/state/$id.pid"; echo $! >> "$DUX_HOME/state/stand-ins"
+  DUX_RECOVER_WAIT_SECS=2 run dux-recover "$id" --retire-legacy
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: wrapper pid $(cat "$DUX_HOME/state/$id.pid") for $id is still running 2s after SIGINT; kill it by hand, then rerun"* ]]
+  [ ! -e "$DUX_HOME/state/$id.run" ]
+  [ ! -e "$DUX_HOME/state/$id.handoffs" ]
+  [ "$(dux-ledger get "$id" state)" = stale ]
+}
+
+@test "--retire-legacy retires a dead legacy task with no wrapper left to signal" {
+  legacy_task_in dead; kill_worker
+  run dux-recover "$id" --retire-legacy
+  [ "$status" -eq 0 ]
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/status")" = "$retire_line" ]
+  [ "$(dux-ledger get "$id" state)" = dead ]
+}
+
+@test "--retire-legacy refuses a waiting handoff and every state that is not live" {
+  legacy_task_in stale; handoff "$id" "done: report" done
+  run dux-recover "$id" --retire-legacy
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $id already has a result waiting at state/$id.handoffs/1; a task from before the upgrade cannot have published one"* ]]
+  for state in queued done blocked needs-decision failed dropped; do
+    legacy_task_in "$state"
+    run dux-recover "$id" --retire-legacy
+    [ "$status" -eq 2 ]
+    [[ "$output" == "finding: --retire-legacy applies to running, stale, dead, or ended tasks; $id is $state"* ]]
+  done
+}
+
+@test "a retired task gets the one ordinary retry and no more" {
+  legacy_task_in stale
+  dux-recover "$id" --retire-legacy >/dev/null
+  dux-watch --once
+  [ "$(dux-ledger get "$id" state)" = failed ]
+  run dux-recover "$id" --retry
+  [ "$status" -eq 0 ]
+  new="$(cat "$DUX_HOME/data/tasks/$id/retry")"
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "retried $id as $new" ]
+  grep -q "^## Previous attempt $id failed" "$DUX_HOME/data/tasks/$new/intent.md"
+  grep -qF "$retire_line" "$DUX_HOME/data/tasks/$new/intent.md"
+  run dux-recover "$id" --retry
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $id was already retried as $new"* ]]
+}
+
 @test "a terminal status line with no handoff behind it settles nothing" {
   task_in stale; kill_worker; status_is "done: PR https://example.invalid/pr/5"
   run dux-recover "$id" --stop
