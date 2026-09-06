@@ -10,7 +10,13 @@ case "$1 ${2:-}" in
     echo "https://example.invalid/issues/comment/1" ;;
   "pr list")
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr list failed" >&2; exit 1; fi
-    echo "${FAKE_GH_PR_LIST:-[]}" ;;
+    # A test whose head commit only exists once the worker has made it points at
+    # a file the worker writes; every other test keeps using the variable.
+    if [ -n "${FAKE_GH_PR_LIST_FILE:-}" ] && [ -f "${FAKE_GH_PR_LIST_FILE:-}" ]; then
+      cat "$FAKE_GH_PR_LIST_FILE"
+    else
+      echo "${FAKE_GH_PR_LIST:-[]}"
+    fi ;;
   "pr checks")
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr checks failed" >&2; exit 1; fi
     echo "${FAKE_GH_PR_CHECKS:-[]}"
