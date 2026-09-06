@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Pull labelled GitHub issues into the ledger as queued tasks. Spec section 10.
+# One read of the forge per run; idempotent by the ledger's source key. Runs at
+# session start through dux-status --intake, never in the watcher.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+usage="usage: dux-intake <project> [--shape plan|ship|scout]"
+LIMIT=100         # issues read per run; gh's own default is 30
+TITLE_BYTES=200
+BODY_BYTES=3700   # title line plus body stays under the brief's 4,000-byte cap
+ledger="$DUX_ROOT/bin/dux-ledger"; projects="$DUX_ROOT/bin/dux-project"
+
+project=""; shape=ship
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --shape) [ $# -ge 2 ] || finding "$usage"; shape="$2"; shift 2 ;;
+    -*) finding "$usage" ;;
+    *) [ -z "$project" ] || finding "$usage"; project="$1"; shift ;;
+  esac
+done
+[ -n "$project" ] || finding "$usage"
+case "$shape" in plan|ship|scout) ;; *) finding "--shape must be plan, ship, or scout: $shape" ;; esac
+
+"$DUX_ROOT/bin/dux-lock" mine || finding "the Dux lock is not held by this session; refusing to queue tasks"
+issues="$("$projects" get "$project" issues)" || exit $?
+case "$issues" in
+  label:?*) label="${issues#label:}" ;;
+  off|'')   finding "project $project has issues=off; nothing to pull" ;;
+  *)        finding "project $project has an unreadable issues field: $issues" ;;
+esac
+path="$("$projects" get "$project" path)" || exit $?
+[ -d "$path" ] || finding "project $project path is gone: $path"
+slug="$(github_slug "$path")" || finding "project $project has no GitHub origin; intake needs one"
+
+# gh's stderr goes to a file, never into the JSON or the finding as a whole:
+# issue text is data, and only the last line of what gh said reaches the
+# operator, cleaned and capped (the pattern of dux-recover lines 233 to 241).
+err="$DUX_STATE/intake-$project.err"
+last_err() { cap_line "$(tail -n 1 "$err" 2>/dev/null)"; rm -f "$err"; }
+json="$(gh issue list --repo "$slug" --state open --label "$label" --limit "$LIMIT" --json number,title,body 2>"$err")" \
+  || finding "gh issue list failed for $slug: $(last_err)"
+rm -f "$err"
+printf '%s' "$json" | jq -e 'type == "array" and all(.[]; type == "object" and (.number | type) == "number" and .number > 0 and (.number | floor) == .number)' >/dev/null 2>&1 \
+  || finding "gh issue list returned something other than a list of issues for $slug"
+count="$(printf '%s' "$json" | jq 'length')"
+[ "$count" -lt "$LIMIT" ] || log "intake: $slug has $LIMIT or more open '$label' issues; only the first $LIMIT were read"
+
+# -j: no trailing newline, so a byte count is the field's own length. The field
+# name is a jq variable, never interpolated into the program text.
+field() {  # $1 field name, $2 issue number
+  printf '%s' "$json" | jq -j --arg k "$1" --argjson n "$2" '.[] | select(.number == $n) | .[$k] // ""'
+}
+
+write_issue_file() {  # $1 id, $2 number; title and body cleaned and capped, one rename
+  local f="$DUX_TASKS/$1/issue.md" tmp title bytes
+  tmp="$f.tmp"
+  title="$(cap_line "$(field title "$2" | head -c "$TITLE_BYTES")")"
+  bytes="$(field body "$2" | wc -c | tr -d ' ')"
+  {
+    printf '%s#%s: %s\n\n' "$slug" "$2" "$title"
+    if [ "$bytes" -gt 0 ]; then
+      field body "$2" | head -c "$BODY_BYTES" | LC_ALL=C tr -d '\000-\010\013-\037\177'
+      echo
+    fi
+    [ "$bytes" -le "$BODY_BYTES" ] || echo "[truncated at $BODY_BYTES bytes]"
+  } > "$tmp" || { rm -f "$tmp"; finding "cannot write $f"; }
+  mv "$tmp" "$f" || { rm -f "$tmp"; finding "cannot write $f"; }
+}
+
+queued=0; dropped=0; unlabelled=0
+numbers="$(printf '%s' "$json" | jq -r '.[].number')"
+for n in $numbers; do
+  key="gh:$slug#$n"; present=0
+  # A finding raised inside $( ) in a for list would be swallowed, so every
+  # substitution that can raise one is captured first and its status relayed.
+  ids="$("$ledger" list --source "$key")" || exit $?
+  for id in $ids; do
+    state="$("$ledger" get "$id" state)" || exit $?
+    [ "$state" != dropped ] || continue
+    present=1
+    # Refresh the saved issue only while nothing has been built from it: once
+    # brief.md exists the brief and the file must keep saying the same thing.
+    if [ "$state" = queued ] && [ ! -e "$DUX_TASKS/$id/brief.md" ]; then write_issue_file "$id" "$n"; fi
+  done
+  [ "$present" = 0 ] || continue
+  id="$("$DUX_ROOT/bin/dux-task-new" "$project" "$shape" --source "$key")" || exit $?
+  write_issue_file "$id" "$n"
+  echo "queued $id $slug#$n"; queued=$((queued + 1))
+done
+
+echo "intake $project: $queued queued, $dropped dropped, $unlabelled unlabelled"
