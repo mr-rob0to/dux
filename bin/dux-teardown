@@ -17,6 +17,10 @@ is_terminal() { case "$1" in done|failed) return 0 ;; *) return 1 ;; esac; }
 # about itself; only a proved handoff the watcher applied puts a task here, and
 # removing a worktree on anything less would throw away unproved work.
 lstate="$("$ledger" get "$id" state)" || exit $?
+# Both are read before anything is torn down: the endpoint is set to - below, and
+# whether it was still set here is what tells a first teardown from a rerun.
+src="$("$ledger" get "$id" source)" || exit $?
+ep_before="$("$ledger" get "$id" endpoint)" || exit $?
 is_terminal "$lstate" || finding "task $id is not terminal (ledger: $lstate)"
 final="$lstate"
 # Read the same file as strictly as dux-spawn does, or the two disagree about the
@@ -76,4 +80,15 @@ rm -f "$portal" "$pgidfile"
 pr="$("$ledger" get "$id" pr)" || exit $?
 "$ledger" set "$id" state "$final" || exit $?
 "$ledger" set "$id" endpoint - || exit $?
+# The issue hears once, from the first teardown that completes: a rerun reads
+# endpoint=- and says nothing. A failed comment is a warning, as at spawn; the
+# PR body's Closes #<n> links the issue from the moment the PR opened.
+if [ "$final" = "done" ] && [ "$pr" != - ] && [ "$ep_before" != - ]; then
+  case "$src" in
+    gh:*)
+      ref="${src#gh:}"; slug="${ref%%#*}"; n="${ref##*#}"
+      gh issue comment "$n" --repo "$slug" --body "Dux delivered PR $pr." >/dev/null 2>&1 \
+        || log "could not comment on $src; the task is torn down regardless" ;;
+  esac
+fi
 echo "torn down $id state=$final pr=$pr"
