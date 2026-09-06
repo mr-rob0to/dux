@@ -116,3 +116,38 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   [ ! -s "$DUX_HOME/data/backlog.md" ]
 }
 
+
+@test "a closed issue drops its queued task with a note; an unlabelled open one stays queued" {
+  labelled_project
+  FAKE_GH_ISSUE_LIST_FILE="$FIX" dux-intake proj >/dev/null
+  id12="$(dux-ledger list --source 'gh:acme/proj#12')"; id13="$(dux-ledger list --source 'gh:acme/proj#13')"
+  jq '[.[] | select(.number == 14)]' "$FIX" > "$DUX_HOME/only14.json"
+  FAKE_GH_ISSUE_LIST_FILE="$DUX_HOME/only14.json" FAKE_GH_ISSUE_STATE=CLOSED run --separate-stderr dux-intake proj
+  [ "$status" -eq 0 ]
+  [ "$(dux-ledger get "$id12" state)" = dropped ]; [ "$(dux-ledger get "$id13" state)" = dropped ]
+  grep -q "^dropped: issue acme/proj#12 was closed; seen by intake at " "$DUX_HOME/data/tasks/$id12/report.md"
+  [[ "$output" == *"dropped $id12 acme/proj#12"* ]]; [[ "$output" == *"0 queued, 2 dropped, 0 unlabelled" ]]
+  grep -qxF 'issue view 12 --repo acme/proj --json state -q .state' "$FAKE_GH_LOG"
+}
+
+@test "a failed list, a malformed list, a failed view, and an unknown state are findings that leave the ledger alone" {
+  labelled_project
+  FAKE_GH_FAIL=1 run dux-intake proj
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: gh issue list failed for acme/proj: fake gh: issue list failed"* ]]
+  FAKE_GH_ISSUE_LIST='{"number": 1}' run dux-intake proj
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: gh issue list returned something other than a list of issues for acme/proj"* ]]
+  FAKE_GH_ISSUE_LIST='[{"number": "12", "title": "t", "body": "b"}]' run dux-intake proj
+  [ "$status" -eq 2 ]
+  [ ! -s "$DUX_HOME/data/backlog.md" ]
+  FAKE_GH_ISSUE_LIST='[{"number": 12.5, "title": "t", "body": "b"}]' run dux-intake proj
+  [ "$status" -eq 2 ]
+  [ ! -s "$DUX_HOME/data/backlog.md" ]
+  FAKE_GH_ISSUE_LIST_FILE="$FIX" dux-intake proj >/dev/null
+  # The list succeeds and is empty; the view of the vanished issue fails.
+  FAKE_GH_ISSUE_LIST='[]' FAKE_GH_VIEW_FAIL=1 run dux-intake proj
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: gh issue view failed for acme/proj#12: fake gh: issue view failed"* ]]
+  FAKE_GH_ISSUE_LIST='[]' FAKE_GH_ISSUE_STATE=WEIRD run dux-intake proj
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: gh issue view returned an unknown state for acme/proj#12: WEIRD"* ]]
+  for n in 12 13 14; do [ "$(dux-ledger get "$(dux-ledger list --source "gh:acme/proj#$n")" state)" = queued ]; done
+}
+
