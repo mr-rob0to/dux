@@ -1,24 +1,86 @@
 SHELL := /bin/bash
 BATS  ?= bats
 
-.PHONY: test lint lint-shell lint-identifiers check check-bash32
+# Test files run side by side. This goes through make's own -j, so there is no
+# GNU parallel to install: every file is its own target. JOBS=1 puts them back
+# in a line when a failure is easier to read that way.
+JOBS ?= $(shell getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+
+# A file tagged adapter, worker or e2e is run by an explicit matrix line below,
+# once per combination it needs. Everything else runs once. This is the same
+# split the old `--filter-tags '!adapter,!worker,!e2e'` made, read from the
+# files instead of restated, so adding a file keeps it correct.
+# /dev/null in the grep list stops grep reading stdin if the list is ever empty.
+ALL_BATS   := $(shell find tests -name '*.bats' | sort)
+# Two things make quoting here awkward: it reads a ( inside $(shell ...) as its
+# own, so the alternatives are spelled out rather than grouped, and it reads an
+# unescaped # as the start of a comment even inside quotes, so the one the tag
+# line begins with is written \#.
+TAGGED     := $(shell grep -lE '^\# bats file_tags=adapter|^\# bats file_tags=worker|^\# bats file_tags=e2e' $(ALL_BATS) /dev/null 2>/dev/null | sort)
+UNIT_FILES := $(filter-out $(TAGGED),$(ALL_BATS))
+UNIT_JOBS  := $(patsubst tests/%.bats,job/%,$(UNIT_FILES))
+
+MATRIX_JOBS := \
+  job-m/backend-herdr job-m/backend-tmux \
+  job-m/worker-claude job-m/worker-codex \
+  job-m/e2e-dispatch-herdr job-m/e2e-dispatch-tmux \
+  job-m/e2e-supervise-herdr job-m/e2e-supervise-tmux
+
+LOGS := tests/tmp/logs
+
+# One job: run a bats file with an environment, quietly. A passing file prints
+# one line. A failing file prints its whole log, so a parallel run still reads
+# like a serial one at the point where it matters.
+# $(1) job name, $(2) environment, $(3) bats arguments
+define run_bats
+@mkdir -p $(LOGS); \
+if env $(2) $(BATS) $(3) > "$(LOGS)/$(1).log" 2>&1; then \
+  printf '  ok    %-26s %3s tests\n' "$(1)" "$$(grep -c '^ok ' "$(LOGS)/$(1).log")"; \
+else \
+  printf '  FAIL  %s\n' "$(1)"; cat "$(LOGS)/$(1).log"; exit 1; \
+fi
+endef
+
+.PHONY: test unit matrix check check-branch check-bash32 lint lint-shell lint-identifiers \
+        $(UNIT_JOBS) $(MATRIX_JOBS)
 
 test:
-	$(BATS) --recursive tests --filter-tags '!adapter,!worker,!e2e'
-	DUX_BACKEND=herdr $(BATS) tests/backend-adapter.bats
-	DUX_BACKEND=tmux  $(BATS) tests/backend-adapter.bats
-	DUX_WORKER_HARNESS=claude $(BATS) tests/worker-adapter.bats
-	DUX_WORKER_HARNESS=codex  $(BATS) tests/worker-adapter.bats
-	DUX_BACKEND=herdr DUX_WORKER_HARNESS=claude $(BATS) tests/e2e-dispatch.bats
-	DUX_BACKEND=tmux  DUX_WORKER_HARNESS=claude $(BATS) tests/e2e-dispatch.bats
-	DUX_BACKEND=herdr $(BATS) tests/e2e-supervise.bats
-	DUX_BACKEND=tmux  $(BATS) tests/e2e-supervise.bats
+	@rm -rf $(LOGS)
+	@$(MAKE) --no-print-directory -j$(JOBS) unit matrix
+
+unit:   $(UNIT_JOBS)
+matrix: $(MATRIX_JOBS)
+
+$(UNIT_JOBS): job/%:
+	$(call run_bats,$*,,tests/$*.bats)
+
+job-m/backend-herdr:
+	$(call run_bats,backend-herdr,DUX_BACKEND=herdr,tests/backend-adapter.bats)
+job-m/backend-tmux:
+	$(call run_bats,backend-tmux,DUX_BACKEND=tmux,tests/backend-adapter.bats)
+job-m/worker-claude:
+	$(call run_bats,worker-claude,DUX_WORKER_HARNESS=claude,tests/worker-adapter.bats)
+job-m/worker-codex:
+	$(call run_bats,worker-codex,DUX_WORKER_HARNESS=codex,tests/worker-adapter.bats)
+job-m/e2e-dispatch-herdr:
+	$(call run_bats,e2e-dispatch-herdr,DUX_BACKEND=herdr DUX_WORKER_HARNESS=claude,tests/e2e-dispatch.bats)
+job-m/e2e-dispatch-tmux:
+	$(call run_bats,e2e-dispatch-tmux,DUX_BACKEND=tmux DUX_WORKER_HARNESS=claude,tests/e2e-dispatch.bats)
+job-m/e2e-supervise-herdr:
+	$(call run_bats,e2e-supervise-herdr,DUX_BACKEND=herdr,tests/e2e-supervise.bats)
+job-m/e2e-supervise-tmux:
+	$(call run_bats,e2e-supervise-tmux,DUX_BACKEND=tmux,tests/e2e-supervise.bats)
 
 # macOS only: run the whole suite with /bin/bash (3.2) first on PATH, since
 # every script's shebang resolves bash through PATH.
 check-bash32:
 	@mkdir -p tests/tmp/bash32 && ln -sf /bin/bash tests/tmp/bash32/bash
 	PATH="$(CURDIR)/tests/tmp/bash32:$$PATH" $(MAKE) test
+
+# check is the loop to run after a task. check-branch is the one to run once
+# before /ship: it adds the bash 3.2 pass, which is the same suite again.
+check: lint test
+check-branch: check check-bash32
 
 lint: lint-shell lint-identifiers
 
@@ -53,5 +115,3 @@ lint-identifiers:
 	fi; \
 	rm -rf "$$tmp"; \
 	[ "$$rc" -eq 0 ] || { echo "personal identifiers found"; exit 1; }
-
-check: lint test
