@@ -26,6 +26,13 @@ The script does the mechanics and prints what it did. You judge and relay.
      cleaned status data. Put the operator's answer in
      `data/tasks/<id>/answer.md`, then run
      `bin/dux-recover <id> --retry --answer-file data/tasks/<id>/answer.md`.
+   - For a task that was **already running before the security-boundary
+     upgrade**, and only that: `bin/dux-recover <id> --retire-legacy`. The
+     script itself refuses anything that has a run record or a waiting result,
+     so never argue with that finding. Tell the operator the worker was stopped
+     and the task recorded failed, and that the branch and the worktree are
+     kept. Then wait for the `failed` wake and handle it as failed: one retry
+     if the operator asks, otherwise a teardown.
 4. Run `bin/dux-ledger ack <id> <event-state>` after handling the wake.
 
 Never read `state/<id>.out` yourself; use only the script's capped tail. Never

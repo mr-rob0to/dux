@@ -35,7 +35,8 @@ bin/
   dux-watch                classify task events, record them, and raise local toasts
   dux-status               recompute the fleet digest and missed wakes from files
   dux-notify               format one action-first phone notification line
-  dux-recover              inspect or recover stale, dead, ended, and failed tasks
+  dux-recover              inspect or recover stale, dead, ended, and failed tasks;
+                           retire one from before the security-boundary upgrade
   dux-backend              selects a backend once and dispatches to its adapter
   backends/tmux.sh         window per task, remain-on-exit; endpoint tmux:<session>:<window_id>
   backends/herdr.sh        tab per task in the Dux workspace; endpoint herdr:<pane_id>
@@ -221,8 +222,60 @@ whole handoff or none of it.
 - A terminal-looking status line with no handoff behind it proves nothing and is
   ignored by the watcher, the digest and teardown alike.
 - Sequences are retained for the whole run. `dux-teardown` is their lifecycle
-  owner, and clears them with `state/<id>.run`, `state/<id>.result-context` and
-  `state/<id>.ship-receipt`.
+  owner, and clears them with `state/<id>.run`, `state/<id>.result-context`,
+  `state/<id>.ship-receipt`, `state/<id>.portal`, `state/<id>.pgid` and the task
+  channel the portal names. A wrapper that died without cleaning up leaves those
+  last three behind; recovery clears them only once the worker's own process
+  group is proved gone, and teardown is the last owner either way. A portal that
+  does not name a path under `state/channels/` is left alone and logged, so a
+  broken reference never turns into a recursive delete of something else.
+
+## Retiring a task from before the upgrade
+
+A task that was running before this milestone landed has no run record, so no
+handoff can ever be published for it and no result can ever be proved. It would
+sit in the fleet forever. `dux-recover <id> --retire-legacy` is the one-time
+migration that ends it, and it proves the task really is one of those before it
+writes anything.
+
+- It refuses unless the ledger says `running`, `stale`, `dead` or `ended`.
+- It refuses if `state/<id>.run` exists at all, including as a symlink: a task
+  with a run record is an ordinary task, recovered the ordinary way. A run
+  record it wrote itself carries `retired=`, so a second retirement is refused
+  by name rather than repeated.
+- It refuses if a handoff is already waiting, because a task from before the
+  upgrade cannot have published one.
+- Only then does it signal the wrapper, INT and then a bounded wait, and refuse
+  if the wrapper is still there afterwards. Nothing of the old run is left
+  running before anything is written.
+- What it writes is a retirement run record and one handoff,
+  `failed: stopped for security-boundary upgrade; worktree kept`. The watcher
+  applies that like any other handoff, which is what puts the task in `failed`
+  and raises the wake.
+
+The branch and the worktree are kept. From `failed` the ordinary paths apply and
+each applies once: one `--retry`, which is a new task with its own worktree and
+its own run, or `dux-teardown`, with its usual clean, pushed and stopped checks.
+A second retirement and a second retry are both findings.
+
+## What this boundary does not claim
+
+The worker runs as the operator, so the boundary is about mistakes and about
+text, not about a hostile program.
+
+- It contains the ordinary process group. A child that deliberately starts a
+  session of its own escapes it, and a survivor of TERM and KILL is a finding
+  with no result, never a quiet success.
+- It caps what a worker can say: 200 bytes a status line, 64 KiB of status
+  proposals, 1 MiB of report. It does not cap what a worker can do inside its
+  own worktree with the operator's own rights.
+- Every operator surface, pane, toast, notification and digest line, carries
+  fixed text chosen by state and the url the ledger holds. `dux-recover` is the
+  only place worker text reaches the operator, capped, cleaned and fenced as
+  data.
+- A stronger boundary, a separate user account or a sandbox, is possible later
+  and is not required by anything here. If one is added it fails closed: no
+  isolation, no dispatch.
 
 ## Wake flow (exists today)
 
@@ -256,6 +309,7 @@ whole handoff or none of it.
 | `dead` | Mark failed, save the last 20 output lines, and keep the worktree. |
 | `ended` | Run the same proof the wrapper would have run and publish what it proves into the next sequence; otherwise ask the operator, whose only classification is `failed`. |
 | `failed` | Show the saved failure and offer one retry or a scout. |
+| from before the upgrade | `--retire-legacy` stops the old wrapper and publishes one retirement handoff; the branch and worktree are kept for one retry or a teardown. |
 | `blocked`, `needs-decision` | Relay the meaning of fenced status data; append the operator answer to one fresh retry. |
 
 ## Session lifecycle (exists today)

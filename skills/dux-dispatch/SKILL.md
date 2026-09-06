@@ -41,7 +41,9 @@ Only after the task's last status line is `done` or `failed`, and after the
 operator has said the PR is merged or the task is abandoned:
 
 - `bin/dux-teardown <id>`. Dirty, unpushed, still-running, and focused-pane
-  refusals are findings; report them and stop.
+  refusals are findings; report them and stop. Teardown is what removes the run
+  record, the retained handoffs, the receipt and the worker's task channel, so a
+  task left un-torn-down keeps them; that is deliberate, not a leak.
 - Then `bin/dux-ledger ack <id> <done|failed>` with the final state, so a task
   torn down before its wake was handled is not pushed again at the next session
   start.
