@@ -20,7 +20,9 @@ backend_open() {  # id cwd cmd
     finding "herdr tab create returned no pane id for $id; tab $tab closed"
   fi
   # pane run types into a live shell; without a prompt the command would be lost.
-  if ! herdr pane wait-output "$pane" --regex '[$%>#] ?$' --timeout 10000 >/dev/null 2>&1; then
+  # The class carries the chevrons starship and oh-my-zsh draw as well as the
+  # four plain shells use: a prompt this does not know times out every open.
+  if ! herdr pane wait-output "$pane" --regex '[$%>#❯➜] ?$' --timeout 10000 >/dev/null 2>&1; then
     backend_close "herdr:$pane"   # fail-closed: a focused pane or a failed close is its own finding
     finding "no shell prompt in pane $pane for $id within 10s; pane closed, command not sent"
   fi
