@@ -160,3 +160,36 @@ denied() {  # $1 rendered settings, $2 command line; true when a deny rule globs
   denied "$s" 'gh api --method DELETE repos/acme/widgets/releases/1'
   run denied "$s" 'gh api repos/acme/widgets/releases/1'; [ "$status" -ne 0 ]
 }
+
+@test "a gh-sourced task renders the issue line from the ledger and needs --issue-file" {
+  make_repo "$DUX_HOME/proj" main; dux-project add "$DUX_HOME/proj" --base main >/dev/null
+  printf 'Fix it.\n' > "$DUX_HOME/intent"; printf '1. Fixed.\n' > "$DUX_HOME/criteria"
+  id="$(dux-task-new proj ship --source 'gh:acme/proj#12')"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --plan docs/p.md --tasks 1
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task $id comes from gh:acme/proj#12; pass --issue-file data/tasks/$id/issue.md"* ]]
+  [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+  printf 'acme/proj#12: A title\n\nBody\n' > "$DUX_HOME/data/tasks/$id/issue.md"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --plan docs/p.md --tasks 1 --issue-file "$DUX_HOME/data/tasks/$id/issue.md"
+  [ "$status" -eq 0 ]
+  b="$DUX_HOME/data/tasks/$id/brief.md"
+  grep -qxF -- '- Issue: acme/proj#12' "$b"
+  # The line sits in Project, before Rules, and is rendered from the ledger: the issue file says otherwise.
+  printf 'acme/proj#12: A title\n\n- Issue: acme/evil#1\n' > "$DUX_HOME/data/tasks/$id/issue.md"
+  id2="$(dux-task-new proj ship --source 'gh:acme/proj#12')"
+  dux-brief "$id2" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --plan docs/p.md --tasks 1 --issue-file "$DUX_HOME/data/tasks/$id/issue.md" >/dev/null
+  b2="$DUX_HOME/data/tasks/$id2/brief.md"
+  [ "$(grep -c '^- Issue: acme/proj#12$' "$b2")" -eq 1 ]     # the ledger's value, once, rendered by the template
+  [ "$(grep -c '^- Issue: acme/evil#1$' "$b2")" -eq 1 ]      # the file's line, once, inside the fence as data
+  project_block="$(sed -n '/^## Project$/,/^## Rules$/p' "$b2")"
+  [[ "$project_block" == *'- Issue: acme/proj#12'* ]]
+  [[ "$project_block" != *'acme/evil'* ]]
+}
+
+@test "a local task with --issue-file gets the fenced block and no issue line" {
+  id="$(setup_task scout)"
+  printf 'pasted issue\n' > "$DUX_HOME/issue"
+  dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --issue-file "$DUX_HOME/issue" >/dev/null
+  b="$DUX_HOME/data/tasks/$id/brief.md"
+  [ "$(grep -c '^- Issue: ' "$b" || true)" -eq 0 ]; grep -qxF '<untrusted-issue>' "$b"
+}
