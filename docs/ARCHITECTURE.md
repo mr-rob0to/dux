@@ -24,6 +24,7 @@ bin/
   dux-project              registry add/list/get/resolve-base, PR template install, --worktree
   dux-ledger               add/set/set-if/get/list/ack/unack over data/backlog.md; the only writer
   dux-task-new             allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, folder, queued line
+  dux-intake               queue labelled GitHub issues as tasks; --show fences one issue's text
   dux-brief                render tasks/<id>/brief.md and tasks/<id>/worker-settings.json
   dux-worktree             create/remove/discard a worktree per the project's mechanism
   dux-spawn                worktree plus backend container for a queued task; five refusals
@@ -53,8 +54,9 @@ templates/
   config/                  defaults dux-install copies into config/ (models, models-codex,
                            worker-harness, backend, reviewer, security-reviewer)
 data/         (gitignored) projects.md registry; backlog.md ledger with acked state;
-                           tasks/<id>/{intent.md,criteria.md,brief.md,status.log,report.md,
-                           worker-settings.json,harness,hooks/,worktree.log,retry,retried-from}
+                           tasks/<id>/{intent.md,criteria.md,brief.md,issue.md,status.log,
+                           report.md,worker-settings.json,harness,hooks/,worktree.log,
+                           retry,retried-from}
 state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            <id>.endpoint; <id>.pid; <id>.pgid; <id>.out; events.log;
                            <id>.run; <id>.portal; <id>.result-context;
@@ -65,8 +67,7 @@ config/       (gitignored) backend override, reviewer defaults, models, models-c
 tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash
 ```
 
-Planned for later milestones (spec section 16): `dux-intake` (milestone 4) and
-the `/ship` port (milestone 5).
+Planned for later milestones (spec section 16): the `/ship` port (milestone 5).
 
 Rules that shape every component:
 
@@ -109,13 +110,38 @@ finding. `find` is one of the two ways spawn asks whether a worker may still be
 alive; the other is the wrapper's own `state/<id>.pid`, which answers whichever
 backend started it and catches a worker in a server whose socket vanished.
 
+## Intake flow (exists today)
+
+1. `dux-status --intake` at session start runs `dux-intake <project>` for every
+   project whose registry line has `issues=label:<name>`. One project's finding
+   is one `skipped:` line; the rest of the fleet still reports.
+2. `dux-intake` reads the forge once, `gh issue list --state open --label <name>
+   --limit 100`, and validates the answer is a list of issues before using it.
+3. For each issue it builds the source key `gh:<owner>/<repo>#<n>` from the
+   repository's own origin url and asks the ledger, `dux-ledger list --source`,
+   whether a task already carries it. A task that exists and is not `dropped`
+   means nothing new is queued: the key is the idempotence rule, so a second run
+   queues nothing twice.
+4. A new issue becomes a task through `dux-task-new <project> ship --source
+   <key>`, and its title and body are cleaned, capped, and written to
+   `tasks/<id>/issue.md`. That file is the only copy Dux keeps, and
+   `dux-intake --show <id>` is the only way its text reaches Dux's context,
+   fenced as data the way `dux-recover` fences worker text.
+5. A `queued` task whose issue has left the list is reconciled: closed means the
+   task is dropped with a line in its report, and an open issue that lost the
+   label is reported and left queued. Only `queued` tasks; a worker is never
+   stopped because someone closed an issue.
+
 ## Dispatch flow (exists today)
 
 1. Operator states a goal; Dux writes intent and criteria files and runs
    `dux-task-new <project> <shape>`, which allocates the id and folder and
    appends the `queued` ledger line (`dux-ledger add`).
 2. `dux-brief <id> ...` renders `tasks/<id>/brief.md` (<=60 lines outside the
-   fenced issue block) and `tasks/<id>/worker-settings.json`.
+   fenced issue block) and `tasks/<id>/worker-settings.json`. A task with a
+   `gh:` source needs `--issue-file`, and its brief carries one
+   `- Issue: <owner>/<repo>#<n>` line taken from the ledger, never from the
+   issue text; that line is what `/ship` turns into `Closes #<n>`.
 3. `dux-spawn <id>` refuses with a finding unless: the lock is this session's
    (`dux-lock mine`), the task is `queued`, the project is registered, the
    brief has a `- Worktree: ` line to fill, the chosen worker harness is
@@ -164,7 +190,10 @@ backend started it and catches a worker in a server whose socket vanished.
    harness that exits without a terminal proposal gets `failed:` or `ended:`.
 7. `dux-teardown <id>` (the ledger says terminal, worktree clean, branch pushed)
    removes the worktree, closes the container, clears the run's retained
-   references, and reports the ledger's own state and PR url.
+   references, and reports the ledger's own state and PR url. For a `done` task
+   from an issue whose PR is in that issue's repository, it posts one comment,
+   `Dux delivered PR <url>.`, on the first teardown that completes; a failed
+   comment is a warning, not a refusal.
 
 ## The task channel
 
@@ -346,8 +375,9 @@ means another live session holds the lock and this one is read-only. A successfu
 acquire replaces any watcher recorded in `state/watch.pid`, starts a fresh one,
 and writes diagnostics to `state/watch.log`. `DUX_WATCHER=off` is the explicit
 test and maintenance switch. `dux-doctor` then requires the watcher while the
-switch is on. Dux arms the Monitor before `dux-status` reconstructs the fleet,
-and it runs the digest again after replacing a dead Monitor. The ordering means
+switch is on. Dux arms the Monitor before `dux-status --intake` pulls the labelled issues and
+reconstructs the fleet, and it runs the plain digest again after replacing a dead
+Monitor. The ordering means
 the digest catches earlier events while the Monitor catches later ones.
 SessionEnd runs `dux-lock release`, which stops this session's watcher and removes
 the lock only when it holds this session's pid. Worker containers keep running.

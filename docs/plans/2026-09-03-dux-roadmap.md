@@ -50,7 +50,7 @@ Model per shape: plan `claude-fable-5-1` effort high; ship `claude-opus-5` effor
 
 **Not milestone 3, and not this repo.** Two follow-ups live in `fitfights_ios`, each its own branch, session and PR: a worktree mode that links the committed `GoogleService-Info.plist.example` so a worker can launch the app without real credentials, and pulling failure screenshots out of the `xcresult` bundle so a worker can attach them to its report. Established during M2: the iOS `make worktree` links the real plist and only the `.example` is committed, so a plain worktree with no linking cannot launch the app. `AppConfig.xcconfig.local` and the fastlane env files are not needed, because the committed debug xcconfig already carries working defaults.
 
-Also outstanding from M2, but post-merge rather than a task: rerun `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded, and run Task 9 Step 7's real-harness dry runs against a live `claude` in a throwaway registered project, which needs a fresh interactive session and the real `data/`.
+Left over from M2, both settled in Milestone 4 (2026-09-06): rerun `bin/dux-install` so `config/models-codex` and `config/worker-harness` are seeded stays a chore the operator runs by hand from the primary checkout, and Task 9 Step 7's real-harness dry runs are folded into Milestone 4 Task 4 Step 2, which needs the same throwaway registered project and a live `claude`.
 
 ## Milestone 4: Intake (4 tasks)
 
