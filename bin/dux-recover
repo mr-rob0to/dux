@@ -322,6 +322,11 @@ retry() {
   plan="$(sed -n 's/^- Plan: //p' "$brief" | head -n 1)"
   tasks="$(sed -n 's/^- Tasks: //p' "$brief" | head -n 1)"
   set -- --intent-file "$new_intent" --criteria-file "$DUX_TASKS/$new/criteria.md"
+  # A gh-sourced retry keeps the issue text beside it; dux-brief refuses without it.
+  if [ -f "$task/issue.md" ]; then
+    cp "$task/issue.md" "$DUX_TASKS/$new/issue.md" || finding "cannot copy $task/issue.md"
+    set -- "$@" --issue-file "$DUX_TASKS/$new/issue.md"
+  fi
   [ -z "$plan" ] || set -- "$@" --plan "$plan" --tasks "$tasks"
   if ! "$DUX_ROOT/bin/dux-brief" "$new" "$@" >/dev/null; then
     "$ledger" set "$new" state dropped || true

@@ -16,19 +16,25 @@ setup() {
   dux-lock acquire >/dev/null
 }
 
-task_in() {  # $1 state, [$2 shape]; sets id
-  local task shape="${2:-scout}"
+task_in() {  # $1 state, [$2 shape], [$3 source key]; sets id
+  local task shape="${2:-scout}" src="${3:-local}"
   if ! dux-project list | grep -qx proj; then
     make_repo "$DUX_HOME/proj" main
     dux-project add "$DUX_HOME/proj" --base main >/dev/null
   fi
-  id="$(dux-task-new proj "$shape")"; task="$DUX_HOME/data/tasks/$id"
+  id="$(dux-task-new proj "$shape" --source "$src")"; task="$DUX_HOME/data/tasks/$id"
   printf 'Do the thing the operator asked for.\n' > "$task/intent.md"
   printf '1. The thing is done.\n' > "$task/criteria.md"
+  # A gh-sourced task is never briefed without its issue text beside it.
+  local issue=()
+  if [ "$src" != local ]; then
+    printf '%s: A title\n\nBody\n' "${src#gh:}" > "$task/issue.md"
+    issue=(--issue-file "$task/issue.md")
+  fi
   if [ "$shape" = ship ]; then
-    dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" --plan docs/plan.md --tasks 1-2 >/dev/null
+    dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" --plan docs/plan.md --tasks 1-2 "${issue[@]+"${issue[@]}"}" >/dev/null
   else
-    dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" >/dev/null
+    dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" "${issue[@]+"${issue[@]}"}" >/dev/null
   fi
   dux-ledger set "$id" endpoint herdr:w1:p9; dux-ledger set "$id" state "$1"
   fake_run "$id" r00 "$shape" acme/proj "$DUX_HOME/proj"
@@ -483,6 +489,17 @@ retire_line="failed: stopped for security-boundary upgrade; worktree kept"
   [ "$(dux-ledger get "$id" state)" = failed ]; [ "$(grep -c '^failed:' "$DUX_HOME/data/tasks/$id/status.log")" -eq 1 ]
   run dux-recover "$id" --retry
   [ "$status" -eq 2 ]; [[ "$output" == "finding: $id was already retried as $new; a further attempt is the operator's call through dux-dispatch"* ]]
+}
+
+@test "a retry of an issue task carries the issue file and renders the issue line again" {
+  task_in failed ship 'gh:acme/proj#12'; kill_worker; status_is 'failed: worker exited 3'
+  run dux-recover "$id" --retry
+  [ "$status" -eq 0 ]
+  new="$(cat "$DUX_HOME/data/tasks/$id/retry")"
+  [ -f "$DUX_HOME/data/tasks/$new/issue.md" ]
+  cmp -s "$DUX_HOME/data/tasks/$id/issue.md" "$DUX_HOME/data/tasks/$new/issue.md"
+  grep -qxF -- '- Issue: acme/proj#12' "$DUX_HOME/data/tasks/$new/brief.md"
+  [ "$(dux-ledger get "$new" source)" = 'gh:acme/proj#12' ]
 }
 
 @test "a retry fences and caps the prior worker status in its new brief" {
