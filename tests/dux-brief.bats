@@ -193,3 +193,12 @@ denied() {  # $1 rendered settings, $2 command line; true when a deny rule globs
   b="$DUX_HOME/data/tasks/$id/brief.md"
   [ "$(grep -c '^- Issue: ' "$b" || true)" -eq 0 ]; grep -qxF '<untrusted-issue>' "$b"
 }
+
+@test "a brief flag with nothing after it prints the usage line, not a crash" {
+  id="$(fixture_task proj ship)"
+  for flag in --intent-file --criteria-file --plan --tasks --issue-file; do
+    run dux-brief "$id" "$flag"
+    [ "$status" -eq 1 ]
+    [[ "$output" == "dux: usage: dux-brief"* ]]
+  done
+}
