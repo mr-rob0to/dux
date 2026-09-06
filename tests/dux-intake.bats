@@ -87,3 +87,24 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   [ "$(grep -c '^queued ' <<< "$output")" -eq 100 ]
 }
 
+
+@test "a second run queues nothing and refreshes the issue file only while queued" {
+  labelled_project
+  FAKE_GH_ISSUE_LIST_FILE="$FIX" dux-intake proj >/dev/null
+  before="$(wc -l < "$DUX_HOME/data/backlog.md")"
+  id12="$(dux-ledger list --source 'gh:acme/proj#12')"; id13="$(dux-ledger list --source 'gh:acme/proj#13')"
+  dux-ledger set "$id13" state running
+  jq '(.[] | select(.number == 12) | .body) = "sharpened" | (.[] | select(.number == 13) | .body) = "changed"' "$FIX" > "$DUX_HOME/fix2.json"
+  FAKE_GH_ISSUE_LIST_FILE="$DUX_HOME/fix2.json" run --separate-stderr dux-intake proj
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "$output" = "intake proj: 0 queued, 0 dropped, 0 unlabelled" ]
+  [ "$(wc -l < "$DUX_HOME/data/backlog.md")" -eq "$before" ]
+  grep -qxF sharpened "$DUX_HOME/data/tasks/$id12/issue.md"
+  [ "$(grep -c changed "$DUX_HOME/data/tasks/$id13/issue.md" || true)" -eq 0 ]
+  # Once a brief exists the file is frozen, so brief and issue keep agreeing.
+  : > "$DUX_HOME/data/tasks/$id12/brief.md"
+  jq '(.[] | select(.number == 12) | .body) = "sharper"' "$FIX" > "$DUX_HOME/fix3.json"
+  FAKE_GH_ISSUE_LIST_FILE="$DUX_HOME/fix3.json" dux-intake proj >/dev/null
+  grep -qxF sharpened "$DUX_HOME/data/tasks/$id12/issue.md"
+}
+
