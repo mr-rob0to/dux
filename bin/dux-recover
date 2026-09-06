@@ -4,7 +4,7 @@ set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
-usage="usage: dux-recover <id> [--extend | --stop | --retry [--answer-file <f>] | --classify failed]"
+usage="usage: dux-recover <id> [--extend | --stop | --retry [--answer-file <f>] | --classify failed | --retire-legacy]"
 id="${1:-}"
 [ -n "$id" ] || finding "$usage"
 shift
@@ -15,6 +15,7 @@ classify=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --extend|--stop|--retry) action="${1#--}" ;;
+    --retire-legacy) action=retire-legacy ;;
     --answer-file) [ $# -ge 2 ] || finding "$usage"; answer="$2"; shift ;;
     --classify)
       [ $# -ge 2 ] || finding "$usage"
@@ -33,6 +34,8 @@ out="$DUX_STATE/$id.out"
 pidfile="$DUX_STATE/$id.pid"
 report="$task/report.md"
 brief="$task/brief.md"
+runfile="$DUX_STATE/$id.run"; portal="$DUX_STATE/$id.portal"; pgidfile="$DUX_STATE/$id.pgid"
+retire_line="failed: stopped for security-boundary upgrade; worktree kept"
 tail_lines="${DUX_RECOVER_TAIL_LINES:-40}"
 line_chars="${DUX_RECOVER_LINE_CHARS:-200}"
 wait_secs="${DUX_RECOVER_WAIT_SECS:-60}"
@@ -150,18 +153,26 @@ extend() {
   echo "extended $id once; stale again after ${stale_after}s of silence"
 }
 
+# Interrupt one wrapper and wait for it to go. A wrapper that stays is a
+# finding: everything after this point writes state, and writing it while the
+# old worker is still running is what the caller asked us to prevent.
+signal_wrapper() {  # $1 pid
+  local waited=0
+  kill -INT "$1" 2>/dev/null || finding "cannot signal wrapper pid $1 for $id"
+  while kill -0 "$1" 2>/dev/null; do
+    [ "$waited" -lt "$wait_secs" ] || finding "wrapper pid $1 for $id is still running ${wait_secs}s after SIGINT; kill it by hand, then rerun"
+    sleep 1
+    waited=$((waited + 1))
+  done
+}
+
 stop() {
-  local pid waited=0 n
+  local pid n
   [ "$state" = stale ] || finding "$id is $state, not stale; --stop applies to stale tasks"
   already_settled && return 0
   pid="$(wrapper_pid)" || exit $?
   [ -n "$pid" ] || finding "no live wrapper for $id; the watcher will report it dead"
-  kill -INT "$pid" 2>/dev/null || finding "cannot signal wrapper pid $pid for $id"
-  while kill -0 "$pid" 2>/dev/null; do
-    [ "$waited" -lt "$wait_secs" ] || finding "wrapper pid $pid for $id is still running ${wait_secs}s after SIGINT; kill it by hand, then rerun"
-    sleep 1
-    waited=$((waited + 1))
-  done
+  signal_wrapper "$pid"
   # A wrapper that reached its own ending published it on the way out. That is
   # the run's result and it stands; only a wrapper that published nothing is
   # recovery's to call.
@@ -174,6 +185,34 @@ stop() {
   fi
 }
 
+# A wrapper that died left its task channel behind, and the channel is the only
+# reference nothing else owns: teardown clears the run record, the receipt and
+# the handoffs, and a wrapper that reaches its own ending clears its channel
+# itself. Clearing one is safe only once the wrapper is gone, which dead() has
+# just proved, and the worker's own process group with it.
+release_channel() {
+  local pg channel
+  { [ -e "$portal" ] || [ -L "$portal" ] || [ -e "$pgidfile" ] || [ -L "$pgidfile" ]; } || return 0
+  pg="$(cat "$pgidfile" 2>/dev/null)"
+  case "$pg" in
+    '') ;;
+    *[!0-9]*)
+      echo "state/$id.pgid does not hold a process group, so I cannot tell whether the worker's own processes are gone; its task channel stays"
+      return 0 ;;
+    *)
+      if kill -0 -- "-$pg" 2>/dev/null; then
+        echo "the worker's own processes for $id are still running as group $pg; its task channel stays until they are gone"
+        return 0
+      fi ;;
+  esac
+  channel="$(cat "$portal" 2>/dev/null)"
+  case "$channel" in
+    "$DUX_STATE/channels/"?*) rm -rf "$channel" 2>/dev/null || log "task channel $channel left in place" ;;
+    ?*) log "state/$id.portal does not name a task channel; left in place" ;;
+  esac
+  rm -f "$portal" "$pgidfile"
+}
+
 dead() {
   local pid
   already_settled && return 0
@@ -182,6 +221,7 @@ dead() {
   mark_failed "failed: worker gone without an exit line (dux-recover)"
   failure_tail_to_report
   echo "marked $id failed; worktree kept; last 20 output lines saved to tasks/$id/report.md"
+  release_channel
 }
 
 # A worker that exited without a result may still have finished the work. The
@@ -217,6 +257,35 @@ ended() {
       echo "next: dux-recover $id --classify failed, or dispatch a fresh task" ;;
     *) finding "cannot check the result for $id: ${reason:-no reason given}" ;;
   esac
+}
+
+# A task from before the security-boundary upgrade has no run record, so nothing
+# it does can ever produce a handoff, and the watcher will never record a result
+# for it. Retirement is what gives it one: stop the old worker, then hand the
+# watcher a failure Dux itself wrote. The branch and the worktree are left
+# exactly where they are, so the work is still there to retry or to tear down.
+retire_legacy() {
+  local pid run n
+  need_state --retire-legacy "running, stale, dead, or ended" running stale dead ended
+  if [ -e "$runfile" ] || [ -L "$runfile" ]; then
+    grep -q '^retired=' "$runfile" 2>/dev/null \
+      && finding "$id was already retired; the watcher applies its result, and then one --retry or a teardown"
+    finding "$id has a run record, so it is not a task from before the security-boundary upgrade; recover it the ordinary way"
+  fi
+  if n="$(next_handoff "$id")"; then
+    finding "$id already has a result waiting at state/$id.handoffs/$n; a task from before the upgrade cannot have published one"
+  fi
+  pid="$(wrapper_pid)" || exit $?
+  [ -z "$pid" ] || signal_wrapper "$pid"
+  # Only now, with nothing of the old run still running, does this write.
+  run="retired$(printf '%04x%04x' "$RANDOM" "$RANDOM")"
+  {
+    echo "version=1"; echo "id=$id"; echo "run=$run"; echo "shape=$shape"
+    echo "retired=$(now)"; echo "by=dux-recover"
+  } > "$runfile" || finding "cannot write $runfile"
+  n="$(publish_handoff "$id" "$run" "$retire_line" failed)" \
+    || finding "cannot publish the retirement of $id under state/$id.handoffs"
+  echo "retired $id; its worker is stopped and the watcher will record it failed. The branch and the worktree are kept."
 }
 
 classify_as() {
@@ -298,5 +367,6 @@ case "$action" in
   extend) extend ;;
   stop) stop ;;
   retry) retry ;;
+  retire-legacy) retire_legacy ;;
   classify) classify_as "$classify" ;;
 esac
