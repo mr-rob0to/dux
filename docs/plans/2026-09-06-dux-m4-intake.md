@@ -4,9 +4,9 @@
 
 **Where this stands**
 
-- Milestone: 4 of 7. Implementing on `feat/m4-intake` from `main` at 40ce32a (this plan merged as PR #7). Tasks 1 to 4, 2 of 4 implemented.
+- Milestone: 4 of 7. Implementing on `feat/m4-intake` from `main` at 40ce32a (this plan merged as PR #7). Tasks 1 to 4, 3 of 4 implemented.
 - Design review: one independent review from a fresh Fable session is recorded at the bottom; all 25 findings are verified and folded into the tasks, none disputed.
-- Next action: Task 3, `dux-status --intake` and the session-start wiring. Task 2 landed in 6 commits with 5 break-verified failures, the number the plan named.
+- Next action: Task 4 Step 2, the dry run against a throwaway GitHub repository. Task 3 landed in 4 commits with 2 break-verified failures, the number the plan named.
 
 **Known limitation carried forward, not fixed here.** The `/ship` receipt written by `dux-result record-ship` ties only the `ci` phase to the head SHA, and it cannot represent fix-and-re-review: a second review of new commits has nowhere to go. So the receipt proves the five phases ran in order, not that a review covered the final code. Milestone 5 Task 1 (`ship-guard`, `reviewed_sha`, bounded fix passes) is where that lands. Nothing in this milestone touches the receipt.
 
@@ -977,7 +977,7 @@ Commit: `docs: describe intake in the skills, the architecture, and the README`
 - Consumes: the brief's `- Issue:` line (Task 2).
 - Produces: `Closes #<n>` in the PR body of a ship task from an issue.
 
-- [ ] **Step 1: Contract test, then the prose**
+- [x] **Step 1: Contract test, then the prose**
 
 ```bash
 @test "the ship skill closes the brief's issue from the PR body" {

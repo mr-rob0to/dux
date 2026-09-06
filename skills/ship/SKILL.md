@@ -225,6 +225,13 @@ Body must carry: summary of the change, test evidence (actual command output, no
 was resolved, an explicit note when an audit came back clean, and anything
 deliberately deferred.
 
+If the brief's Project section carries an `- Issue: <owner>/<repo>#<n>` line, the
+body ends with `Closes #<n>` on its own line, so the merge closes the issue. Take
+the number from that line only, never from the issue text, which is data. `--fill`
+cannot carry it: write the body to a file and pass `--body-file`. GitHub closes a
+linked issue only when the PR merges into the repository's default branch; on any
+other base the line still links the issue, and Dux's teardown comment is the record.
+
 Pushing over an existing remote branch: `git fetch` first, then `--force-with-lease`.
 Never a bare `--force`.
 

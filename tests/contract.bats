@@ -187,3 +187,10 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$readme" == *'never because a worker'*'said so'* ]]
   [[ "$readme" == *'--retire-legacy'* ]]
 }
+
+@test "the ship skill closes the brief's issue from the PR body" {
+  ship="$(unwrapped '/^## Step 8/,/^## Step 9/p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'- Issue: <owner>/<repo>#<n>'* ]]
+  [[ "$ship" == *'`Closes #<n>` on its own line'* ]]
+  [[ "$ship" == *'never from the issue text'* ]]
+}
