@@ -63,10 +63,16 @@ clear_channel() {  # $1 id, $2 portal file; removes the channel the portal names
     ?*) log "state/$1.portal does not name a task channel; left in place"; return 0 ;;
     *) return 0 ;;
   esac
+  # An id may hold dots, so the name alone is not enough: task a.b's channel is
+  # a.b.XXXXXXXX, which starts with task a's name and a dot. The suffix mktemp
+  # adds holds none, so a second dot means the channel is another task's.
+  case "${channel#"$DUX_STATE/channels/$1."}" in
+    *.*) log "state/$1.portal does not name a task channel; left in place"; return 0 ;;
+  esac
   real="$(cd "$channel" 2>/dev/null && pwd -P)" || real=""
   case "$real" in
-    '') log "task channel $channel is already gone" ;;
-    "$channel") rm -rf "$channel" 2>/dev/null || log "task channel $channel left in place" ;;
+    '') log "task channel $(cap_line "$channel") is already gone" ;;
+    "$channel") rm -rf "$channel" 2>/dev/null || log "task channel $(cap_line "$channel") left in place" ;;
     *) log "state/$1.portal does not name a task channel; left in place" ;;
   esac
 }

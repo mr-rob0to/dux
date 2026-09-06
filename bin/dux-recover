@@ -117,7 +117,7 @@ wrapper_pid() {
   local pid
   if [ ! -e "$pidfile" ] && [ ! -L "$pidfile" ]; then return 0; fi
   pid="$(cat "$pidfile" 2>/dev/null)" || finding "cannot read $pidfile"
-  case "$pid" in ''|*[!0-9]*) finding "$pidfile does not hold a pid ('$pid')" ;; esac
+  case "$pid" in ''|*[!0-9]*) finding "$pidfile does not hold a pid ('$(cap_line "$pid")')" ;; esac
   if pid_runs "$pid" "dux-worker-wrap $id"; then printf '%s' "$pid"; fi
   return 0
 }

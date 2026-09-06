@@ -242,9 +242,13 @@ whole handoff or none of it.
   `state/channels/../../<anything>` starts with the directory without being in
   it, and a path that is a link to another task's channel, or simply that
   task's own path written down, is that task's live channel. The wrapper makes
-  the channel as `state/channels/<id>.XXXXXXXX` and records the path the kernel
-  agrees on, so anything that fails the rule is a broken reference, left alone
-  and logged rather than turned into a recursive delete of something else.
+  the channel as `state/channels/<id>.XXXXXXXX`, whose suffix holds no dot, and
+  records the path the kernel agrees on, so a task named `a` cannot read task
+  `a.b`'s channel as its own either. Anything that fails the rule is a broken
+  reference, left alone and logged rather than turned into a recursive delete of
+  something else. What those messages quote from a file goes through the same
+  one-line cleaning as a worker's own text: a finding is relayed to the operator
+  as it stands, so nothing a file holds may add a line to one.
 
 ## Retiring a task from before the upgrade
 
