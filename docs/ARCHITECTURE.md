@@ -229,9 +229,12 @@ whole handoff or none of it.
   group is proved gone, and teardown asks the same question before it removes
   anything: a live group in `state/<id>.pgid`, or a file it cannot read as one,
   is a finding, because the folder those processes are working in is the
-  worktree teardown is about to take away. A portal that does not name a path
-  under `state/channels/` is left alone and logged, so a broken reference never
-  turns into a recursive delete of something else.
+  worktree teardown is about to take away. Both go through the same step, which
+  resolves the portal's path and requires the resolved one to be under
+  `state/channels/`: a stored path that walks back out matches the directory as
+  text without being in it, and a broken reference must never turn into a
+  recursive delete of something else. Anything that fails that check is left
+  alone and logged.
 
 ## Retiring a task from before the upgrade
 

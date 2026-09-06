@@ -191,7 +191,7 @@ stop() {
 # itself. Clearing one is safe only once the wrapper is gone, which dead() has
 # just proved, and the worker's own process group with it.
 release_channel() {
-  local pg channel
+  local pg
   { [ -e "$portal" ] || [ -L "$portal" ] || [ -e "$pgidfile" ] || [ -L "$pgidfile" ]; } || return 0
   pg="$(cat "$pgidfile" 2>/dev/null)"
   case "$pg" in
@@ -205,11 +205,7 @@ release_channel() {
         return 0
       fi ;;
   esac
-  channel="$(cat "$portal" 2>/dev/null)"
-  case "$channel" in
-    "$DUX_STATE/channels/"?*) rm -rf "$channel" 2>/dev/null || log "task channel $channel left in place" ;;
-    ?*) log "state/$id.portal does not name a task channel; left in place" ;;
-  esac
+  clear_channel "$id" "$portal"
   rm -f "$portal" "$pgidfile"
 }
 
