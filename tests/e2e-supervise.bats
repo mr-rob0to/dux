@@ -225,3 +225,34 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
     [ ! -e "$DUX_HOME/state/$id.$f" ] || { echo "state/$id.$f survived teardown"; return 1; }
   done
 }
+
+# A watcher killed part-way through applying a handoff comes back to a sequence
+# that is not marked consumed. What it already did is behind its own markers, so
+# the second pass finishes the work rather than repeating it.
+@test "a handoff half applied by a killed watcher is finished, not replayed" {
+  ready || skip
+  supervised_env
+  printf 'report all clear\nstatus working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  id="$(fixture_task proj scout)"
+  dux-spawn "$id" >/dev/null
+  wait_until 20 count_is done "$id" 1
+  wait_until 10 ledger_is "$id" done
+  d="$DUX_HOME/state/$id.handoffs/1"
+  [ -e "$d/did-status" ] && [ -e "$d/did-event" ] && [ -e "$d/consumed" ]
+  before_status="$(cat "$DUX_HOME/data/tasks/$id/status.log")"
+  before_events="$(cat "$events")"
+  # Exactly what a crash between the ledger write and the consumed marker leaves.
+  rm -f "$d/consumed"
+  dux-watch --once
+  [ -e "$d/consumed" ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/status.log")" = "$before_status" ]
+  [ "$(cat "$events")" = "$before_events" ]
+  [ "$(count done "$id")" -eq 1 ]
+  [ "$(dux-ledger get "$id" state)" = done ]
+  # And a crash before either surface was written replays both, once.
+  rm -f "$d/consumed" "$d/did-status" "$d/did-event"
+  dux-watch --once
+  [ "$(grep -c '^done: report$' "$DUX_HOME/data/tasks/$id/status.log")" -eq 2 ]
+  [ "$(count done "$id")" -eq 2 ]
+  [ "$(dux-ledger get "$id" state)" = done ]
+}
