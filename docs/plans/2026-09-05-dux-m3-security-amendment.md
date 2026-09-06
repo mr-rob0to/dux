@@ -4,7 +4,8 @@
 
 - Original Milestone 3 Tasks 0 to 7 are implemented; `/ship` remains paused after its security audit.
 - The one independent design review is complete. The operator chose the lightweight, trusted-local-worker boundary; every review finding is recorded below.
-- Tasks 0, 1, 2 and 3 are implemented on `feat/m3-supervision`; `make check` is green. Next action: Task 4.
+- Tasks 0, 1, 2, 3 and 4 are implemented on `feat/m3-supervision`; `make check` is green. Next
+  action: the `/ship` gate for the whole milestone. There is no further planning here.
 - Divergence: the constitution landed as 2.0.1, not 2.0.0. The branch was cut before `main` added
   the principle 3 bullets that put break-verification at the task, and the 2.0.0 rewrite would have
   dropped them. 2.0.1 keeps both changes and `AGENTS.md` points at it.
@@ -14,6 +15,13 @@
 - Divergence: Task 3 moved `needs-decision` off the notification and onto recovery. Making every
   push fixed by state means the notification can no longer carry the question, so `AGENTS.md` and
   the contract guard now route the decision text through `dux-recover`, which fences it as data.
+- Divergence: Task 4 names `bin/dux-spawn` in its files and does not change it. A spawn-time
+  refusal on a leftover run artifact would break the existing rule that a clean, untouched
+  worktree is re-spawnable, and `dux-worker-wrap` already refuses to start when any of the
+  four run references exists, which is the same guard one step later and with the run's own
+  name in the message.
+- Divergence: Task 4 adds a macOS Bash 3.2 job to CI, which the plan lists under its files but
+  not under any checkbox. It is recorded here rather than left silent.
 - Decision, recorded here so Task 4 does not reopen it: a plan task may not supersede an old spec
   by deleting it. `dux-result`'s plan shape asks for positive evidence, a regular non-executable
   Markdown file, and a deletion carries no file mode to show. Allowing one would let a plan PR
@@ -144,11 +152,11 @@
 
 **Interfaces:** `bin/dux-recover <id> --retire-legacy` converts one pre-amendment live task to a trusted failed handoff without removing its worktree; existing `--retry` and teardown then apply once.
 
-- [ ] With the Dux lock and no new run, signal the exact legacy wrapper and refuse if it remains. Once gone, create a retirement run and `failed: stopped for security-boundary upgrade; worktree kept` handoff.
-- [ ] Preserve the old branch and worktree. Allow the existing one retry after watcher records failure; allow ordinary teardown only after its clean/pushed/stopped checks. A second retirement or retry is a finding.
-- [ ] Exercise tmux and Herdr for proposal isolation, early terminal plus ordinary orphan, exact PR URL, plan file scope, ship receipt and non-empty CI, wrong-shape report, hostile text, wrapper crash, handoff replay, legacy retirement, retry, and cleanup.
-- [ ] Document limits, lifecycle, fixed notifications, migration, optional future isolation, and the completed one-time design review.
-- [ ] Run each new guard's break-verification separately and paste its failure in the implementing commit. Re-read every changed control-flow function as required by `AGENTS.md`.
+- [x] With the Dux lock and no new run, signal the exact legacy wrapper and refuse if it remains. Once gone, create a retirement run and `failed: stopped for security-boundary upgrade; worktree kept` handoff.
+- [x] Preserve the old branch and worktree. Allow the existing one retry after watcher records failure; allow ordinary teardown only after its clean/pushed/stopped checks. A second retirement or retry is a finding.
+- [x] Exercise tmux and Herdr for proposal isolation, early terminal plus ordinary orphan, exact PR URL, plan file scope, ship receipt and non-empty CI, wrong-shape report, hostile text, wrapper crash, handoff replay, legacy retirement, retry, and cleanup.
+- [x] Document limits, lifecycle, fixed notifications, migration, optional future isolation, and the completed one-time design review.
+- [x] Run each new guard's break-verification separately and paste its failure in the implementing commit. Re-read every changed control-flow function as required by `AGENTS.md`.
 
 **Done when:** `make check` passes on Ubuntu, `make check-bash32` passes on macOS with both backend runs, the installed skill dry-run records all five ship phases in a throwaway task, and the existing `/ship` gate completes. Any Critical-fix re-review is the gate's existing review scoped to those commits, not a second whole-branch design review.
 

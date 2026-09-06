@@ -136,3 +136,46 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   # A tracked path is never reported by check-ignore without --no-index; with it, the rule itself is tested.
   [ "$(git check-ignore -q --no-index templates/config/models; echo $?)" -eq 1 ]
 }
+
+@test "the architecture documents retirement as a proof before a signal" {
+  arch="$(unwrapped '/^## Retiring a task from before the upgrade/,/^## What this boundary does not claim/p' "$DUX_ROOT/docs/ARCHITECTURE.md")"
+  [[ "$arch" == *'has no run record'* ]]
+  [[ "$arch" == *'refuses if `state/<id>.run` exists at all'* ]]
+  [[ "$arch" == *'refuses if a handoff is already waiting'* ]]
+  [[ "$arch" == *'Only then does it signal the wrapper'* ]]
+  [[ "$arch" == *'failed: stopped for security-boundary upgrade; worktree kept'* ]]
+  [[ "$arch" == *'branch and the worktree are kept'* ]]
+  [[ "$arch" == *'one `--retry`'* ]]
+  [[ "$arch" == *'second retirement and a second retry are both findings'* ]]
+}
+
+@test "the architecture states the limits of the boundary and keeps future isolation fail-closed" {
+  arch="$(unwrapped '/^## What this boundary does not claim/,/^## Wake flow/p' "$DUX_ROOT/docs/ARCHITECTURE.md")"
+  [[ "$arch" == *'session of its own escapes it'* ]]
+  [[ "$arch" == *'200 bytes a status line'* ]]
+  [[ "$arch" == *'does not cap what a worker can do'* ]]
+  [[ "$arch" == *'fixed text chosen by state'* ]]
+  [[ "$arch" == *'fails closed: no isolation, no dispatch'* ]]
+}
+
+@test "the architecture names teardown as the last owner of a run's references" {
+  arch="$(unwrapped '/^## The terminal handoff/,/^## Retiring a task/p' "$DUX_ROOT/docs/ARCHITECTURE.md")"
+  [[ "$arch" == *'`dux-teardown` is their lifecycle owner'* ]]
+  [[ "$arch" == *'state/<id>.portal'* ]]
+  [[ "$arch" == *'state/<id>.pgid'* ]]
+  [[ "$arch" == *'once the worker'*'process group is proved gone'* ]]
+}
+
+@test "the recovery skill retires only a task from before the upgrade" {
+  skill="$(unwrapped '1,$p' "$DUX_ROOT/skills/dux-recover/SKILL.md")"
+  [[ "$skill" == *'--retire-legacy'* ]]
+  [[ "$skill" == *'already running before the security-boundary upgrade'* ]]
+  [[ "$skill" == *'never argue with that finding'* ]]
+  [[ "$skill" == *'branch and the worktree are kept'* ]]
+}
+
+@test "the README says a worker's word is not a result and how to retire an old one" {
+  readme="$(unwrapped '1,$p' "$DUX_ROOT/README.md")"
+  [[ "$readme" == *'never because a worker'*'said so'* ]]
+  [[ "$readme" == *'--retire-legacy'* ]]
+}

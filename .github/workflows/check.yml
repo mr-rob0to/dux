@@ -23,3 +23,21 @@ jobs:
       - name: Versions
         run: bats --version && shellcheck --version && tmux -V
       - run: make check
+
+  # macOS is where Dux actually runs, and its /bin/bash is 3.2. Every script's
+  # shebang resolves bash through PATH, so this job puts 3.2 first and runs the
+  # whole suite, both backends included, against it.
+  macos-bash32:
+    runs-on: macos-latest
+    env:
+      TERM: xterm
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Install bats, shellcheck, tmux
+        run: brew install bats-core shellcheck tmux
+      - name: Versions
+        run: bats --version && shellcheck --version && tmux -V && /bin/bash --version | head -n 1
+      - run: make check-bash32
