@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fleet digest from local files. Network access is opt-in through --prs.
+# Fleet digest from local files. Network access is opt-in through --prs and --intake.
 set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
@@ -19,7 +19,26 @@ while [ $# -gt 0 ]; do
   esac
   shift
 done
-[ "$intake" = 0 ] || finding "issue intake is not available yet (milestone 4)"
+# Before the digest, so the queue the digest counts is the queue the forge holds.
+# One project's failure is one line: a misconfigured project must not hide the
+# fleet, so the finding is reported and the loop carries on (spec section 14).
+if [ "$intake" = 1 ]; then
+  echo intake
+  any=0
+  for project in $("$projects" list); do
+    case "$("$projects" get "$project" issues)" in label:?*) ;; *) continue ;; esac
+    any=1
+    if out="$("$DUX_ROOT/bin/dux-intake" "$project" 2>&1)"; then
+      printf '%s\n' "$out" | sed 's/^/  /'
+    else
+      # What intake managed before it stopped is shown too: those tasks exist.
+      [ -z "$out" ] || printf '%s\n' "$out" | grep -v -E '^(finding|dux): ' | sed 's/^/  /'
+      why="$(printf '%s\n' "$out" | grep -m1 -E '^(finding|dux): ' || echo 'intake failed')"
+      echo "  $project: skipped: $why"
+    fi
+  done
+  [ "$any" = 1 ] || echo "  no project has issues enabled"
+fi
 
 w="$(cat "$DUX_STATE/watch.pid" 2>/dev/null)"
 if pid_runs "$w" dux-watch; then echo "watcher: running (pid $w)"; else echo "watcher: not running"; fi

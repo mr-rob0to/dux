@@ -104,11 +104,39 @@ unacknowledged
   [[ "$stderr" == *"dux: gh pr view failed for https://example.invalid/pr/7"* ]]
 }
 
-@test "--intake and unknown flags are findings" {
-  run dux-status --intake
-  [ "$status" -eq 2 ]; [[ "$output" == "finding: issue intake is not available yet (milestone 4)"* ]]
+@test "an unknown flag is a finding" {
   run dux-status --verbose
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-status [--prs] [--intake]"* ]]
+}
+
+@test "--intake runs intake for labelled projects, skips the rest, and one failure is one line" {
+  export DUX_SESSION_PID=$$; dux-lock acquire >/dev/null
+  make_github_repo api; dux-project add "$DUX_HOME/api" --base main --issues label:dux >/dev/null
+  make_repo "$DUX_HOME/ios" main; dux-project add "$DUX_HOME/ios" --base main >/dev/null
+  make_repo "$DUX_HOME/bare" main; dux-project add "$DUX_HOME/bare" --base main --issues label:dux >/dev/null
+  FAKE_GH_ISSUE_LIST='[{"number": 3, "title": "t", "body": "b"}]' run --separate-stderr dux-status --intake
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = intake ]
+  [[ "${lines[1]}" == "  queued api-ship-"*" acme/api#3" ]]
+  [ "${lines[2]}" = "  intake api: 1 queued, 0 dropped, 0 unlabelled" ]
+  [ "${lines[3]}" = "  bare: skipped: finding: project bare has no GitHub origin; intake needs one" ]
+  [[ "${lines[4]}" == "watcher: "* ]]
+  [ "$(grep -c '^  ios' <<< "$output" || true)" -eq 0 ]
+  [ "$(dux-ledger list --project api --state queued | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "--intake without the lock skips every labelled project and still prints the digest" {
+  make_github_repo api; dux-project add "$DUX_HOME/api" --base main --issues label:dux >/dev/null
+  run dux-status --intake
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"  api: skipped: finding: the Dux lock is not held by this session"* ]]
+  [ "${lines[${#lines[@]}-1]}" = api ]   # the digest still prints; its last line is the one project's name
+}
+
+@test "--intake with no labelled project says so" {
+  make_repo "$DUX_HOME/ios" main; dux-project add "$DUX_HOME/ios" --base main >/dev/null
+  run dux-status --intake
+  [ "${lines[0]}" = intake ]; [ "${lines[1]}" = "  no project has issues enabled" ]
 }
 
 @test "an empty registry prints only watcher state" {
