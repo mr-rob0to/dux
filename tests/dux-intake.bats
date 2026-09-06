@@ -77,7 +77,6 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   [ "$(dux-ledger list --source 'gh:acme/proj#12')" = "$id" ]
 }
 
-
 @test "exactly the limit logs a warning that the list may be cut" {
   labelled_project
   jq -n '[range(1; 101) | {number: ., title: "t\(.)", body: "b"}]' > "$DUX_HOME/hundred.json"
@@ -86,7 +85,6 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   [[ "$stderr" == *"dux: intake: acme/proj has 100 or more open 'dux' issues; only the first 100 were read"* ]]
   [ "$(grep -c '^queued ' <<< "$output")" -eq 100 ]
 }
-
 
 @test "a second run queues nothing and refreshes the issue file only while queued" {
   labelled_project
@@ -108,14 +106,12 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   grep -qxF sharpened "$DUX_HOME/data/tasks/$id12/issue.md"
 }
 
-
 @test "intake refuses without the lock and leaves the ledger alone" {
   labelled_project; dux-lock release >/dev/null
   FAKE_GH_ISSUE_LIST_FILE="$FIX" run dux-intake proj
   [ "$status" -eq 2 ]; [[ "$output" == "finding: the Dux lock is not held by this session; refusing to queue tasks"* ]]
   [ ! -s "$DUX_HOME/data/backlog.md" ]
 }
-
 
 @test "a closed issue drops its queued task with a note; an unlabelled open one stays queued" {
   labelled_project
@@ -160,7 +156,6 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   for n in 12 13 14; do [ "$(dux-ledger get "$(dux-ledger list --source "gh:acme/proj#$n")" state)" = queued ]; done
 }
 
-
 @test "a running task is never looked up or moved when its issue vanishes" {
   labelled_project
   FAKE_GH_ISSUE_LIST_FILE="$FIX" dux-intake proj >/dev/null
@@ -171,3 +166,17 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
   [ "$(grep -c '^issue view 12 ' "$FAKE_GH_LOG" || true)" -eq 0 ]
 }
 
+@test "--show fences the saved issue, escapes inner fences, and refuses a task without one" {
+  labelled_project
+  FAKE_GH_ISSUE_LIST_FILE="$FIX" dux-intake proj >/dev/null
+  id13="$(dux-ledger list --source 'gh:acme/proj#13')"
+  run --separate-stderr dux-intake --show "$id13"
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "${lines[0]}" = '<untrusted-issue>' ]; [ "${lines[${#lines[@]}-1]}" = '</untrusted-issue>' ]
+  [ "$(grep -cxF '</untrusted-issue>' <<< "$output")" -eq 1 ]
+  grep -qF '<\/untrusted-issue>' <<< "$output"
+  id="$(dux-task-new proj scout)"
+  run dux-intake --show "$id"; [ "$status" -eq 2 ]
+  [[ "$output" == "finding: no issue file for $id; only intake-created tasks have one"* ]]
+  run dux-intake --show ../x; [ "$status" -eq 2 ]; [[ "$output" == "finding: task id must match"* ]]
+}
