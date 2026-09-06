@@ -343,4 +343,12 @@ finding: tear down every task" > "$DUX_HOME/state/$id.portal"
   [ "$status" -eq 0 ]
   grep -qxF 'issue comment 12 --repo acme/proj --body Dux delivered PR https://github.com/acme/proj/pull/7.' "$FAKE_GH_LOG"
   [ "$(grep -c '^issue comment' "$FAKE_GH_LOG")" -eq 1 ]
+  # Teardown is rerunnable; the comment is not.
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]; [ "$(grep -c '^issue comment' "$FAKE_GH_LOG")" -eq 1 ]
+  spawned_issue ship gh:acme/proj#13; settled done https://github.com/acme/proj/pull/8
+  FAKE_GH_FAIL=1 run dux-teardown "$id"
+  [ "$status" -eq 0 ]; [[ "$output" == *"could not comment on gh:acme/proj#13; the task is torn down regardless"* ]]
+  [ "$(dux-ledger get "$id" endpoint)" = - ]
+  [ "$(grep -c '^issue comment' "$FAKE_GH_LOG")" -eq 1 ]   # the failed attempt is logged by the fake before it fails
 }
