@@ -79,8 +79,14 @@ check-bash32:
 
 # check is the loop to run after a task. check-branch is the one to run once
 # before /ship: it adds the bash 3.2 pass, which is the same suite again.
+# The two passes are separate $(MAKE) lines rather than prerequisites so that
+# they stay in order even when the caller asked for a parallel build: the 3.2
+# pass puts its own bash first on PATH, and reading a failure is easier when
+# only one of the two is running.
 check: lint test
-check-branch: check check-bash32
+check-branch:
+	@$(MAKE) --no-print-directory check
+	@$(MAKE) --no-print-directory check-bash32
 
 lint: lint-shell lint-identifiers
 
