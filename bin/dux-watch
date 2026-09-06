@@ -130,13 +130,16 @@ read_handoff() {  # $1 id, $2 sequence
   fi
   # One clean line, in the grammar, inside the cap. A handoff Dux built is
   # already all three; one that is not did not come from a run of this task.
+  # cap_line is the writer's own cleaning and capping, so comparing against it
+  # draws the line in exactly one place. A range like [ -~] in a case pattern
+  # would not: a bracket range matches by the locale's collation, and on bash
+  # 3.2 in a UTF-8 locale that rejects ordinary text.
+  [ "$status" = "$(cap_line "$status")" ] \
+    || { echo "reject:handoff $2 does not hold one status line"; return 0; }
   case "$status" in
-    *[!\ -~]*) echo "reject:handoff $2 does not hold one status line"; return 0 ;;
     done:\ ?*|failed:\ ?*|blocked:\ ?*|needs-decision:\ ?*|ended:\ ?*) ;;
     *) echo "reject:handoff $2 does not hold one status line"; return 0 ;;
   esac
-  [ "${#status}" -le "$HANDOFF_LINE_CAP" ] \
-    || { echo "reject:handoff $2 does not hold one status line"; return 0; }
   [ "$event" = "${status%%:*}" ] \
     || { echo "reject:handoff $2 records event $event for a ${status%%:*} status"; return 0; }
   if [ "$event" = "done" ]; then

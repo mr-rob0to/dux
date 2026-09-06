@@ -300,6 +300,26 @@ start_loop() { DUX_WATCH_INTERVAL_SECS="${1:-1}" dux-watch >> "$watchlog" 2>&1 3
   [[ "$stderr" == *"finding: watch: t1: handoff 1 does not hold one status line"* ]]
 }
 
+# The writer keeps every printable character and strips the control ones, so the
+# reader has to draw the line in the same place. A range like [ -~] in a case
+# pattern does not: it matches by the locale's collation, which on bash 3.2 in a
+# UTF-8 locale rejects ordinary text and on bash 5 rejects only the accented
+# characters an ordinary status line may well contain.
+@test "a status line is clean or not by the same rule the writer used" {
+  running_task t1 scout; status_is t1 "working: on it"
+  handoff t1 "failed: le café a fermé" failed
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 1 ]
+  [ "$(dux-ledger get t1 state)" = failed ]
+  [ "$(tail -n 1 "$DUX_HOME/data/tasks/t1/status.log")" = "failed: le café a fermé" ]
+  running_task t2 scout; status_is t2 "working: on it"
+  handoff t2 "done: report" done
+  printf 'failed: a\001b\n' > "$(seq_dir t2)/status"
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 1 ]
+  [[ "$stderr" == *"finding: watch: t2: handoff 1 does not hold one status line"* ]]
+}
+
 @test "a handoff whose event does not answer its status is refused" {
   running_task t1; status_is t1 "working: on it"
   handoff t1 "done: report" failed
