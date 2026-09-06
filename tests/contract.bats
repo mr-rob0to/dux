@@ -193,4 +193,8 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$ship" == *'- Issue: <owner>/<repo>#<n>'* ]]
   [[ "$ship" == *'`Closes #<n>` on its own line'* ]]
   [[ "$ship" == *'never from the issue text'* ]]
+  # The claim that matters is the one that is easy to get wrong: a project whose
+  # base is not the default branch gets a link, not a close.
+  [[ "$ship" == *"only closes the issue automatically when"* ]]
+  [[ "$ship" == *"default branch"* ]]
 }

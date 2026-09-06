@@ -11,8 +11,10 @@ you pass `--name <name>`.
 
 Register with `--issues label:<name>` and every open issue carrying that label
 becomes a queued task at the next session start; the issue text rides in the
-brief as data, the PR closes the issue, and a closed issue that was never
-started is dropped.
+brief as data, the PR body carries `Closes #<n>`, and a closed issue that was
+never started is dropped. GitHub closes the issue by itself only when the PR
+merges into the repository's default branch; on any other base branch the PR is
+shown on the issue and you close it yourself.
 
 A worker is trusted to act with your account, so what it writes is treated as
 untrusted text rather than as evidence: a task is done when Dux has proved it
