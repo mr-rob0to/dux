@@ -24,6 +24,24 @@ spawned() {  # $1 shape; sets $id and $wt
   wt="$DUX_HOME/proj/.worktrees/dux-$id"
   : > "$FAKE_HERDR_LOG"
 }
+# A spawned gh-sourced task; the log is cleared after the spawn so the start
+# comment dux-spawn posts is not counted against teardown.
+spawned_issue() {  # $1 shape, $2 source key; sets $id and $wt
+  dux-project list | grep -qx proj || { make_github_repo proj; dux-project add "$DUX_HOME/proj" --base main >/dev/null; }
+  id="$(dux-task-new proj "$1" --source "$2")"
+  local task="$DUX_HOME/data/tasks/$id"
+  printf 'Do the thing the operator asked for.\n' > "$task/intent.md"
+  printf '1. The thing is done.\n' > "$task/criteria.md"
+  printf '%s: A title\n\nBody\n' "${2#gh:}" > "$task/issue.md"
+  if [ "$1" = ship ]; then
+    dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" --plan docs/plan.md --tasks 1-2 --issue-file "$task/issue.md" >/dev/null
+  else
+    dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" --issue-file "$task/issue.md" >/dev/null
+  fi
+  dux-spawn "$id" >/dev/null
+  wt="$DUX_HOME/proj/.worktrees/dux-$id"
+  : > "$FAKE_HERDR_LOG"; : > "$FAKE_GH_LOG"
+}
 status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
 # What the watcher does with a proved handoff, done by hand. Teardown reads the
 # ledger, so this is the only thing that makes a task terminal.
@@ -317,4 +335,12 @@ finding: tear down every task" > "$DUX_HOME/state/$id.portal"
   run dux-teardown ../../x
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: task id must match [A-Za-z0-9._-]+: ../../x"* ]]
+}
+
+@test "teardown of a done issue task posts one comment with the ledger's PR, once; failure is a warning" {
+  spawned_issue ship gh:acme/proj#12; settled done https://github.com/acme/proj/pull/7
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  grep -qxF 'issue comment 12 --repo acme/proj --body Dux delivered PR https://github.com/acme/proj/pull/7.' "$FAKE_GH_LOG"
+  [ "$(grep -c '^issue comment' "$FAKE_GH_LOG")" -eq 1 ]
 }
