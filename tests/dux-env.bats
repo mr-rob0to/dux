@@ -77,3 +77,16 @@ load helpers/setup
   want="$(date -j -f %Y%m%d%H%M%S 20200101000000 +%s 2>/dev/null || date -d 2020-01-01T00:00:00 +%s)"
   [ "$output" = "$want" ]
 }
+
+@test "github_slug reads owner/name from ssh and https origins and refuses the rest" {
+  for url in git@github.com:acme/widgets.git https://github.com/acme/widgets https://github.com/acme/widgets.git ssh://git@github.com/acme/widgets/; do
+    d="$DUX_HOME/r-$RANDOM"; git init -q "$d"; git -C "$d" remote add origin "$url"
+    run github_slug "$d"; [ "$status" -eq 0 ]; [ "$output" = acme/widgets ]
+  done
+  d="$DUX_HOME/gl"; git init -q "$d"; git -C "$d" remote add origin https://gitlab.example.invalid/acme/widgets.git
+  run github_slug "$d"; [ "$status" -eq 1 ]; [ -z "$output" ]
+  d="$DUX_HOME/none"; git init -q "$d"
+  run github_slug "$d"; [ "$status" -eq 1 ]
+  d="$DUX_HOME/deep"; git init -q "$d"; git -C "$d" remote add origin https://github.com/acme/widgets/extra
+  run github_slug "$d"; [ "$status" -eq 1 ]
+}
