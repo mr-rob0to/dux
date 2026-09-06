@@ -4,7 +4,13 @@
 
 - Original Milestone 3 Tasks 0 to 7 are implemented; `/ship` remains paused after its security audit.
 - The one independent design review is complete. The operator chose the lightweight, trusted-local-worker boundary; every review finding is recorded below.
-- Task 0 and Task 1 are implemented on `feat/m3-supervision`; `make check` is green. Next action: Task 2.
+- Tasks 0, 1 and 2 are implemented on `feat/m3-supervision`; `make check` is green. Next action: Task 3.
+- Divergence: the constitution landed as 2.0.1, not 2.0.0. The branch was cut before `main` added
+  the principle 3 bullets that put break-verification at the task, and the 2.0.0 rewrite would have
+  dropped them. 2.0.1 keeps both changes and `AGENTS.md` points at it.
+- Divergence: Task 2 leaves the wrapper still writing the worker's own terminal line to
+  `status.log`. Swapping it for the proved result belongs with the handoff, so it lands in Task 3
+  alongside "ignore terminal-looking status without a handoff", where the watcher tests move with it.
 
 **Goal:** Dux treats repository content and worker messages as untrusted data, accepts task completion only from independently checked evidence, and prevents accidental cross-task control without claiming to contain a deliberately malicious process running as the operator.
 
@@ -102,11 +108,11 @@
 
 **Interfaces:** Consumes protected run context and a buffered request; produces `state/<id>.ship-receipt` and one canonical result line for Task 3.
 
-- [ ] Implement ordered `record-ship` phases and conditional calls in `/ship` after local checks, code review, security review, PR creation or update, and non-empty green CI. Bind each phase to task, run, branch, and current SHA.
-- [ ] Query at most two PR candidates. Require one open, non-draft PR with matching repository, head repository, branch, base, and final SHA.
-- [ ] Enforce the plan file allowlist and required spec/plan Markdown. For ship, require selected plan tasks checked, an implementation file, all five phases in order, and at least one successful check with no non-green checks.
-- [ ] Import only a bounded non-empty scout report. Remove every report-to-plan/ship, PR-to-scout, and worker-URL shortcut.
-- [ ] Break-verify repository, head, base, SHA, draft, duplicate PR, plan file mode/path, ship task boxes, implementation diff, phase order, empty CI, failed CI, report shape, and malicious URL guards one at a time.
+- [x] Implement ordered `record-ship` phases and conditional calls in `/ship` after local checks, code review, security review, PR creation or update, and non-empty green CI. Bind each phase to task, run, branch, and current SHA.
+- [x] Query at most two PR candidates. Require one open, non-draft PR with matching repository, head repository, branch, base, and final SHA.
+- [x] Enforce the plan file allowlist and required spec/plan Markdown. For ship, require selected plan tasks checked, an implementation file, all five phases in order, and at least one successful check with no non-green checks.
+- [x] Import only a bounded non-empty scout report. Remove every report-to-plan/ship, PR-to-scout, and worker-URL shortcut.
+- [x] Break-verify repository, head, base, SHA, draft, duplicate PR, plan file mode/path, ship task boxes, implementation diff, phase order, empty CI, failed CI, report shape, and malicious URL guards one at a time.
 
 **Done when:** `bats tests/dux-result.bats tests/contract.bats` passes; every invalid evidence fixture returns 1 or 2 without a result, and the worker-supplied URL never appears in result state.
 

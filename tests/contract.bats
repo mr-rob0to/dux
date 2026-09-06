@@ -117,6 +117,12 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   done
 }
 
+@test "the ship skill leaves the last phase for the recorder to settle" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'green and non-empty'* ]]
+  [[ "$ship" == *'the recorder verifies the pull request and its checks'* ]]
+}
+
 @test "the ship security review is scoped to the declared boundary" {
   grep -q 'declared security boundary' "$DUX_ROOT/skills/ship/SKILL.md"
 }

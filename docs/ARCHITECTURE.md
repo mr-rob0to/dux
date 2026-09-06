@@ -29,6 +29,8 @@ bin/
   dux-spawn                worktree plus backend container for a queued task; five refusals
   dux-worker-wrap          runs inside the container: task channel, scrubbed environment,
                            process group, proposal rules, heartbeat, terminal state
+  dux-result               record-ship files the five /ship phases in order; verify proves a
+                           plan, ship, or scout result from the registry, Git, and GitHub
   dux-teardown             remove the worktree, close the container, mark done or failed
   dux-watch                classify task events, record them, and raise local toasts
   dux-status               recompute the fleet digest and missed wakes from files
