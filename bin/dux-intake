@@ -90,4 +90,25 @@ for n in $numbers; do
   echo "queued $id $slug#$n"; queued=$((queued + 1))
 done
 
+# A queued task whose issue left the list: closed, or unlabelled. Only queued;
+# a worker is not stopped because someone closed an issue.
+queued_ids="$("$ledger" list --project "$project" --state queued)" || exit $?
+for id in $queued_ids; do
+  src="$("$ledger" get "$id" source)" || exit $?
+  case "$src" in "gh:$slug#"*) n="${src##*#}" ;; *) continue ;; esac
+  if printf '%s' "$json" | jq -e --argjson n "$n" 'any(.[]; .number == $n)' >/dev/null; then continue; fi
+  state="$(gh issue view "$n" --repo "$slug" --json state -q .state 2>"$err")" \
+    || finding "gh issue view failed for $slug#$n: $(last_err)"
+  rm -f "$err"
+  case "$state" in
+    CLOSED)
+      "$ledger" set-if "$id" state queued dropped || exit $?
+      printf 'dropped: issue %s#%s was closed; seen by intake at %s\n' "$slug" "$n" "$(now)" >> "$DUX_TASKS/$id/report.md" \
+        || finding "cannot write $DUX_TASKS/$id/report.md"
+      echo "dropped $id $slug#$n"; dropped=$((dropped + 1)) ;;
+    OPEN)
+      echo "unlabelled $id $slug#$n (open, label removed; left queued)"; unlabelled=$((unlabelled + 1)) ;;
+    *) finding "gh issue view returned an unknown state for $slug#$n: $(cap_line "$state")" ;;
+  esac
+done
 echo "intake $project: $queued queued, $dropped dropped, $unlabelled unlabelled"
