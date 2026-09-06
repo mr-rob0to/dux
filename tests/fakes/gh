@@ -8,6 +8,20 @@ case "$1 ${2:-}" in
   "issue comment")
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: comment failed" >&2; exit 1; fi
     echo "https://example.invalid/issues/comment/1" ;;
+  "issue list")
+    if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: issue list failed" >&2; exit 1; fi
+    # A fixture too large for an environment variable, or one a test rewrites
+    # between runs, is named by a file; everything else stays a variable.
+    if [ -n "${FAKE_GH_ISSUE_LIST_FILE:-}" ] && [ -f "${FAKE_GH_ISSUE_LIST_FILE:-}" ]; then
+      cat "$FAKE_GH_ISSUE_LIST_FILE"
+    else
+      echo "${FAKE_GH_ISSUE_LIST:-[]}"
+    fi ;;
+  "issue view")
+    # FAKE_GH_VIEW_FAIL fails the view while the list still answers, which is
+    # the only way to reach the reconciliation refusal.
+    if [ -n "${FAKE_GH_FAIL:-}${FAKE_GH_VIEW_FAIL:-}" ]; then echo "fake gh: issue view failed" >&2; exit 1; fi
+    echo "${FAKE_GH_ISSUE_STATE:-OPEN}" ;;
   "pr list")
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr list failed" >&2; exit 1; fi
     # A test whose head commit only exists once the worker has made it points at
