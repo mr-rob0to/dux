@@ -58,6 +58,27 @@ Then:
 
 Record the resolved name and reuse it. It is written `$BASE` below.
 
+### Resolve the guard helper and open the gate
+
+The gate records which commit each phase saw, so a review cannot be outrun by
+commits that land after it. The helper sits beside this file, so `dux-install`'s
+symlink carries it.
+
+```bash
+SHIP_GUARD="$(for c in "${SHIP_GUARD:-}" "$HOME/.claude/skills/ship/ship-guard" \
+                       "$HOME/.agents/skills/ship/ship-guard"; do
+  [ -n "$c" ] && [ -x "$c" ] && { printf '%s' "$c"; break; }
+done)"
+[ -n "$SHIP_GUARD" ] || {
+  echo "finding: cannot find ship-guard; the gate does not run unguarded" >&2; exit 2
+}
+"$SHIP_GUARD" open
+```
+
+**If the helper cannot be resolved, stop and report.** Do not carry on without
+it: an unguarded run is the failure this helper exists to remove. Every call
+below is a refusal that stops the gate, never a warning to note and pass.
+
 ## Step 1. Sync the base ref
 
 ```bash
@@ -104,6 +125,14 @@ line; nothing else about this skill changes.
 [ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD checks
 ```
 
+Separately, and on every run whether or not Dux is watching, bind this phase to
+the commit it saw. The Dux line above is written once per phase; the guard line
+below is the one that is written again after a fix pass.
+
+```bash
+"$SHIP_GUARD" record checks
+```
+
 ## Step 5. Pre-review self-audit
 
 Check what a diff-only reviewer cannot see:
@@ -120,6 +149,10 @@ Check what a diff-only reviewer cannot see:
 ## Step 6. Independent adversarial review (REQUIRED)
 
 A fresh reviewer that did not plan or implement the change. Never merge without it.
+
+```bash
+"$SHIP_GUARD" check checks
+```
 
 **This is the PR's one code review.** Not one of several: no per-task reviews, no separate
 whole-branch review on top of it, and no re-review unless a Critical was fixed. If a review was
@@ -148,6 +181,7 @@ Then:
 
 ```bash
 [ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD review
+"$SHIP_GUARD" record review
 ```
 
 ## Step 7. Security review (REQUIRED)
@@ -155,6 +189,10 @@ Then:
 Separate pass, separate reviewer. The correctness review in step 6 is not a
 security review and does not substitute for one, and a clean step 6 is not a
 reason to skip this.
+
+```bash
+"$SHIP_GUARD" check review
+```
 
 Run this on **every** ship, not only when the diff "looks security-relevant".
 Auth bugs arrive inside ordinary refactors, and deciding case by case is itself
@@ -179,6 +217,7 @@ otherwise have to guess:
 
 ```bash
 [ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD security
+"$SHIP_GUARD" record security
 ```
 
 **Coverage the audit must reach**, whether or not the diff obviously touches it:
@@ -216,9 +255,18 @@ Then apply the same discipline as step 6:
 
 ## Step 8. PR
 
+Nothing reaches the remote until the review and the security pass both cover the
+exact commit going out. `push-ok` is the last thing before every push, this one
+and any later one.
+
 ```bash
+"$SHIP_GUARD" check security
+"$SHIP_GUARD" push-ok
 gh pr create --base "$BASE" --fill
 ```
+
+A refusal here means commits landed after a phase was recorded. That is a fix
+pass (step 6), not something to push past.
 
 Body must carry: summary of the change, test evidence (actual command output, not
 "tests pass"), the correctness-review and security-review findings with how each
@@ -248,6 +296,18 @@ Watch until green. Report the run URL. A red run, or one that never started, is 
 gh run watch
 ```
 
+**A fix made while CI is red is a fix pass like any other.** It is the easiest
+place to lose the whole guard: the pull request is open, the review is behind
+you, and one more commit feels like housekeeping. It is not. Run the fix pass,
+re-run step 4's checks, record the phases it cleared, and only then push.
+
+```bash
+"$SHIP_GUARD" fix-pass review
+# fix, then step 4 again, then step 6's and step 7's recordings
+"$SHIP_GUARD" push-ok
+git push --force-with-lease
+```
+
 Record the final phase only when the checks really came back green and non-empty; the
 recorder verifies the pull request and its checks before it accepts this one.
 
@@ -268,6 +328,10 @@ recorder verifies the pull request and its checks before it accepts this one.
 | Security review could not be run | An unaudited PR is not shipped |
 | A fix would need to touch shared or unrelated code paths | Scope expansion needs approval first |
 | Anything irreversible or production-facing | Needs explicit go-ahead |
+| Guard helper cannot be resolved | An unguarded run is the failure the guard exists to remove |
+| HEAD moved during the gate | A rebase, amend or reset means the phases behind you saw other code |
+| push-ok refused | The review or the security pass does not cover the commit going out |
+| A CI fix pushed without a fix pass | The reviewed commit is not the one in the pull request |
 
 ## Red flags: you are rationalizing
 

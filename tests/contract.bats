@@ -198,3 +198,36 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$ship" == *"only closes the issue automatically when"* ]]
   [[ "$ship" == *"default branch"* ]]
 }
+
+@test "the ship skill binds every phase to the commit it saw" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  [ -x "$DUX_ROOT/skills/ship/ship-guard" ]
+  prev=0
+  for call in open "record checks" "check checks" "record review" \
+              "check review" "record security" "check security" push-ok; do
+    line="$(grep -nF "\"\$SHIP_GUARD\" $call" "$ship" | head -n 1 | cut -d: -f1)"
+    [ -n "$line" ] || { echo "the skill never calls the guard: $call"; return 1; }
+    [ "$line" -gt "$prev" ] || { echo "guard call '$call' is out of order at line $line"; return 1; }
+    prev="$line"
+  done
+}
+
+@test "the ship skill guards the push in step 9, not only the one that opens the PR" {
+  # A fix pushed while CI is red reaches the remote through step 9. Guarding
+  # step 8 alone leaves the whole point of the guard behind.
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  ci="$(grep -n '^## Step 9' "$ship" | head -n 1 | cut -d: -f1)"
+  [ -n "$ci" ]
+  last="$(grep -nF '"$SHIP_GUARD" push-ok' "$ship" | tail -n 1 | cut -d: -f1)"
+  [ -n "$last" ] || { echo "the skill never calls push-ok"; return 1; }
+  [ "$last" -gt "$ci" ] || { echo "the last push-ok is at line $last, before step 9 at $ci"; return 1; }
+}
+
+@test "the ship skill stops rather than running unguarded" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'.claude/skills/ship/ship-guard'* ]]
+  [[ "$ship" == *'the gate does not run unguarded'* ]]
+  [[ "$ship" == *'Guard helper cannot be resolved'* ]]
+  [[ "$ship" == *'HEAD moved during the gate'* ]]
+  [[ "$ship" == *'push-ok refused'* ]]
+}

@@ -9,7 +9,7 @@
 
 **Where this stands**
 - Approved 2026-09-07 and in progress on `feat/ship-guard` from `main` at fec61a1,
-  reviewed once by a fresh independent session, all 18 findings folded in. 1 of 4 done.
+  reviewed once by a fresh independent session, all 18 findings folded in. 2 of 4 done.
 - Milestone 4 left the receipt gap open: the `/ship` receipt proves the five phases ran
   in order, not that a review covered the code that gets pushed.
 - When this merges the gate refuses to push code no review saw. `dux-result verify` is
@@ -127,13 +127,13 @@ points at the main checkout until this merges. The PR excerpt names the file tha
 
 **Steps**
 
-- [ ] Add the contract test to `tests/contract.bats` and see it fail against today's `SKILL.md`.
-- [ ] Edit `SKILL.md` steps 0, 4, 6, 7, 8, 9 and the stop table.
-- [ ] Dry run A: record through `security`, commit once more, run `push-ok`, confirm refusal.
-- [ ] Dry run B: point `SHIP_GUARD` at a non-executable path, confirm step 0 stops the gate.
-- [ ] Dry run C: rebase between `record checks` and step 6, confirm `check checks` refuses.
+- [x] Add the contract test to `tests/contract.bats` and see it fail against today's `SKILL.md`.
+- [x] Edit `SKILL.md` steps 0, 4, 6, 7, 8, 9 and the stop table.
+- [x] Dry run A: record through `security`, commit once more, run `push-ok`, confirm refusal.
+- [x] Dry run B: point `SHIP_GUARD` at a non-executable path, confirm step 0 stops the gate.
+- [x] Dry run C: rebase between `record checks` and step 6, confirm `check checks` refuses.
       Paste all three excerpts into the commit body.
-- [ ] Break-verify: break the contract test's ordering assertion alone, run, confirm it fails,
+- [x] Break-verify: break the contract test's ordering assertion alone, run, confirm it fails,
       restore, paste the failure into the commit body.
 
 ## Task 3: Fail-closed review parsing and bounded fix passes
