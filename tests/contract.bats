@@ -231,3 +231,35 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$ship" == *'HEAD moved during the gate'* ]]
   [[ "$ship" == *'push-ok refused'* ]]
 }
+
+@test "the ship skill makes both reviewers answer in a shape it can read" {
+  # The shape has to be demanded of the reviewer, in the prompt it is sent. The
+  # first version of this test read the whole step, so it stayed green with the
+  # prompt stripped and only the prose about it left: it asserted on the file,
+  # not on what the reviewer is told.
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  prompt="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$ship" | grep -F 'codex exec')"
+  [ -n "$prompt" ] || { echo "step 6 sends no codex prompt"; return 1; }
+  [[ "$prompt" == *"'## Findings'"* ]]
+  [[ "$prompt" == *"'No findings.'"* ]]
+  # Step 7 sends its prompt as a blockquote, so the quoted lines are the prompt.
+  seven="$(sed -n '/^## Step 7\./,/^## Step 8\./p' "$ship" | grep '^>' | tr '\n' ' ')"
+  [ -n "$seven" ] || { echo "step 7 sends no quoted prompt"; return 1; }
+  [[ "$seven" == *'`## Findings`'* ]]
+  [[ "$seven" == *'`## Checked clean`'* ]]
+}
+
+@test "the ship skill never reads silence as clean" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'neither a finding nor the sentinel'* ]]
+  [[ "$ship" == *'Never treat absence as clean'* ]]
+  [[ "$ship" == *'Reviewer output is missing its header'* ]]
+}
+
+@test "the ship skill says what a fix pass clears and what recording it again asserts" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'fix-pass review'* ]]
+  [[ "$ship" == *'fix-pass security'* ]]
+  [[ "$ship" == *'never has to claim a code re-review'* ]]
+  [[ "$ship" == *'revert to the minimal fix'* ]]
+}

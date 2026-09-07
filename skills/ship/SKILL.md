@@ -161,7 +161,7 @@ here; carry the first one's findings forward, note in the PR that it ran outside
 on to step 7, which is the pass a manual review does not cover.
 
 ```bash
-codex exec -m gpt-5.6-sol --sandbox read-only "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Findings first, ordered by severity, with precise file:line references. State explicitly when an area has no findings."
+codex exec -m gpt-5.6-sol --sandbox read-only "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings."
 ```
 
 **Give the reviewer only** the repo state, the base branch, the diff, the acceptance
@@ -171,6 +171,13 @@ criteria, and the checklist.
 concluded. A reviewer told the intent grades against the intent instead of against
 the code.
 
+**Read the answer fail-closed.** The reviewer must come back with a literal
+`## Findings` header, and either findings under it or the single line
+`No findings.`. Output missing that header is a stop, and so is the header with
+neither a finding nor the sentinel under it. Never treat absence as clean: a
+reviewer that crashed, timed out, or answered something else looks exactly like
+a reviewer that found nothing, and the second reading is the one that ships bugs.
+
 Then:
 
 - **Verify every finding yourself** before acting on it. Reviewers are often right
@@ -178,6 +185,14 @@ Then:
 - Where a proposed fix is really a design decision, surface it to the user. Do not decide.
 - After material fixes, re-review **scoped to the new commits only**, so round two
   does not re-litigate round one.
+
+**Fixing anything is a fix pass.** Run `"$SHIP_GUARD" fix-pass review`, make the
+fix, run step 4's checks again and record them, then record this phase again.
+Recording `review` again asserts one of two things, and the pull request body
+says which: the reviewer re-ran scoped to the new commits, because a Critical
+was fixed; or the fixes stayed inside what this review asked for. Three fix
+passes per gate. The fourth is refused: revert to the minimal fix and stop.
+Re-gating after a revert is a fresh `"$SHIP_GUARD" open`, not a fourth pass.
 
 ```bash
 [ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD review
@@ -214,6 +229,18 @@ otherwise have to guess:
 > Say plainly when a finding falls outside that boundary and report it as an
 > accepted limit rather than a defect. A boundary the repository has not declared
 > is not a defence, and a claim the repository does make is in scope.
+>
+> Answer in this shape and no other: a literal `## Findings` header, then the
+> findings or the single line `No findings.` under it, and a literal
+> `## Checked clean` header listing the areas you checked and found clean.
+
+**Read this answer fail-closed too.** Both headers must be there. A missing
+header, or a header with neither a finding nor the sentinel under it, is a stop.
+
+A security fix is a fix pass of its own: `"$SHIP_GUARD" fix-pass security`
+clears this phase and the checks but leaves the code review standing, so a
+security-only round never has to claim a code re-review it did not run.
+Recording `security` again asserts the audit re-ran over the new commits.
 
 ```bash
 [ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD security
@@ -332,6 +359,8 @@ recorder verifies the pull request and its checks before it accepts this one.
 | HEAD moved during the gate | A rebase, amend or reset means the phases behind you saw other code |
 | push-ok refused | The review or the security pass does not cover the commit going out |
 | A CI fix pushed without a fix pass | The reviewed commit is not the one in the pull request |
+| Reviewer output is missing its header | Absence is not a clean review, and reading it as one ships the bug |
+| A fourth fix pass | Three rounds of fresh defects means the change is wrong, not the fix |
 
 ## Red flags: you are rationalizing
 
@@ -341,6 +370,7 @@ recorder verifies the pull request and its checks before it accepts this one.
 - "The fetch is probably fine, the ref looks recent."
 - "I'll tell the reviewer what I was going for so it understands."
 - "The reviewer flagged it, so I'll just fix it." (Verify first.)
+- "The reviewer came back empty, so there is nothing to fix." (No header, no review.)
 - "The correctness review covered security too."
 - "This diff doesn't touch auth, so a security pass is overkill."
 - "I'll open the PR now and file the Critical as a follow-up issue."

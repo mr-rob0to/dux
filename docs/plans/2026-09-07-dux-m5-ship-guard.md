@@ -9,7 +9,7 @@
 
 **Where this stands**
 - Approved 2026-09-07 and in progress on `feat/ship-guard` from `main` at fec61a1,
-  reviewed once by a fresh independent session, all 18 findings folded in. 2 of 4 done.
+  reviewed once by a fresh independent session, all 18 findings folded in. 3 of 4 done.
 - Milestone 4 left the receipt gap open: the `/ship` receipt proves the five phases ran
   in order, not that a review covered the code that gets pushed.
 - When this merges the gate refuses to push code no review saw. `dux-result verify` is
@@ -159,13 +159,13 @@ output.
 
 **Steps**
 
-- [ ] Add the contract test and see it fail.
-- [ ] Edit `SKILL.md` steps 6 and 7 and the stop table.
-- [ ] Dry run D: `codex` shim prints a findings-free body with no `## Findings` header; confirm
+- [x] Add the contract test and see it fail.
+- [x] Edit `SKILL.md` steps 6 and 7 and the stop table.
+- [x] Dry run D: `codex` shim prints a findings-free body with no `## Findings` header; confirm
       the gate stops rather than reading it as clean.
-- [ ] Dry run E: four fix passes against a throwaway repository; confirm the fourth refuses.
+- [x] Dry run E: four fix passes against a throwaway repository; confirm the fourth refuses.
       Paste both excerpts into the commit body.
-- [ ] Break-verify: break the header assertion alone, run, confirm it fails, restore, paste the
+- [x] Break-verify: break the header assertion alone, run, confirm it fails, restore, paste the
       failure into the commit body.
 
 ## Task 4: Acceptance criteria to the reviewer
