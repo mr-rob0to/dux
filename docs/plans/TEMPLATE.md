@@ -1,8 +1,11 @@
 # Dux Milestone N: <name> Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: use subagent-driven-development
-> (recommended) or executing-plans to implement this plan task by task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> **For the implementer:** one task at a time, in order. Tick each `- [ ]` box as it
+> lands and keep the "where this stands" block current: the plan file is the state of
+> the milestone, not the conversation. Break-verify at the task boundary, before the
+> next task starts. Do not run a code review of your own work: `/ship` owns the
+> branch's one review and its security pass (constitution principle 9), and a review
+> outside the gate is how the gate gets skipped.
 
 **Where this stands**
 - <one line: drafted, reviewed, approved, or how many tasks are done>
