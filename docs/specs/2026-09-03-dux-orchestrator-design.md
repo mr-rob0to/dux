@@ -738,10 +738,14 @@ skill calls, kept in the ship skill directory.
    template. Verbose material goes inside `<details>`.
 
 The ship skill is bundled in this repo at `skills/ship/` from milestone 1 and
-installed by `dux-install` (section 18), so milestone 5 is an ordinary PR with a
-diff Codex can review and commits that can carry break-verification. Milestone 5
-also moves the reviewer commands and per-shape models into `config/` with the
-defaults in `templates/config/`, so the skill works for anyone who installs Dux.
+installed by `dux-install` (section 18), so this is an ordinary PR with a diff
+Codex can review and commits that can carry break-verification.
+
+The nine changes are too much for one session under the size cap (constitution
+principle 1), so they ship as two milestones. Milestone 5 takes 1 to 5, the guard
+and what it bounds. Milestone 6 takes 6 to 9, plus the move of the reviewer
+commands and per-shape models into `config/` with defaults in `templates/config/`,
+so the skill works for anyone who installs Dux.
 
 Not ported: hook enforcement, CI auto-repair, transient reruns, evidence branch.
 
@@ -839,11 +843,22 @@ receiving anything beyond the brief file and their project's own instructions.
    `dux-recover`, stale and dead paths.
 4. Intake: `dux-intake`, registry `issues` field, issue fencing in briefs, start
    and done comments.
-5. `/ship` port: the nine changes in section 11, break-verified.
-6. Dogfood: register fitfights_api and fitfights_ios, run one scout and one ship
+5. `/ship` guard: section 11 changes 1 to 5, break-verified. Reviewed-SHA
+   binding, head continuity, fail-closed review parsing, bounded fix passes,
+   acceptance criteria to the reviewer.
+6. `/ship` stands alone: section 11 changes 6 to 9, plus the reviewer commands
+   and per-shape models into `config/`. Evidence, anchored lease, attestation,
+   PR body, and a fresh-clone dry run.
+7. Dogfood: register fitfights_api and fitfights_ios, run one scout and one ship
    task each, one from a GitHub issue, fix what breaks.
+8. Codex as orchestrator harness: `bin/dux` launcher, `bin/dux-wait`, the
+   `AGENTS.md` fallback lines, the notify fallback, and a hand-run verification
+   transcript (section 19).
 
-Each milestone is its own session and PR, per the operator's one-session rule.
+Each milestone is its own session and PR, per the operator's one-session rule,
+and is sized against the cap before its plan is written (constitution principle
+1). Task granularity and the sizing procedure are in
+`docs/plans/2026-09-03-dux-roadmap.md`.
 
 ## 17. Decisions already made
 
@@ -923,7 +938,7 @@ worker, plus one case that asserts the refusal.
 harness-neutral from milestone 1 (`AGENTS.md` canonical, `CLAUDE.md` an import,
 skills with frontmatter both harnesses read). Behavior parity is not:
 
-| Feature | Claude Code (verified, v1) | Codex (milestone 7) |
+| Feature | Claude Code (verified, v1) | Codex (milestone 8) |
 |---|---|---|
 | Wake on event | Monitor tool; zero tokens idle | `bin/dux-wait` blocks until the next event, then returns; Codex calls it in a bounded loop |
 | Phone push and reply | PushNotification and Remote Control | local toast plus optional webhook; no reply path |

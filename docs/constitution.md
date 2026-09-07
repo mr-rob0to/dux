@@ -8,6 +8,10 @@ All changes MUST follow trunk-based development on `main`.
 
 - One milestone is one session, one branch, one pull request. Feature work happens in a
   worktree under `.worktrees/<branch>`; the plain checkout does base-branch work only.
+- A milestone ships at most 2,500 added lines or 12 tasks, whichever comes first. A milestone
+  estimated over either number MUST be split before its plan is written, at a seam where each
+  half merges on its own. The estimate goes in the plan header and the actual number in the
+  pull request body. How to estimate is in the roadmap's "How a milestone is sized".
 - Branches MUST be cut from freshly fetched `origin/main` and rebased on it before review and
   merge. Pushes over an existing remote branch use `--force-with-lease` anchored to the fetched
   SHA, never bare `--force`.
@@ -169,6 +173,12 @@ Rationale: the operator debugs from files after the fact, often from a different
   documents point rather than restate.
 - The plan file is the state of a milestone: checkboxes ticked as tasks land, a three-line
   "where this stands" block at the top.
+- A plan task is at most about 60 lines: files, interfaces, acceptance criteria, and the
+  break-verification the task owes. A plan MUST NOT carry script bodies, blocks that restate
+  this constitution, or conversation history. A decision the plan settles is amended into the
+  spec and then pointed at, never restated. This binds every plan from milestone 5 onward;
+  the merged plans for milestones 1 to 4 are the record of what was built and stay as they
+  are. The shape is `docs/plans/TEMPLATE.md`.
 - Every pull request fills `.github/PULL_REQUEST_TEMPLATE.md`; verbose material goes in
   `<details>`.
 
@@ -195,8 +205,10 @@ A milestone is done when all of the following hold:
 - `make check-branch` is green on a clean checkout: the suite, the lint, and the bash 3.2 pass.
 - Every new test was break-verified at the task that added it, not at the ship gate, and the
   failure is in a commit body.
-- The pull request reports the milestone's fix-to-feature commit ratio and the time spent
-  fixing after the code was written.
+- The pull request reports the milestone's fix-to-feature commit ratio, the time spent fixing
+  after the code was written, and the added-line count against the 2,500-line cap.
+- No task in the milestone plan exceeds about 60 lines, and the plan carries no script bodies
+  and no restated constitution.
 - Every skill touched was dry-run and the excerpt is in the PR.
 - `docs/ARCHITECTURE.md` matches the scripts and flows that exist.
 - The PR was opened by `/ship`, the reviews ran, CI is green, and the operator merged it.
@@ -208,7 +220,16 @@ that edits this file, bumps the version, and updates Last Amended: MAJOR for a r
 removed principle, MINOR for a new principle, PATCH for a clarification. A plan that must
 deviate from a principle says so in its header and names the principle.
 
-**Version**: 2.0.2 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-06
+**Version**: 2.0.3 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-06
+
+Version 2.0.3 puts a number on two rules that were already here in words. Principle 1 said a
+milestone is one session; it now says how big a session may get, 2,500 added lines or 12 tasks.
+Principle 8 said the plan file is the state of a milestone; it now says how long a task in it
+may be and what it may not contain. Both were measured on 2026-09-06: four days of sessions
+produced 3,114 lines of shell against 10,210 lines of plan, and milestone 3's pull request was
+9,495 lines, three to four times what one session holds. This is a PATCH: no principle is
+added, removed, or redefined, and the governance section offers no other level for putting a
+number on an existing rule.
 
 Version 2.0.2 names `make check-branch` where the gate used to say `make check`. The suite now
 runs its files side by side, so `make check` is the loop to run after a task and

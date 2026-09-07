@@ -26,7 +26,7 @@ records it failed, and keeps its branch and worktree for one retry.
 Design: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
 Plans: `docs/plans/`.
 
-Verified orchestrator harness: Claude Code. Worker harnesses: Claude Code and Codex, selected by `config/worker-harness` or `dux-spawn --harness`. Codex as orchestrator: milestone 7.
+Verified orchestrator harness: Claude Code. Worker harnesses: Claude Code and Codex, selected by `config/worker-harness` or `dux-spawn --harness`. Codex as orchestrator: milestone 8.
 
 ## Run
 

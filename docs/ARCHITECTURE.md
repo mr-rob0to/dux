@@ -67,7 +67,8 @@ config/       (gitignored) backend override, reviewer defaults, models, models-c
 tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash
 ```
 
-Planned for later milestones (spec section 16): the `/ship` port (milestone 5).
+Planned for later milestones (spec section 16): the `/ship` guard (milestone 5) and the
+changes that let `/ship` stand alone (milestone 6).
 
 Rules that shape every component:
 

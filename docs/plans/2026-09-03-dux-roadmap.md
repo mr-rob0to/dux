@@ -1,14 +1,43 @@
-# Dux Roadmap: milestones 1 to 7
+# Dux Roadmap: milestones 1 to 8
 
 **Where this stands**
 - Milestone 1 (skeleton) is merged 2026-09-03: plan `2026-09-03-dux-m1-skeleton.md`, 8 of 8 tasks, reviewed_sha a3288cc.
 - Milestone 2 (dispatch) is merged in PR #4: plan `2026-09-03-dux-m2-dispatch.md`, 12 of 12 tasks.
 - Milestone 3 (supervision) is merged 2026-09-06 as PR #6, rebased onto `main` at 9a7e524: plan `2026-09-04-dux-m3-supervision.md`, 8 of 8 tasks, plus the 5-task security amendment `2026-09-05-dux-m3-security-amendment.md`.
 - Current milestone: 4 (intake), plan `2026-09-06-dux-m4-intake.md`, drafted and reviewed, awaiting the operator's approval; 0 of 4 tasks.
-- Milestones 5 to 7 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
+- Milestones 5 to 8 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
+- Re-scoped 2026-09-06 against the size cap below. The old milestone 5 was too big for one session and is now milestones 5 and 6; dogfood and the Codex harness moved to 7 and 8. Nothing was dropped. `ship-guard` is still milestone 5 task 1, so earlier references to it still resolve.
 - Spec: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
 
-One milestone is one session and one PR. After a milestone's PR merges, the next session starts from its plan file.
+## How a milestone is sized
+
+One milestone is one session and one PR. A session ships at most **2,500 added lines or 12 tasks, whichever comes first**. The cap itself is constitution principle 1; this section is how to apply it before a plan is written.
+
+Measured on 2026-09-06, the first four milestones ran three to four times over that. Milestone 3's pull request was 9,495 lines across 58 files, about 730 lines for each of its 13 tasks. That is why its session needed compaction and why its fix commits outnumbered its feature commits.
+
+Size a milestone in this order:
+
+1. **Estimate added lines, not rows in a table.** A task that edits a script, a skill and a test file is three files and closer to 900 lines. A task that edits one prose file is closer to 150. The count of rows tells you nothing; two seven-task milestones can differ fourfold.
+2. **Add the estimates up.** Over 2,500 lines, split. Over 12 tasks, split, even when the lines fit.
+3. **Split at a dependency seam**, so each half merges on its own: one milestone ships the mechanism, the next ships what uses it. Never split a task in half to make a number work.
+4. **Write the estimate into the plan header** as `Estimated diff: ~N added lines across M tasks`, and put the actual number in the pull request body. The next estimate leans on the last actual.
+5. **When the output cannot be estimated**, as with dogfood, the milestone carries a stop rule instead of an estimate: when the cap is reached, what is left is queued as the next milestone rather than finished in the same session.
+
+Splitting after the plan is written throws the plan away. Size first.
+
+## How a plan is written, from milestone 5 onward
+
+Plans for milestones 1 to 4 are the record of what was built and stay as they are. Every plan from milestone 5 on follows these rules.
+
+Measured on 2026-09-06: the four merged plans run 10,210 lines against 3,114 lines of shell, three lines of plan for every line of code. Milestone 3's plan averaged 208 lines per task.
+
+- **A task is at most about 60 lines.** Files, interfaces, acceptance criteria, and the break-verification the task owes. A task that does not fit is two tasks, or its design is not settled yet and belongs in the spec first.
+- **No implementation in the plan.** Function signatures, exit codes, output shapes and refusal wording, yes. Script bodies, no. The plan says what a script must do and the implementer writes it. Pasted shell is the single largest cost in the merged plans.
+- **A settled design decision lives in the spec, once.** The spec is the design authority (constitution principle 8). A plan that settles something amends the spec and then points at the section by number. It never restates a decision the spec already carries.
+- **No constitution blocks.** `docs/constitution.md` is loaded every session. A plan that repeats bash 3.2, shellcheck, findings on stderr, test-driven development, break-verification, attribution or identifier rules spends tokens and lets the two drift apart. Name a principle by number only to record a deviation, which governance already requires.
+- **No conversation history**, no exploratory discussion, no options that were rejected. A rejected option that still matters is one line in the spec's decisions section.
+
+The shape is in `docs/plans/TEMPLATE.md`.
 
 ## Milestone 1: Skeleton (7 tasks)
 
@@ -61,22 +90,39 @@ Left over from M2, both settled in Milestone 4 (2026-09-06): rerun `bin/dux-inst
 | 3 | Session start and status wiring | `CLAUDE.md`, `bin/dux-status` | intake runs for every `issues=label:*` project at start and on `--intake`; never in the watcher |
 | 4 | `/ship` `Closes #n` | `~/.agents/skills/ship/SKILL.md` step 8 | when the brief carries an issue key, PR body includes `Closes #<n>` |
 
-## Milestone 5: `/ship` port (7 tasks)
+## Milestone 5: `/ship` guard (4 tasks)
 
-The skill is already bundled at `skills/ship/` and installed by symlink (milestone 1). Task 0 here extracts the operator-specific parts into config so the skill stands alone: reviewer and security-reviewer commands read from `config/reviewer` and `config/security-reviewer`, per-shape models from `config/models`, with defaults in `templates/config/`; the Sol-or-Terra fallback becomes a documented config note. Acceptance: a fresh clone with default config runs `/ship` end to end on a throwaway repo.
+The skill is already bundled at `skills/ship/` and installed by symlink (milestone 1). This milestone gives the gate a memory: a state file recording which commit each phase saw, so a review cannot be quietly outrun by later commits. Spec section 11.
+
+Estimated: ~1,300 added lines. One new script with its bats file, four prose steps, and a dry run for each prose guard.
 
 | # | Task | Files | Acceptance |
 |---|---|---|---|
 | 1 | `ship-guard` script | `skills/ship/ship-guard`, `tests/ship-guard.bats` | state file `$(git rev-parse --git-dir)/dux-ship/<branch>`, never a tracked file; `record <phase>` writes `<phase>=<sha>`; `check <phase>` exits 2 when `HEAD` is not equal to or a descendant of the recorded sha; `fix-pass` increments and refuses past 3; `push-ok` exits 0 only when `HEAD == reviewed_sha` or every later commit is inside a recorded fix pass with a recorded re-review |
 | 2 | Reviewed-SHA and continuity in SKILL.md | `skills/ship/SKILL.md` steps 4, 6, 7, 8 | record after 4, 6, 7; check before 6, 7, 8; step 8 runs `push-ok` |
-| 3 | Fail-closed review parsing and bounded fix passes | `skills/ship/SKILL.md` steps 6, 7 | Codex prompt demands `## Findings` and the sentinel `No findings.`; security prompt demands `## Findings` and `## Checked clean`; missing header is a stop; three fix passes max, fourth is a revert recommendation; re-review policy unchanged (only a fixed Critical, scoped to new commits) |
-| 4 | Acceptance criteria to reviewer | `SKILL.md` step 6 | criteria fenced as data, rationale withheld, "necessary not sufficient" sentence |
-| 5 | Evidence, anchored lease, ls-remote verify | `SKILL.md` steps 5, 8 | UI change needs screenshot or reason; `--force-with-lease=<ref>:<sha>` from fresh fetch; `ls-remote` equality check |
-| 6 | PR template fill and attestation | `skills/ship/SKILL.md` step 8 | body fills `.github/PULL_REQUEST_TEMPLATE.md`, or `dux/templates/` when the repo has none, passed via `gh pr create --body-file`; verbose content in `<details>`; trailing `<!-- dux-attestation:v1 {...} -->` |
+| 3 | Fail-closed review parsing and bounded fix passes | `skills/ship/SKILL.md` steps 6, 7 | Codex prompt demands `## Findings` and the sentinel `No findings.`; security prompt demands `## Findings` and `## Checked clean`; a missing header is a stop; three fix passes at most, the fourth is a revert recommendation; re-review policy unchanged (only a fixed Critical, scoped to the new commits) |
+| 4 | Acceptance criteria to reviewer | `skills/ship/SKILL.md` step 6 | criteria fenced as data, rationale withheld, "necessary not sufficient" sentence |
 
-Each guard broken once with the failure pasted into the commit. `/ship` is prose, so break-verification for prose guards is a dry run against a throwaway repo where the guarded condition is set up to fail, with the transcript excerpt pasted.
+This milestone closes the receipt gap milestone 4 recorded: the receipt proved the five phases ran in order, not that a review covered the final code.
 
-## Milestone 6: Dogfood (4 tasks)
+Each guard is broken once with the failure pasted into the commit. `/ship` is prose, so break-verifying a prose guard is a dry run against a throwaway repo where the guarded condition is set up to fail, with the transcript excerpt pasted.
+
+## Milestone 6: `/ship` stands alone (4 tasks)
+
+The rest of spec section 11. The operator's own reviewer and model names move into config so a fresh clone can run the gate, and the pull request the gate writes carries its own evidence.
+
+Estimated: ~1,200 added lines, mostly config defaults, two prose steps and their dry runs.
+
+| # | Task | Files | Acceptance |
+|---|---|---|---|
+| 1 | Operator specifics into config | `skills/ship/SKILL.md`, `templates/config/reviewer`, `templates/config/security-reviewer`, `templates/config/models`, `bin/dux-install`, `tests/ship-config.bats` | the reviewer and security-reviewer commands read from `config/reviewer` and `config/security-reviewer`, per-shape models from `config/models`, all seeded from `templates/config/` by `dux-install`; the Sol-or-Terra fallback becomes a documented note next to the default, not a rule inside the skill; no operator-specific name is left in the skill |
+| 2 | Evidence, anchored lease, `ls-remote` verify | `skills/ship/SKILL.md` steps 5, 8 | a user-visible change needs a screenshot or a stated reason; `--force-with-lease=<ref>:<sha>` from a fresh fetch; an `ls-remote` equality check after the push |
+| 3 | PR template fill and attestation | `skills/ship/SKILL.md` step 8 | the body fills the repo's `.github/PULL_REQUEST_TEMPLATE.md`, or `templates/PULL_REQUEST_TEMPLATE.md` when the repo has none, passed through `gh pr create --body-file`; verbose material inside `<details>`; a trailing `<!-- dux-attestation:v1 {...} -->` line |
+| 4 | Fresh-clone dry run | `tests/harness/ship.md` | a clone with default config runs `/ship` end to end against a throwaway repo, with no operator-specific path, reviewer or model name anywhere in the run; the transcript is committed |
+
+Milestone acceptance: `/ship` runs from a fresh clone on default config, and every guard milestone 5 added still refuses.
+
+## Milestone 7: Dogfood (4 tasks)
 
 | # | Task | Acceptance |
 |---|---|---|
@@ -87,7 +133,11 @@ Each guard broken once with the failure pasted into the commit. `/ship` is prose
 
 Findings from dogfood become tests before they become fixes.
 
-## Milestone 7: Codex as orchestrator harness (5 tasks)
+**Stop rule instead of an estimate.** The four tasks add few lines themselves; what they provoke cannot be estimated in advance. When the fixes reach the 2,500-line cap, the session stops fixing and queues what is left as a milestone of its own, inserted ahead of the Codex harness, which then becomes milestone 9. Every finding is written down whether or not it is fixed in this milestone.
+
+## Milestone 8: Codex as orchestrator harness (5 tasks)
+
+Estimated: ~1,000 added lines. Two small scripts with their bats files, prose fallbacks, and one hand-run transcript.
 
 | # | Task | Files | Acceptance |
 |---|---|---|---|
