@@ -93,7 +93,7 @@ check-branch:
 lint: lint-shell lint-identifiers
 
 lint-shell:
-	shellcheck -s bash bin/dux-* bin/backends/*.sh bin/workers/*.sh templates/hooks/pre-push tests/fakes/* tests/helpers/*.bash
+	shellcheck -s bash bin/dux-* bin/backends/*.sh bin/workers/*.sh templates/hooks/pre-push tests/fakes/* tests/helpers/*.bash skills/ship/ship-guard
 
 # Account names that are also ordinary English words or shared CI defaults. A
 # denylist entry equal to one of these is dropped before the search: this repo's

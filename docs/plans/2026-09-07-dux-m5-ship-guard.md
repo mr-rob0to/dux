@@ -8,8 +8,8 @@
 > outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted 2026-09-07 on `feat/ship-guard` from `main` at fec61a1, reviewed once by a
-  fresh independent session, all 18 findings folded in. 0 of 4 tasks done.
+- Approved 2026-09-07 and in progress on `feat/ship-guard` from `main` at fec61a1,
+  reviewed once by a fresh independent session, all 18 findings folded in. 1 of 4 done.
 - Milestone 4 left the receipt gap open: the `/ship` receipt proves the five phases ran
   in order, not that a review covered the code that gets pushed.
 - When this merges the gate refuses to push code no review saw. `dux-result verify` is
@@ -96,15 +96,15 @@ milestone 5 from "planned for later".
 
 **Steps**
 
-- [ ] Write `tests/ship-guard.bats` first and see it fail: a temp repository per test, the five
+- [x] Write `tests/ship-guard.bats` first and see it fail: a temp repository per test, the five
       verbs, every refusal, the descent case, a rename, a run from a subdirectory, two
       worktrees, and a second `open` after three fix passes.
-- [ ] Write `skills/ship/ship-guard`; bash 3.2, shellcheck clean, findings on stderr, exit 2.
-- [ ] Add the helper to `lint-shell` in the `Makefile`; update `docs/ARCHITECTURE.md`.
-- [ ] Close the template-to-reader drift the last session hit: a test in `tests/dux-result.bats`
+- [x] Write `skills/ship/ship-guard`; bash 3.2, shellcheck clean, findings on stderr, exit 2.
+- [x] Add the helper to `lint-shell` in the `Makefile`; update `docs/ARCHITECTURE.md`.
+- [x] Close the template-to-reader drift the last session hit: a test in `tests/dux-result.bats`
       that copies `docs/plans/TEMPLATE.md`, ticks every box under Task 1 and gives Task 2 one
       ticked box, and verifies task range `1-2`, so the heading shape is what is proved.
-- [ ] Break-verify: break each assertion alone, run, confirm N distinct failures, restore,
+- [x] Break-verify: break each assertion alone, run, confirm N distinct failures, restore,
       paste them into the commit body (constitution principle 3).
 
 ## Task 2: Reviewed-SHA and continuity in `SKILL.md`

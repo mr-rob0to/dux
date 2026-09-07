@@ -806,3 +806,29 @@ receipt_of() {  # $1.. the phases to file, in the order given
   [ "$status" -eq 1 ]
   [[ "$output" == *"task 1 in docs/plan.md still has an unchecked box"* ]]
 }
+
+# ---- the plan template and the reader that proves a plan finished ---------
+
+template_plan() {  # the shipped template, with its boxes ticked
+  local f="docs/plan.md"
+  mkdir -p "$(dirname "$wt/$f")"
+  sed 's/^- \[ \]/- [x]/' "$DUX_ROOT/docs/plans/TEMPLATE.md" \
+    | awk '{ print } /^## Task 2:/ { print ""; print "- [x] the box the template leaves to the author" }' \
+    > "$wt/$f"
+  git -C "$wt" add -A
+  git -C "$wt" commit -q -m "plan"
+}
+
+@test "a plan written from the shipped template is one the reader accepts" {
+  # The template and this reader are two files nothing held together, and they
+  # drifted: plans written the template's way read as having no tasks at all.
+  # This is what pins them, so a change to either is a red test.
+  prepare ship
+  template_plan
+  commit_file src/main.sh "echo hi"
+  pr_at_head; green_checks
+  for phase in checks review security pr ci; do dux-result record-ship "$id" "$runid" "$phase"; done
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 0 ]
+  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
+}

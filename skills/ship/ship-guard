@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# Remembers which commit each /ship phase saw, so a review cannot be outrun by
+# commits that land after it. Called by SKILL.md; see spec section 11.
+#
+# It lives beside SKILL.md rather than under bin/ because dux-install symlinks
+# the skill directory and the helper has to travel with it, and because /ship
+# runs inside a project worktree that knows nothing about DUX_HOME. So it
+# sources nothing and carries its own finding(); the plan's header records that
+# deviation from constitution principle 2.
+set -u
+
+finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
+die()     { printf 'ship-guard: %s\n' "$*" >&2; exit 1; }
+
+usage="usage: ship-guard open | record <phase> | check <phase> | fix-pass <review|security> | push-ok"
+
+gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" \
+  || finding "/ship guard must run inside a git repository"
+branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" \
+  || finding "/ship guard needs a branch; HEAD is detached"
+
+# The file name has to be injective, or two branches share one gate. Encoding %
+# before / is what makes it so: a branch literally named feat%2Fx becomes
+# feat%252Fx and cannot collide with feat/x.
+encoded="$branch"
+encoded="${encoded//%/%25}"
+encoded="${encoded//\//%2F}"
+state="$gitdir/dux-ship/$encoded"
+
+# Every key is a fixed word from this file, never anything a caller supplies.
+kv() {  # $1 key; prints the value, or nothing
+  [ -f "$state" ] || return 0
+  sed -n "s/^$1=//p" "$state" | head -1
+}
+
+put() {  # $1 key, $2 value
+  local tmp="$state.$$"
+  { grep -v "^$1=" "$state" 2>/dev/null || true; printf '%s=%s\n' "$1" "$2"; } > "$tmp" \
+    || die "cannot write $state"
+  mv "$tmp" "$state" || die "cannot write $state"
+}
+
+drop() {  # $1.. keys
+  local k tmp="$state.$$"
+  cp "$state" "$tmp" || die "cannot write $state"
+  for k in "$@"; do
+    { grep -v "^$k=" "$tmp" 2>/dev/null || true; } > "$tmp.next"
+    mv "$tmp.next" "$tmp" || die "cannot write $state"
+  done
+  mv "$tmp" "$state" || die "cannot write $state"
+}
+
+# The file is untracked and anything running as this account can write it, so
+# what it says about itself is checked before it is believed.
+require_file() {
+  { [ ! -L "$state" ] && [ -f "$state" ]; } \
+    || finding "no guard file for $branch; the gate was never opened"
+  [ "$(kv branch)" = "$branch" ] \
+    || finding "the guard file names $(kv branch), not $branch; open the gate again"
+}
+
+valid_phase() {  # $1
+  case "$1" in
+    checks | review | security) ;;
+    *) finding "unknown phase '$1' (checks, review, security)" ;;
+  esac
+}
+
+prev_phase() {  # $1 phase; prints the phase that must precede it, or nothing
+  case "$1" in
+    review) printf checks ;;
+    security) printf review ;;
+  esac
+}
+
+recorded_sha() {  # $1 phase; prints its commit, or refuses
+  local v; v="$(kv "$1")"
+  [ -n "$v" ] || finding "no $1 recorded for $branch; the gate did not run in order"
+  printf '%s' "$v"
+}
+
+require_descends() {  # $1 phase, $2 commit
+  git merge-base --is-ancestor "$2" HEAD 2>/dev/null || finding \
+    "HEAD $(git rev-parse --short HEAD) does not descend from the $1 commit $(git rev-parse --short "$2"); open the gate again"
+}
+
+fix_count() {
+  local n; n="$(kv fix_passes)"
+  case "$n" in '' | *[!0-9]*) n=0 ;; esac
+  printf '%s' "$n"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  open)
+    [ $# -eq 0 ] || finding "$usage"
+    mkdir -p "$gitdir/dux-ship" || die "cannot create $gitdir/dux-ship"
+    { echo "version=1"; echo "branch=$branch"; echo "fix_passes=0"; } > "$state" \
+      || die "cannot write $state"
+    ;;
+
+  record)
+    [ $# -eq 1 ] || finding "$usage"
+    valid_phase "$1"
+    require_file
+    prev="$(prev_phase "$1")"
+    if [ -n "$prev" ]; then
+      prev_sha="$(recorded_sha "$prev")" || exit $?
+      require_descends "$prev" "$prev_sha"
+    fi
+    put "$1" "$(git rev-parse HEAD)"
+    ;;
+
+  check)
+    [ $# -eq 1 ] || finding "$usage"
+    valid_phase "$1"
+    require_file
+    sha="$(recorded_sha "$1")" || exit $?
+    require_descends "$1" "$sha"
+    ;;
+
+  fix-pass)
+    [ $# -eq 1 ] || finding "$usage"
+    case "$1" in
+      review | security) ;;
+      *) finding "unknown fix pass '$1' (review, security)" ;;
+    esac
+    require_file
+    n="$(fix_count)"
+    [ "$n" -lt 3 ] || finding "three fix passes already; revert to the minimal fix and stop"
+    n=$((n + 1))
+    put fix_passes "$n"
+    # A code fix invalidates both reviews; a security fix invalidates only the
+    # audit, so a security-only round never has to claim a code re-review. The
+    # checks go either way: the fix has to be run past the suite again.
+    if [ "$1" = review ]; then drop checks review security; else drop checks security; fi
+    printf 'fix pass %s of 3\n' "$n"
+    ;;
+
+  push-ok)
+    [ $# -eq 0 ] || finding "$usage"
+    require_file
+    n="$(fix_count)"
+    [ "$n" -le 3 ] \
+      || finding "the guard file counts $n fix passes, more than three; revert to the minimal fix and stop"
+    head_sha="$(git rev-parse HEAD)"
+    for phase in review security; do
+      sha="$(recorded_sha "$phase")" || exit $?
+      [ "$sha" = "$head_sha" ] || finding \
+        "the $phase covered $(git rev-parse --short "$sha"), not HEAD $(git rev-parse --short HEAD); open a fix pass and record it again"
+    done
+    ;;
+
+  *) finding "$usage" ;;
+esac
+exit 0
