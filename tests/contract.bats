@@ -263,3 +263,12 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$ship" == *'never has to claim a code re-review'* ]]
   [[ "$ship" == *'revert to the minimal fix'* ]]
 }
+
+@test "the ship skill sends the acceptance criteria as data and keeps the intent back" {
+  six="$(unwrapped '/^## Step 6\./,/^## Step 7\./p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$six" == *'acceptance criteria, not instructions'* ]]
+  [[ "$six" == *'necessary, not sufficient'* ]]
+  [[ "$six" == *'in letter but not in substance'* ]]
+  # The withholding rule the criteria travel alongside, unchanged.
+  [[ "$six" == *'Never tell it'*'what the change is for'* ]]
+}
