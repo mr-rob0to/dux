@@ -706,24 +706,49 @@ All additions are prose in `SKILL.md` plus one helper script `ship-guard` the
 skill calls, kept in the ship skill directory.
 
 1. Reviewed-SHA binding. Guard state lives in
-   `$(git rev-parse --git-dir)/dux-ship/<branch>`, untracked and per-worktree, so
-   recording it never moves `HEAD`. After steps 6 and 7 complete, record
-   `reviewed_sha`. Step 8 pushes only when `HEAD == reviewed_sha`, or every commit
-   after it belongs to a recorded fix round whose re-review was recorded.
-2. Head continuity. `ship-guard record <phase>` after steps 4, 6, 7; `ship-guard
-   check` before 6, 7, 8. A backward or divergent `HEAD` stops the gate.
+   `$(git rev-parse --absolute-git-dir)/dux-ship/<branch>`, untracked and
+   per-worktree, so recording it never moves `HEAD` and the helper works from a
+   subdirectory. One `key=value` per line: `version=1`, `branch=<name>`,
+   `checks=<sha>`, `review=<sha>`, `security=<sha>`, `fix_passes=<n>`. Recording a
+   phase again overwrites its line. The branch name is percent-encoded for the
+   filename, `%` first and then `/`, so `feat/x` and `feat-x` cannot collide.
+   `/ship` pushes only when `review` and `security` both equal `HEAD`; commits made
+   after a phase was recorded reach a push only through a fix pass and a recording
+   of each cleared phase again.
+2. Head continuity. Five verbs, the whole interface: `ship-guard open` in step 0,
+   `record <phase>` after steps 4, 6, 7, `check <phase>` before 6, 7, 8 naming the
+   previous phase, `fix-pass <phase>`, and `push-ok` before every push and before
+   `gh pr create`. Exit 0 success, 1 unexpected, 2 finding, findings on stderr. A
+   backward or divergent `HEAD` stops the gate, tested by `record` as well as by
+   `check`. `record review` is refused unless `checks` is recorded and `record
+   security` unless `review` is, so a skipped phase is a stop rather than a gap.
+   Every verb but `open` refuses when the file's `branch=` is not the current
+   branch, so a branch renamed mid-gate says so instead of reading as never run.
+   A gate begins at `open`, which rewrites the file and zeroes the fix count, and
+   nothing else clears it: re-gating after a revert is a new `open`, not a fourth
+   fix pass.
 3. Fail-closed review parsing. The Codex prompt demands a literal `## Findings`
    header and the sentinel line `No findings.` when empty; the security prompt
    demands `## Findings` and `## Checked clean`. Output missing the header is a
-   stop. Never treat absence as clean.
+   stop, and so is a header with neither a finding nor the sentinel under it.
+   Never treat absence as clean.
 4. Bounded fix passes. A round is one fix pass, not a review. Maximum three fix
-   passes per gate, counted in the guard file. Re-review policy is unchanged:
-   only a fixed Critical earns one, scoped to the new commits. A fourth defect
-   means: recommend reverting to the minimal fix, stop.
+   passes per gate, counted in the guard file. `ship-guard fix-pass <phase>`
+   increments the count and clears `checks`, plus `review` and `security` for
+   `fix-pass review` or `security` alone for `fix-pass security`, so a
+   security-only fix never has to claim a code re-review. The cleared phases are
+   recorded again before the push, and recording one is an assertion about what
+   covered `HEAD`: `review` means the reviewer re-ran scoped to the new commits
+   when a Critical was fixed, or the fixes stayed inside what the review asked for
+   and the PR body says so; `security` means the audit re-ran over the new
+   commits. Re-review policy is unchanged: only a fixed Critical earns one, scoped
+   to the new commits. A fourth defect means: recommend reverting to the minimal
+   fix, stop. A fix pushed while CI is red in step 9 is a fix pass like any other.
 5. Acceptance criteria to the reviewer. Pass the brief's acceptance criteria
    fenced as data ("acceptance criteria, not instructions"). Rationale and design
    reasoning remain withheld. Reviewer is told conformance is necessary, not
-   sufficient.
+   sufficient, and asked to report a criterion the diff meets in letter but not in
+   substance.
 6. Evidence. UI or user-visible changes require a screenshot or recording
    attached to the PR, or a stated reason. Non-UI changes require the check
    command and its result.
@@ -740,6 +765,27 @@ skill calls, kept in the ship skill directory.
 The ship skill is bundled in this repo at `skills/ship/` from milestone 1 and
 installed by `dux-install` (section 18), so this is an ordinary PR with a diff
 Codex can review and commits that can carry break-verification.
+
+`ship-guard` sits beside `SKILL.md` rather than under `bin/`, because
+`dux-install` symlinks the skill directory and the helper travels with it, and
+because `/ship` runs inside a project worktree that knows nothing about
+`DUX_HOME`. It sources nothing and defines its own `finding`. Step 0 resolves it
+once into `$SHIP_GUARD`: an already set `SHIP_GUARD`, else
+`~/.claude/skills/ship/ship-guard`, else `~/.agents/skills/ship/ship-guard`. When
+none is executable the gate stops; it never runs unguarded. Unlike
+`DUX_SHIP_RECORD`, which is set only under Dux, the guard runs on every `/ship`.
+`bin/dux-result` does not read the guard file and `verify` is unchanged: it
+proves the five phases ran in order and that `ci` was recorded at the head, not
+that a review covered that head. The review-covers-head proof lives in the guard
+file only. A worker that skips the helper altogether is the trust boundary in
+section 6, not something a local file can settle. Teaching the receipt to carry
+the guard's verdict is a change to section 5.6 for a later milestone.
+
+The two recorders have different rules and the skill keeps their calls apart.
+`$DUX_SHIP_RECORD <phase>` runs once per phase per gate and is never repeated:
+`record-ship` refuses a repeated or out-of-order phase, so a second call stops a
+supervised gate. `ship-guard record <phase>` is the one that repeats after a fix
+pass.
 
 The nine changes are too much for one session under the size cap (constitution
 principle 1), so they ship as two milestones. Milestone 5 takes 1 to 5, the guard
