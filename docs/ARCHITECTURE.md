@@ -17,6 +17,9 @@ skills/
   dux-status/SKILL.md      show the fleet digest and explain its next actions
   dux-recover/SKILL.md     judge and handle stale, dead, ended, or failed work
   ship/SKILL.md            bundled delivery gate, installed by dux-install (milestone 1, task 8)
+  ship/ship-guard          binds each gate phase to the commit it saw; refuses a push the
+                           review never covered (milestone 5). Sources nothing: it runs in
+                           a project worktree with no DUX_HOME
 bin/
   dux-env                  sourced by every script: paths, log, die, finding, now,
                            task_harness, harness_refusal, require_cmd
@@ -67,8 +70,8 @@ config/       (gitignored) backend override, reviewer defaults, models, models-c
 tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash
 ```
 
-Planned for later milestones (spec section 16): the `/ship` guard (milestone 5) and the
-changes that let `/ship` stand alone (milestone 6).
+Planned for later milestones (spec section 16): the changes that let `/ship` stand alone
+(milestone 6).
 
 Rules that shape every component:
 

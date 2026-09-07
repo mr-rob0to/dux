@@ -5,7 +5,7 @@
 - Milestone 2 (dispatch) is merged in PR #4: plan `2026-09-03-dux-m2-dispatch.md`, 12 of 12 tasks.
 - Milestone 3 (supervision) is merged 2026-09-06 as PR #6, rebased onto `main` at 9a7e524: plan `2026-09-04-dux-m3-supervision.md`, 8 of 8 tasks, plus the 5-task security amendment `2026-09-05-dux-m3-security-amendment.md`.
 - Milestone 4 (intake) is merged as PR #8: plan `2026-09-06-dux-m4-intake.md`, 4 of 4 tasks.
-- Current milestone: 5 (`/ship` guard), not yet planned. It is the first milestone under the size cap and the plan rules below.
+- Current milestone: 5 (`/ship` guard), planned 2026-09-07 in `2026-09-07-dux-m5-ship-guard.md`, 4 tasks, ~1,100 estimated added lines. It is the first milestone under the size cap and the plan rules below.
 - Milestones 5 to 8 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
 - Re-scoped 2026-09-06 against the size cap below. The old milestone 5 was too big for one session and is now milestones 5 and 6; dogfood and the Codex harness moved to 7 and 8. Nothing was dropped. `ship-guard` is still milestone 5 task 1, so earlier references to it still resolve.
 - Spec: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
@@ -106,7 +106,7 @@ Estimated: ~1,300 added lines. One new script with its bats file, four prose ste
 
 | # | Task | Files | Acceptance |
 |---|---|---|---|
-| 1 | `ship-guard` script | `skills/ship/ship-guard`, `tests/ship-guard.bats` | state file `$(git rev-parse --git-dir)/dux-ship/<branch>`, never a tracked file; `record <phase>` writes `<phase>=<sha>`; `check <phase>` exits 2 when `HEAD` is not equal to or a descendant of the recorded sha; `fix-pass` increments and refuses past 3; `push-ok` exits 0 only when `HEAD == reviewed_sha` or every later commit is inside a recorded fix pass with a recorded re-review |
+| 1 | `ship-guard` script | `skills/ship/ship-guard`, `tests/ship-guard.bats` | state file `$(git rev-parse --git-dir)/dux-ship/<branch>`, never a tracked file; `record <phase>` writes `<phase>=<sha>`; `check <phase>` exits 2 when `HEAD` is not equal to or a descendant of the recorded sha; `fix-pass` increments and refuses past 3; `push-ok` per spec section 11 change 1 |
 | 2 | Reviewed-SHA and continuity in SKILL.md | `skills/ship/SKILL.md` steps 4, 6, 7, 8 | record after 4, 6, 7; check before 6, 7, 8; step 8 runs `push-ok` |
 | 3 | Fail-closed review parsing and bounded fix passes | `skills/ship/SKILL.md` steps 6, 7 | Codex prompt demands `## Findings` and the sentinel `No findings.`; security prompt demands `## Findings` and `## Checked clean`; a missing header is a stop; three fix passes at most, the fourth is a revert recommendation; re-review policy unchanged (only a fixed Critical, scoped to the new commits) |
 | 4 | Acceptance criteria to reviewer | `skills/ship/SKILL.md` step 6 | criteria fenced as data, rationale withheld, "necessary not sufficient" sentence |

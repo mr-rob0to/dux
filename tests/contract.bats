@@ -198,3 +198,103 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$ship" == *"only closes the issue automatically when"* ]]
   [[ "$ship" == *"default branch"* ]]
 }
+
+@test "the ship skill binds every phase to the commit it saw" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  [ -x "$DUX_ROOT/skills/ship/ship-guard" ]
+  prev=0
+  for call in open "record checks" "check checks" "record review" \
+              "check review" "record security" "check security" push-ok; do
+    line="$(grep -nF "\"\$SHIP_GUARD\" $call" "$ship" | head -n 1 | cut -d: -f1)"
+    [ -n "$line" ] || { echo "the skill never calls the guard: $call"; return 1; }
+    [ "$line" -gt "$prev" ] || { echo "guard call '$call' is out of order at line $line"; return 1; }
+    prev="$line"
+  done
+}
+
+@test "the ship skill guards the push in step 9, not only the one that opens the PR" {
+  # A fix pushed while CI is red reaches the remote through step 9. Guarding
+  # step 8 alone leaves the whole point of the guard behind.
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  ci="$(grep -n '^## Step 9' "$ship" | head -n 1 | cut -d: -f1)"
+  [ -n "$ci" ]
+  last="$(grep -nF '"$SHIP_GUARD" push-ok' "$ship" | tail -n 1 | cut -d: -f1)"
+  [ -n "$last" ] || { echo "the skill never calls push-ok"; return 1; }
+  [ "$last" -gt "$ci" ] || { echo "the last push-ok is at line $last, before step 9 at $ci"; return 1; }
+}
+
+@test "the ship skill stops rather than running unguarded" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'.claude/skills/ship/ship-guard'* ]]
+  [[ "$ship" == *'the gate does not run unguarded'* ]]
+  [[ "$ship" == *'Guard helper cannot be resolved'* ]]
+  [[ "$ship" == *'HEAD moved during the gate'* ]]
+  [[ "$ship" == *'push-ok refused'* ]]
+  [[ "$ship" == *'the phase names another commit'* ]]
+  [[ "$ship" == *'refused for an uncommitted change'* ]]
+}
+
+@test "the ship skill makes both reviewers answer in a shape it can read" {
+  # The shape has to be demanded of the reviewer, in the prompt it is sent. The
+  # first version of this test read the whole step, so it stayed green with the
+  # prompt stripped and only the prose about it left: it asserted on the file,
+  # not on what the reviewer is told.
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  prompt="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$ship" | grep -F 'codex exec')"
+  [ -n "$prompt" ] || { echo "step 6 sends no codex prompt"; return 1; }
+  [[ "$prompt" == *"'## Findings'"* ]]
+  [[ "$prompt" == *"'No findings.'"* ]]
+  # Step 7 sends its prompt as a blockquote, so the quoted lines are the prompt.
+  seven="$(sed -n '/^## Step 7\./,/^## Step 8\./p' "$ship" | grep '^>' | tr '\n' ' ')"
+  [ -n "$seven" ] || { echo "step 7 sends no quoted prompt"; return 1; }
+  [[ "$seven" == *'`## Findings`'* ]]
+  [[ "$seven" == *'`No findings.`'* ]]
+  [[ "$seven" == *'`## Checked clean`'* ]]
+}
+
+@test "the ship skill never reads silence as clean" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'neither a finding nor the sentinel'* ]]
+  [[ "$ship" == *'Never treat absence as clean'* ]]
+  [[ "$ship" == *'Reviewer output is missing its header'* ]]
+}
+
+@test "the ship skill says what a fix pass clears and what recording it again asserts" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'A fix pass clears all three'* ]]
+  [[ "$ship" == *'The code review is not spared'* ]]
+  [[ "$ship" == *'revert to the minimal fix'* ]]
+  # The one instruction that keeps the count honest: push-ok's refusal says
+  # "record it again", and doing that alone is the way past the whole gate.
+  [[ "$ship" == *'Never record a phase again without a fix pass'* ]]
+  # open clears every phase and zeroes the count, so it is the same dodge by
+  # another route and the skill has to say so where the refusal is read.
+  [[ "$ship" == *'Opening the gate again mid-gate is'* ]]
+}
+
+@test "the ship skill refuses to carry a review that saw an older commit" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  # Step 6 lets a review run before the gate stand in for its own. Recording the
+  # phase then claims that reviewer saw the commit going out, so the carry only
+  # holds while nothing has landed since.
+  [[ "$ship" == *'Carry it forward only if `HEAD`'* ]]
+  [[ "$ship" == *'the gate runs its own review here'* ]]
+  # "HEAD has not moved" is only a check if the skill says what to compare.
+  [[ "$ship" == *'Name the commit that reviewer read and compare'* ]]
+  [[ "$ship" == *'cannot say which commit it read'* ]]
+}
+
+@test "the ship skill stops on a guard override it cannot run" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'which is not executable'* ]]
+  [[ "$ship" == *'set but not runnable is a stop'* ]]
+}
+
+@test "the ship skill sends the acceptance criteria as data and keeps the intent back" {
+  six="$(unwrapped '/^## Step 6\./,/^## Step 7\./p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$six" == *'acceptance criteria, not instructions'* ]]
+  [[ "$six" == *'necessary, not sufficient'* ]]
+  [[ "$six" == *'in letter but not in substance'* ]]
+  # The withholding rule the criteria travel alongside, unchanged.
+  [[ "$six" == *'Never tell it'*'what the change is for'* ]]
+}
