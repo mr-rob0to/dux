@@ -3,6 +3,11 @@ load helpers/setup
 setup() {
   REPO_ROOT="$DUX_ROOT"
   DUX_HOME="$(mktemp -d "${BATS_TMPDIR:-/tmp}/dux-home.XXXXXX")"; export DUX_HOME
+  # This file has its own setup, so it does not get the shared one's identity.
+  # Without it make_repo cannot commit anywhere git has no global config, which
+  # is every CI runner and no development machine.
+  export GIT_AUTHOR_NAME=dux-test GIT_AUTHOR_EMAIL=dux-test@example.invalid
+  export GIT_COMMITTER_NAME=dux-test GIT_COMMITTER_EMAIL=dux-test@example.invalid
   mkdir -p "$DUX_HOME/data" "$DUX_HOME/state" "$DUX_HOME/config"
   # A throwaway DUX_ROOT: dux-install writes the identifier denylist under it, and
   # must not leave one behind in the checkout the suite is running from.
