@@ -48,16 +48,36 @@ load helpers/setup
     fifo="$DUX_HOME/state/fifo"; mkfifo "$fifo"
     ( exec -a "dux-worker-wrap t1" cat ) <> "$fifo" >/dev/null 2>&1 & end=$!
     ( exec -a "dux-worker-wrap t1" sleep 30 ) >/dev/null 2>&1 & mid=$!
-    sleep 0.2
+    # Wait until both processes are really showing the command line this test is
+    # about. A fixed pause was here before, and it was long enough on a fast
+    # machine and not on a slow one. The wait reads ps rather than calling
+    # pid_runs, so it cannot make the answers below true by asking the same
+    # question the test is asking.
+    i=0
+    until ps -ww -o command= -p "$end" 2>/dev/null | grep -q dux-worker-wrap &&
+          ps -ww -o command= -p "$mid" 2>/dev/null | grep -q dux-worker-wrap; do
+      i=$((i + 1)); [ "$i" -ge 100 ] && break
+      sleep 0.1
+    done
     pid_runs "$end" "dux-worker-wrap t1"; a=$?
     pid_runs "$mid" "dux-worker-wrap t1"; b=$?
     pid_runs "$end" "dux-worker-wrap t"; c=$?
     pid_runs "$end" "dux-worker-wrap t10"; d=$?
     pid_runs 999999 "dux-worker-wrap t1"; e=$?
     pid_runs "" "dux-worker-wrap t1"; f=$?
+    endcmd="$(ps -ww -o command= -p "$end" 2>/dev/null)"
+    midcmd="$(ps -ww -o command= -p "$mid" 2>/dev/null)"
     kill "$end" "$mid"
-    echo "$a $b $c $d $e $f"'
-  [ "$output" = "0 0 1 1 1 1" ]
+    echo "$a $b $c $d $e $f"
+    echo "waited $i tenths of a second; end is [$endcmd] and mid is [$midcmd]"'
+  # Said out loud rather than left to a bare comparison: when this failed on CI
+  # the log showed only that the line did not match, so which of the six answers
+  # was wrong, and what the process table actually held, cost a round trip.
+  [ "${lines[0]}" = "0 0 1 1 1 1" ] || {
+    echo "pid_runs answered ${lines[0]}, wanted 0 0 1 1 1 1"
+    echo "${lines[1]}"
+    return 1
+  }
 }
 
 @test "pid_runs rejects a needle inside a prefixed command name" {
