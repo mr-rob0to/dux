@@ -175,7 +175,31 @@ only `ship` tasks use the recorded mechanism, since only they run the project.
 Dux brainstorms goals with the operator in conversation, then writes a brief.
 The plan worker writes the spec and plan; the operator approves the docs PR.
 Ship tasks are dispatched one milestone at a time, each with the plan path and
-task range in the brief.
+task range in the brief. `dux-result` proves the range against the plan file, so
+the plan writes each task as a heading at any level, `## Task N` or `### Task N`,
+optionally followed by `:` or a space and a title, with at least one checkbox
+under it and every box ticked before the milestone ships.
+
+`dux-result` reads that plan to catch a worker that finished three of four
+tasks and reported done. It reads the shape plans in this repository are
+actually written in, and rejects a task whose box is still unticked.
+
+It does not catch a worker set on lying: that worker types `[x]` in a file it
+already owns, and reading the file more carefully cannot tell the difference.
+Hard rules 2 and 4 cover that case instead, because the operator merges and
+nothing in Dux merges for them. The reader is kept simple on purpose rather
+than hardened against a worker who has an easier way round it.
+
+Where the reader has a choice it leans one way. An unchecked box is matched
+broadly, over the lines inside fenced blocks too, and across the shapes GitHub
+renders as a checkbox: `-`, `*`, `+` and `1.` bullets, tab or space indents, a
+blockquote prefix, any run of blanks. Missing one is the failure that matters.
+Proof that a task had work to tick is matched narrowly, outside fenced blocks,
+so a `- [x]` quoted in an example cannot stand in for a real box. A task ends
+only at the next task heading, so a `### Verification`, a `#### Steps`, a
+`### Notes`, a pasted shell comment and a sub-heading such as `#### Task 0(a)`
+all keep their boxes inside the task they belong to, and `Task 1` never answers
+for `Task 10`.
 
 ### 5.2 Task id
 
