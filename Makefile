@@ -110,6 +110,13 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 # repo is registered as a project called "dux", that name reached the paths list,
 # and every tracked file matched. A check that fires on every line is a check
 # nobody reads, so a short entry is refused by name instead.
+#
+# Only the paths list. It is matched as a substring, which is what floods; the
+# names list is matched as a whole word, where a three-letter account name is
+# an ordinary entry and not a problem. The two lists also come from different
+# places, so one refusal message could not tell the truth about both: the paths
+# list is built from data/projects.md, the names list from whoami and the home
+# directory name, which an operator cannot rename to clear a build.
 DENYLIST_MIN := 4
 lint-identifiers:
 	@tmp="$$(mktemp -d)"; rc=0; \
@@ -118,9 +125,10 @@ lint-identifiers:
 	  : > "$$tmp/$$f"; \
 	  [ -s "tests/$$f.txt" ] || continue; \
 	  grep -v '^$$' "tests/$$f.txt" | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
+	  [ "$$f" = personal-identifiers ] || continue; \
 	  while IFS= read -r e; do \
 	    [ "$$(printf '%s' "$$e" | wc -c)" -lt $(DENYLIST_MIN) ] || continue; \
-	    echo "denylist entry [$$e] is too short to match safely; at least $(DENYLIST_MIN) characters"; \
+	    echo "denylist entry [$$e] is too short to match safely as a substring; at least $(DENYLIST_MIN) characters"; \
 	    echo "  tests/$$f.txt is written by dux-install from data/projects.md; rename or drop that project there, then run dux-install again"; \
 	    rc=1; \
 	  done < "$$tmp/$$f"; \
