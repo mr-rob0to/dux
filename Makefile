@@ -99,12 +99,33 @@ lint-shell:
 # denylist entry equal to one of these is dropped before the search: this repo's
 # CI account is named after one of them, and matching it fails every tracked file
 # that uses the word normally.
-GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docker
+#
+# This list is the only volume limit the names half has. It is matched as a
+# whole word, so the length floor does not apply and cannot: the floor is for
+# substring matching. Whole words flood too when the word is ordinary. Counted
+# on this repo: run 1624 lines, test 1171, dev 643, git 527, log 435, tmp 204.
+# An operator whose account is one of those would get that on every lint run,
+# and the way out of an unreadable check is to delete the file it comes from.
+GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docker \
+                    dev git log run tmp test www ftp
 
 # tests/personal-identifiers.txt holds paths and project names, matched literally.
 # tests/personal-names.txt holds bare account names, matched only as whole words,
 # so a name never matches inside a longer word. Both are git-ignored, written by
 # bin/dux-install; a missing or empty one is skipped.
+#
+# An entry shorter than DENYLIST_MIN cannot be matched without flooding: this
+# repo is registered as a project called "dux", that name reached the paths list,
+# and every tracked file matched. A check that fires on every line is a check
+# nobody reads, so a short entry is refused by name instead.
+#
+# Only the paths list. It is matched as a substring, which is what floods; the
+# names list is matched as a whole word, where a three-letter account name is
+# an ordinary entry and not a problem. The two lists also come from different
+# places, so one refusal message could not tell the truth about both: the paths
+# list is built from data/projects.md, the names list from whoami and the home
+# directory name, which an operator cannot rename to clear a build.
+DENYLIST_MIN := 4
 lint-identifiers:
 	@tmp="$$(mktemp -d)"; rc=0; \
 	printf '%s\n' $(GENERIC_ACCOUNTS) > "$$tmp/generic"; \
@@ -112,7 +133,15 @@ lint-identifiers:
 	  : > "$$tmp/$$f"; \
 	  [ -s "tests/$$f.txt" ] || continue; \
 	  grep -v '^$$' "tests/$$f.txt" | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
+	  [ "$$f" = personal-identifiers ] || continue; \
+	  while IFS= read -r e; do \
+	    [ "$$(printf '%s' "$$e" | wc -c)" -lt $(DENYLIST_MIN) ] || continue; \
+	    echo "denylist entry [$$e] is too short to match safely as a substring; at least $(DENYLIST_MIN) characters"; \
+	    echo "  tests/$$f.txt is written by dux-install from data/projects.md; rename or drop that project there, then run dux-install again"; \
+	    rc=1; \
+	  done < "$$tmp/$$f"; \
 	done; \
+	[ "$$rc" -eq 0 ] || { rm -rf "$$tmp"; exit 1; }; \
 	if [ -s "$$tmp/personal-identifiers" ]; then \
 	  git ls-files -z | xargs -0 grep -nF -f "$$tmp/personal-identifiers" -- 2>/dev/null \
 	    | grep -v '^tests/personal-' && rc=1 || true; \
