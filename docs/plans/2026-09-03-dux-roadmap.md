@@ -4,7 +4,8 @@
 - Milestone 1 (skeleton) is merged 2026-09-03: plan `2026-09-03-dux-m1-skeleton.md`, 8 of 8 tasks, reviewed_sha a3288cc.
 - Milestone 2 (dispatch) is merged in PR #4: plan `2026-09-03-dux-m2-dispatch.md`, 12 of 12 tasks.
 - Milestone 3 (supervision) is merged 2026-09-06 as PR #6, rebased onto `main` at 9a7e524: plan `2026-09-04-dux-m3-supervision.md`, 8 of 8 tasks, plus the 5-task security amendment `2026-09-05-dux-m3-security-amendment.md`.
-- Current milestone: 4 (intake), plan `2026-09-06-dux-m4-intake.md`, drafted and reviewed, awaiting the operator's approval; 0 of 4 tasks.
+- Milestone 4 (intake) is merged as PR #8: plan `2026-09-06-dux-m4-intake.md`, 4 of 4 tasks.
+- Current milestone: 5 (`/ship` guard), not yet planned. It is the first milestone under the size cap and the plan rules below.
 - Milestones 5 to 8 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
 - Re-scoped 2026-09-06 against the size cap below. The old milestone 5 was too big for one session and is now milestones 5 and 6; dogfood and the Codex harness moved to 7 and 8. Nothing was dropped. `ship-guard` is still milestone 5 task 1, so earlier references to it still resolve.
 - Spec: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
@@ -13,7 +14,7 @@
 
 One milestone is one session and one PR. A session ships at most **2,500 added lines or 12 tasks, whichever comes first**. The cap itself is constitution principle 1; this section is how to apply it before a plan is written.
 
-Measured on 2026-09-06, the first four milestones ran three to four times over that. Milestone 3's pull request was 9,495 lines across 58 files, about 730 lines for each of its 13 tasks. That is why its session needed compaction and why its fix commits outnumbered its feature commits.
+Measured on 2026-09-06, the first four milestones ran three to four times over that. Milestone 3's pull request was 9,495 lines across 58 files, about 730 lines for each of its 13 tasks (8 in the plan, 5 in the security amendment). That is why its session needed compaction and why its fix commits outnumbered its feature commits.
 
 Size a milestone in this order:
 
@@ -29,7 +30,14 @@ Splitting after the plan is written throws the plan away. Size first.
 
 Plans for milestones 1 to 4 are the record of what was built and stay as they are. Every plan from milestone 5 on follows these rules.
 
-Measured on 2026-09-06: the four merged plans run 10,210 lines against 3,114 lines of shell, three lines of plan for every line of code. Milestone 3's plan averaged 208 lines per task.
+Measured on 2026-09-06, at commit 2fd9d57:
+
+```
+git ls-files 'docs/plans/2026-09-0*-dux-m*.md' | xargs cat | wc -l   # 9,226
+git ls-files bin | xargs cat | wc -l                                 # 3,350
+```
+
+Three lines of plan for every line of shell they produced. Milestone 3's plan and its amendment run 3,167 lines over 13 tasks, about 244 lines each.
 
 - **A task is at most about 60 lines.** Files, interfaces, acceptance criteria, and the break-verification the task owes. A task that does not fit is two tasks, or its design is not settled yet and belongs in the spec first.
 - **No implementation in the plan.** Function signatures, exit codes, output shapes and refusal wording, yes. Script bodies, no. The plan says what a script must do and the implementer writes it. Pasted shell is the single largest cost in the merged plans.
@@ -132,6 +140,8 @@ Milestone acceptance: `/ship` runs from a fresh clone on default config, and eve
 | 4 | Restart drill | kill Dux mid-task; restart; digest matches reality; worker unaffected; Monitor re-armed |
 
 Findings from dogfood become tests before they become fixes.
+
+**Carried here by the renumbering.** Three questions earlier plans deferred to "milestone 6's dogfood" are this milestone's, and it does not close until each has an answer: whether the watcher should report a `running` task that never got an endpoint, whether a retry needs `--from-branch` when the blocked worker left commits on its branch (both milestone 3, open questions 1 and 2), and whether `dux-result verify` should require `Closes #<n>` in the body of a `gh:` ship task (milestone 4, open question 2).
 
 **Stop rule instead of an estimate.** The four tasks add few lines themselves; what they provoke cannot be estimated in advance. When the fixes reach the 2,500-line cap, the session stops fixing and queues what is left as a milestone of its own, inserted ahead of the Codex harness, which then becomes milestone 9. Every finding is written down whether or not it is fixed in this milestone.
 
