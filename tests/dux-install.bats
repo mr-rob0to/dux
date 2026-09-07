@@ -139,6 +139,16 @@ setup() {
 # parser read the whole "path=..." token as a path, the skip never fired outside
 # the test, and the lint stayed broken. The next test pins this to the real
 # writer.
+seed_root() {  # $1 dir, $2 text a tracked file must contain
+  # The skip only fires for a name that is really in this repo's tracked content,
+  # so a root the test wants skipped has to be a repo that contains it.
+  mkdir -p "$1/tests"
+  git -C "$1" init -q
+  printf '%s\n' "$2" > "$1/README.md"
+  git -C "$1" add -A
+  git -C "$1" -c user.email=t@t -c user.name=t -c commit.gpgsign=false commit -qm seed
+}
+
 registry_line() {  # $1 name, $2 path
   printf -- '- %s path=%s base=main worktree=git issues=off (added 2026-01-01)\n' "$1" "$2"
 }
@@ -163,7 +173,7 @@ registry_line() {  # $1 name, $2 path
   # does not help: a hyphen is a word boundary, so dux-install still matches.
   # The project whose checkout is this repo is the one entry that cannot mean
   # anything here, so it is the one that is skipped.
-  root="$DUX_HOME/ro2"; mkdir -p "$root/tests"
+  root="$DUX_HOME/ro2"; seed_root "$root" "self-hosted, self-named, self everywhere"
   other="$DUX_HOME/widgets"; mkdir -p "$other"
   registry_line self "$root" > "$DUX_HOME/data/projects.md"
   registry_line widgets "$other" >> "$DUX_HOME/data/projects.md"
@@ -179,7 +189,7 @@ registry_line() {  # $1 name, $2 path
   # It has to be THIS repo's project for the name to reach grep at all: without
   # --, grep reads it as options, the pipeline hides the error, and every other
   # project name disappears from the denylist instead of just this one.
-  root="$DUX_HOME/ro5"; mkdir -p "$root/tests"
+  root="$DUX_HOME/ro5"; seed_root "$root" "the -dash name is written here"
   other="$DUX_HOME/widgets2"; mkdir -p "$other"
   registry_line -dash "$root" > "$DUX_HOME/data/projects.md"
   registry_line widgets2 "$other" >> "$DUX_HOME/data/projects.md"
@@ -188,6 +198,18 @@ registry_line() {  # $1 name, $2 path
   refute grep -qx -- '-dash' "$root/tests/personal-identifiers.txt"
   # The one that must survive: it is what breaks when grep eats the name.
   grep -qx 'widgets2' "$root/tests/personal-identifiers.txt"
+}
+
+@test "this repo registered under a personal name keeps its denylist entry" {
+  # The skip is for a name that floods the lint, not for wherever a project sits.
+  # Registering this checkout as "rq-dux" used to drop that name from the
+  # denylist, so committing it into a tracked file later went unnoticed.
+  root="$DUX_HOME/ro6"; seed_root "$root" "nothing personal in here"
+  registry_line rq-dux "$root" > "$DUX_HOME/data/projects.md"
+  DUX_ROOT="$root" run dux-install --yes
+  [ "$status" -eq 0 ]
+  grep -qx 'rq-dux' "$root/tests/personal-identifiers.txt"
+  [[ "$output" != *"left this repo's own project out of the denylist"* ]]
 }
 
 @test "install keeps every other project name, short ones included" {

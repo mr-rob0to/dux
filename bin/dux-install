@@ -41,7 +41,7 @@ done
 # substring, so writing this repo's own name here made every tracked file match
 # and turned the lint into noise. Whole-word matching does not help: a hyphen is
 # a word boundary, so dux-install still matches dux. The project whose checkout
-# is this repo is the one name that cannot mean anything inside it, so it is the
+# is this repo, and whose name is already all over its tracked content, is the
 # one that is left out. Every other name is written, short ones included; the
 # Makefile refuses a name too short to match safely, by name, which is a
 # decision for the operator rather than one to make silently here.
@@ -53,6 +53,11 @@ if [ -f "$DUX_DATA/projects.md" ] && [ -n "$root_real" ]; then
     [ -n "$path" ] || continue
     p_real="$(cd "$path" 2>/dev/null && pwd -P)" || continue
     [ "$p_real" = "$root_real" ] || continue
+    # -- and only when the name is really in the tracked content. The skip is for
+    # a name that floods the lint, not for wherever a project happens to live. A
+    # checkout registered under a personal name keeps the coverage it had: the
+    # name is not in the content, so keeping it costs nothing and catches a leak.
+    git -C "$DUX_ROOT" grep -qF -e "$name" -- >/dev/null 2>&1 || continue
     skipped="$name"
   done <<EOF
 $(sed -n 's/^- \([^ ]*\) path=\([^ ]*\).*/\1 \2/p' "$DUX_DATA/projects.md")
