@@ -9,12 +9,20 @@
 
 **Where this stands**
 - Approved 2026-09-07 and in progress on `feat/ship-guard` from `main` at fec61a1,
-  reviewed once by a fresh independent session, all 18 findings folded in. 4 of 4 done.
+  reviewed once by a fresh independent session, all 18 findings folded in. 4 of 4 done,
+  plus one fix pass answering the gate's own code review and security audit.
 - Milestone 4 left the receipt gap open: the `/ship` receipt proves the five phases ran
   in order, not that a review covered the code that gets pushed.
 - When this merges the gate refuses to push code no review saw. `dux-result verify` is
   unchanged and still proves only phase order and `ci` at head; the review-covers-head
   proof lives in the guard file. Teaching the receipt to carry it is a later milestone.
+
+**Divergence, 2026-09-07:** the fix pass at the ship gate collapsed `fix-pass <phase>` to a
+single `fix-pass` that clears all three phases. The split the design review asked for could not
+reach a valid push: a security fix moves `HEAD`, and `push-ok` demands the code review cover the
+commit going out. The operator chose the single form. Spec section 11 change 4 is amended to
+match, and the same pass made `record` refuse a phase that already names another commit, added
+`checks` to `push-ok`, and made an unreadable fix count and an uncommitted change findings.
 
 **Estimated diff:** ~1,250 added lines across 4 tasks. The cap is 2,500 lines or 12 tasks
 (constitution principle 1). Sizing procedure: roadmap, "How a milestone is sized". The
@@ -70,7 +78,7 @@ Only what the spec does not say.
 | `ship-guard open` | rewrites the file: `version`, `branch`, `fix_passes=0` | 0; 2 on a finding |
 | `ship-guard record <checks\|review\|security>` | writes `<phase>=<HEAD sha>` | 0; 2 on a finding |
 | `ship-guard check <checks\|review\|security>` | `HEAD` equals the recorded sha or descends from it | 0; 2 on a finding |
-| `ship-guard fix-pass <review\|security>` | increments `fix_passes`, clears `checks`, and clears `review` and `security` for `review` or `security` alone for `security` | 0; 2 past three |
+| `ship-guard fix-pass` | increments `fix_passes` and clears `checks`, `review` and `security` together | 0; 2 past three |
 | `ship-guard push-ok` | `review` and `security` both equal `HEAD`, `fix_passes` at most 3 | 0; 2 on a finding |
 
 Every verb but `open` refuses a `branch=` that is not the current branch. `record review` is
@@ -144,11 +152,12 @@ points at the main checkout until this merges. The PR excerpt names the file tha
 line `No findings.` when there are none. Step 7's demands `## Findings` and `## Checked clean`.
 Output missing a header, or carrying the header with neither a finding nor the sentinel under
 it, is a stop; absence is never read as clean. Both steps say that fixing means running
-`ship-guard fix-pass review` or `fix-pass security`, re-running step 4's checks, and recording
-the cleared phases again, and what recording each one asserts: `review` that the reviewer
-re-ran scoped to the new commits when a Critical was fixed, or that the fixes stayed inside
-what the review asked for and the PR body says so; `security` that the audit re-ran over the
-new commits. A security-only fix therefore never has to claim a code re-review. A fourth pass
+`ship-guard fix-pass`, re-running step 4's checks, and recording every cleared phase again,
+and what recording each one asserts: `review` that the reviewer re-ran scoped to the new
+commits when a Critical was fixed, or that the fixes stayed inside what the review asked for
+and the PR body says so; `security` that the audit re-ran over the new commits. A fix
+answering the security audit clears the code review with the rest, because the fix is code
+nobody has reviewed. A fourth pass
 is a recommendation to revert to the minimal fix and stop; re-gating from step 4 after a
 revert is a fresh gate, opened with `ship-guard open`, not a fourth pass.
 

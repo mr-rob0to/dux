@@ -65,6 +65,9 @@ commits that land after it. The helper sits beside this file, so `dux-install`'s
 symlink carries it.
 
 ```bash
+[ -z "${SHIP_GUARD:-}" ] || [ -x "${SHIP_GUARD}" ] || {
+  echo "finding: SHIP_GUARD names $SHIP_GUARD, which is not executable" >&2; exit 2
+}
 SHIP_GUARD="$(for c in "${SHIP_GUARD:-}" "$HOME/.claude/skills/ship/ship-guard" \
                        "$HOME/.agents/skills/ship/ship-guard"; do
   [ -n "$c" ] && [ -x "$c" ] && { printf '%s' "$c"; break; }
@@ -74,6 +77,10 @@ done)"
 }
 "$SHIP_GUARD" open
 ```
+
+**A `SHIP_GUARD` that is set but not runnable is a stop, not a fall-through.**
+A typo in the override, or a copy left behind before the install became a
+symlink, would otherwise silently run a different guard than the one intended.
 
 **If the helper cannot be resolved, stop and report.** Do not carry on without
 it: an unguarded run is the failure this helper exists to remove. Every call
@@ -158,7 +165,10 @@ A fresh reviewer that did not plan or implement the change. Never merge without 
 whole-branch review on top of it, and no re-review unless a Critical was fixed. If a review was
 already run by hand before this skill was invoked, that was the mistake — do not run a second one
 here; carry the first one's findings forward, note in the PR that it ran outside the gate, and go
-on to step 7, which is the pass a manual review does not cover.
+on to step 7, which is the pass a manual review does not cover. **Carry it forward only if `HEAD`
+has not moved since it ran.** Recording this phase claims the reviewer saw the commit going out, and
+a review of an earlier commit cannot make that claim. If anything landed since, the gate runs its
+own review here and the manual one counts for nothing.
 
 ```bash
 codex exec -m gpt-5.6-sol --sandbox read-only "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings."
@@ -201,13 +211,21 @@ Then:
 - After material fixes, re-review **scoped to the new commits only**, so round two
   does not re-litigate round one.
 
-**Fixing anything is a fix pass.** Run `"$SHIP_GUARD" fix-pass review`, make the
-fix, run step 4's checks again and record them, then record this phase again.
+**Fixing anything is a fix pass.** Run `"$SHIP_GUARD" fix-pass`, make the fix,
+then record every phase again from step 4 onward: the checks, this review, and
+the security pass. A fix pass clears all three because a fix is code, and the
+commit going out is then code that none of the three has seen.
+
 Recording `review` again asserts one of two things, and the pull request body
 says which: the reviewer re-ran scoped to the new commits, because a Critical
 was fixed; or the fixes stayed inside what this review asked for. Three fix
 passes per gate. The fourth is refused: revert to the minimal fix and stop.
 Re-gating after a revert is a fresh `"$SHIP_GUARD" open`, not a fourth pass.
+
+**Never record a phase again without a fix pass.** When `push-ok` refuses, the
+way through is `fix-pass` and a recording of each phase, never a second
+`record` on its own. The guard refuses that anyway, and reaching for it is the
+sign the fix count is about to be dodged.
 
 ```bash
 [ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD review
@@ -252,10 +270,12 @@ otherwise have to guess:
 **Read this answer fail-closed too.** Both headers must be there. A missing
 header, or a header with neither a finding nor the sentinel under it, is a stop.
 
-A security fix is a fix pass of its own: `"$SHIP_GUARD" fix-pass security`
-clears this phase and the checks but leaves the code review standing, so a
-security-only round never has to claim a code re-review it did not run.
-Recording `security` again asserts the audit re-ran over the new commits.
+**A security fix is a fix pass like any other.** `"$SHIP_GUARD" fix-pass`
+clears the checks, the code review and this audit together, and all three are
+recorded again before the push. The code review is not spared: a fix answering
+a security finding is new code, so the code reviewer re-runs scoped to the fix
+commits, exactly as it would for any other Critical. Recording `security` again
+asserts the audit re-ran over those commits.
 
 ```bash
 [ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD security
@@ -344,7 +364,7 @@ you, and one more commit feels like housekeeping. It is not. Run the fix pass,
 re-run step 4's checks, record the phases it cleared, and only then push.
 
 ```bash
-"$SHIP_GUARD" fix-pass review
+"$SHIP_GUARD" fix-pass
 # fix, then step 4 again, then step 6's and step 7's recordings
 "$SHIP_GUARD" push-ok
 git push --force-with-lease
@@ -376,6 +396,10 @@ recorder verifies the pull request and its checks before it accepts this one.
 | A CI fix pushed without a fix pass | The reviewed commit is not the one in the pull request |
 | Reviewer output is missing its header | Absence is not a clean review, and reading it as one ships the bug |
 | A fourth fix pass | Three rounds of fresh defects means the change is wrong, not the fix |
+| record refused because the phase names another commit | Recording it again with no fix pass is how the gate gets walked past |
+| record or push-ok refused for an uncommitted change | The reviewers covered content the push would not carry |
+| The guard file's fix count is not a number | A count that cannot be read is not a count of zero |
+| SHIP_GUARD is set but not executable | A typo would otherwise run a different guard, or none |
 
 ## Red flags: you are rationalizing
 
@@ -385,6 +409,7 @@ recorder verifies the pull request and its checks before it accepts this one.
 - "The fetch is probably fine, the ref looks recent."
 - "I'll tell the reviewer what I was going for so it understands."
 - "The reviewer flagged it, so I'll just fix it." (Verify first.)
+- "push-ok said to record it again, so I'll record it again." (That is a fix pass.)
 - "The reviewer came back empty, so there is nothing to fix." (No header, no review.)
 - "The correctness review covered security too."
 - "This diff doesn't touch auth, so a security pass is overkill."

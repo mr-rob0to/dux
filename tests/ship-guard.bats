@@ -58,15 +58,32 @@ full_gate() {
   [ -z "$(git status --porcelain)" ]
 }
 
-@test "push-ok refuses a commit that landed after the review" {
+@test "push-ok refuses a commit that landed after the gate ran" {
   cd "$(new_repo main)"
   full_gate
-  reviewed="$(short)"
+  gated="$(short)"
   git commit -q --allow-empty -m "late fix"
   head="$(short)"
   run guard push-ok
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: the review covered $reviewed, not HEAD $head; open a fix pass and record it again"* ]]
+  # Every phase is stale here; the first one reported is the earliest.
+  [[ "$output" == "finding: the checks covered $gated, not HEAD $head; open a fix pass and record every phase again"* ]]
+}
+
+@test "push-ok names the review when the review is the stale one" {
+  cd "$(new_repo main)"
+  full_gate
+  reviewed="$(short)"
+  git commit -q --allow-empty -m "late fix"
+  head="$(git rev-parse HEAD)"
+  # Only a hand-edited file can single the review out: a legal flow can no
+  # longer move checks and security past it without a fix pass clearing it too.
+  f="$(state_file main)"
+  sed -i.bak -e "s/^checks=.*/checks=$head/" -e "s/^security=.*/security=$head/" "$f"
+  rm -f "$f.bak"
+  run guard push-ok
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the review covered $reviewed, not HEAD $(short); open a fix pass and record every phase again"* ]]
 }
 
 @test "push-ok refuses when the security pass was never recorded" {
@@ -134,17 +151,9 @@ full_gate() {
   [[ "$output" == "finding: unknown phase 'pr' (checks, review, security)"* ]]
 }
 
-@test "fix-pass refuses an unknown phase" {
-  cd "$(new_repo main)"
-  guard open
-  run guard fix-pass checks
-  [ "$status" -eq 2 ]
-  [[ "$output" == "finding: unknown fix pass 'checks' (review, security)"* ]]
-}
-
 @test "every verb but open refuses when the gate was never opened" {
   cd "$(new_repo main)"
-  for args in "record checks" "check checks" "fix-pass review" "push-ok"; do
+  for args in "record checks" "check checks" "fix-pass" "push-ok"; do
     # shellcheck disable=SC2086
     run guard $args
     [ "$status" -eq 2 ]
@@ -191,10 +200,10 @@ full_gate() {
   [[ "$output" == "finding: /ship guard must run inside a git repository"* ]]
 }
 
-@test "a review fix pass clears the checks, the review and the security pass" {
+@test "a fix pass clears every phase, so each one is recorded again" {
   cd "$(new_repo main)"
   full_gate
-  run guard fix-pass review
+  run guard fix-pass
   [ "$status" -eq 0 ]
   [[ "$output" == "fix pass 1 of 3" ]]
   f="$(state_file main)"
@@ -204,29 +213,36 @@ full_gate() {
   grep -qx 'fix_passes=1' "$f"
 }
 
-@test "a security fix pass clears the security pass and the checks, not the review" {
+@test "a fix pass reaches a push, which is the whole point of clearing the phases" {
   cd "$(new_repo main)"
   full_gate
-  reviewed="$(git rev-parse HEAD)"
-  run guard fix-pass security
+  guard fix-pass
+  git commit -q --allow-empty -m "the fix"
+  guard record checks
+  guard record review
+  guard record security
+  run guard push-ok
   [ "$status" -eq 0 ]
-  [[ "$output" == "fix pass 1 of 3" ]]
-  f="$(state_file main)"
-  grep -qx "review=$reviewed" "$f"
-  refute grep -q '^security=' "$f"
-  refute grep -q '^checks=' "$f"
+}
+
+@test "fix-pass takes no argument" {
+  cd "$(new_repo main)"
+  guard open
+  run guard fix-pass security
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: usage: ship-guard open | record <phase> | check <phase> | fix-pass | push-ok"* ]]
 }
 
 @test "the fourth fix pass is refused" {
   cd "$(new_repo main)"
   guard open
-  run guard fix-pass review
+  run guard fix-pass
   [[ "$output" == "fix pass 1 of 3" ]]
-  run guard fix-pass review
+  run guard fix-pass
   [[ "$output" == "fix pass 2 of 3" ]]
-  run guard fix-pass review
+  run guard fix-pass
   [[ "$output" == "fix pass 3 of 3" ]]
-  run guard fix-pass review
+  run guard fix-pass
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: three fix passes already; revert to the minimal fix and stop"* ]]
 }
@@ -234,11 +250,11 @@ full_gate() {
 @test "opening the gate again starts the fix count over" {
   cd "$(new_repo main)"
   guard open
-  guard fix-pass review
-  guard fix-pass review
-  guard fix-pass review
+  guard fix-pass
+  guard fix-pass
+  guard fix-pass
   guard open
-  run guard fix-pass review
+  run guard fix-pass
   [ "$status" -eq 0 ]
   [[ "$output" == "fix pass 1 of 3" ]]
 }
@@ -276,7 +292,7 @@ full_gate() {
   cd "$(new_repo main)"
   run guard verify
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: ship-guard open | record <phase> | check <phase> | fix-pass <review|security> | push-ok"* ]]
+  [[ "$output" == "finding: usage: ship-guard open | record <phase> | check <phase> | fix-pass | push-ok"* ]]
 }
 
 @test "push-ok refuses a guard file counting more fix passes than the gate allows" {
@@ -289,4 +305,80 @@ full_gate() {
   run guard push-ok
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: the guard file counts 9 fix passes, more than three; revert to the minimal fix and stop"* ]]
+}
+
+@test "record refuses to move a phase to a new commit without a fix pass" {
+  cd "$(new_repo main)"
+  full_gate
+  recorded="$(short)"
+  git commit -q --allow-empty -m "one more small fix"
+  # The refusal push-ok prints says "record it again". Doing literally that is
+  # how the gate gets walked past, so record has to refuse it.
+  run guard record review
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: review is already recorded at $recorded; a new commit needs a fix pass, or open the gate again"* ]]
+  run guard record security
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: security is already recorded at $recorded; a new commit needs a fix pass, or open the gate again"* ]]
+}
+
+@test "record at the commit already recorded is allowed, so a repeated call is not a trap" {
+  cd "$(new_repo main)"
+  guard open
+  guard record checks
+  run guard record checks
+  [ "$status" -eq 0 ]
+}
+
+@test "push-ok refuses when the checks are older than the commit going out" {
+  cd "$(new_repo main)"
+  guard open
+  guard record checks
+  checked="$(short)"
+  git commit -q --allow-empty -m "committed after the suite ran"
+  head="$(short)"
+  guard record review
+  guard record security
+  run guard push-ok
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the checks covered $checked, not HEAD $head; open a fix pass and record every phase again"* ]]
+}
+
+@test "a fix count that is not a number is a finding, not a fresh gate" {
+  cd "$(new_repo main)"
+  full_gate
+  f="$(state_file main)"
+  sed -i.bak 's/^fix_passes=0$/fix_passes=three/' "$f" && rm -f "$f.bak"
+  run guard push-ok
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the guard file's fix count is not a number; open the gate again"* ]]
+  run guard fix-pass
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the guard file's fix count is not a number; open the gate again"* ]]
+}
+
+@test "record and push-ok refuse a fix that was never committed" {
+  cd "$(new_repo main)"
+  guard open
+  guard record checks
+  guard record review
+  echo "the fix" > tracked.txt
+  git add tracked.txt
+  run guard record security
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worktree has uncommitted changes; the push would not carry them"* ]]
+  git commit -q -m "the fix"
+  guard open && guard record checks && guard record review && guard record security
+  echo "forgotten" >> tracked.txt
+  run guard push-ok
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the worktree has uncommitted changes; the push would not carry them"* ]]
+}
+
+@test "untracked files do not block the gate, because ship worktrees carry env files" {
+  cd "$(new_repo main)"
+  full_gate
+  echo "SECRET=x" > .env
+  run guard push-ok
+  [ "$status" -eq 0 ]
 }

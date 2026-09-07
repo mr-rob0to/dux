@@ -230,6 +230,8 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$ship" == *'Guard helper cannot be resolved'* ]]
   [[ "$ship" == *'HEAD moved during the gate'* ]]
   [[ "$ship" == *'push-ok refused'* ]]
+  [[ "$ship" == *'the phase names another commit'* ]]
+  [[ "$ship" == *'refused for an uncommitted change'* ]]
 }
 
 @test "the ship skill makes both reviewers answer in a shape it can read" {
@@ -246,6 +248,7 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   seven="$(sed -n '/^## Step 7\./,/^## Step 8\./p' "$ship" | grep '^>' | tr '\n' ' ')"
   [ -n "$seven" ] || { echo "step 7 sends no quoted prompt"; return 1; }
   [[ "$seven" == *'`## Findings`'* ]]
+  [[ "$seven" == *'`No findings.`'* ]]
   [[ "$seven" == *'`## Checked clean`'* ]]
 }
 
@@ -258,10 +261,27 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
 
 @test "the ship skill says what a fix pass clears and what recording it again asserts" {
   ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
-  [[ "$ship" == *'fix-pass review'* ]]
-  [[ "$ship" == *'fix-pass security'* ]]
-  [[ "$ship" == *'never has to claim a code re-review'* ]]
+  [[ "$ship" == *'A fix pass clears all three'* ]]
+  [[ "$ship" == *'The code review is not spared'* ]]
   [[ "$ship" == *'revert to the minimal fix'* ]]
+  # The one instruction that keeps the count honest: push-ok's refusal says
+  # "record it again", and doing that alone is the way past the whole gate.
+  [[ "$ship" == *'Never record a phase again without a fix pass'* ]]
+}
+
+@test "the ship skill refuses to carry a review that saw an older commit" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  # Step 6 lets a review run before the gate stand in for its own. Recording the
+  # phase then claims that reviewer saw the commit going out, so the carry only
+  # holds while nothing has landed since.
+  [[ "$ship" == *'Carry it forward only if `HEAD`'* ]]
+  [[ "$ship" == *'the gate runs its own review here'* ]]
+}
+
+@test "the ship skill stops on a guard override it cannot run" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'which is not executable'* ]]
+  [[ "$ship" == *'set but not runnable is a stop'* ]]
 }
 
 @test "the ship skill sends the acceptance criteria as data and keeps the intent back" {

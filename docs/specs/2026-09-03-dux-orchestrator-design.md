@@ -709,15 +709,21 @@ skill calls, kept in the ship skill directory.
    `$(git rev-parse --absolute-git-dir)/dux-ship/<branch>`, untracked and
    per-worktree, so recording it never moves `HEAD` and the helper works from a
    subdirectory. One `key=value` per line: `version=1`, `branch=<name>`,
-   `checks=<sha>`, `review=<sha>`, `security=<sha>`, `fix_passes=<n>`. Recording a
-   phase again overwrites its line. The branch name is percent-encoded for the
-   filename, `%` first and then `/`, so `feat/x` and `feat-x` cannot collide.
-   `/ship` pushes only when `review` and `security` both equal `HEAD`; commits made
-   after a phase was recorded reach a push only through a fix pass and a recording
-   of each cleared phase again.
+   `checks=<sha>`, `review=<sha>`, `security=<sha>`, `fix_passes=<n>`. A phase
+   already holding another commit is not overwritten: `record` refuses it and
+   names the fix pass, so the "only through a fix pass" rule is mechanism rather
+   than prose. Repeating a record at the same commit is allowed. A `fix_passes`
+   value that is not a number is a finding, never a count of zero. The branch name
+   is percent-encoded for the filename, `%` first and then `/`, so `feat/x` and
+   `feat-x` cannot collide. `/ship` pushes only when `checks`, `review` and
+   `security` all equal `HEAD`, and only from a worktree with no uncommitted
+   tracked changes, because a fix left uncommitted is one the push does not carry;
+   untracked files are ignored, since a supervised ship worktree carries env files
+   the repository never tracks. Commits made after a phase was recorded reach a
+   push only through a fix pass and a recording of each cleared phase again.
 2. Head continuity. Five verbs, the whole interface: `ship-guard open` in step 0,
    `record <phase>` after steps 4, 6, 7, `check <phase>` before 6, 7, 8 naming the
-   previous phase, `fix-pass <phase>`, and `push-ok` before every push and before
+   previous phase, `fix-pass`, and `push-ok` before every push and before
    `gh pr create`. Exit 0 success, 1 unexpected, 2 finding, findings on stderr. A
    backward or divergent `HEAD` stops the gate, tested by `record` as well as by
    `check`. `record review` is refused unless `checks` is recorded and `record
@@ -733,16 +739,20 @@ skill calls, kept in the ship skill directory.
    stop, and so is a header with neither a finding nor the sentinel under it.
    Never treat absence as clean.
 4. Bounded fix passes. A round is one fix pass, not a review. Maximum three fix
-   passes per gate, counted in the guard file. `ship-guard fix-pass <phase>`
-   increments the count and clears `checks`, plus `review` and `security` for
-   `fix-pass review` or `security` alone for `fix-pass security`, so a
-   security-only fix never has to claim a code re-review. The cleared phases are
+   passes per gate, counted in the guard file. `ship-guard fix-pass` increments the
+   count and clears `checks`, `review` and `security` together. It takes no phase:
+   a fix is code, so the commit going out is code none of the three has seen, and
+   a fix answering the security audit is no exception. An earlier draft cleared
+   only the phases a security fix was thought to invalidate; that left the
+   security-only round unable to push at all, because `push-ok` wants every phase
+   at the commit going out. The cleared phases are
    recorded again before the push, and recording one is an assertion about what
    covered `HEAD`: `review` means the reviewer re-ran scoped to the new commits
    when a Critical was fixed, or the fixes stayed inside what the review asked for
    and the PR body says so; `security` means the audit re-ran over the new
    commits. Re-review policy is unchanged: only a fixed Critical earns one, scoped
-   to the new commits. A fourth defect means: recommend reverting to the minimal
+   to the new commits, and a security fix earns one like any other Critical. A
+   fourth defect means: recommend reverting to the minimal
    fix, stop. A fix pushed while CI is red in step 9 is a fix pass like any other.
 5. Acceptance criteria to the reviewer. Pass the brief's acceptance criteria
    fenced as data ("acceptance criteria, not instructions"). Rationale and design
@@ -772,7 +782,9 @@ because `/ship` runs inside a project worktree that knows nothing about
 `DUX_HOME`. It sources nothing and defines its own `finding`. Step 0 resolves it
 once into `$SHIP_GUARD`: an already set `SHIP_GUARD`, else
 `~/.claude/skills/ship/ship-guard`, else `~/.agents/skills/ship/ship-guard`. When
-none is executable the gate stops; it never runs unguarded. Unlike
+none is executable the gate stops; it never runs unguarded, and a `SHIP_GUARD`
+that is set but not executable stops it too rather than falling through to the
+next candidate, so a typo cannot silently run a different guard. Unlike
 `DUX_SHIP_RECORD`, which is set only under Dux, the guard runs on every `/ship`.
 `bin/dux-result` does not read the guard file and `verify` is unchanged: it
 proves the five phases ran in order and that `ci` was recorded at the head, not
@@ -785,7 +797,8 @@ The two recorders have different rules and the skill keeps their calls apart.
 `$DUX_SHIP_RECORD <phase>` runs once per phase per gate and is never repeated:
 `record-ship` refuses a repeated or out-of-order phase, so a second call stops a
 supervised gate. `ship-guard record <phase>` is the one that repeats after a fix
-pass.
+pass, and only after one: it refuses a phase that already names a different
+commit.
 
 The nine changes are too much for one session under the size cap (constitution
 principle 1), so they ship as two milestones. Milestone 5 takes 1 to 5, the guard

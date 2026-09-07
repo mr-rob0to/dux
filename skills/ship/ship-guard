@@ -12,7 +12,7 @@ set -u
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 die()     { printf 'ship-guard: %s\n' "$*" >&2; exit 1; }
 
-usage="usage: ship-guard open | record <phase> | check <phase> | fix-pass <review|security> | push-ok"
+usage="usage: ship-guard open | record <phase> | check <phase> | fix-pass | push-ok"
 
 gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" \
   || finding "/ship guard must run inside a git repository"
@@ -86,8 +86,19 @@ require_descends() {  # $1 phase, $2 commit
 
 fix_count() {
   local n; n="$(kv fix_passes)"
-  case "$n" in '' | *[!0-9]*) n=0 ;; esac
+  case "$n" in
+    '') n=0 ;;
+    *[!0-9]*) finding "the guard file's fix count is not a number; open the gate again" ;;
+  esac
   printf '%s' "$n"
+}
+
+# A fix nobody committed is a fix the push does not carry, so the reviewers and
+# the suite covered content that is not going out. Untracked files are ignored:
+# a supervised ship worktree carries env files the repository never tracks.
+require_clean() {
+  [ -z "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] \
+    || finding "the worktree has uncommitted changes; the push would not carry them"
 }
 
 cmd="${1:-}"; shift || true
@@ -103,12 +114,21 @@ case "$cmd" in
     [ $# -eq 1 ] || finding "$usage"
     valid_phase "$1"
     require_file
+    require_clean
     prev="$(prev_phase "$1")"
     if [ -n "$prev" ]; then
       prev_sha="$(recorded_sha "$prev")" || exit $?
       require_descends "$prev" "$prev_sha"
     fi
-    put "$1" "$(git rev-parse HEAD)"
+    head_sha="$(git rev-parse HEAD)"
+    # push-ok's refusal says "record it again", and doing literally that with no
+    # fix pass is how the gate gets walked past: the count stays at zero and the
+    # phases behind this one still name the old commit. Repeating the same
+    # commit is harmless, so only a move is refused.
+    cur="$(kv "$1")"
+    [ -z "$cur" ] || [ "$cur" = "$head_sha" ] || finding \
+      "$1 is already recorded at $(git rev-parse --short "$cur"); a new commit needs a fix pass, or open the gate again"
+    put "$1" "$head_sha"
     ;;
 
   check)
@@ -120,34 +140,34 @@ case "$cmd" in
     ;;
 
   fix-pass)
-    [ $# -eq 1 ] || finding "$usage"
-    case "$1" in
-      review | security) ;;
-      *) finding "unknown fix pass '$1' (review, security)" ;;
-    esac
+    [ $# -eq 0 ] || finding "$usage"
     require_file
-    n="$(fix_count)"
+    n="$(fix_count)" || exit $?
     [ "$n" -lt 3 ] || finding "three fix passes already; revert to the minimal fix and stop"
     n=$((n + 1))
     put fix_passes "$n"
-    # A code fix invalidates both reviews; a security fix invalidates only the
-    # audit, so a security-only round never has to claim a code re-review. The
-    # checks go either way: the fix has to be run past the suite again.
-    if [ "$1" = review ]; then drop checks review security; else drop checks security; fi
+    # Every phase, including a fix that only answers the security audit: the fix
+    # is code, so the commit going out is code no reviewer has read yet. Keeping
+    # the code review across a security fix left that round unable to push at
+    # all, because push-ok wants every phase at the commit going out.
+    drop checks review security
     printf 'fix pass %s of 3\n' "$n"
     ;;
 
   push-ok)
     [ $# -eq 0 ] || finding "$usage"
     require_file
-    n="$(fix_count)"
+    require_clean
+    n="$(fix_count)" || exit $?
     [ "$n" -le 3 ] \
       || finding "the guard file counts $n fix passes, more than three; revert to the minimal fix and stop"
     head_sha="$(git rev-parse HEAD)"
-    for phase in review security; do
+    # The checks belong here too: a commit made after the suite ran is reviewed
+    # code that was never run, and the descent test alone lets it through.
+    for phase in checks review security; do
       sha="$(recorded_sha "$phase")" || exit $?
       [ "$sha" = "$head_sha" ] || finding \
-        "the $phase covered $(git rev-parse --short "$sha"), not HEAD $(git rev-parse --short HEAD); open a fix pass and record it again"
+        "the $phase covered $(git rev-parse --short "$sha"), not HEAD $(git rev-parse --short HEAD); open a fix pass and record every phase again"
     done
     ;;
 

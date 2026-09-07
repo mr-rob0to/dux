@@ -106,7 +106,7 @@ Estimated: ~1,300 added lines. One new script with its bats file, four prose ste
 
 | # | Task | Files | Acceptance |
 |---|---|---|---|
-| 1 | `ship-guard` script | `skills/ship/ship-guard`, `tests/ship-guard.bats` | state file `$(git rev-parse --git-dir)/dux-ship/<branch>`, never a tracked file; `record <phase>` writes `<phase>=<sha>`; `check <phase>` exits 2 when `HEAD` is not equal to or a descendant of the recorded sha; `fix-pass <phase>` increments and refuses past 3; `push-ok` per spec section 11 change 1 |
+| 1 | `ship-guard` script | `skills/ship/ship-guard`, `tests/ship-guard.bats` | state file `$(git rev-parse --git-dir)/dux-ship/<branch>`, never a tracked file; `record <phase>` writes `<phase>=<sha>`; `check <phase>` exits 2 when `HEAD` is not equal to or a descendant of the recorded sha; `fix-pass` increments and refuses past 3; `push-ok` per spec section 11 change 1 |
 | 2 | Reviewed-SHA and continuity in SKILL.md | `skills/ship/SKILL.md` steps 4, 6, 7, 8 | record after 4, 6, 7; check before 6, 7, 8; step 8 runs `push-ok` |
 | 3 | Fail-closed review parsing and bounded fix passes | `skills/ship/SKILL.md` steps 6, 7 | Codex prompt demands `## Findings` and the sentinel `No findings.`; security prompt demands `## Findings` and `## Checked clean`; a missing header is a stop; three fix passes at most, the fourth is a revert recommendation; re-review policy unchanged (only a fixed Critical, scoped to the new commits) |
 | 4 | Acceptance criteria to reviewer | `skills/ship/SKILL.md` step 6 | criteria fenced as data, rationale withheld, "necessary not sufficient" sentence |
