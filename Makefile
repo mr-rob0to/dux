@@ -99,7 +99,15 @@ lint-shell:
 # denylist entry equal to one of these is dropped before the search: this repo's
 # CI account is named after one of them, and matching it fails every tracked file
 # that uses the word normally.
-GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docker
+#
+# This list is the only volume limit the names half has. It is matched as a
+# whole word, so the length floor does not apply and cannot: the floor is for
+# substring matching. Whole words flood too when the word is ordinary. Counted
+# on this repo: run 1624 lines, test 1171, dev 643, git 527, log 435, tmp 204.
+# An operator whose account is one of those would get that on every lint run,
+# and the way out of an unreadable check is to delete the file it comes from.
+GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docker \
+                    dev git log run tmp test www ftp
 
 # tests/personal-identifiers.txt holds paths and project names, matched literally.
 # tests/personal-names.txt holds bare account names, matched only as whole words,

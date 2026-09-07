@@ -133,6 +133,17 @@ tok_a=qx; tok_b=zw; boundary_entry="$tok_a$tok_b"
   [ "$status" -eq 0 ]
 }
 
+# The length floor does not reach the names list and must not: it is matched as
+# a whole word. The generic list is that half's only volume limit, and an
+# ordinary English word floods whole-word too. "run" is 1624 lines here.
+@test "an account name that is an ordinary word does not flood the names list" {
+  tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
+  printf 'run\n' > "$tmp/repo/tests/personal-names.txt"
+  run make -C "$tmp/repo" lint-identifiers
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"Makefile:"* ]]
+}
+
 @test "a generic account name that is short is dropped before the length check" {
   tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
   # "ci" is on the generic list, so it never reaches the length check and is not
