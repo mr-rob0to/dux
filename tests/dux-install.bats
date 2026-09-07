@@ -134,23 +134,41 @@ setup() {
   [[ "$output" == *"finding: cannot write $DUX_HOME/config/"* ]]
 }
 
-@test "install keeps a short project name out of the denylist and says so" {
-  # This repo is registered as a project called "dux". Writing that into the
-  # paths denylist made every tracked file match, and the lint went from a guard
-  # to noise. A name too short to match safely is dropped, out loud.
-  printf -- '- dux /tmp/dux main\n- widgets /tmp/widgets main\n' > "$DUX_HOME/data/projects.md"
+@test "install leaves this repo's own project out of the denylist" {
+  # Dux is registered as a project of itself. Writing its name into the paths
+  # denylist made every tracked file match, because the name is matched as a
+  # substring and every script here is called dux-something. Whole-word matching
+  # does not help: a hyphen is a word boundary, so dux-install still matches.
+  # The project whose checkout is this repo is the one entry that cannot mean
+  # anything here, so it is the one that is skipped.
   root="$DUX_HOME/ro2"; mkdir -p "$root/tests"
+  other="$DUX_HOME/widgets"; mkdir -p "$other"
+  printf -- '- self %s main\n- widgets %s main\n' "$root" "$other" > "$DUX_HOME/data/projects.md"
   DUX_ROOT="$root" run dux-install --yes
   [ "$status" -eq 0 ]
-  refute grep -qx 'dux' "$root/tests/personal-identifiers.txt"
+  refute grep -qx 'self' "$root/tests/personal-identifiers.txt"
   grep -qx 'widgets' "$root/tests/personal-identifiers.txt"
-  [[ "$output" == *"dropped 1 denylist entry shorter than 4 characters"* ]]
+  [[ "$output" == *"left this repo's own project out of the denylist"* ]]
 }
 
-@test "install says nothing about dropped entries when it drops none" {
-  printf -- '- widgets /tmp/widgets main\n' > "$DUX_HOME/data/projects.md"
+@test "install keeps every other project name, short ones included" {
+  # A short name elsewhere is still a name worth catching. It is not deleted
+  # here; the lint refuses it by name, which is the operator's call to make.
   root="$DUX_HOME/ro3"; mkdir -p "$root/tests"
+  # The path has to exist, or the comparison against DUX_ROOT is never reached
+  # and this passes without testing anything.
+  other="$DUX_HOME/api"; mkdir -p "$other"
+  printf -- '- api %s main\n' "$other" > "$DUX_HOME/data/projects.md"
   DUX_ROOT="$root" run dux-install --yes
   [ "$status" -eq 0 ]
-  [[ "$output" != *"dropped"* ]]
+  grep -qx 'api' "$root/tests/personal-identifiers.txt"
+}
+
+@test "install says nothing about a skipped project when it skips none" {
+  root="$DUX_HOME/ro4"; mkdir -p "$root/tests"
+  other="$DUX_HOME/widgets"; mkdir -p "$other"
+  printf -- '- widgets %s main\n' "$other" > "$DUX_HOME/data/projects.md"
+  DUX_ROOT="$root" run dux-install --yes
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"left this repo's own project"* ]]
 }

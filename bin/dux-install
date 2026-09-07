@@ -37,32 +37,37 @@ done
 # Paths and project names are matched literally; a bare account name is matched
 # only as a whole word, and the Makefile drops the generic account names outright.
 #
-# An entry shorter than this cannot be matched without flooding. Dux itself is
-# registered as a project called "dux", and writing that name here made every
-# tracked file match, which turned the lint into noise. The Makefile refuses a
-# short entry; this drops it before it is ever written, and says so, because a
-# name silently missing from the denylist is a gap the operator should know about.
-denylist_min=4
-
-drop_short() {  # reads entries, writes the long ones, counts the rest
-  local e n=0
-  while IFS= read -r e; do
-    if [ "${#e}" -lt "$denylist_min" ]; then n=$((n + 1)); else printf '%s\n' "$e"; fi
-  done
-  printf '%s' "$n" > "$dropped_count"
-}
-
+# Dux is registered as a project of itself, and a project name is matched as a
+# substring, so writing this repo's own name here made every tracked file match
+# and turned the lint into noise. Whole-word matching does not help: a hyphen is
+# a word boundary, so dux-install still matches dux. The project whose checkout
+# is this repo is the one name that cannot mean anything inside it, so it is the
+# one that is left out. Every other name is written, short ones included; the
+# Makefile refuses a name too short to match safely, by name, which is a
+# decision for the operator rather than one to make silently here.
 mkdir -p "$DUX_ROOT/tests" 2>/dev/null || finding "cannot create $DUX_ROOT/tests"
-dropped_count="$(mktemp)"; dropped=0
+root_real="$(cd "$DUX_ROOT" 2>/dev/null && pwd -P)" || root_real=""
+skipped=""
+if [ -f "$DUX_DATA/projects.md" ] && [ -n "$root_real" ]; then
+  while read -r name path; do
+    [ -n "$path" ] || continue
+    p_real="$(cd "$path" 2>/dev/null && pwd -P)" || continue
+    [ "$p_real" = "$root_real" ] || continue
+    skipped="$name"
+  done <<EOF
+$(sed -n 's/^- \([^ ]*\) \([^ ]*\).*/\1 \2/p' "$DUX_DATA/projects.md")
+EOF
+fi
+drop_self() {  # reads names, writes the ones that are not this repo's own
+  if [ -n "$skipped" ]; then grep -vxF "$skipped"; else cat; fi
+}
 {
   echo "$HOME"
-  [ -f "$DUX_DATA/projects.md" ] && sed -n 's/^- \([^ ]*\) .*/\1/p' "$DUX_DATA/projects.md"
-} | grep -v '^$' | sort -u | drop_short > "$DUX_ROOT/tests/personal-identifiers.txt"
-dropped=$((dropped + $(cat "$dropped_count")))
+  [ -f "$DUX_DATA/projects.md" ] \
+    && sed -n 's/^- \([^ ]*\) .*/\1/p' "$DUX_DATA/projects.md" | drop_self
+} | grep -v '^$' | sort -u > "$DUX_ROOT/tests/personal-identifiers.txt"
 {
   whoami; basename "$HOME"
-} | grep -v '^$' | sort -u | drop_short > "$DUX_ROOT/tests/personal-names.txt"
-dropped=$((dropped + $(cat "$dropped_count")))
-rm -f "$dropped_count"
+} | grep -v '^$' | sort -u > "$DUX_ROOT/tests/personal-names.txt"
 log "identifier denylist written"
-[ "$dropped" -eq 0 ] || log "dropped $dropped denylist entry shorter than $denylist_min characters"
+[ -z "$skipped" ] || log "left this repo's own project out of the denylist: $skipped"
