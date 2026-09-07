@@ -71,10 +71,13 @@ short_name="${long_word%yr}"
 # every line is the check nobody reads.
 @test "lint refuses a denylist entry too short to be an identifier" {
   tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
-  printf 'abc\n' > "$tmp/repo/tests/personal-identifiers.txt"
+  # The fixture is the real entry that caused this, and it has to be: a short
+  # entry that matches nothing would let the last assertion pass with the early
+  # exit deleted. "dux" is in 76 tracked files, README.md among them.
+  printf 'dux\n' > "$tmp/repo/tests/personal-identifiers.txt"
   run make -C "$tmp/repo" lint-identifiers
   [ "$status" -ne 0 ]
-  [[ "$output" == *"denylist entry [abc] is too short to match safely"* ]]
+  [[ "$output" == *"denylist entry [dux] is too short to match safely"* ]]
   # It refuses instead of reporting the flood it would otherwise have produced.
   [[ "$output" != *"README.md"* ]]
 }

@@ -207,13 +207,13 @@ registry_line() {  # $1 name, $2 path
 
 @test "this repo registered under a personal name keeps its denylist entry" {
   # The skip is for a name that floods the lint, not for wherever a project sits.
-  # Registering this checkout as "rq-dux" used to drop that name from the
+  # Registering this checkout as "zz-dux" used to drop that name from the
   # denylist, so committing it into a tracked file later went unnoticed.
   root="$DUX_HOME/ro6"; seed_root "$root" "nothing personal in here"
-  registry_line rq-dux "$root" > "$DUX_HOME/data/projects.md"
+  registry_line zz-dux "$root" > "$DUX_HOME/data/projects.md"
   DUX_ROOT="$root" run dux-install --yes
   [ "$status" -eq 0 ]
-  grep -qx 'rq-dux' "$root/tests/personal-identifiers.txt"
+  grep -qx 'zz-dux' "$root/tests/personal-identifiers.txt"
   [[ "$output" != *"left this repo's own project out of the denylist"* ]]
 }
 
