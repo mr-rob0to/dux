@@ -48,17 +48,26 @@ load helpers/setup
     fifo="$DUX_HOME/state/fifo"; mkfifo "$fifo"
     ( exec -a "dux-worker-wrap t1" cat ) <> "$fifo" >/dev/null 2>&1 & end=$!
     ( exec -a "dux-worker-wrap t1" sleep 30 ) >/dev/null 2>&1 & mid=$!
-    # Wait until both processes are really showing the command line this test is
-    # about. A fixed pause was here before, and it was long enough on a fast
-    # machine and not on a slow one. The wait reads ps rather than calling
-    # pid_runs, so it cannot make the answers below true by asking the same
-    # question the test is asking.
+    # Wait until both processes are really running under the new name. A fixed
+    # pause was here before, and it was long enough on a fast machine and not on
+    # a slow one: the second process had not reached its sleep yet, so pid_runs
+    # was asked about a shell. The match is anchored at the start of the command
+    # line, because this script holds its own source and so its command line
+    # contains the name too; an unanchored match answered yes straight away and
+    # waited for nothing. It reads ps rather than calling pid_runs, so it does
+    # not make the answers below true by asking the question the test is asking.
+    renamed() {  # $1 pid
+      case "$(ps -ww -o command= -p "$1" 2>/dev/null)" in
+        "dux-worker-wrap t1"*) return 0 ;;
+      esac
+      return 1
+    }
     i=0
-    until ps -ww -o command= -p "$end" 2>/dev/null | grep -q dux-worker-wrap &&
-          ps -ww -o command= -p "$mid" 2>/dev/null | grep -q dux-worker-wrap; do
+    until renamed "$end" && renamed "$mid"; do
       i=$((i + 1)); [ "$i" -ge 100 ] && break
       sleep 0.1
     done
+    renamed "$$"; g=$?
     pid_runs "$end" "dux-worker-wrap t1"; a=$?
     pid_runs "$mid" "dux-worker-wrap t1"; b=$?
     pid_runs "$end" "dux-worker-wrap t"; c=$?
@@ -69,13 +78,22 @@ load helpers/setup
     midcmd="$(ps -ww -o command= -p "$mid" 2>/dev/null)"
     kill "$end" "$mid"
     echo "$a $b $c $d $e $f"
+    echo "$g"
     echo "waited $i tenths of a second; end is [$endcmd] and mid is [$midcmd]"'
   # Said out loud rather than left to a bare comparison: when this failed on CI
   # the log showed only that the line did not match, so which of the six answers
   # was wrong, and what the process table actually held, cost a round trip.
   [ "${lines[0]}" = "0 0 1 1 1 1" ] || {
     echo "pid_runs answered ${lines[0]}, wanted 0 0 1 1 1 1"
-    echo "${lines[1]}"
+    echo "${lines[2]}"
+    return 1
+  }
+  # The wait must not accept a process whose command line only quotes the name.
+  # This script is one: it carries its own source. That is what let the wait pass
+  # instantly and hand pid_runs a shell that had not become a worker yet.
+  [ "${lines[1]}" = 1 ] || {
+    echo "the wait accepted a process that only quotes the name"
+    echo "${lines[2]}"
     return 1
   }
 }
