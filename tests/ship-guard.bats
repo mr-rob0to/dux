@@ -316,10 +316,10 @@ full_gate() {
   # how the gate gets walked past, so record has to refuse it.
   run guard record review
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: review is already recorded at $recorded; a new commit needs a fix pass, or open the gate again"* ]]
+  [[ "$output" == "finding: review is already recorded at $recorded; recording a new commit needs a fix pass"* ]]
   run guard record security
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: security is already recorded at $recorded; a new commit needs a fix pass, or open the gate again"* ]]
+  [[ "$output" == "finding: security is already recorded at $recorded; recording a new commit needs a fix pass"* ]]
 }
 
 @test "record at the commit already recorded is allowed, so a repeated call is not a trap" {
@@ -381,4 +381,38 @@ full_gate() {
   echo "SECRET=x" > .env
   run guard push-ok
   [ "$status" -eq 0 ]
+}
+
+@test "a git status that fails is a stop, not a clean worktree" {
+  cd "$(new_repo main)"
+  guard open
+  # Every other guard here turns a git error into a refusal. This one used to
+  # throw the error away and read the empty output as a clean tree.
+  printf 'garbage' > .git/index
+  run guard record checks
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: git status failed; cannot prove the worktree is clean"* ]]
+}
+
+@test "the moved-phase refusal does not name the one command that resets the count" {
+  cd "$(new_repo main)"
+  full_gate
+  git commit -q --allow-empty -m "one more small fix"
+  run guard record review
+  [ "$status" -eq 2 ]
+  # Naming open here would hand back the dodge this refusal exists to close:
+  # open zeroes the fix count and clears every phase.
+  [[ "$output" != *"open the gate"* ]]
+}
+
+@test "a missing fix count is a finding, the same as an unreadable one" {
+  cd "$(new_repo main)"
+  full_gate
+  f="$(state_file main)"
+  # open always writes the line and no verb removes it, so an absent count has
+  # the same provenance as a garbled one.
+  grep -v '^fix_passes=' "$f" > "$f.next" && mv "$f.next" "$f"
+  run guard push-ok
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the guard file has no fix count; open the gate again"* ]]
 }

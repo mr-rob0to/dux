@@ -719,7 +719,12 @@ skill calls, kept in the ship skill directory.
    `security` all equal `HEAD`, and only from a worktree with no uncommitted
    tracked changes, because a fix left uncommitted is one the push does not carry;
    untracked files are ignored, since a supervised ship worktree carries env files
-   the repository never tracks. Commits made after a phase was recorded reach a
+   the repository never tracks; the accepted cost is that a fix delivered as a
+   brand-new file nobody staged still passes, which the checks in step 4 are the
+   place to catch. `record` refuses by naming the fix pass alone: `open` would
+   clear the phases and zero the count, so offering it at a refusal would hand
+   back the dodge. A `git status` that errors is a stop, not a clean tree, and a
+   `fix_passes` line that is missing is a finding like one that is unreadable. Commits made after a phase was recorded reach a
    push only through a fix pass and a recording of each cleared phase again.
 2. Head continuity. Five verbs, the whole interface: `ship-guard open` in step 0,
    `record <phase>` after steps 4, 6, 7, `check <phase>` before 6, 7, 8 naming the

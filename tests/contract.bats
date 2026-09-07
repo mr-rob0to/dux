@@ -267,6 +267,9 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   # The one instruction that keeps the count honest: push-ok's refusal says
   # "record it again", and doing that alone is the way past the whole gate.
   [[ "$ship" == *'Never record a phase again without a fix pass'* ]]
+  # open clears every phase and zeroes the count, so it is the same dodge by
+  # another route and the skill has to say so where the refusal is read.
+  [[ "$ship" == *'Opening the gate again mid-gate is'* ]]
 }
 
 @test "the ship skill refuses to carry a review that saw an older commit" {
@@ -276,6 +279,9 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   # holds while nothing has landed since.
   [[ "$ship" == *'Carry it forward only if `HEAD`'* ]]
   [[ "$ship" == *'the gate runs its own review here'* ]]
+  # "HEAD has not moved" is only a check if the skill says what to compare.
+  [[ "$ship" == *'Name the commit that reviewer read and compare'* ]]
+  [[ "$ship" == *'cannot say which commit it read'* ]]
 }
 
 @test "the ship skill stops on a guard override it cannot run" {

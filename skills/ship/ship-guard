@@ -87,7 +87,9 @@ require_descends() {  # $1 phase, $2 commit
 fix_count() {
   local n; n="$(kv fix_passes)"
   case "$n" in
-    '') n=0 ;;
+    # open always writes the line and nothing removes it, so an absent count has
+    # the same provenance as a garbled one: neither is a count of zero.
+    '') finding "the guard file has no fix count; open the gate again" ;;
     *[!0-9]*) finding "the guard file's fix count is not a number; open the gate again" ;;
   esac
   printf '%s' "$n"
@@ -97,7 +99,12 @@ fix_count() {
 # the suite covered content that is not going out. Untracked files are ignored:
 # a supervised ship worktree carries env files the repository never tracks.
 require_clean() {
-  [ -z "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] \
+  local out
+  # A git that errors prints nothing, and reading that silence as a clean tree
+  # is the one fail-open this file would have had.
+  out="$(git status --porcelain --untracked-files=no 2>/dev/null)" \
+    || finding "git status failed; cannot prove the worktree is clean"
+  [ -z "$out" ] \
     || finding "the worktree has uncommitted changes; the push would not carry them"
 }
 
@@ -124,10 +131,12 @@ case "$cmd" in
     # push-ok's refusal says "record it again", and doing literally that with no
     # fix pass is how the gate gets walked past: the count stays at zero and the
     # phases behind this one still name the old commit. Repeating the same
-    # commit is harmless, so only a move is refused.
+    # commit is harmless, so only a move is refused. The message names the fix
+    # pass and nothing else: open would clear the phases and zero the count,
+    # which is the same dodge by another route.
     cur="$(kv "$1")"
     [ -z "$cur" ] || [ "$cur" = "$head_sha" ] || finding \
-      "$1 is already recorded at $(git rev-parse --short "$cur"); a new commit needs a fix pass, or open the gate again"
+      "$1 is already recorded at $(git rev-parse --short "$cur"); recording a new commit needs a fix pass"
     put "$1" "$head_sha"
     ;;
 

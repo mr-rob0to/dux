@@ -167,8 +167,9 @@ already run by hand before this skill was invoked, that was the mistake — do n
 here; carry the first one's findings forward, note in the PR that it ran outside the gate, and go
 on to step 7, which is the pass a manual review does not cover. **Carry it forward only if `HEAD`
 has not moved since it ran.** Recording this phase claims the reviewer saw the commit going out, and
-a review of an earlier commit cannot make that claim. If anything landed since, the gate runs its
-own review here and the manual one counts for nothing.
+a review of an earlier commit cannot make that claim. Name the commit that reviewer read and compare
+it to `git rev-parse HEAD`. If they differ, or if you cannot say which commit it read, the gate runs
+its own review here and the manual one counts for nothing.
 
 ```bash
 codex exec -m gpt-5.6-sol --sandbox read-only "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings."
@@ -225,7 +226,9 @@ Re-gating after a revert is a fresh `"$SHIP_GUARD" open`, not a fourth pass.
 **Never record a phase again without a fix pass.** When `push-ok` refuses, the
 way through is `fix-pass` and a recording of each phase, never a second
 `record` on its own. The guard refuses that anyway, and reaching for it is the
-sign the fix count is about to be dodged.
+sign the fix count is about to be dodged. **Opening the gate again mid-gate is
+the same dodge**: `open` clears every phase and zeroes the count, and it belongs
+only to a fresh gate after a revert, never to getting past a refusal.
 
 ```bash
 [ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD review
