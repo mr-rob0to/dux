@@ -76,24 +76,38 @@ load helpers/setup
     pid_runs "" "dux-worker-wrap t1"; f=$?
     endcmd="$(ps -ww -o command= -p "$end" 2>/dev/null)"
     midcmd="$(ps -ww -o command= -p "$mid" 2>/dev/null)"
-    kill "$end" "$mid"
-    echo "$a $b $c $d $e $f"
-    echo "$g"
-    echo "waited $i tenths of a second; end is [$endcmd] and mid is [$midcmd]"'
+    echo "answers: $a $b $c $d $e $f"
+    echo "self: $g"
+    echo "context: waited $i tenths of a second; end is [$endcmd] and mid is [$midcmd]"
+    # Disowned before it is killed, and killed after the answers are printed.
+    # A shell reports a background job that a signal ended, and it prints that
+    # notice at the next command boundary, not where the kill was written. On
+    # CI the notice landed above the answers and the test read it as the
+    # answers. Disowning drops the job from the table so no notice is made, and
+    # killing last means a notice from anywhere else cannot get in front.
+    disown "$end" "$mid" 2>/dev/null
+    kill "$end" "$mid" 2>/dev/null'
+  # Each line is found by its own label rather than by its position, so any
+  # stray line the shell adds is ignored instead of being read as an answer.
+  answers="$(printf '%s\n' "$output" | sed -n 's/^answers: //p')"
+  self="$(printf '%s\n' "$output" | sed -n 's/^self: //p')"
+  context="$(printf '%s\n' "$output" | sed -n 's/^context: //p')"
   # Said out loud rather than left to a bare comparison: when this failed on CI
   # the log showed only that the line did not match, so which of the six answers
   # was wrong, and what the process table actually held, cost a round trip.
-  [ "${lines[0]}" = "0 0 1 1 1 1" ] || {
-    echo "pid_runs answered ${lines[0]}, wanted 0 0 1 1 1 1"
-    echo "${lines[2]}"
+  [ "$answers" = "0 0 1 1 1 1" ] || {
+    echo "pid_runs answered [$answers], wanted [0 0 1 1 1 1]"
+    echo "$context"
+    echo "whole output was:"
+    echo "$output"
     return 1
   }
   # The wait must not accept a process whose command line only quotes the name.
   # This script is one: it carries its own source. That is what let the wait pass
   # instantly and hand pid_runs a shell that had not become a worker yet.
-  [ "${lines[1]}" = 1 ] || {
+  [ "$self" = 1 ] || {
     echo "the wait accepted a process that only quotes the name"
-    echo "${lines[2]}"
+    echo "$context"
     return 1
   }
 }
