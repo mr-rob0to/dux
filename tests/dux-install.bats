@@ -133,3 +133,24 @@ setup() {
   [ "$status" -eq 2 ]
   [[ "$output" == *"finding: cannot write $DUX_HOME/config/"* ]]
 }
+
+@test "install keeps a short project name out of the denylist and says so" {
+  # This repo is registered as a project called "dux". Writing that into the
+  # paths denylist made every tracked file match, and the lint went from a guard
+  # to noise. A name too short to match safely is dropped, out loud.
+  printf -- '- dux /tmp/dux main\n- widgets /tmp/widgets main\n' > "$DUX_HOME/data/projects.md"
+  root="$DUX_HOME/ro2"; mkdir -p "$root/tests"
+  DUX_ROOT="$root" run dux-install --yes
+  [ "$status" -eq 0 ]
+  refute grep -qx 'dux' "$root/tests/personal-identifiers.txt"
+  grep -qx 'widgets' "$root/tests/personal-identifiers.txt"
+  [[ "$output" == *"dropped 1 denylist entry shorter than 4 characters"* ]]
+}
+
+@test "install says nothing about dropped entries when it drops none" {
+  printf -- '- widgets /tmp/widgets main\n' > "$DUX_HOME/data/projects.md"
+  root="$DUX_HOME/ro3"; mkdir -p "$root/tests"
+  DUX_ROOT="$root" run dux-install --yes
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"dropped"* ]]
+}

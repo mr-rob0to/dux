@@ -36,12 +36,33 @@ done
 # Two denylists, because they are matched differently by `make lint-identifiers`.
 # Paths and project names are matched literally; a bare account name is matched
 # only as a whole word, and the Makefile drops the generic account names outright.
+#
+# An entry shorter than this cannot be matched without flooding. Dux itself is
+# registered as a project called "dux", and writing that name here made every
+# tracked file match, which turned the lint into noise. The Makefile refuses a
+# short entry; this drops it before it is ever written, and says so, because a
+# name silently missing from the denylist is a gap the operator should know about.
+denylist_min=4
+
+drop_short() {  # reads entries, writes the long ones, counts the rest
+  local e n=0
+  while IFS= read -r e; do
+    if [ "${#e}" -lt "$denylist_min" ]; then n=$((n + 1)); else printf '%s\n' "$e"; fi
+  done
+  printf '%s' "$n" > "$dropped_count"
+}
+
 mkdir -p "$DUX_ROOT/tests" 2>/dev/null || finding "cannot create $DUX_ROOT/tests"
+dropped_count="$(mktemp)"; dropped=0
 {
   echo "$HOME"
   [ -f "$DUX_DATA/projects.md" ] && sed -n 's/^- \([^ ]*\) .*/\1/p' "$DUX_DATA/projects.md"
-} | grep -v '^$' | sort -u > "$DUX_ROOT/tests/personal-identifiers.txt"
+} | grep -v '^$' | sort -u | drop_short > "$DUX_ROOT/tests/personal-identifiers.txt"
+dropped=$((dropped + $(cat "$dropped_count")))
 {
   whoami; basename "$HOME"
-} | grep -v '^$' | sort -u > "$DUX_ROOT/tests/personal-names.txt"
+} | grep -v '^$' | sort -u | drop_short > "$DUX_ROOT/tests/personal-names.txt"
+dropped=$((dropped + $(cat "$dropped_count")))
+rm -f "$dropped_count"
 log "identifier denylist written"
+[ "$dropped" -eq 0 ] || log "dropped $dropped denylist entry shorter than $denylist_min characters"

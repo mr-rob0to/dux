@@ -105,6 +105,12 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 # tests/personal-names.txt holds bare account names, matched only as whole words,
 # so a name never matches inside a longer word. Both are git-ignored, written by
 # bin/dux-install; a missing or empty one is skipped.
+#
+# An entry shorter than DENYLIST_MIN cannot be matched without flooding: this
+# repo is registered as a project called "dux", that name reached the paths list,
+# and every tracked file matched. A check that fires on every line is a check
+# nobody reads, so a short entry is refused by name instead.
+DENYLIST_MIN := 4
 lint-identifiers:
 	@tmp="$$(mktemp -d)"; rc=0; \
 	printf '%s\n' $(GENERIC_ACCOUNTS) > "$$tmp/generic"; \
@@ -112,7 +118,13 @@ lint-identifiers:
 	  : > "$$tmp/$$f"; \
 	  [ -s "tests/$$f.txt" ] || continue; \
 	  grep -v '^$$' "tests/$$f.txt" | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
+	  while IFS= read -r e; do \
+	    [ "$$(printf '%s' "$$e" | wc -c)" -lt $(DENYLIST_MIN) ] || continue; \
+	    echo "denylist entry [$$e] is too short to match safely; at least $(DENYLIST_MIN) characters"; \
+	    rc=1; \
+	  done < "$$tmp/$$f"; \
 	done; \
+	[ "$$rc" -eq 0 ] || { rm -rf "$$tmp"; exit 1; }; \
 	if [ -s "$$tmp/personal-identifiers" ]; then \
 	  git ls-files -z | xargs -0 grep -nF -f "$$tmp/personal-identifiers" -- 2>/dev/null \
 	    | grep -v '^tests/personal-' && rc=1 || true; \
