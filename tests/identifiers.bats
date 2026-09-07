@@ -78,6 +78,10 @@ short_name="${long_word%yr}"
   run make -C "$tmp/repo" lint-identifiers
   [ "$status" -ne 0 ]
   [[ "$output" == *"denylist entry [dux] is too short to match safely"* ]]
+  # And says where the entry came from. Without this the operator is told the
+  # build is broken and not that data/projects.md is the file to edit, and
+  # there is no dux-project rename or remove to find instead.
+  [[ "$output" == *"written by dux-install from data/projects.md"* ]]
   # It refuses instead of reporting the flood it would otherwise have produced.
   [[ "$output" != *"README.md"* ]]
 }

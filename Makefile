@@ -121,6 +121,7 @@ lint-identifiers:
 	  while IFS= read -r e; do \
 	    [ "$$(printf '%s' "$$e" | wc -c)" -lt $(DENYLIST_MIN) ] || continue; \
 	    echo "denylist entry [$$e] is too short to match safely; at least $(DENYLIST_MIN) characters"; \
+	    echo "  tests/$$f.txt is written by dux-install from data/projects.md; rename or drop that project there, then run dux-install again"; \
 	    rc=1; \
 	  done < "$$tmp/$$f"; \
 	done; \
