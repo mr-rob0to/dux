@@ -204,7 +204,7 @@ expand_range() {  # $1 "1-3,5"; prints "1 2 3 5"
 }
 
 check_plan_tasks() {
-  local f nums n section
+  local f nums n section ht
   { [ -n "$plan_path" ] && [ -n "$task_range" ]; } \
     || finding "the brief for this ship task names no plan or no task range"
   case "$plan_path" in /*|*..*) finding "the plan the brief names is not inside the worktree: $plan_path" ;; esac
@@ -213,21 +213,77 @@ check_plan_tasks() {
     || reject "the plan the brief names is not a regular file in the worktree: $plan_path"
   nums="$(expand_range "$task_range")" \
     || finding "the task range in the brief is not a list of numbers or ranges: $task_range"
+  # A space and a tab, for the character classes below; a plan may indent with either.
+  ht=" $(printf '\t')"
   for n in $nums; do
-    # "## Task 1" must not answer for "## Task 10", so the character after the
-    # number has to end the heading or introduce its title.
-    section="$(awk -v want="## Task $n" '
-      /^## / { inside = 0
-               if (index($0, want) == 1) {
-                 c = substr($0, length(want) + 1, 1)
-                 if (c == "" || c == ":" || c == " ") inside = 1
-               } }
-      inside { print }' "$f")"
-    [ -n "$section" ] || reject "task $n is not in $plan_path"
-    printf '%s\n' "$section" | grep -qE '^ *- \[[ xX]\]' \
-      || reject "task $n in $plan_path has no checkboxes to prove it was done"
-    printf '%s\n' "$section" | grep -qE '^ *- \[ \]' \
+    # What this proves: a worker that finished three of four tasks and reported
+    # done. It reads the plan the way plans in this repository are actually
+    # written, and rejects a task with a box still unticked.
+    #
+    # What it does not prove: a worker set on lying. That worker types "[x]" in
+    # a file it already owns, and no amount of reading the file catches it.
+    # Rules 2 and 4 in AGENTS.md are what cover that case: the operator merges,
+    # and nothing here merges for them.
+    #
+    # So the reader stays simple, and where it has a choice it leans one way:
+    # an unchecked box is matched broadly, over fenced lines too and however the
+    # plan writes it, because missing one is the failure that matters. Proof
+    # that a task had work to tick is matched narrowly, outside fenced blocks,
+    # so a "- [x]" quoted in an example cannot stand in for a real box. A task
+    # ends only at the next task heading, so subsections, deeper headings and
+    # pasted shell comments keep their boxes inside the task they belong to.
+    section="$(awk -v want="$n" '
+      # The task number this line opens, or "" when it opens no task. Used for
+      # the heading being looked for and for the heading that ends a task, so
+      # a line can never end a task without being able to start one. Seven or
+      # more hashes is not a heading to Markdown, so it is not one here.
+      # "Task 0(a)" is a sub-heading of task 0, not task 0 and not a task of
+      # its own, so it must not end anything.
+      function task_num(line,   n, h, c) {
+        if (!match(line, /^#+/)) return ""
+        n = RLENGTH
+        if (n > 6) return ""
+        h = substr(line, n + 1)
+        if (h !~ /^[ \t]/) return ""
+        sub(/^[ \t]+/, "", h)
+        if (!match(h, /^Task [0-9]+/)) return ""
+        c = substr(h, RLENGTH + 1, 1)
+        if (c != "" && c != ":" && c != " " && c != "\t") return ""
+        return substr(h, 6, RLENGTH - 5)
+      }
+      {
+        s = $0
+        sub(/^[ \t]*/, "", s)
+        c = substr(s, 1, 1)
+        n = 0
+        if (c == "`" || c == "~") { while (substr(s, n + 1, 1) == c) n++ }
+        if (fc == "") {
+          # A block opens on three or more of either marker. The marker and its
+          # length are remembered, because a "~~~" inside a backtick block is
+          # content, and closing on it would expose the rest of the block.
+          if (n >= 3) { fc = c; fn = n; next }
+        } else {
+          if (c == fc && n >= fn && substr(s, n + 1) ~ /^[ \t]*$/) { fc = ""; next }
+          if (inside) print "1:" $0
+          next
+        }
+        t = task_num($0)
+        if (t != "") {
+          inside = (t == want)
+          if (inside) print "H:"
+          next
+        }
+        if (inside) print "0:" $0
+      }' "$f")"
+    printf '%s\n' "$section" | grep -q '^H:$' \
+      || reject "task $n is not in $plan_path"
+    # Broad, over fenced lines too: "-", "*", "+" and "1." all open a list item,
+    # the indent may be tabs, and the gap may be any run of blanks.
+    printf '%s\n' "$section" | grep -qE "^[01]:[$ht>]*([-*+]|[0-9]+[.)])[$ht]+\\[[$ht]*\\]" \
       && reject "task $n in $plan_path still has an unchecked box"
+    # Narrow, outside fences only.
+    printf '%s\n' "$section" | grep -qE "^0:[$ht]*([-*+]|[0-9]+[.)])[$ht]+\\[[$ht]*[xX][$ht]*\\]" \
+      || reject "task $n in $plan_path has no checkboxes to prove it was done"
   done
   return 0
 }
