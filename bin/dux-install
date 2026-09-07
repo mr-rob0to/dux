@@ -55,11 +55,13 @@ if [ -f "$DUX_DATA/projects.md" ] && [ -n "$root_real" ]; then
     [ "$p_real" = "$root_real" ] || continue
     skipped="$name"
   done <<EOF
-$(sed -n 's/^- \([^ ]*\) \([^ ]*\).*/\1 \2/p' "$DUX_DATA/projects.md")
+$(sed -n 's/^- \([^ ]*\) path=\([^ ]*\).*/\1 \2/p' "$DUX_DATA/projects.md")
 EOF
 fi
 drop_self() {  # reads names, writes the ones that are not this repo's own
-  if [ -n "$skipped" ]; then grep -vxF "$skipped"; else cat; fi
+  # -- because a project name may legitimately start with a hyphen, and without
+  # it grep reads the name as options and the pipeline hides the error.
+  if [ -n "$skipped" ]; then grep -vxF -- "$skipped"; else cat; fi
 }
 {
   echo "$HOME"

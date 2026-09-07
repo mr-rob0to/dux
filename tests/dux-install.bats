@@ -134,6 +134,28 @@ setup() {
   [[ "$output" == *"finding: cannot write $DUX_HOME/config/"* ]]
 }
 
+# The registry line as bin/dux-project writes it. The first version of these
+# tests invented "- <name> <path> <base>", which no code ever produces, so the
+# parser read the whole "path=..." token as a path, the skip never fired outside
+# the test, and the lint stayed broken. The next test pins this to the real
+# writer.
+registry_line() {  # $1 name, $2 path
+  printf -- '- %s path=%s base=main worktree=git issues=off (added 2026-01-01)\n' "$1" "$2"
+}
+
+@test "the registry fixture matches what dux-project actually writes" {
+  repo="$DUX_HOME/realproj"; make_repo "$repo" main
+  run dux-project add "$repo" --base main --name realproj
+  [ "$status" -eq 0 ]
+  written="$(grep '^- realproj ' "$DUX_HOME/data/projects.md")"
+  fixture="$(registry_line realproj "$repo")"
+  # Field 2 is the one the installer parses; if its shape drifts, this fails
+  # here instead of silently disabling the skip.
+  [ "$(printf '%s' "$written"  | cut -d' ' -f3 | cut -d= -f1)" = path ]
+  [ "$(printf '%s' "$fixture"  | cut -d' ' -f3 | cut -d= -f1)" = path ]
+  [ "$(printf '%s' "$written"  | cut -d' ' -f3)" = "$(printf '%s' "$fixture" | cut -d' ' -f3)" ]
+}
+
 @test "install leaves this repo's own project out of the denylist" {
   # Dux is registered as a project of itself. Writing its name into the paths
   # denylist made every tracked file match, because the name is matched as a
@@ -143,12 +165,29 @@ setup() {
   # anything here, so it is the one that is skipped.
   root="$DUX_HOME/ro2"; mkdir -p "$root/tests"
   other="$DUX_HOME/widgets"; mkdir -p "$other"
-  printf -- '- self %s main\n- widgets %s main\n' "$root" "$other" > "$DUX_HOME/data/projects.md"
+  registry_line self "$root" > "$DUX_HOME/data/projects.md"
+  registry_line widgets "$other" >> "$DUX_HOME/data/projects.md"
   DUX_ROOT="$root" run dux-install --yes
   [ "$status" -eq 0 ]
   refute grep -qx 'self' "$root/tests/personal-identifiers.txt"
   grep -qx 'widgets' "$root/tests/personal-identifiers.txt"
   [[ "$output" == *"left this repo's own project out of the denylist"* ]]
+}
+
+@test "a skipped name that starts with a hyphen is a name, not a grep option" {
+  # dux-project allows a leading hyphen, so the skipped name can start with one.
+  # It has to be THIS repo's project for the name to reach grep at all: without
+  # --, grep reads it as options, the pipeline hides the error, and every other
+  # project name disappears from the denylist instead of just this one.
+  root="$DUX_HOME/ro5"; mkdir -p "$root/tests"
+  other="$DUX_HOME/widgets2"; mkdir -p "$other"
+  registry_line -dash "$root" > "$DUX_HOME/data/projects.md"
+  registry_line widgets2 "$other" >> "$DUX_HOME/data/projects.md"
+  DUX_ROOT="$root" run dux-install --yes
+  [ "$status" -eq 0 ]
+  refute grep -qx -- '-dash' "$root/tests/personal-identifiers.txt"
+  # The one that must survive: it is what breaks when grep eats the name.
+  grep -qx 'widgets2' "$root/tests/personal-identifiers.txt"
 }
 
 @test "install keeps every other project name, short ones included" {
@@ -158,7 +197,7 @@ setup() {
   # The path has to exist, or the comparison against DUX_ROOT is never reached
   # and this passes without testing anything.
   other="$DUX_HOME/api"; mkdir -p "$other"
-  printf -- '- api %s main\n' "$other" > "$DUX_HOME/data/projects.md"
+  registry_line api "$other" > "$DUX_HOME/data/projects.md"
   DUX_ROOT="$root" run dux-install --yes
   [ "$status" -eq 0 ]
   grep -qx 'api' "$root/tests/personal-identifiers.txt"
@@ -167,7 +206,7 @@ setup() {
 @test "install says nothing about a skipped project when it skips none" {
   root="$DUX_HOME/ro4"; mkdir -p "$root/tests"
   other="$DUX_HOME/widgets"; mkdir -p "$other"
-  printf -- '- widgets %s main\n' "$other" > "$DUX_HOME/data/projects.md"
+  registry_line widgets "$other" > "$DUX_HOME/data/projects.md"
   DUX_ROOT="$root" run dux-install --yes
   [ "$status" -eq 0 ]
   [[ "$output" != *"left this repo's own project"* ]]
