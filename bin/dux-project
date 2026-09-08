@@ -43,6 +43,36 @@ resolve_base() {  # $1 path. Spec section 4 and /ship step 0.
   echo "$candidates"
 }
 
+# Every place GitHub reads a pull request template from, one repo-relative path
+# per line, in the order root, docs/, .github/; a folder form ends in "/".
+# Prints nothing when the repo has none, so the caller decides what "none" says.
+#
+# GitHub's own docs give the three directories, say filenames are not case
+# sensitive and may carry an extension such as .md or .txt, and allow a
+# PULL_REQUEST_TEMPLATE/ folder of several in any of the three. They do not say
+# which wins when a repo has more than one, which is why Dux never adds a second.
+#
+# A glob, not `find -maxdepth 1`: find does not descend a symlinked .github by
+# default and a glob does, and a glob over a missing docs/ is simply an entry
+# that fails the -d and -f tests below. A dangling symlink passes neither, so it
+# is not a match and install_template's symlink refusal still fires on it.
+find_templates() {  # $1 path
+  local dir entry base low
+  for dir in "" docs .github; do
+    for entry in "$1${dir:+/$dir}"/*; do
+      base="${entry##*/}"
+      low="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+      case "$low" in
+        # The folder form is a directory; the file form is a regular file. A
+        # directory named PULL_REQUEST_TEMPLATE.md is neither to GitHub.
+        pull_request_template)   [ -d "$entry" ] || continue; printf '%s%s/\n' "${dir:+$dir/}" "$base" ;;
+        pull_request_template.*) [ -f "$entry" ] || continue; printf '%s%s\n'  "${dir:+$dir/}" "$base" ;;
+        *) continue ;;
+      esac
+    done
+  done
+}
+
 install_template() {  # $1 path. Prints one line for the caller to relay.
   local gh="$1/.github" t="$1/.github/PULL_REQUEST_TEMPLATE.md"
   if [ -e "$t" ]; then log "existing PR template left alone: $t"; echo "existing PR template left alone"; return; fi
@@ -121,5 +151,10 @@ case "$cmd" in
     grep -q "^- $name " "$registry" || finding "project $name not registered"
     field "$name" "$key" ;;
   resolve-base) [ $# -eq 1 ] || usage "usage: dux-project resolve-base <path>"; resolve_base "$1" ;;
-  *) usage "usage: dux-project add|list|get|resolve-base" ;;
+  pr-template)
+    [ $# -eq 1 ] || usage "usage: dux-project pr-template <path>"
+    [ -d "$1" ] || finding "no such directory: $1"
+    found="$(find_templates "$1")"
+    if [ -n "$found" ]; then printf '%s\n' "$found"; else echo none; fi ;;
+  *) usage "usage: dux-project add|list|get|resolve-base|pr-template" ;;
 esac

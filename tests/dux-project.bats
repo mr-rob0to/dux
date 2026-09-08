@@ -10,8 +10,10 @@ load helpers/setup
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project get <name> <key>" ]]
   run dux-project resolve-base
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project resolve-base <path>" ]]
+  run dux-project pr-template
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project pr-template <path>" ]]
   run dux-project frobnicate
-  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project add|list|get|resolve-base" ]]
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project add|list|get|resolve-base|pr-template" ]]
   [ "$(grep -c 'line [0-9]' <<< "$output" || true)" -eq 0 ]
 }
 
@@ -282,4 +284,46 @@ load helpers/setup
   [ "$status" -eq 0 ]
   grep -q '^- abcd ' "$DUX_HOME/data/projects.md"
   [[ "$stderr" != *"shorter than four characters"* ]]
+}
+
+# GitHub reads a pull request template from the repository root, from docs/, and
+# from .github/, in any letter case, with any extension, and as a folder of
+# several. This lists all of them so the skill can ask before anything is
+# written. The fixture holds exactly one real match per directory, because glob
+# order inside one directory follows the machine's locale: measured on macOS,
+# en_US.UTF-8 sorts pull_request_template_old.md before pull_request_template.txt
+# and C sorts it after. The near miss therefore sits in .github/, where the
+# shorter PULL_REQUEST_TEMPLATE sorts first under both.
+@test "pr-template lists every place GitHub reads a template from" {
+  make_repo "$DUX_HOME/repoY" main
+  run dux-project pr-template "$DUX_HOME/repoY"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
+
+  make_repo "$DUX_HOME/repoZ" main
+  mkdir -p "$DUX_HOME/repoZ/docs" "$DUX_HOME/repoZ/.github/PULL_REQUEST_TEMPLATE"
+  echo body > "$DUX_HOME/repoZ/PULL_REQUEST_TEMPLATE.md"
+  echo body > "$DUX_HOME/repoZ/docs/pull_request_template.txt"
+  echo body > "$DUX_HOME/repoZ/.github/PULL_REQUEST_TEMPLATE/one.md"
+  echo body > "$DUX_HOME/repoZ/.github/pull_request_template_old.md"
+  run dux-project pr-template "$DUX_HOME/repoZ"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "PULL_REQUEST_TEMPLATE.md" ]
+  [ "${lines[1]}" = "docs/pull_request_template.txt" ]
+  [ "${lines[2]}" = ".github/PULL_REQUEST_TEMPLATE/" ]
+  [ "${#lines[@]}" -eq 3 ]
+
+  run dux-project pr-template "$DUX_HOME/absent"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: no such directory: "* ]]
+}
+
+# A directory named like the file form is not a template to GitHub. Matching it
+# would make Dux report a template the repo does not have and decline to install.
+@test "pr-template ignores a directory named like the file form" {
+  make_repo "$DUX_HOME/repoAD" main
+  mkdir -p "$DUX_HOME/repoAD/docs/PULL_REQUEST_TEMPLATE.md"
+  run dux-project pr-template "$DUX_HOME/repoAD"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
 }
