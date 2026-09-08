@@ -33,11 +33,13 @@ Scripts own mechanics; agents own judgment. The two never mix.
 - `shellcheck -s bash` MUST pass on every script, adapter, fake, and helper, enforced by
   `make lint` locally and in CI on every pull request.
 - `make lint` MUST also reject a pipeline whose reader stops before its producer is done:
-  `| head`, `grep -q`, `grep -m`. The reader closes the pipe, and a producer that handles
-  SIGPIPE rather than dying reports the failed write on stderr, where Dux prints only findings.
-  Take the front of a stream with `take_bytes` or `take_line`; ask grep a whole-stream question
-  with `grep ... >/dev/null`. Reading a file directly, `head -c N file`, has no producer and is
-  not covered.
+  `head`, or `grep` with `-q`, `-m`, `--quiet`, `--silent` or `--max-count`, in a piped
+  position. The reader closes the pipe, and a producer that handles SIGPIPE rather than dying
+  reports the failed write on stderr, where Dux prints only findings. Take the front of a
+  stream with `take_bytes` or `take_line`; ask grep a whole-stream question with
+  `grep ... >/dev/null`. Reading a file directly, `head -c N file` or `grep -q PAT file`, has
+  no producer and is not covered. `tests/lint-pipes.awk` is the rule; `tests/lint-pipes.bats`
+  is what proves it still holds.
 - `make lint` MUST also reject any tracked file containing a personal identifier from either
   denylist `dux-install` writes: `tests/personal-identifiers.txt`, the operator home path and
   registered project names, matched as substrings; and `tests/personal-names.txt`, the account
