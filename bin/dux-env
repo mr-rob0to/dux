@@ -37,7 +37,7 @@ github_slug() {  # $1 repo path; prints owner/name, or returns 1
   host="${auth#*@}"
   [ "$host" = github.com ] || return 1
   slug="${rest#"$auth"}"; slug="${slug#[:/]}"; slug="${slug%/}"; slug="${slug%.git}"
-  printf '%s' "$slug" | grep -qE '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' || return 1
+  printf '%s' "$slug" | grep -E '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' >/dev/null || return 1
   printf '%s' "$slug"
 }
 

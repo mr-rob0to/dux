@@ -43,7 +43,7 @@ else \
 fi
 endef
 
-.PHONY: test unit matrix check check-branch check-bash32 lint lint-shell lint-identifiers \
+.PHONY: test unit matrix check check-branch check-bash32 lint lint-shell lint-identifiers lint-pipes \
         $(UNIT_JOBS) $(MATRIX_JOBS)
 
 test:
@@ -90,10 +90,27 @@ check-branch:
 	@$(MAKE) --no-print-directory check
 	@$(MAKE) --no-print-directory check-bash32
 
-lint: lint-shell lint-identifiers
+SHELL_FILES = bin/dux-* bin/backends/*.sh bin/workers/*.sh templates/hooks/pre-push \
+              tests/fakes/* tests/helpers/*.bash skills/ship/ship-guard
+
+lint: lint-shell lint-identifiers lint-pipes
+
+# A reader that stops early closes the pipe under its producer, and a producer
+# that handles SIGPIPE rather than dying reports the failed write on stderr,
+# where Dux prints only findings. This has been fixed three times as three
+# separate bugs; the lint is what stops a fourth. Take the front of a stream
+# with dux-env's take_bytes or take_line, and ask grep a whole-stream question
+# with `grep ... >/dev/null` rather than `grep -q`. `head -c N file` reads a
+# file, has no producer behind it, and does not match.
+lint-pipes:
+	@if grep -n -E '\|[[:space:]]*(head([[:space:]]|$$)|grep[^|]*[[:space:]]-[a-zA-Z]*q|grep[^|]*[[:space:]]-m)' \
+	     $(SHELL_FILES) | grep -v '^[^:]*:[0-9]*:[[:space:]]*#'; then \
+	  echo "the lines above pipe a producer into a reader that stops early; see dux-env take_bytes/take_line" >&2; \
+	  exit 1; \
+	fi
 
 lint-shell:
-	shellcheck -s bash bin/dux-* bin/backends/*.sh bin/workers/*.sh templates/hooks/pre-push tests/fakes/* tests/helpers/*.bash skills/ship/ship-guard
+	shellcheck -s bash $(SHELL_FILES)
 
 # Account names that are also ordinary English words or shared CI defaults. A
 # denylist entry equal to one of these is dropped before the search: this repo's

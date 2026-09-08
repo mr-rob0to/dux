@@ -19,7 +19,7 @@ case "$shape" in plan|ship|scout) ;; *) finding "unknown shape $shape (plan, shi
 "$DUX_ROOT/bin/dux-project" get "$project" path >/dev/null || exit $?
 case "$source_key" in
   local) ;;
-  *) printf '%s' "$source_key" | grep -qE '^gh:[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+$' \
+  *) printf '%s' "$source_key" | grep -E '^gh:[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+$' >/dev/null \
        || finding "source must be local or gh:<owner>/<repo>#<n>: $source_key" ;;
 esac
 

@@ -33,7 +33,7 @@ if [ "$intake" = 1 ]; then
     else
       # What intake managed before it stopped is shown too: those tasks exist.
       [ -z "$out" ] || printf '%s\n' "$out" | grep -v -E '^(finding|dux): ' | sed 's/^/  /'
-      why="$(printf '%s\n' "$out" | grep -m1 -E '^(finding|dux): ' || echo 'intake failed')"
+      why="$(printf '%s\n' "$out" | grep -E '^(finding|dux): ' | take_line || echo 'intake failed')"
       echo "  $project: skipped: $why"
     fi
   done

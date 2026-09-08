@@ -32,6 +32,12 @@ Scripts own mechanics; agents own judgment. The two never mix.
   arrays, no `mapfile`, no `declare -A`. macOS ships bash 3.2 and the scripts MUST run there.
 - `shellcheck -s bash` MUST pass on every script, adapter, fake, and helper, enforced by
   `make lint` locally and in CI on every pull request.
+- `make lint` MUST also reject a pipeline whose reader stops before its producer is done:
+  `| head`, `grep -q`, `grep -m`. The reader closes the pipe, and a producer that handles
+  SIGPIPE rather than dying reports the failed write on stderr, where Dux prints only findings.
+  Take the front of a stream with `take_bytes` or `take_line`; ask grep a whole-stream question
+  with `grep ... >/dev/null`. Reading a file directly, `head -c N file`, has no producer and is
+  not covered.
 - `make lint` MUST also reject any tracked file containing a personal identifier from either
   denylist `dux-install` writes: `tests/personal-identifiers.txt`, the operator home path and
   registered project names, matched as substrings; and `tests/personal-names.txt`, the account
@@ -226,7 +232,13 @@ that edits this file, bumps the version, and updates Last Amended: MAJOR for a r
 removed principle, MINOR for a new principle, PATCH for a clarification. A plan that must
 deviate from a principle says so in its header and names the principle.
 
-**Version**: 2.0.4 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-08
+**Version**: 2.0.5 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-08
+
+Version 2.0.5 adds the pipeline rule to principle 2. The same defect had been fixed three
+times as three separate bugs: a reader that stops early closes the pipe, and jq or GNU sed then
+puts a broken-pipe line on stderr, which Dux reserves for findings. Twice it was diagnosed as a
+one-off and once it could not be reproduced at all. A lint is the only thing that makes the rule
+hold, so the rule is written down where the other lint rules are.
 
 Version 2.0.4 corrects principle 2's account of the identifier lint. It named one denylist
 file and put the username in it. There are two, matched differently, and the username is in

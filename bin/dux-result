@@ -275,14 +275,14 @@ check_plan_tasks() {
         }
         if (inside) print "0:" $0
       }' "$f")"
-    printf '%s\n' "$section" | grep -q '^H:$' \
+    printf '%s\n' "$section" | grep '^H:$' >/dev/null \
       || reject "task $n is not in $plan_path"
     # Broad, over fenced lines too: "-", "*", "+" and "1." all open a list item,
     # the indent may be tabs, and the gap may be any run of blanks.
-    printf '%s\n' "$section" | grep -qE "^[01]:[$ht>]*([-*+]|[0-9]+[.)])[$ht]+\\[[$ht]*\\]" \
+    printf '%s\n' "$section" | grep -E "^[01]:[$ht>]*([-*+]|[0-9]+[.)])[$ht]+\\[[$ht]*\\]" >/dev/null \
       && reject "task $n in $plan_path still has an unchecked box"
     # Narrow, outside fences only.
-    printf '%s\n' "$section" | grep -qE "^0:[$ht]*([-*+]|[0-9]+[.)])[$ht]+\\[[$ht]*[xX][$ht]*\\]" \
+    printf '%s\n' "$section" | grep -E "^0:[$ht]*([-*+]|[0-9]+[.)])[$ht]+\\[[$ht]*[xX][$ht]*\\]" >/dev/null \
       || reject "task $n in $plan_path has no checkboxes to prove it was done"
   done
   return 0

@@ -186,7 +186,7 @@ make_github_repo() {  # $1 project dir name under $DUX_HOME
 
 fixture_task() {  # $1 project name, $2 shape, [$3 github]; prints the task id. Needs Tasks 2 and 3.
   # A second task in the same project reuses it; registering it twice is a finding.
-  if ! dux-project list | grep -qx "$1"; then
+  if ! dux-project list | grep -x "$1" >/dev/null; then
     if [ "${3:-}" = github ]; then make_github_repo "$1"; else make_repo "$DUX_HOME/$1" main; fi
     dux-project add "$DUX_HOME/$1" --base main >/dev/null
   fi
