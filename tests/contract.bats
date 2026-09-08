@@ -92,6 +92,22 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   grep -qE '^\*\*Version\*\*: 2\.[0-9]+\.[0-9]+ ' "$DUX_ROOT/docs/constitution.md"
 }
 
+# The constitution named one denylist file and put the account name in it, while
+# the installer has written two since milestone 2 and matches them differently.
+# Nothing read the sentence against the code, so it drifted for four milestones.
+@test "the constitution names both denylist files and what each one holds" {
+  p2="$(unwrapped '/^### 2\./,/^### 3\./p' "$DUX_ROOT/docs/constitution.md")"
+  [[ "$p2" == *'tests/personal-identifiers.txt`, the operator home path and registered project names, matched as substrings'* ]]
+  [[ "$p2" == *'tests/personal-names.txt`, the account name and the home directory name, matched as whole words'* ]]
+  # The rule claimed more coverage than the lint gives until 2.0.4: three kinds
+  # of entry are never searched, and one of the three is dropped without a word.
+  [[ "$p2" == *'Three kinds of entry are never searched'* ]]
+  [[ "$p2" == *'a project whose repository is the checkout being installed into'* ]]
+  [[ "$p2" == *'a project name shorter than four characters'* ]]
+  [[ "$p2" == *'GENERIC_ACCOUNTS` list'* ]]
+  [[ "$p2" == *'the generic list is dropped silently'* ]]
+}
+
 @test "the constitution disclaims same-user containment and keeps isolation fail-closed" {
   p6="$(unwrapped '/^### 6\./,/^### 7\./p' "$DUX_ROOT/docs/constitution.md")"
   [[ "$p6" == *'Deliberate abuse of those rights is outside'* ]]
