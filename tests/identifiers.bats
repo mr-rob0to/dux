@@ -79,6 +79,78 @@ tok_a=qx; tok_b=zw; boundary_entry="$tok_a$tok_b"
 # name into the paths denylist, and the lint then flagged every tracked file.
 # Silently matching everything is worse than refusing: the check that fires on
 # every line is the check nobody reads.
+# Both denylist files are git-ignored, so a worktree never has them. Every
+# feature branch is written in a worktree, so the check was passing there
+# without reading anything: the one place it needed to work.
+@test "lint reads the denylist from the main checkout when run in a worktree" {
+  tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
+  printf '%s\n' "$short_account" > "$tmp/repo/tests/personal-names.txt"
+  git -C "$tmp/repo" worktree add -q "$tmp/wt" -b probe
+  # The worktree checks out committed content, so it carries the old Makefile.
+  cp "$DUX_ROOT/Makefile" "$tmp/wt/Makefile"
+  printf 'ask %s about the logs\n' "$short_account" > "$tmp/wt/LEAK.md"
+  git -C "$tmp/wt" add LEAK.md
+  git -C "$tmp/wt" commit -qm leak
+  # The denylist is in $tmp/repo, not $tmp/wt, and nothing copies it across.
+  [ ! -e "$tmp/wt/tests/personal-names.txt" ]
+  run make -C "$tmp/wt" lint-identifiers
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"LEAK.md"* ]]
+}
+
+# dux-install writes the lists beside its own bin/ directory, so run from a
+# worktree it puts them in that worktree. Reading only the main checkout left
+# those ignored, which reopened the same hole through the other door.
+@test "lint reads a denylist that exists only in the worktree" {
+  tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
+  git -C "$tmp/repo" worktree add -q "$tmp/wt" -b probe
+  cp "$DUX_ROOT/Makefile" "$tmp/wt/Makefile"
+  printf '%s\n' "$short_name" > "$tmp/wt/tests/personal-names.txt"
+  # The main checkout has none, so only the local one can catch this.
+  [ ! -e "$tmp/repo/tests/personal-names.txt" ]
+  printf 'ask %s about the logs\n' "$short_name" > "$tmp/wt/LEAK.md"
+  git -C "$tmp/wt" add LEAK.md
+  git -C "$tmp/wt" commit -qm leak
+  run make -C "$tmp/wt" lint-identifiers
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"LEAK.md"* ]]
+}
+
+# The search is git ls-files, and its failure is swallowed, so outside a git
+# repository the target would exit 0 having read nothing at all. A check that
+# passes without looking is worse than one that is not run.
+@test "lint refuses to run outside a git work tree instead of passing" {
+  tmp="$(mktemp -d)"
+  cp "$DUX_ROOT/Makefile" "$tmp/Makefile"
+  mkdir -p "$tmp/tests"
+  run make -C "$tmp" lint-identifiers
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not inside a git work tree"* ]]
+}
+
+# A bare repository is the case that exits 0 while printing "false", so a guard
+# reading only the exit status lets it through and the target checks nothing.
+@test "lint refuses a bare repository, which has no work tree to check" {
+  tmp="$(mktemp -d)"
+  git init -q --bare "$tmp/bare.git"
+  cp "$DUX_ROOT/Makefile" "$tmp/bare.git/Makefile"
+  run make -C "$tmp/bare.git" lint-identifiers
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not inside a git work tree"* ]]
+}
+
+# The skip has to stay for the case it was written for: CI checks out the repo
+# and has no denylist anywhere, and that is not a leak.
+@test "lint passes when no denylist exists in the worktree or the main checkout" {
+  tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
+  [ ! -e "$tmp/repo/tests/personal-names.txt" ]
+  [ ! -e "$tmp/repo/tests/personal-identifiers.txt" ]
+  git -C "$tmp/repo" worktree add -q "$tmp/wt" -b probe
+  cp "$DUX_ROOT/Makefile" "$tmp/wt/Makefile"
+  run make -C "$tmp/wt" lint-identifiers
+  [ "$status" -eq 0 ]
+}
+
 @test "lint refuses a denylist entry too short to be an identifier" {
   tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
   # The fixture is the real entry that caused this, and it has to be: a short

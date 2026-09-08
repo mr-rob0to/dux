@@ -114,6 +114,24 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 # so a name never matches inside a longer word. Both are git-ignored, written by
 # bin/dux-install; a missing or empty one is skipped.
 #
+# Being git-ignored means a worktree never has them, and every feature branch is
+# written in a worktree, so the check was silently passing in the one place the
+# code gets written. The lists are read from the main checkout instead, which
+# `git rev-parse --git-common-dir` names: it prints the main repository's .git
+# from inside a worktree, and a bare .git from the main checkout, so one path
+# serves both. Both places are read and the entries merged, because dux-install
+# writes the lists beside its own bin/ directory: run from a worktree it puts
+# them in that worktree, and reading only one of the two locations leaves the
+# other one ignored either way. CI has neither file and is still skipped, which
+# is the case the skip is actually for.
+#
+# Without a git repository the whole target is a lie: the search below is
+# `git ls-files`, its failure is swallowed, and the target would exit 0 having
+# read nothing. So that is refused rather than skipped. The one case still not
+# handled is this repo vendored as a submodule of another, where git names the
+# superproject's .git/modules and the lists are not found. That skips, which is
+# what it already did before the lists were resolved at all.
+#
 # An entry shorter than DENYLIST_MIN cannot be matched without flooding: this
 # repo is registered as a project called "dux", that name reached the paths list,
 # and every tracked file matched. A check that fires on every line is a check
@@ -128,16 +146,20 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 DENYLIST_MIN := 4
 lint-identifiers:
 	@tmp="$$(mktemp -d)"; rc=0; \
+	[ "$$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ] \
+	  || { echo "cannot check identifiers: not inside a git work tree"; rm -rf "$$tmp"; exit 1; }; \
+	dl="$$(dirname "$$(git rev-parse --git-common-dir)")"; \
 	printf '%s\n' $(GENERIC_ACCOUNTS) > "$$tmp/generic"; \
 	for f in personal-identifiers personal-names; do \
 	  : > "$$tmp/$$f"; \
-	  [ -s "tests/$$f.txt" ] || continue; \
-	  grep -v '^$$' "tests/$$f.txt" | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
+	  cat "tests/$$f.txt" "$$dl/tests/$$f.txt" 2>/dev/null \
+	    | grep -v '^$$' | sort -u | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
+	  [ -s "$$tmp/$$f" ] || continue; \
 	  [ "$$f" = personal-identifiers ] || continue; \
 	  while IFS= read -r e; do \
 	    [ "$$(printf '%s' "$$e" | wc -c)" -lt $(DENYLIST_MIN) ] || continue; \
 	    echo "denylist entry [$$e] is too short to match safely as a substring; at least $(DENYLIST_MIN) characters"; \
-	    echo "  tests/$$f.txt is written by dux-install from data/projects.md; rename or drop that project there, then run dux-install again"; \
+	    echo "  tests/$$f.txt, here or in the main checkout, is written by dux-install from data/projects.md; rename or drop that project there, then run dux-install again"; \
 	    rc=1; \
 	  done < "$$tmp/$$f"; \
 	done; \
