@@ -35,7 +35,11 @@ Scripts own mechanics; agents own judgment. The two never mix.
 - `make lint` MUST also reject any tracked file containing a personal identifier from either
   denylist `dux-install` writes: `tests/personal-identifiers.txt`, the operator home path and
   registered project names, matched as substrings; and `tests/personal-names.txt`, the account
-  name and the home directory name, matched as whole words.
+  name and the home directory name, matched as whole words. Three kinds of entry are never
+  searched, so the rule does not cover them: a project whose repository is the checkout being
+  installed into, a project name shorter than four characters, and any name on the Makefile's
+  `GENERIC_ACCOUNTS` list. `dux-install` says so each time it leaves a project name out; the
+  generic list is dropped silently, at lint time.
 - A script that meets a surprise MUST stop and print `finding: <one line>` to stderr with exit
   code 2. It MUST NOT guess, fall back, or degrade silently. Exit codes: 0 success, 1 unexpected
   error, 2 finding, 3 lock held.
@@ -230,8 +234,9 @@ the other one: `tests/personal-identifiers.txt` holds the home path and project 
 matched as substrings, `tests/personal-names.txt` holds the account name and home directory
 name and is matched as whole words. The second file has existed since milestone 2; this
 sentence was never updated. Anyone following the constitution to find where a name is checked
-would have looked in the wrong file. This is a PATCH: the rule is unchanged, only its
-description of what enforces it.
+would have looked in the wrong file. It also now names what the lint does not search, since a
+rule that claims more coverage than it has is the same defect in a different place. This is a
+PATCH: the rule is unchanged, only its description of what enforces it.
 
 Version 2.0.3 puts a number on two rules that were already here in words. Principle 1 said a
 milestone is one session; it now says how big a session may get, 2,500 added lines or 12 tasks.

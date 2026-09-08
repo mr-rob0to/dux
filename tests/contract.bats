@@ -99,6 +99,10 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   p2="$(unwrapped '/^### 2\./,/^### 3\./p' "$DUX_ROOT/docs/constitution.md")"
   [[ "$p2" == *'tests/personal-identifiers.txt`, the operator home path and registered project names, matched as substrings'* ]]
   [[ "$p2" == *'tests/personal-names.txt`, the account name and the home directory name, matched as whole words'* ]]
+  # The rule claimed more coverage than the lint gives until 2.0.4: three kinds
+  # of entry are never searched, and one of the three is dropped without a word.
+  [[ "$p2" == *'Three kinds of entry are never searched'* ]]
+  [[ "$p2" == *'the generic list is dropped silently'* ]]
 }
 
 @test "the constitution disclaims same-user containment and keeps isolation fail-closed" {
