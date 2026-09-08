@@ -8,6 +8,11 @@ load helpers/setup
   run make -C "$tmp/repo" lint-identifiers
   [ "$status" -ne 0 ]
   [[ "$output" == *"README.md"* ]]
+  # A failure that names only the file leaves the reader with no way to tell a
+  # leak from an entry left behind by an earlier install, so it says where the
+  # lists come from and how to get rid of a stale one.
+  [[ "$output" == *"written by dux-install"* ]]
+  [[ "$output" == *"run the installer again"* ]]
 }
 
 # cat joins two files with nothing between them. Both list locations resolve to

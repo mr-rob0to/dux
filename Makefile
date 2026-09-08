@@ -163,4 +163,4 @@ lint-identifiers:
 	fi; \
 	rm -rf "$$tmp"; \
 	[ "$$rc" -eq 0 ] || { echo "personal identifiers found"; \
-	  echo "  if an entry above looks wrong rather than leaked, tests/personal-*.txt is written by dux-install: change data/projects.md and run it again"; exit 1; }
+	  echo "  the lists in tests/personal-*.txt are written by dux-install, from data/projects.md and this account; an entry that looks wrong rather than leaked is stale, so run the installer again"; exit 1; }
