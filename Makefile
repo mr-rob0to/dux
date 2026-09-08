@@ -162,4 +162,5 @@ lint-identifiers:
 	    | grep -v '^tests/personal-' && rc=1 || true; \
 	fi; \
 	rm -rf "$$tmp"; \
-	[ "$$rc" -eq 0 ] || { echo "personal identifiers found"; exit 1; }
+	[ "$$rc" -eq 0 ] || { echo "personal identifiers found"; \
+	  echo "  if an entry above looks wrong rather than leaked, tests/personal-*.txt is written by dux-install: change data/projects.md and run it again"; exit 1; }
