@@ -4,6 +4,11 @@
 is implemented and break-verified on `feat/project-shortname-warning`. Next: `/ship`.
 Blocked on: nothing.
 
+**Divergence, 2026-09-08, during the ship gate:** the test asserts on `$stderr` via
+`run --separate-stderr`, not on the merged `$output`, so a warning that moved to stdout
+can no longer pass. Raised by the gate's code review as a Minor finding, and it makes a
+fourth assertion, broken and seen to fail with the other three.
+
 **Goal:** `dux-project add` tells the operator, at the moment they choose the name, when
 that name is too short for the identifier lint to check.
 

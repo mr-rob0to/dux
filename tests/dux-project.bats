@@ -267,17 +267,19 @@ load helpers/setup
 @test "add warns that a name shorter than four characters is not linted" {
   # bin/dux-install leaves such a name out of the identifier denylist. Registration
   # is still correct, so this is a log line and the exit status stays 0.
+  # --separate-stderr, because the warning has to be on stderr: plain run merges the
+  # two, so the same assertions would pass if it moved to stdout.
   make_repo "$DUX_HOME/repoW" main
-  run dux-project add "$DUX_HOME/repoW" --name abc
+  run --separate-stderr dux-project add "$DUX_HOME/repoW" --name abc
   [ "$status" -eq 0 ]
-  [[ "$output" == *"shorter than four characters"* ]]
-  [[ "$output" == *"dux-project add --name"* ]]
+  [[ "$stderr" == *"shorter than four characters"* ]]
+  [[ "$stderr" == *"dux-project add --name"* ]]
   grep -q '^- abc ' "$DUX_HOME/data/projects.md"
   # Status and the registry line first: a run that ended in a finding also lacks the
   # warning, and would pass the absence check having proved nothing.
   make_repo "$DUX_HOME/repoX" main
-  run dux-project add "$DUX_HOME/repoX" --name abcd
+  run --separate-stderr dux-project add "$DUX_HOME/repoX" --name abcd
   [ "$status" -eq 0 ]
   grep -q '^- abcd ' "$DUX_HOME/data/projects.md"
-  [[ "$output" != *"shorter than four characters"* ]]
+  [[ "$stderr" != *"shorter than four characters"* ]]
 }
