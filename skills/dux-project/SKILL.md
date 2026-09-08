@@ -19,7 +19,9 @@ description: Register a repository with Dux so tasks can be dispatched to it. Us
 4. Run `bin/dux-project add <path> [--name <name>] [--base X] [--issues Y] [--worktree Z]`.
    The name defaults to the folder name; pass `--name` only when that is taken or unusable.
 5. Report the registry line in plain words: base branch, worktree mechanism,
-   issue intake, and whether a PR template was installed or left alone.
+   issue intake, and whether a PR template was installed or left alone. If the
+   script warned that the name is too short for the identifier lint to check,
+   say so and name `--name` as the way to a longer one.
 
 ## Inspect
 
