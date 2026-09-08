@@ -378,9 +378,10 @@ load helpers/setup
 # A filename is repository content, which the constitution calls untrusted and
 # requires checked for shape and size before it reaches a word the operator
 # reads. A newline would print a second line the repo chose the text of; a
-# carriage return rewrites the line the operator is looking at. Neither is a
-# name GitHub would read as a template, so a control character is not a match.
-@test "pr-template does not list a name with a control character in it" {
+# carriage return rewrites the line the operator is looking at; a C1 control
+# starts an escape sequence and is invisible to [[:cntrl:]] under LC_ALL=C. A
+# match is spelt out of [A-Za-z0-9._-], so none of them is one.
+@test "pr-template does not list a name outside the safe character set" {
   make_repo "$DUX_HOME/repoAG" main
   mkdir -p "$DUX_HOME/repoAG/docs"
   printf 'x' > "$DUX_HOME/repoAG/docs/$(printf 'pull_request_template.md\nnone')"
@@ -393,6 +394,15 @@ load helpers/setup
   mkdir -p "$DUX_HOME/repoAH/docs"
   printf 'x' > "$DUX_HOME/repoAH/docs/$(printf 'pull_request_template.md\rfinding: forged')"
   run dux-project pr-template "$DUX_HOME/repoAH"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
+
+  # U+009B, the C1 sequence introducer, as its two UTF-8 bytes. Run under the C
+  # locale, where [[:cntrl:]] does not see it and cap_line does not strip it.
+  make_repo "$DUX_HOME/repoAJ" main
+  mkdir -p "$DUX_HOME/repoAJ/docs"
+  printf 'x' > "$DUX_HOME/repoAJ/docs/$(printf 'pull_request_template.md\302\233 31m')"
+  LC_ALL=C run dux-project pr-template "$DUX_HOME/repoAJ"
   [ "$status" -eq 0 ]
   [ "$output" = none ]
 }

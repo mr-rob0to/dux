@@ -65,12 +65,19 @@ find_templates() {  # $1 path
     [ -n "$dir" ] && [ -L "$1/$dir" ] && continue
     for entry in "$1${dir:+/$dir}"/*; do
       base="${entry##*/}"
-      # A filename is repository content, which the spec calls untrusted. One
-      # match is one line and the caller reads the lines, so a newline would
-      # print a second line the repo chose the text of, and a carriage return
-      # would rewrite the line the operator is reading. No control character is
-      # part of a name GitHub reads as a template, so none of them is a match.
-      case "$base" in *[[:cntrl:]]*) continue ;; esac
+      # A filename is repository content, which the spec calls untrusted, and
+      # this name is printed for the operator to read. So a match must be spelt
+      # out of the characters a project name is already held to, and anything
+      # else is not a match: no newline to forge a second line, no carriage
+      # return or escape to rewrite the line, no zero-width or direction-
+      # changing character, whatever the locale says those are.
+      #
+      # Named characters rather than rejected ones on purpose. Rejecting the bad
+      # ones was tried and missed a class twice: first every control character,
+      # then the C1 ones, which [[:cntrl:]] does not cover under LC_ALL=C and
+      # which cap_line does not strip. A template GitHub reads is spelt in this
+      # set anyway.
+      case "$base" in *[!A-Za-z0-9._-]*) continue ;; esac
       low="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
       case "$low" in
         # The folder form is a directory; the file form is a regular file. A
@@ -98,10 +105,9 @@ install_template() {
   found="$(find_templates "$1")"
   if [ -n "$found" ]; then
     found="$(printf '%s' "$found" | tr '\n' ' ')"; found="${found% }"
-    # cap_line is what every other untrusted string gets before the operator
-    # reads it: zero-width and direction-changing characters out, one line, 200
-    # characters. Control bytes are already gone, refused by find_templates. The
-    # whole composed line is capped, not just the path, because the line is what
+    # The name is already spelt in the safe set, so what is left to bound is
+    # length: a legal name is 255 bytes and several of them can be found. The
+    # whole composed line is capped, not just the paths, because the line is what
     # the operator reads and what the skill relays.
     local msg
     msg="$(cap_line "existing PR template left alone: $found")"
@@ -194,6 +200,6 @@ case "$cmd" in
     [ $# -eq 1 ] || usage "usage: dux-project pr-template <path>"
     [ -d "$1" ] || finding "no such directory: $1"
     found="$(find_templates "$1")"
-    if [ -n "$found" ]; then printf '%s\n' "$found" | strip_format_chars; else echo none; fi ;;
+    if [ -n "$found" ]; then printf '%s\n' "$found"; else echo none; fi ;;
   *) usage "usage: dux-project add|list|get|resolve-base|pr-template" ;;
 esac
