@@ -119,8 +119,11 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 # code gets written. The lists are read from the main checkout instead, which
 # `git rev-parse --git-common-dir` names: it prints the main repository's .git
 # from inside a worktree, and a bare .git from the main checkout, so one path
-# serves both. CI still has neither file and is still skipped, which is the case
-# the skip is actually for.
+# serves both. Both places are read and the entries merged, because dux-install
+# writes the lists beside its own bin/ directory: run from a worktree it puts
+# them in that worktree, and reading only one of the two locations leaves the
+# other one ignored either way. CI has neither file and is still skipped, which
+# is the case the skip is actually for.
 #
 # Without a git repository the whole target is a lie: the search below is
 # `git ls-files`, its failure is swallowed, and the target would exit 0 having
@@ -149,13 +152,14 @@ lint-identifiers:
 	printf '%s\n' $(GENERIC_ACCOUNTS) > "$$tmp/generic"; \
 	for f in personal-identifiers personal-names; do \
 	  : > "$$tmp/$$f"; \
-	  [ -s "$$dl/tests/$$f.txt" ] || continue; \
-	  grep -v '^$$' "$$dl/tests/$$f.txt" | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
+	  cat "tests/$$f.txt" "$$dl/tests/$$f.txt" 2>/dev/null \
+	    | grep -v '^$$' | sort -u | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
+	  [ -s "$$tmp/$$f" ] || continue; \
 	  [ "$$f" = personal-identifiers ] || continue; \
 	  while IFS= read -r e; do \
 	    [ "$$(printf '%s' "$$e" | wc -c)" -lt $(DENYLIST_MIN) ] || continue; \
 	    echo "denylist entry [$$e] is too short to match safely as a substring; at least $(DENYLIST_MIN) characters"; \
-	    echo "  $$dl/tests/$$f.txt is written by dux-install from data/projects.md; rename or drop that project there, then run dux-install again"; \
+	    echo "  tests/$$f.txt, here or in the main checkout, is written by dux-install from data/projects.md; rename or drop that project there, then run dux-install again"; \
 	    rc=1; \
 	  done < "$$tmp/$$f"; \
 	done; \

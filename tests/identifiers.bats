@@ -98,6 +98,24 @@ tok_a=qx; tok_b=zw; boundary_entry="$tok_a$tok_b"
   [[ "$output" == *"LEAK.md"* ]]
 }
 
+# dux-install writes the lists beside its own bin/ directory, so run from a
+# worktree it puts them in that worktree. Reading only the main checkout left
+# those ignored, which reopened the same hole through the other door.
+@test "lint reads a denylist that exists only in the worktree" {
+  tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
+  git -C "$tmp/repo" worktree add -q "$tmp/wt" -b probe
+  cp "$DUX_ROOT/Makefile" "$tmp/wt/Makefile"
+  printf '%s\n' "$short_name" > "$tmp/wt/tests/personal-names.txt"
+  # The main checkout has none, so only the local one can catch this.
+  [ ! -e "$tmp/repo/tests/personal-names.txt" ]
+  printf 'ask %s about the logs\n' "$short_name" > "$tmp/wt/LEAK.md"
+  git -C "$tmp/wt" add LEAK.md
+  git -C "$tmp/wt" commit -qm leak
+  run make -C "$tmp/wt" lint-identifiers
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"LEAK.md"* ]]
+}
+
 # The search is git ls-files, and its failure is swallowed, so outside a git
 # repository the target would exit 0 having read nothing at all. A check that
 # passes without looking is worse than one that is not run.
