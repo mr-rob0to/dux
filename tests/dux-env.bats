@@ -159,3 +159,26 @@ load helpers/setup
   d="$DUX_HOME/tok"; git init -q "$d"; git -C "$d" remote add origin https://tok@github.com/acme/widgets.git
   run github_slug "$d"; [ "$status" -eq 0 ]; [ "$output" = acme/widgets ]
 }
+
+# A reader that stops early closes the pipe under whatever is writing into it.
+# The producer either dies on SIGPIPE or, if it handles the signal, reports the
+# failed write on stderr, where Dux prints findings and nothing else. The
+# producer here ignores SIGPIPE on purpose so the fault is deterministic rather
+# than a race the test would lose most of the time; jq and GNU sed do the same
+# thing in the real scripts. 200000 bytes is past any pipe buffer, so the write
+# cannot land in one go.
+@test "take_bytes gives back the bytes asked for and leaves nothing writing into a closed pipe" {
+  run --separate-stderr bash -c 'source "$DUX_ROOT/bin/dux-env"
+    trap "" PIPE; printf "%s" "$(printf "a%.0s" $(seq 1 200000))" | take_bytes 10'
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ] || { echo "producer wrote to stderr: $stderr"; return 1; }
+  [ "${#output}" -eq 10 ] || { echo "wanted 10 bytes, got ${#output}"; return 1; }
+}
+
+@test "take_line gives back the first line and leaves nothing writing into a closed pipe" {
+  run --separate-stderr bash -c 'source "$DUX_ROOT/bin/dux-env"
+    trap "" PIPE; printf "first\n%s\n" "$(printf "a%.0s" $(seq 1 200000))" | take_line'
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ] || { echo "producer wrote to stderr: $stderr"; return 1; }
+  [ "$output" = first ] || { echo "wanted 'first', got '$output'"; return 1; }
+}
