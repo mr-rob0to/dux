@@ -357,6 +357,37 @@ load helpers/setup
   [[ "$output" == "finding: no such directory: "* ]]
 }
 
+# git stores a symlink as a symlink, so GitHub reads no template through one and
+# neither does this. Following it would report a template the repo does not have,
+# and would take the early return that the symlink refusal sits after.
+@test "pr-template does not follow a symlinked .github, and the refusal still fires" {
+  make_repo "$DUX_HOME/repoAF" main
+  mkdir -p "$DUX_HOME/elsewhere"; echo theirs > "$DUX_HOME/elsewhere/pull_request_template.md"
+  ln -s "$DUX_HOME/elsewhere" "$DUX_HOME/repoAF/.github"
+  run dux-project pr-template "$DUX_HOME/repoAF"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
+
+  run dux-project add "$DUX_HOME/repoAF" --pr-template install
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: refusing to write through a symlink"* ]]
+  [ "$(grep -c '^- repoAF ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
+  [ "$(cat "$DUX_HOME/elsewhere/pull_request_template.md")" = "theirs" ]
+}
+
+# One match is one line, and the skill reads the lines. A newline inside a
+# filename would print a second line the repo chose the text of, so a name
+# carrying one is not a match. GitHub would not read it as a template either.
+@test "pr-template does not list a name with a newline in it" {
+  make_repo "$DUX_HOME/repoAG" main
+  mkdir -p "$DUX_HOME/repoAG/docs"
+  printf 'x' > "$DUX_HOME/repoAG/docs/$(printf 'pull_request_template.md\nnone')"
+  run dux-project pr-template "$DUX_HOME/repoAG"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
+  [ "${#lines[@]}" -eq 1 ]
+}
+
 # A directory named like the file form is not a template to GitHub. Matching it
 # would make Dux report a template the repo does not have and decline to install.
 @test "pr-template ignores a directory named like the file form" {

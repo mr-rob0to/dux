@@ -59,8 +59,16 @@ resolve_base() {  # $1 path. Spec section 4 and /ship step 0.
 find_templates() {  # $1 path
   local dir entry base low
   for dir in "" docs .github; do
+    # git stores a symlink as a symlink, so GitHub reads no template through one.
+    # Following it would report a template the repo does not have, and would take
+    # the early return that install_template's symlink refusal sits after.
+    [ -n "$dir" ] && [ -L "$1/$dir" ] && continue
     for entry in "$1${dir:+/$dir}"/*; do
       base="${entry##*/}"
+      # One match is one line and the caller reads the lines, so a name carrying
+      # a newline would print a second line the repo chose the text of. GitHub
+      # would not read that name as a template either.
+      case "$base" in *$'\n'*) continue ;; esac
       low="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
       case "$low" in
         # The folder form is a directory; the file form is a regular file. A
