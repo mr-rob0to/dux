@@ -8,20 +8,33 @@
 > outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Rewritten 2026-09-07 on `fix/denylist-match-ceiling` from `main` at bde55f4. The first
+- Rewritten 2026-09-07 on `fix/denylist-at-install` from `main` at bde55f4, on a branch
+  renamed from `fix/denylist-match-ceiling` when the design changed. The first
   design, a per-entry match ceiling in the lint, was rejected by the operator the same
   day: it stacked a third guard on two that exist only because this repo's own name was
   written into its own denylist, and the tool is meant to be simple to install and use.
   This version cuts that at the root. Reviewed once by a fresh independent session,
   all six findings folded in, approved by the operator the same day. 4 of 4 tasks
-  done, `make check` green, awaiting the ship gate.
+  done, `make check-branch` green on the branch and on a clean clone of it, and in
+  the ship gate, which has had one fix pass answering its code review.
 - PRs #15 and #16 logged two small follow-ups in the identifier lint, a `cat` that fuses
   two list files and one stale comment; both are carried here unchanged as Tasks 1 and 2.
 - When this merges, `dux-install` never writes this repository's own name into the
   denylist, skips a name too short to match and says so once, and the lint loses the
   length floor and the machinery around it. Less code than today.
 
-**Divergence, 2026-09-07:** Task 4 was to delete the test that a short generic
+**Divergence, 2026-09-07, three of them.** Task 3's acceptance said `bin/dux-install`
+would end up shorter than today. It ends up longer, 104 lines against 80: the code in it
+shrank and the comment explaining why "self" is a repository and not a directory grew.
+The criterion was the wrong measure and now says what it meant, that the file holds no
+`git grep`, no content condition and no temporary file.
+
+Task 4's commit body says four tests went with the floor. The diff deletes two, trims one
+assertion from a third, and keeps a fourth under the divergence below. The commit message
+overstates it; this line is the correction, since rewriting a landed commit mid-gate would
+put the phases behind it on other code.
+
+Task 4 was to delete the test that a short generic
 account name is dropped. It is kept and renamed instead. Without the floor it proves
 something no other test does, that a two-character generic word is dropped before the
 search rather than flooding 56 lines, and it was break-verified by taking `ci` off
@@ -309,8 +322,8 @@ self checked first. "Self" is the resolved git common directory of `DUX_ROOT` ma
 that of the registered path.
 
 **Acceptance:** the seven installer tests behave as the Design table says and `make check`
-is green. `bin/dux-install` is shorter than today and holds no `git grep`. Both spec
-passages read as quoted in Design.
+is green. `bin/dux-install` holds no `git grep`, no content condition, and no temporary
+file. Both spec passages read as quoted in Design.
 
 **Steps**
 
