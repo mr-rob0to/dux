@@ -375,10 +375,12 @@ load helpers/setup
   [ "$(cat "$DUX_HOME/elsewhere/pull_request_template.md")" = "theirs" ]
 }
 
-# One match is one line, and the skill reads the lines. A newline inside a
-# filename would print a second line the repo chose the text of, so a name
-# carrying one is not a match. GitHub would not read it as a template either.
-@test "pr-template does not list a name with a newline in it" {
+# A filename is repository content, which the constitution calls untrusted and
+# requires checked for shape and size before it reaches a word the operator
+# reads. A newline would print a second line the repo chose the text of; a
+# carriage return rewrites the line the operator is looking at. Neither is a
+# name GitHub would read as a template, so a control character is not a match.
+@test "pr-template does not list a name with a control character in it" {
   make_repo "$DUX_HOME/repoAG" main
   mkdir -p "$DUX_HOME/repoAG/docs"
   printf 'x' > "$DUX_HOME/repoAG/docs/$(printf 'pull_request_template.md\nnone')"
@@ -386,6 +388,35 @@ load helpers/setup
   [ "$status" -eq 0 ]
   [ "$output" = none ]
   [ "${#lines[@]}" -eq 1 ]
+
+  make_repo "$DUX_HOME/repoAH" main
+  mkdir -p "$DUX_HOME/repoAH/docs"
+  printf 'x' > "$DUX_HOME/repoAH/docs/$(printf 'pull_request_template.md\rfinding: forged')"
+  run dux-project pr-template "$DUX_HOME/repoAH"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
+}
+
+# A name with no control character in it still reaches the operator, so the line
+# carrying it gets what every other untrusted string in Dux gets: one line, 200
+# characters, and zero-width and direction-changing characters removed.
+#
+# Whether [[:cntrl:]] covers the Unicode format characters is a libc question and
+# the answer differs between macOS and Linux, so cap_line is the layer this test
+# pins and the guard is not asked to be the only one.
+@test "add caps the path it reports back" {
+  make_repo "$DUX_HOME/repoAI" main
+  mkdir -p "$DUX_HOME/repoAI/docs"
+  # 200 filler bytes: the basename stays under the 255-byte filename limit while
+  # the line it composes runs past the 200-character cap.
+  long="$(printf 'a%.0s' $(seq 1 200))"
+  printf 'x' > "$DUX_HOME/repoAI/docs/pull_request_template.$long"
+  run --separate-stderr dux-project add "$DUX_HOME/repoAI" --pr-template install
+  [ "$status" -eq 0 ]
+  # The precondition. Without it the cap below is satisfied by the shorter
+  # "installed PR template" line, and the test passes having reached nothing.
+  [[ "$output" == "existing PR template left alone: "* ]]
+  [ "${#output}" -le 200 ]
 }
 
 # A directory named like the file form is not a template to GitHub. Matching it
