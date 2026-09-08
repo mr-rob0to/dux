@@ -93,9 +93,11 @@ tok_a=qx; tok_b=zw; boundary_entry="$tok_a$tok_b"
 # name into the paths denylist, and the lint then flagged every tracked file.
 # Silently matching everything is worse than refusing: the check that fires on
 # every line is the check nobody reads.
-# Both denylist files are git-ignored, so a worktree never has them. Every
-# feature branch is written in a worktree, so the check was passing there
-# without reading anything: the one place it needed to work.
+# Both denylist files are git-ignored, so a fresh worktree does not inherit
+# them. Every feature branch is written in a worktree, so the check was passing
+# there without reading anything: the one place it needed to work. A worktree
+# can still have them, because dux-install writes the lists beside its own bin/
+# and so puts them wherever it is run from; the test after this one covers that.
 @test "lint reads the denylist from the main checkout when run in a worktree" {
   tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
   printf '%s\n' "$short_account" > "$tmp/repo/tests/personal-names.txt"
