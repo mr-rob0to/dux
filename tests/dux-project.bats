@@ -3,7 +3,7 @@ load helpers/setup
 @test "a missing argument is a usage finding, not a bash error, for every subcommand" {
   run dux-project add
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: dux-project add <path> [--name <name>] [--base <branch>] [--issues off|label:<name>] [--worktree make|script|git]" ]]
+  [[ "$output" == "finding: usage: dux-project add <path> [--name <name>] [--base <branch>] [--issues off|label:<name>] [--worktree make|script|git] [--pr-template install|skip]" ]]
   run dux-project add --name onlyaname
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project add"* ]]
   run dux-project get repoA
@@ -124,16 +124,19 @@ load helpers/setup
   [[ "$output" == "finding: not a git repository"* ]]
 }
 
-@test "add installs the PR template when absent and leaves an existing one" {
+@test "add installs the PR template only on --pr-template install and leaves an existing one alone" {
   make_repo "$DUX_HOME/repoE" main
-  dux-project add "$DUX_HOME/repoE"
+  dux-project add "$DUX_HOME/repoE" --pr-template install
   [ -f "$DUX_HOME/repoE/.github/PULL_REQUEST_TEMPLATE.md" ]
   grep -q '^## How to review' "$DUX_HOME/repoE/.github/PULL_REQUEST_TEMPLATE.md"
   make_repo "$DUX_HOME/repoF" main
   mkdir -p "$DUX_HOME/repoF/.github"; echo custom > "$DUX_HOME/repoF/.github/PULL_REQUEST_TEMPLATE.md"
-  run dux-project add "$DUX_HOME/repoF"
+  # --separate-stderr, because the line being asserted is the one the caller
+  # relays on stdout: log writes the same words to stderr, and a plain run merges
+  # the two, so the log line alone would satisfy this while stdout said nothing.
+  run --separate-stderr dux-project add "$DUX_HOME/repoF" --pr-template install
   [ "$(cat "$DUX_HOME/repoF/.github/PULL_REQUEST_TEMPLATE.md")" = "custom" ]
-  [[ "$output" == *"existing PR template left alone"* ]]
+  [[ "$output" == *"existing PR template left alone: .github/PULL_REQUEST_TEMPLATE.md"* ]]
 }
 
 @test "add stops with a finding when base signals disagree" {
@@ -167,7 +170,7 @@ load helpers/setup
 @test "add refuses a symlinked .github and writes nothing anywhere" {
   make_repo "$DUX_HOME/repoI" main
   mkdir -p "$DUX_HOME/outside"; ln -s "$DUX_HOME/outside" "$DUX_HOME/repoI/.github"
-  run dux-project add "$DUX_HOME/repoI"
+  run dux-project add "$DUX_HOME/repoI" --pr-template install
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: refusing to write through a symlink"* ]]
   [ -z "$(ls -A "$DUX_HOME/outside")" ]
@@ -177,8 +180,9 @@ load helpers/setup
 @test "add refuses a dangling template symlink instead of writing through it" {
   make_repo "$DUX_HOME/repoJ" main
   mkdir -p "$DUX_HOME/repoJ/.github"; ln -s "$DUX_HOME/victim.md" "$DUX_HOME/repoJ/.github/PULL_REQUEST_TEMPLATE.md"
-  run dux-project add "$DUX_HOME/repoJ"
+  run dux-project add "$DUX_HOME/repoJ" --pr-template install
   [ "$status" -eq 2 ]
+  [[ "$output" == "finding: refusing to write through a symlink"* ]]
   [ ! -e "$DUX_HOME/victim.md" ]
 }
 
@@ -234,7 +238,7 @@ load helpers/setup
 @test "add is a finding when .github cannot be created, and nothing is registered" {
   make_repo "$DUX_HOME/repoO" main
   chmod 555 "$DUX_HOME/repoO"
-  run dux-project add "$DUX_HOME/repoO"
+  run dux-project add "$DUX_HOME/repoO" --pr-template install
   chmod 755 "$DUX_HOME/repoO"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: cannot create $DUX_HOME/repoO/.github"* ]]
@@ -244,7 +248,7 @@ load helpers/setup
 @test "add is a finding when the template cannot be written" {
   make_repo "$DUX_HOME/repoP" main
   mkdir -p "$DUX_HOME/repoP/.github"; chmod 555 "$DUX_HOME/repoP/.github"
-  run dux-project add "$DUX_HOME/repoP"
+  run dux-project add "$DUX_HOME/repoP" --pr-template install
   chmod 755 "$DUX_HOME/repoP/.github"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: cannot write $DUX_HOME/repoP/.github/PULL_REQUEST_TEMPLATE.md"* ]]
@@ -284,6 +288,41 @@ load helpers/setup
   [ "$status" -eq 0 ]
   grep -q '^- abcd ' "$DUX_HOME/data/projects.md"
   [[ "$stderr" != *"shorter than four characters"* ]]
+}
+
+# Writing into a project repo is the one exception to "never write to a project
+# repo", so it needs the operator's word. Without the flag nothing is written and
+# the project is still registered: declining is a normal outcome, not a finding.
+@test "add without consent writes no template and still registers" {
+  make_repo "$DUX_HOME/repoAA" main
+  run --separate-stderr dux-project add "$DUX_HOME/repoAA"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^- repoAA ' "$DUX_HOME/data/projects.md" || true)" -eq 1 ]
+  refute [ -e "$DUX_HOME/repoAA/.github/PULL_REQUEST_TEMPLATE.md" ]
+  [[ "$output" == *"no PR template found; none installed"* ]]
+
+  make_repo "$DUX_HOME/repoAB" main
+  run dux-project add "$DUX_HOME/repoAB" --pr-template skip
+  [ "$status" -eq 0 ]
+  refute [ -e "$DUX_HOME/repoAB/.github/PULL_REQUEST_TEMPLATE.md" ]
+
+  make_repo "$DUX_HOME/repoAE" main
+  run dux-project add "$DUX_HOME/repoAE" --pr-template yes
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --pr-template must be install or skip: yes"* ]]
+  [ "$(grep -c '^- repoAE ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
+}
+
+# GitHub does not say which template wins when a repo has more than one, so Dux
+# never adds a second. A template anywhere GitHub reads one is left alone and its
+# path reported, even when the operator asked for an install.
+@test "add leaves a template outside .github alone and says where" {
+  make_repo "$DUX_HOME/repoAC" main
+  mkdir -p "$DUX_HOME/repoAC/docs"; echo custom > "$DUX_HOME/repoAC/docs/pull_request_template.md"
+  run --separate-stderr dux-project add "$DUX_HOME/repoAC" --pr-template install
+  [ "$status" -eq 0 ]
+  refute [ -e "$DUX_HOME/repoAC/.github/PULL_REQUEST_TEMPLATE.md" ]
+  [[ "$output" == *"existing PR template left alone: docs/pull_request_template.md"* ]]
 }
 
 # GitHub reads a pull request template from the repository root, from docs/, and
