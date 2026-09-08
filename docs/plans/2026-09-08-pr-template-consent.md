@@ -15,7 +15,8 @@
   sentence and a `/ship` base-branch hint are recorded. Approved by the operator on
   2026-09-08, who chose option 3 below. No decisions are open.
 - On branch `feat/pr-template-consent`, worktree `.worktrees/pr-template-consent`, based
-  on `origin/main` at `fd0cb6c`. Tasks 1 to 3 not started.
+  on `origin/main` at `fd0cb6c`. Task 1 done and break-verified, eight breaks.
+  Tasks 2 and 3 not started.
 - Picks up the one exception to hard rule 1, which `dux-project` has taken without asking
   since milestone 1, and the one-path template check the kickoff found.
 - When this merges, `dux-project add` writes a PR template only with `--pr-template
@@ -149,7 +150,7 @@ repo, and refuses a missing path.
 
 **Steps**
 
-- [ ] Write the test first: "pr-template lists every place GitHub reads a template from".
+- [x] Write the test first: "pr-template lists every place GitHub reads a template from".
       Make `repoY` with nothing; `run dux-project pr-template "$DUX_HOME/repoY"`; assert
       (1) `[ "$output" = none ]`. Make `repoZ` with one real match per directory:
       `PULL_REQUEST_TEMPLATE.md` at the root, `docs/pull_request_template.txt`, and a
@@ -163,14 +164,14 @@ repo, and refuses a missing path.
       "$DUX_HOME/absent"`; assert (6) status 2 and
       `[[ "$output" == "finding: no such directory: "* ]]`. Then `repoAD` holding only
       a directory `docs/PULL_REQUEST_TEMPLATE.md/`; run; assert (8) `[ "$output" = none ]`.
-- [ ] In the first test of the file, add `run dux-project pr-template` and assert (7) the
+- [x] In the first test of the file, add `run dux-project pr-template` and assert (7) the
       usage finding `finding: usage: dux-project pr-template <path>`; update the catch-all
       usage string there to `add|list|get|resolve-base|pr-template`.
-- [ ] Run `make job/dux-project`, see the new test and the usage test fail, paste that
+- [x] Run `make job/dux-project`, see the new test and the usage test fail, paste that
       into the commit body.
-- [ ] Add `find_templates` and the `pr-template` subcommand to `bin/dux-project`. Run
+- [x] Add `find_templates` and the `pr-template` subcommand to `bin/dux-project`. Run
       `make job/dux-project` and `make lint-shell`; green.
-- [ ] Break-verify, one at a time, restoring between each (copy the file aside first,
+- [x] Break-verify, one at a time, restoring between each (copy the file aside first,
       never `git checkout --` an uncommitted file): (1) print nothing instead of `none`;
       (2) drop the root from the directory list; (3) drop `docs`; (4) drop the folder
       case so only files match; (5) widen the name match to `pull_request_template*`;
