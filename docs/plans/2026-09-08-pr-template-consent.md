@@ -15,8 +15,8 @@
   sentence and a `/ship` base-branch hint are recorded. Approved by the operator on
   2026-09-08, who chose option 3 below. No decisions are open.
 - On branch `feat/pr-template-consent`, worktree `.worktrees/pr-template-consent`, based
-  on `origin/main` at `fd0cb6c`. Task 1 done and break-verified, eight breaks.
-  Tasks 2 and 3 not started.
+  on `origin/main` at `fd0cb6c`. Tasks 1 and 2 done and break-verified, eight breaks
+  and ten. Task 3, the prose, not started.
 - Picks up the one exception to hard rule 1, which `dux-project` has taken without asking
   since milestone 1, and the one-path template check the kickoff found.
 - When this merges, `dux-project add` writes a PR template only with `--pr-template
@@ -195,7 +195,7 @@ with the flag and still register nothing; an unknown value is a usage-style find
 
 **Steps**
 
-- [ ] Add `--pr-template install` to the six existing runs that must reach the write
+- [x] Add `--pr-template install` to the six existing runs that must reach the write
       path: `repoE` (line 127), `repoF` (132), `repoI` (168), `repoJ` (178), `repoO`
       (235), `repoP` (245). Update the exact usage string on line 6. In the `repoJ` test
       add, right after the status check, assertion (14)
@@ -203,29 +203,29 @@ with the flag and still register nothing; an unknown value is a usage-style find
       checks only exit 2 and an unwritten file, which a usage finding also satisfies.
       Run the suite: the flag does not exist yet, so each of those runs ends in the
       unknown-flag usage finding and fails, `repoJ` on line (14). Paste that red run.
-- [ ] Rewrite the test on line 125 as "add installs the PR template only on
+- [x] Rewrite the test on line 125 as "add installs the PR template only on
       --pr-template install and leaves an existing one alone": `repoE` with the flag,
       assert (1) the file exists and holds `## How to review`; `repoF` with a custom
       `.github/PULL_REQUEST_TEMPLATE.md` and the flag, assert (2) content still `custom`
       and (3) output contains `existing PR template left alone:
       .github/PULL_REQUEST_TEMPLATE.md`.
-- [ ] New test "add without consent writes no template and still registers": `repoAA`,
+- [x] New test "add without consent writes no template and still registers": `repoAA`,
       `run dux-project add "$DUX_HOME/repoAA"`, assert (4) status 0, (5) the registry has
       `- repoAA `, (6) `[ ! -e "$DUX_HOME/repoAA/.github/PULL_REQUEST_TEMPLATE.md" ]`,
       (7) output contains `no PR template found; none installed`. Then `repoAB` with
       `--pr-template skip`, assert (8) status 0 and the file absent. Then
       `--pr-template yes` on a fresh repo, assert (9) status 2, output
       `finding: --pr-template must be install or skip: yes`, and nothing registered.
-- [ ] New test "add leaves a template outside .github alone and says where": `repoAC`
+- [x] New test "add leaves a template outside .github alone and says where": `repoAC`
       with `docs/pull_request_template.md` holding `custom`; `run dux-project add
       "$DUX_HOME/repoAC" --pr-template install`; assert (10) status 0, (11)
       `[ ! -e .../.github/PULL_REQUEST_TEMPLATE.md ]`, (12) output contains
       `existing PR template left alone: docs/pull_request_template.md`. No assertion on
       the docs file's content: nothing ever writes to `docs/`, so it would assert on the
       fixture. (10) is a precondition, so a finding cannot pass (11) vacuously.
-- [ ] Run `make job/dux-project`, see the new and rewritten tests fail, paste. Implement
+- [x] Run `make job/dux-project`, see the new and rewritten tests fail, paste. Implement
       the flag, the validation, and the `find_templates` call in `install_template`. Green.
-- [ ] Break-verify, restoring between each, one failure per break, each labelled in the
+- [x] Break-verify, restoring between each, one failure per break, each labelled in the
       commit body with the assertion it hit:
       (1) make `install` behave as `skip`;
       (2) remove the `find_templates` gate so `install` always copies over `repoF`'s file;
@@ -275,6 +275,17 @@ bundled copy when it has none or only the folder form.
       principle 3). This is the prose guard's break-verification: the "no" run must show
       registration succeeded with no file written.
 - [ ] Run `make check-branch`, inspect the diff, then invoke `/ship`.
+
+## Divergences during implementation
+
+- Task 2 break 12 landed and its test still passed. `log` writes the same words
+  to stderr, and a plain `run` merges stderr into `$output`, so the log line
+  satisfied the assertion while the line the caller relays had lost its path.
+  Three assertions moved to `run --separate-stderr`, the idiom already used in
+  this file at the short-name test. No change to the plan's design.
+- Task 1 break 4 first reported no failure because the break had not landed: the
+  substitution counter returned 1 whether or not the pattern matched. The landing
+  check now compares the file. No change to the plan's design.
 
 ## Milestone acceptance
 
