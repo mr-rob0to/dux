@@ -13,7 +13,7 @@ CLAUDE.md                  two-line import of AGENTS.md
 .claude/settings.json      SessionStart: dux-lock acquire; SessionEnd: dux-lock release
 skills/
   dux-dispatch/SKILL.md    turn a goal into a running task, and tear it down after merge
-  dux-project/SKILL.md     register a repo, install the PR template if absent
+  dux-project/SKILL.md     register a repo; ask before installing the PR template
   dux-status/SKILL.md      show the fleet digest and explain its next actions
   dux-recover/SKILL.md     judge and handle stale, dead, ended, or failed work
   ship/SKILL.md            bundled delivery gate, installed by dux-install (milestone 1, task 8)
@@ -25,7 +25,8 @@ bin/
                            task_harness, harness_refusal, require_cmd, take_bytes,
                            take_line
   dux-lock                 single live session; starts and stops its watcher
-  dux-project              registry add/list/get/resolve-base, PR template install, --worktree
+  dux-project              registry add/list/get/resolve-base/pr-template, --worktree,
+                           --pr-template install|skip
   dux-ledger               add/set/set-if/get/list/ack/unack over data/backlog.md; the only writer
   dux-task-new             allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, folder, queued line
   dux-intake               queue labelled GitHub issues as tasks; --show fences one issue's text
@@ -51,7 +52,8 @@ bin/
   dux-install              symlink bundled skills, seed config, write identifier denylist (task 8)
   dux-uninstall            remove only symlinks that point into this repo (task 8)
 templates/
-  PULL_REQUEST_TEMPLATE.md the template dux-project installs into projects
+  PULL_REQUEST_TEMPLATE.md the template dux-project installs, with consent, into a
+                           project that has none
   brief.md                 the brief skeleton dux-brief renders
   worker-settings.json     Claude deny rules, __BASE__ rendered per task
   hooks/pre-push           base-branch push guard, __BASE__ and __UPSTREAM__ rendered per task

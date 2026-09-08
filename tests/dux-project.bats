@@ -3,15 +3,17 @@ load helpers/setup
 @test "a missing argument is a usage finding, not a bash error, for every subcommand" {
   run dux-project add
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: dux-project add <path> [--name <name>] [--base <branch>] [--issues off|label:<name>] [--worktree make|script|git]" ]]
+  [[ "$output" == "finding: usage: dux-project add <path> [--name <name>] [--base <branch>] [--issues off|label:<name>] [--worktree make|script|git] [--pr-template install|skip]" ]]
   run dux-project add --name onlyaname
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project add"* ]]
   run dux-project get repoA
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project get <name> <key>" ]]
   run dux-project resolve-base
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project resolve-base <path>" ]]
+  run dux-project pr-template
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project pr-template <path>" ]]
   run dux-project frobnicate
-  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project add|list|get|resolve-base" ]]
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-project add|list|get|resolve-base|pr-template" ]]
   [ "$(grep -c 'line [0-9]' <<< "$output" || true)" -eq 0 ]
 }
 
@@ -122,16 +124,19 @@ load helpers/setup
   [[ "$output" == "finding: not a git repository"* ]]
 }
 
-@test "add installs the PR template when absent and leaves an existing one" {
+@test "add installs the PR template only on --pr-template install and leaves an existing one alone" {
   make_repo "$DUX_HOME/repoE" main
-  dux-project add "$DUX_HOME/repoE"
+  dux-project add "$DUX_HOME/repoE" --pr-template install
   [ -f "$DUX_HOME/repoE/.github/PULL_REQUEST_TEMPLATE.md" ]
   grep -q '^## How to review' "$DUX_HOME/repoE/.github/PULL_REQUEST_TEMPLATE.md"
   make_repo "$DUX_HOME/repoF" main
   mkdir -p "$DUX_HOME/repoF/.github"; echo custom > "$DUX_HOME/repoF/.github/PULL_REQUEST_TEMPLATE.md"
-  run dux-project add "$DUX_HOME/repoF"
+  # --separate-stderr, because the line being asserted is the one the caller
+  # relays on stdout: log writes the same words to stderr, and a plain run merges
+  # the two, so the log line alone would satisfy this while stdout said nothing.
+  run --separate-stderr dux-project add "$DUX_HOME/repoF" --pr-template install
   [ "$(cat "$DUX_HOME/repoF/.github/PULL_REQUEST_TEMPLATE.md")" = "custom" ]
-  [[ "$output" == *"existing PR template left alone"* ]]
+  [[ "$output" == *"existing PR template left alone: .github/PULL_REQUEST_TEMPLATE.md"* ]]
 }
 
 @test "add stops with a finding when base signals disagree" {
@@ -165,7 +170,7 @@ load helpers/setup
 @test "add refuses a symlinked .github and writes nothing anywhere" {
   make_repo "$DUX_HOME/repoI" main
   mkdir -p "$DUX_HOME/outside"; ln -s "$DUX_HOME/outside" "$DUX_HOME/repoI/.github"
-  run dux-project add "$DUX_HOME/repoI"
+  run dux-project add "$DUX_HOME/repoI" --pr-template install
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: refusing to write through a symlink"* ]]
   [ -z "$(ls -A "$DUX_HOME/outside")" ]
@@ -175,8 +180,9 @@ load helpers/setup
 @test "add refuses a dangling template symlink instead of writing through it" {
   make_repo "$DUX_HOME/repoJ" main
   mkdir -p "$DUX_HOME/repoJ/.github"; ln -s "$DUX_HOME/victim.md" "$DUX_HOME/repoJ/.github/PULL_REQUEST_TEMPLATE.md"
-  run dux-project add "$DUX_HOME/repoJ"
+  run dux-project add "$DUX_HOME/repoJ" --pr-template install
   [ "$status" -eq 2 ]
+  [[ "$output" == "finding: refusing to write through a symlink"* ]]
   [ ! -e "$DUX_HOME/victim.md" ]
 }
 
@@ -232,7 +238,7 @@ load helpers/setup
 @test "add is a finding when .github cannot be created, and nothing is registered" {
   make_repo "$DUX_HOME/repoO" main
   chmod 555 "$DUX_HOME/repoO"
-  run dux-project add "$DUX_HOME/repoO"
+  run dux-project add "$DUX_HOME/repoO" --pr-template install
   chmod 755 "$DUX_HOME/repoO"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: cannot create $DUX_HOME/repoO/.github"* ]]
@@ -242,7 +248,7 @@ load helpers/setup
 @test "add is a finding when the template cannot be written" {
   make_repo "$DUX_HOME/repoP" main
   mkdir -p "$DUX_HOME/repoP/.github"; chmod 555 "$DUX_HOME/repoP/.github"
-  run dux-project add "$DUX_HOME/repoP"
+  run dux-project add "$DUX_HOME/repoP" --pr-template install
   chmod 755 "$DUX_HOME/repoP/.github"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: cannot write $DUX_HOME/repoP/.github/PULL_REQUEST_TEMPLATE.md"* ]]
@@ -282,4 +288,153 @@ load helpers/setup
   [ "$status" -eq 0 ]
   grep -q '^- abcd ' "$DUX_HOME/data/projects.md"
   [[ "$stderr" != *"shorter than four characters"* ]]
+}
+
+# Writing into a project repo is the one exception to "never write to a project
+# repo", so it needs the operator's word. Without the flag nothing is written and
+# the project is still registered: declining is a normal outcome, not a finding.
+@test "add without consent writes no template and still registers" {
+  make_repo "$DUX_HOME/repoAA" main
+  run --separate-stderr dux-project add "$DUX_HOME/repoAA"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^- repoAA ' "$DUX_HOME/data/projects.md" || true)" -eq 1 ]
+  refute [ -e "$DUX_HOME/repoAA/.github/PULL_REQUEST_TEMPLATE.md" ]
+  [[ "$output" == *"no PR template found; none installed"* ]]
+
+  make_repo "$DUX_HOME/repoAB" main
+  run dux-project add "$DUX_HOME/repoAB" --pr-template skip
+  [ "$status" -eq 0 ]
+  refute [ -e "$DUX_HOME/repoAB/.github/PULL_REQUEST_TEMPLATE.md" ]
+
+  make_repo "$DUX_HOME/repoAE" main
+  run dux-project add "$DUX_HOME/repoAE" --pr-template yes
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --pr-template must be install or skip: yes"* ]]
+  [ "$(grep -c '^- repoAE ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
+}
+
+# GitHub does not say which template wins when a repo has more than one, so Dux
+# never adds a second. A template anywhere GitHub reads one is left alone and its
+# path reported, even when the operator asked for an install.
+@test "add leaves a template outside .github alone and says where" {
+  make_repo "$DUX_HOME/repoAC" main
+  mkdir -p "$DUX_HOME/repoAC/docs"; echo custom > "$DUX_HOME/repoAC/docs/pull_request_template.md"
+  run --separate-stderr dux-project add "$DUX_HOME/repoAC" --pr-template install
+  [ "$status" -eq 0 ]
+  refute [ -e "$DUX_HOME/repoAC/.github/PULL_REQUEST_TEMPLATE.md" ]
+  [[ "$output" == *"existing PR template left alone: docs/pull_request_template.md"* ]]
+}
+
+# GitHub reads a pull request template from the repository root, from docs/, and
+# from .github/, in any letter case, with any extension, and as a folder of
+# several. This lists all of them so the skill can ask before anything is
+# written. The fixture holds exactly one real match per directory, because glob
+# order inside one directory follows the machine's locale: measured on macOS,
+# en_US.UTF-8 sorts pull_request_template_old.md before pull_request_template.txt
+# and C sorts it after. The near miss therefore sits in .github/, where the
+# shorter PULL_REQUEST_TEMPLATE sorts first under both.
+@test "pr-template lists every place GitHub reads a template from" {
+  make_repo "$DUX_HOME/repoY" main
+  run dux-project pr-template "$DUX_HOME/repoY"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
+
+  make_repo "$DUX_HOME/repoZ" main
+  mkdir -p "$DUX_HOME/repoZ/docs" "$DUX_HOME/repoZ/.github/PULL_REQUEST_TEMPLATE"
+  echo body > "$DUX_HOME/repoZ/PULL_REQUEST_TEMPLATE.md"
+  echo body > "$DUX_HOME/repoZ/docs/pull_request_template.txt"
+  echo body > "$DUX_HOME/repoZ/.github/PULL_REQUEST_TEMPLATE/one.md"
+  echo body > "$DUX_HOME/repoZ/.github/pull_request_template_old.md"
+  run dux-project pr-template "$DUX_HOME/repoZ"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "PULL_REQUEST_TEMPLATE.md" ]
+  [ "${lines[1]}" = "docs/pull_request_template.txt" ]
+  [ "${lines[2]}" = ".github/PULL_REQUEST_TEMPLATE/" ]
+  [ "${#lines[@]}" -eq 3 ]
+
+  run dux-project pr-template "$DUX_HOME/absent"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: no such directory: "* ]]
+}
+
+# git stores a symlink as a symlink, so GitHub reads no template through one and
+# neither does this. Following it would report a template the repo does not have,
+# and would take the early return that the symlink refusal sits after.
+@test "pr-template does not follow a symlinked .github, and the refusal still fires" {
+  make_repo "$DUX_HOME/repoAF" main
+  mkdir -p "$DUX_HOME/elsewhere"; echo theirs > "$DUX_HOME/elsewhere/pull_request_template.md"
+  ln -s "$DUX_HOME/elsewhere" "$DUX_HOME/repoAF/.github"
+  run dux-project pr-template "$DUX_HOME/repoAF"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
+
+  run dux-project add "$DUX_HOME/repoAF" --pr-template install
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: refusing to write through a symlink"* ]]
+  [ "$(grep -c '^- repoAF ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
+  [ "$(cat "$DUX_HOME/elsewhere/pull_request_template.md")" = "theirs" ]
+}
+
+# A filename is repository content, which the constitution calls untrusted and
+# requires checked for shape and size before it reaches a word the operator
+# reads. A newline would print a second line the repo chose the text of; a
+# carriage return rewrites the line the operator is looking at; a C1 control
+# starts an escape sequence and is invisible to [[:cntrl:]] under LC_ALL=C. A
+# match is spelt out of [A-Za-z0-9._-], so none of them is one.
+@test "pr-template does not list a name outside the safe character set" {
+  make_repo "$DUX_HOME/repoAG" main
+  mkdir -p "$DUX_HOME/repoAG/docs"
+  printf 'x' > "$DUX_HOME/repoAG/docs/$(printf 'pull_request_template.md\nnone')"
+  run dux-project pr-template "$DUX_HOME/repoAG"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
+  [ "${#lines[@]}" -eq 1 ]
+
+  make_repo "$DUX_HOME/repoAH" main
+  mkdir -p "$DUX_HOME/repoAH/docs"
+  printf 'x' > "$DUX_HOME/repoAH/docs/$(printf 'pull_request_template.md\rfinding: forged')"
+  run dux-project pr-template "$DUX_HOME/repoAH"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
+
+  # U+009B, the C1 sequence introducer, as its two UTF-8 bytes. Run under the C
+  # locale, where [[:cntrl:]] does not see it and cap_line does not strip it.
+  make_repo "$DUX_HOME/repoAJ" main
+  mkdir -p "$DUX_HOME/repoAJ/docs"
+  printf 'x' > "$DUX_HOME/repoAJ/docs/$(printf 'pull_request_template.md\302\233 31m')"
+  LC_ALL=C run dux-project pr-template "$DUX_HOME/repoAJ"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
+}
+
+# A name with no control character in it still reaches the operator, so the line
+# carrying it gets what every other untrusted string in Dux gets: one line, 200
+# characters, and zero-width and direction-changing characters removed.
+#
+# Whether [[:cntrl:]] covers the Unicode format characters is a libc question and
+# the answer differs between macOS and Linux, so cap_line is the layer this test
+# pins and the guard is not asked to be the only one.
+@test "add caps the path it reports back" {
+  make_repo "$DUX_HOME/repoAI" main
+  mkdir -p "$DUX_HOME/repoAI/docs"
+  # 200 filler bytes: the basename stays under the 255-byte filename limit while
+  # the line it composes runs past the 200-character cap.
+  long="$(printf 'a%.0s' $(seq 1 200))"
+  printf 'x' > "$DUX_HOME/repoAI/docs/pull_request_template.$long"
+  run --separate-stderr dux-project add "$DUX_HOME/repoAI" --pr-template install
+  [ "$status" -eq 0 ]
+  # The precondition. Without it the cap below is satisfied by the shorter
+  # "installed PR template" line, and the test passes having reached nothing.
+  [[ "$output" == "existing PR template left alone: "* ]]
+  [ "${#output}" -le 200 ]
+}
+
+# A directory named like the file form is not a template to GitHub. Matching it
+# would make Dux report a template the repo does not have and decline to install.
+@test "pr-template ignores a directory named like the file form" {
+  make_repo "$DUX_HOME/repoAD" main
+  mkdir -p "$DUX_HOME/repoAD/docs/PULL_REQUEST_TEMPLATE.md"
+  run dux-project pr-template "$DUX_HOME/repoAD"
+  [ "$status" -eq 0 ]
+  [ "$output" = none ]
 }

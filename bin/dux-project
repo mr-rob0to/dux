@@ -6,7 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 registry="$DUX_DATA/projects.md"
 touch "$registry"
-usage_add="usage: dux-project add <path> [--name <name>] [--base <branch>] [--issues off|label:<name>] [--worktree make|script|git]"
+usage_add="usage: dux-project add <path> [--name <name>] [--base <branch>] [--issues off|label:<name>] [--worktree make|script|git] [--pr-template install|skip]"
 usage() { finding "$1"; }
 
 field() {  # $1 name, $2 key
@@ -43,9 +43,79 @@ resolve_base() {  # $1 path. Spec section 4 and /ship step 0.
   echo "$candidates"
 }
 
-install_template() {  # $1 path. Prints one line for the caller to relay.
-  local gh="$1/.github" t="$1/.github/PULL_REQUEST_TEMPLATE.md"
-  if [ -e "$t" ]; then log "existing PR template left alone: $t"; echo "existing PR template left alone"; return; fi
+# Every place GitHub reads a pull request template from, one repo-relative path
+# per line, in the order root, docs/, .github/; a folder form ends in "/".
+# Prints nothing when the repo has none, so the caller decides what "none" says.
+#
+# GitHub's own docs give the three directories, say filenames are not case
+# sensitive and may carry an extension such as .md or .txt, and allow a
+# PULL_REQUEST_TEMPLATE/ folder of several in any of the three. They do not say
+# which wins when a repo has more than one, which is why Dux never adds a second.
+#
+# A glob, not `find -maxdepth 1`: find does not descend a symlinked .github by
+# default and a glob does, and a glob over a missing docs/ is simply an entry
+# that fails the -d and -f tests below. A dangling symlink passes neither, so it
+# is not a match and install_template's symlink refusal still fires on it.
+find_templates() {  # $1 path
+  local dir entry base low
+  for dir in "" docs .github; do
+    # git stores a symlink as a symlink, so GitHub reads no template through one.
+    # Following it would report a template the repo does not have, and would take
+    # the early return that install_template's symlink refusal sits after.
+    [ -n "$dir" ] && [ -L "$1/$dir" ] && continue
+    for entry in "$1${dir:+/$dir}"/*; do
+      base="${entry##*/}"
+      # A filename is repository content, which the spec calls untrusted, and
+      # this name is printed for the operator to read. So a match must be spelt
+      # out of the characters a project name is already held to, and anything
+      # else is not a match: no newline to forge a second line, no carriage
+      # return or escape to rewrite the line, no zero-width or direction-
+      # changing character, whatever the locale says those are.
+      #
+      # Named characters rather than rejected ones on purpose. Rejecting the bad
+      # ones was tried and missed a class twice: first every control character,
+      # then the C1 ones, which [[:cntrl:]] does not cover under LC_ALL=C and
+      # which cap_line does not strip. A template GitHub reads is spelt in this
+      # set anyway.
+      case "$base" in *[!A-Za-z0-9._-]*) continue ;; esac
+      low="$(printf '%s' "$base" | tr '[:upper:]' '[:lower:]')"
+      case "$low" in
+        # The folder form is a directory; the file form is a regular file. A
+        # directory named PULL_REQUEST_TEMPLATE.md is neither to GitHub.
+        pull_request_template)   [ -d "$entry" ] || continue; printf '%s%s/\n' "${dir:+$dir/}" "$base" ;;
+        pull_request_template.*) [ -f "$entry" ] || continue; printf '%s%s\n'  "${dir:+$dir/}" "$base" ;;
+        *) continue ;;
+      esac
+    done
+  done
+}
+
+# $1 path, $2 install|skip. Prints one line for the caller to relay.
+#
+# Writing here is the one exception to "never write to a project repo", so it
+# takes the operator's word: $2 comes from the skill, which asks. The default is
+# skip, so a caller that forgets to ask writes nothing.
+#
+# A repo that already has a template anywhere GitHub reads one keeps it and gets
+# no second one, whatever $2 says. GitHub does not document which of root, docs/
+# and .github/ wins, so a second template is a coin toss over which one a person
+# sees in the browser. The operator who wants this one copies it across by hand.
+install_template() {
+  local gh="$1/.github" t="$1/.github/PULL_REQUEST_TEMPLATE.md" found
+  found="$(find_templates "$1")"
+  if [ -n "$found" ]; then
+    found="$(printf '%s' "$found" | tr '\n' ' ')"; found="${found% }"
+    # The name is already spelt in the safe set, so what is left to bound is
+    # length: a legal name is 255 bytes and several of them can be found. The
+    # whole composed line is capped, not just the paths, because the line is what
+    # the operator reads and what the skill relays.
+    local msg
+    msg="$(cap_line "existing PR template left alone: $found")"
+    log "$msg"
+    echo "$msg"
+    return
+  fi
+  [ "$2" = install ] || { log "no PR template found and none installed"; echo "no PR template found; none installed"; return; }
   if [ -L "$gh" ] || [ -L "$t" ]; then finding "refusing to write through a symlink at $gh"; fi
   mkdir -p "$gh" 2>/dev/null || finding "cannot create $gh"
   cp "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md" "$t" 2>/dev/null || finding "cannot write $t"
@@ -55,13 +125,14 @@ install_template() {  # $1 path. Prints one line for the caller to relay.
 cmd="${1:-}"; shift || true
 case "$cmd" in
   add)
-    path=""; name=""; base=""; issues="off"; wt_flag=""
+    path=""; name=""; base=""; issues="off"; wt_flag=""; pr_template="skip"
     while [ $# -gt 0 ]; do
       case "$1" in
         --name) [ $# -ge 2 ] || usage "$usage_add"; name="$2"; shift 2 ;;
         --base) [ $# -ge 2 ] || usage "$usage_add"; base="$2"; shift 2 ;;
         --issues) [ $# -ge 2 ] || usage "$usage_add"; issues="$2"; shift 2 ;;
         --worktree) [ $# -ge 2 ] || usage "$usage_add"; wt_flag="$2"; shift 2 ;;
+        --pr-template) [ $# -ge 2 ] || usage "$usage_add"; pr_template="$2"; shift 2 ;;
         -*) usage "$usage_add" ;;
         *) [ -z "$path" ] || usage "$usage_add"; path="$1"; shift ;;
       esac
@@ -82,6 +153,10 @@ case "$cmd" in
     grep -q "^- $name " "$registry" && finding "project $name already registered; pass --name to register it under another name"
     other="$(grep -F -- " path=$path " "$registry" | sed -n 's/^- \([^ ]*\) .*/\1/p')"
     [ -z "$other" ] || finding "path $path already registered as $other"
+    case "$pr_template" in
+      install|skip) ;;
+      *) finding "--pr-template must be install or skip: $pr_template" ;;
+    esac
     # One project is one line, and the line is read by splitting on spaces. A
     # label with a space in it would be stored whole and read back cut at the
     # space, so intake would quietly pull the wrong issues. Refuse it here.
@@ -104,7 +179,7 @@ case "$cmd" in
     else
       wt="$(detect_worktree "$path")"
     fi
-    template_msg="$(install_template "$path")" || exit $?
+    template_msg="$(install_template "$path" "$pr_template")" || exit $?
     printf -- '- %s path=%s base=%s worktree=%s issues=%s (added %s)\n' \
       "$name" "$path" "$base" "$wt" "$issues" "$(date -u +%Y-%m-%d)" >> "$registry"
     echo "$template_msg"
@@ -121,5 +196,10 @@ case "$cmd" in
     grep -q "^- $name " "$registry" || finding "project $name not registered"
     field "$name" "$key" ;;
   resolve-base) [ $# -eq 1 ] || usage "usage: dux-project resolve-base <path>"; resolve_base "$1" ;;
-  *) usage "usage: dux-project add|list|get|resolve-base" ;;
+  pr-template)
+    [ $# -eq 1 ] || usage "usage: dux-project pr-template <path>"
+    [ -d "$1" ] || finding "no such directory: $1"
+    found="$(find_templates "$1")"
+    if [ -n "$found" ]; then printf '%s\n' "$found"; else echo none; fi ;;
+  *) usage "usage: dux-project add|list|get|resolve-base|pr-template" ;;
 esac

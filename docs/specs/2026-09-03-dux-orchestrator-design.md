@@ -776,9 +776,11 @@ skill calls, kept in the ship skill directory.
 8. Attestation. Step 8 appends
    `<!-- dux-attestation:v1 {"head_sha":"…","steps":[{"step":"checks","status":"completed"},…]} -->`
    to the PR body. Data only, no policy claim.
-9. PR body. Step 8 fills the repo's `.github/PULL_REQUEST_TEMPLATE.md` (section
-   12) and passes it with `gh pr create --body-file`, since `--fill` ignores the
-   template. Verbose material goes inside `<details>`.
+9. PR body. Step 8 fills whichever pull request template the repo has, found by
+   the same rule as `dux-project pr-template` (section 12), and passes it with
+   `gh pr create --body-file`, since `--fill` ignores the template. A repo with
+   none, or with only the `PULL_REQUEST_TEMPLATE/` folder form, gets the copy in
+   `templates/`. Verbose material goes inside `<details>`.
 
 The ship skill is bundled in this repo at `skills/ship/` from milestone 1 and
 installed by `dux-install` (section 18), so this is an ordinary PR with a diff
@@ -818,11 +820,24 @@ Not ported: hook enforcement, CI auto-repair, transient reruns, evidence branch.
 
 ## 12. PR template
 
-Installed by `dux-project` when the repo has none; existing templates are left
-alone and reported. The installed file is untracked in the primary checkout and
-invisible to worktrees cut from `origin/<base>`, so `dux-project` says so and the
-operator commits it, or Dux dispatches a docs-only task to land it. `/ship`
-falls back to the copy in `templates/` when a repo has none.
+Installed by `dux-project` only when the operator says so and only when the repo
+has none. `dux-project pr-template <path>` lists what a repo already has: GitHub
+reads a template from the repository root, from `docs/` and from `.github/`, in
+any letter case, with any extension, and as a `PULL_REQUEST_TEMPLATE/` folder of
+several. An existing template is left alone and its path reported, and Dux never
+adds a second one beside it.
+
+That last rule is a decision, taken 2026-09-08 and recorded in
+`docs/plans/2026-09-08-pr-template-consent.md`. GitHub's documentation does not
+say which template wins when a repo has more than one, so a second template is a
+guess about which one a person opening a pull request in the browser would see.
+The operator who wants this template in a repo that already has one copies it
+across by hand.
+
+The installed file is untracked in the primary checkout and invisible to
+worktrees cut from `origin/<base>`, so `dux-project` says so and the operator
+commits it, or Dux dispatches a docs-only task to land it. `/ship` falls back to
+the copy in `templates/` when a repo has none.
 
 ```markdown
 ## Why
