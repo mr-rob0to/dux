@@ -130,13 +130,13 @@ case "$cmd" in
     grep -q "^- $name " "$registry" && finding "project $name already registered; pass --name to register it under another name"
     other="$(grep -F -- " path=$path " "$registry" | sed -n 's/^- \([^ ]*\) .*/\1/p')"
     [ -z "$other" ] || finding "path $path already registered as $other"
-    # One project is one line, and the line is read by splitting on spaces. A
-    # label with a space in it would be stored whole and read back cut at the
-    # space, so intake would quietly pull the wrong issues. Refuse it here.
     case "$pr_template" in
       install|skip) ;;
       *) finding "--pr-template must be install or skip: $pr_template" ;;
     esac
+    # One project is one line, and the line is read by splitting on spaces. A
+    # label with a space in it would be stored whole and read back cut at the
+    # space, so intake would quietly pull the wrong issues. Refuse it here.
     case "$issues" in
       off) ;;
       label:?*) case "${issues#label:}" in
