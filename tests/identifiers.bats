@@ -10,6 +10,20 @@ load helpers/setup
   [[ "$output" == *"README.md"* ]]
 }
 
+# cat joins two files with nothing between them. Both list locations resolve to
+# the same file in a main checkout, so a list hand-edited and saved without a
+# final newline has its last entry fused to its own first entry: the list then
+# matches nothing and the target exits 0 while reporting success.
+@test "lint still catches a leak when a list file has no final newline" {
+  tmp="$(mktemp -d)"; git clone -q "$DUX_ROOT" "$tmp/repo"; cp "$DUX_ROOT/Makefile" "$tmp/repo/Makefile"
+  printf '%s' 'leak-me-please' > "$tmp/repo/tests/personal-identifiers.txt"
+  echo 'this line says leak-me-please' >> "$tmp/repo/README.md"
+  (cd "$tmp/repo" && git add README.md)
+  run make -C "$tmp/repo" lint-identifiers
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"README.md"* ]]
+}
+
 @test "lint passes on the clean repo" {
   run make -C "$DUX_ROOT" lint-identifiers
   [ "$status" -eq 0 ]

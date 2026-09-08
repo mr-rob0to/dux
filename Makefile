@@ -132,6 +132,13 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 # superproject's .git/modules and the lists are not found. That skips, which is
 # what it already did before the lists were resolved at all.
 #
+# The two locations are read with an echo after each, not by handing both to one
+# cat. cat joins files with nothing between them, so a list hand-edited and saved
+# without a final newline fuses its last entry to the next file's first, and in a
+# main checkout, where both paths are the same file, to its own first entry. The
+# fused token matches nothing and the whole list stops working while the target
+# reports success. The blank line each echo leaves is dropped by the grep below.
+#
 # An entry shorter than DENYLIST_MIN cannot be matched without flooding: this
 # repo is registered as a project called "dux", that name reached the paths list,
 # and every tracked file matched. A check that fires on every line is a check
@@ -152,7 +159,7 @@ lint-identifiers:
 	printf '%s\n' $(GENERIC_ACCOUNTS) > "$$tmp/generic"; \
 	for f in personal-identifiers personal-names; do \
 	  : > "$$tmp/$$f"; \
-	  cat "tests/$$f.txt" "$$dl/tests/$$f.txt" 2>/dev/null \
+	  { cat "tests/$$f.txt" 2>/dev/null; echo; cat "$$dl/tests/$$f.txt" 2>/dev/null; echo; } \
 	    | grep -v '^$$' | sort -u | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
 	  [ -s "$$tmp/$$f" ] || continue; \
 	  [ "$$f" = personal-identifiers ] || continue; \
