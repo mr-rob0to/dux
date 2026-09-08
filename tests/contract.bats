@@ -102,6 +102,9 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   # The rule claimed more coverage than the lint gives until 2.0.4: three kinds
   # of entry are never searched, and one of the three is dropped without a word.
   [[ "$p2" == *'Three kinds of entry are never searched'* ]]
+  [[ "$p2" == *'a project whose repository is the checkout being installed into'* ]]
+  [[ "$p2" == *'a project name shorter than four characters'* ]]
+  [[ "$p2" == *'GENERIC_ACCOUNTS` list'* ]]
   [[ "$p2" == *'the generic list is dropped silently'* ]]
 }
 
