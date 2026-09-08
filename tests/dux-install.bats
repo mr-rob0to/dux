@@ -145,8 +145,9 @@ setup() {
 # the test, and the lint stayed broken. The next test pins this to the real
 # writer.
 seed_root() {  # $1 dir, $2 text a tracked file must contain
-  # The skip only fires for a name that is really in this repo's tracked content,
-  # so a root the test wants skipped has to be a repo that contains it.
+  # A root standing in for this checkout has to be a repository: "self" is decided
+  # by the git directory a checkout and its worktrees share, not by the folder path
+  # and not by what any tracked file happens to say.
   mkdir -p "$1/tests"
   git -C "$1" init -q
   printf '%s\n' "$2" > "$1/README.md"
@@ -172,12 +173,10 @@ registry_line() {  # $1 name, $2 path
 }
 
 @test "install leaves this repo's own project out of the denylist" {
-  # Dux is registered as a project of itself. Writing its name into the paths
-  # denylist made every tracked file match, because the name is matched as a
-  # substring and every script here is called dux-something. Whole-word matching
-  # does not help: a hyphen is a word boundary, so dux-install still matches.
-  # The project whose checkout is this repo is the one entry that cannot mean
-  # anything here, so it is the one that is skipped.
+  # Dux is registered as a project of itself. Its own name cannot leak into it:
+  # it is the repository's name, in the README and in every script. Written into
+  # the paths denylist it made every tracked file match, because the name is
+  # matched as a substring and every script here is called dux-something.
   root="$DUX_HOME/ro2"; seed_root "$root" "self-hosted, self-named, self everywhere"
   other="$DUX_HOME/widgets"; mkdir -p "$other"
   registry_line self "$root" > "$DUX_HOME/data/projects.md"
@@ -190,9 +189,10 @@ registry_line() {  # $1 name, $2 path
 }
 
 @test "a skipped name that starts with a hyphen is a name, not a grep option" {
-  # dux-project allows a leading hyphen, so the skipped name can start with one.
-  # It has to be THIS repo's project for the name to reach grep at all: without
-  # --, grep reads it as options, the pipeline hides the error, and every other
+  # dux-project allows a leading hyphen, so a skipped name can start with one.
+  # It has to be THIS repo's project for the name to reach the filter at all. If
+  # that filter ever hands the name to grep as an argument rather than in a -f
+  # file, grep reads it as options, the pipeline hides the error, and every other
   # project name disappears from the denylist instead of just this one.
   root="$DUX_HOME/ro5"; seed_root "$root" "the -dash name is written here"
   other="$DUX_HOME/widgets2"; mkdir -p "$other"
@@ -205,29 +205,54 @@ registry_line() {  # $1 name, $2 path
   grep -qx 'widgets2' "$root/tests/personal-identifiers.txt"
 }
 
-@test "this repo registered under a personal name keeps its denylist entry" {
-  # The skip is for a name that floods the lint, not for wherever a project sits.
-  # Registering this checkout as "zz-dux" used to drop that name from the
-  # denylist, so committing it into a tracked file later went unnoticed.
+@test "install leaves this repo's own name out even when the content lacks it" {
+  # The skip used to fire only when the name was already in the tracked content,
+  # which is exactly the case where a real leak gets hidden: a name that is
+  # genuinely leaking was dropped and nothing reported it. The name is left out
+  # because it is this repository's own, whatever any file says.
   root="$DUX_HOME/ro6"; seed_root "$root" "nothing personal in here"
   registry_line zz-dux "$root" > "$DUX_HOME/data/projects.md"
   DUX_ROOT="$root" run dux-install --yes
   [ "$status" -eq 0 ]
-  grep -qx 'zz-dux' "$root/tests/personal-identifiers.txt"
-  [[ "$output" != *"left this repo's own project out of the denylist"* ]]
+  refute grep -qx 'zz-dux' "$root/tests/personal-identifiers.txt"
+  [[ "$output" == *"left this repo's own project out of the denylist"* ]]
 }
 
-@test "install keeps every other project name, short ones included" {
-  # A short name elsewhere is still a name worth catching. It is not deleted
-  # here; the lint refuses it by name, which is the operator's call to make.
-  root="$DUX_HOME/ro3"; mkdir -p "$root/tests"
-  # The path has to exist, or the comparison against DUX_ROOT is never reached
-  # and this passes without testing anything.
-  other="$DUX_HOME/api"; mkdir -p "$other"
-  registry_line api "$other" > "$DUX_HOME/data/projects.md"
+@test "install run from a worktree of this repo leaves its own name out" {
+  # dux-install writes the lists beside its own bin/, so it is run from worktrees
+  # too. A worktree's path is not the registered path, so comparing paths writes
+  # the name there and the lint then matches every file in that worktree. The
+  # README carries the name on purpose: it is what test ro6 above lacks, so a
+  # skip that went back to reading the content fails there and not here.
+  root="$DUX_HOME/ro7"; seed_root "$root" "the selfwt name is written here"
+  git -C "$root" worktree add -q "$DUX_HOME/ro7wt" -b probe
+  registry_line selfwt "$root" > "$DUX_HOME/data/projects.md"
+  DUX_ROOT="$DUX_HOME/ro7wt" run dux-install --yes
+  [ "$status" -eq 0 ]
+  refute grep -qx 'selfwt' "$DUX_HOME/ro7wt/tests/personal-identifiers.txt"
+  [[ "$output" == *"left this repo's own project out of the denylist"* ]]
+}
+
+@test "install leaves a short project name out and says so, and keeps a long one" {
+  # A name of three characters or fewer is matched as a substring and would hit
+  # nearly every file, so it is not written and the operator hears why once, at
+  # the install, instead of a red build on every run afterwards.
+  #
+  # The root is a repository, the way a real install always is, so the length
+  # check is proven on the path an operator actually takes. Built as a plain
+  # directory it would only prove the branch where DUX_ROOT is not a repository.
+  root="$DUX_HOME/ro3"; seed_root "$root" "nothing to see here"
+  # The paths have to exist, or the self comparison is never reached and this
+  # passes without testing anything.
+  short="$DUX_HOME/api"; mkdir -p "$short"
+  long="$DUX_HOME/keep"; mkdir -p "$long"
+  registry_line api "$short" > "$DUX_HOME/data/projects.md"
+  registry_line keep "$long" >> "$DUX_HOME/data/projects.md"
   DUX_ROOT="$root" run dux-install --yes
   [ "$status" -eq 0 ]
-  grep -qx 'api' "$root/tests/personal-identifiers.txt"
+  refute grep -qx 'api' "$root/tests/personal-identifiers.txt"
+  [[ "$output" == *"left api out of the denylist: shorter than four characters"* ]]
+  grep -qx 'keep' "$root/tests/personal-identifiers.txt"
 }
 
 @test "install says nothing about a skipped project when it skips none" {
@@ -237,4 +262,5 @@ registry_line() {  # $1 name, $2 path
   DUX_ROOT="$root" run dux-install --yes
   [ "$status" -eq 0 ]
   [[ "$output" != *"left this repo's own project"* ]]
+  [[ "$output" != *"shorter than four characters"* ]]
 }

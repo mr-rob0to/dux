@@ -37,44 +37,76 @@ done
 # Paths and project names are matched literally; a bare account name is matched
 # only as a whole word, and the Makefile drops the generic account names outright.
 #
-# Dux is registered as a project of itself, and a project name is matched as a
-# substring, so writing this repo's own name here made every tracked file match
-# and turned the lint into noise. Whole-word matching does not help: a hyphen is
-# a word boundary, so dux-install still matches dux. The project whose checkout
-# is this repo, and whose name is already all over its tracked content, is the
-# one that is left out. Every other name is written, short ones included; the
-# Makefile refuses a name too short to match safely, by name, which is a
-# decision for the operator rather than one to make silently here.
+# Two kinds of registered name are never written, and each is logged as it is
+# left out. The lint checks whatever it is given, and has no length rule of its
+# own: what is worth writing is decided here, once, at install.
+#
+# First, the project whose repository is the checkout being installed into. Dux
+# is registered as a project of itself, and its own name cannot leak into it: it
+# is the repository's name, in the README and in every script. Written into the
+# paths list, which is matched as a substring, it made every tracked file match.
+# Whole-word matching would not help, because a hyphen is a word boundary and
+# dux-install still matches dux.
+#
+# "The checkout being installed into" is the repository, not the directory. It is
+# identified by the git directory a main checkout and all its worktrees share, so
+# an install run from a worktree of this repo reaches the same answer. Comparing
+# directory paths does not: a worktree's path is not the registered path, so the
+# name would be written there and the lint would match every file in it. A
+# DUX_ROOT that is not in a repository, and a registered path that is missing or
+# is not a repository, are simply not self, and those names are written.
+#
+# The earlier version of this skip fired only when the name was already in the
+# tracked content, which is exactly the case where a leak gets hidden: a name
+# that is genuinely leaking was dropped and nothing said so.
+#
+# Second, a name shorter than four characters. Matched as a substring it hits
+# nearly every file, and a check that fires on every line is a check nobody
+# reads. It is left out and said once, here, rather than refused by the lint on
+# every run afterwards. This is a log line and not a finding: the skills are
+# already linked and the config seeded by now, nothing on the machine is wrong,
+# and stopping would strand a half-done install that fails at the same name every
+# time until the operator re-registers the project under a longer name.
 mkdir -p "$DUX_ROOT/tests" 2>/dev/null || finding "cannot create $DUX_ROOT/tests"
-root_real="$(cd "$DUX_ROOT" 2>/dev/null && pwd -P)" || root_real=""
-skipped=""
-if [ -f "$DUX_DATA/projects.md" ] && [ -n "$root_real" ]; then
+git_home() {  # $1 dir; prints the resolved git dir it shares with its worktrees
+  local g
+  g="$(cd "$1" 2>/dev/null && git rev-parse --git-common-dir 2>/dev/null)" || return 0
+  [ -n "$g" ] || return 0
+  ( cd "$1" && cd "$g" 2>/dev/null && pwd -P ) || return 0
+}
+root_git="$(git_home "$DUX_ROOT")"
+# Outside DUX_ROOT: a stray file under tests/ would show up as untracked work in
+# whatever checkout the install was run from.
+skipfile="$(mktemp)" || finding "cannot create a temporary file"
+if [ -f "$DUX_DATA/projects.md" ]; then
   while read -r name path; do
-    [ -n "$path" ] || continue
-    p_real="$(cd "$path" 2>/dev/null && pwd -P)" || continue
-    [ "$p_real" = "$root_real" ] || continue
-    # -- and only when the name is really in the tracked content. The skip is for
-    # a name that floods the lint, not for wherever a project happens to live. A
-    # checkout registered under a personal name keeps the coverage it had: the
-    # name is not in the content, so keeping it costs nothing and catches a leak.
-    git -C "$DUX_ROOT" grep -qF -e "$name" -- >/dev/null 2>&1 || continue
-    skipped="$name"
+    [ -n "$name" ] || continue
+    if [ -n "$path" ] && [ -n "$root_git" ] && [ "$(git_home "$path")" = "$root_git" ]; then
+      printf '%s\n' "$name" >> "$skipfile"
+      log "left this repo's own project out of the denylist: $name"
+      continue
+    fi
+    if [ "${#name}" -lt 4 ]; then
+      printf '%s\n' "$name" >> "$skipfile"
+      log "left $name out of the denylist: shorter than four characters, and the lint would match nearly every file; register it under a longer name with dux-project add --name"
+    fi
   done <<EOF
 $(sed -n 's/^- \([^ ]*\) path=\([^ ]*\).*/\1 \2/p' "$DUX_DATA/projects.md")
 EOF
 fi
-drop_self() {  # reads names, writes the ones that are not this repo's own
-  # -- because a project name may legitimately start with a hyphen, and without
-  # it grep reads the name as options and the pipeline hides the error.
-  if [ -n "$skipped" ]; then grep -vxF -- "$skipped"; else cat; fi
+drop_skipped() {  # reads names, writes the ones that are not being left out
+  # -f rather than an argument, because a project name may legitimately start
+  # with a hyphen: handed to grep as an argument it is read as options, the
+  # pipeline hides the error, and every other name disappears from the list.
+  if [ -s "$skipfile" ]; then grep -vxF -f "$skipfile"; else cat; fi
 }
 {
   echo "$HOME"
   [ -f "$DUX_DATA/projects.md" ] \
-    && sed -n 's/^- \([^ ]*\) .*/\1/p' "$DUX_DATA/projects.md" | drop_self
+    && sed -n 's/^- \([^ ]*\) .*/\1/p' "$DUX_DATA/projects.md" | drop_skipped
 } | grep -v '^$' | sort -u > "$DUX_ROOT/tests/personal-identifiers.txt"
 {
   whoami; basename "$HOME"
 } | grep -v '^$' | sort -u > "$DUX_ROOT/tests/personal-names.txt"
+rm -f "$skipfile"
 log "identifier denylist written"
-[ -z "$skipped" ] || log "left this repo's own project out of the denylist: $skipped"
