@@ -13,12 +13,19 @@
   day: it stacked a third guard on two that exist only because this repo's own name was
   written into its own denylist, and the tool is meant to be simple to install and use.
   This version cuts that at the root. Reviewed once by a fresh independent session,
-  all six findings folded in. Awaiting approval; 0 of 4 tasks done.
+  all six findings folded in, approved by the operator the same day. 4 of 4 tasks
+  done, `make check` green, awaiting the ship gate.
 - PRs #15 and #16 logged two small follow-ups in the identifier lint, a `cat` that fuses
   two list files and one stale comment; both are carried here unchanged as Tasks 1 and 2.
 - When this merges, `dux-install` never writes this repository's own name into the
   denylist, skips a name too short to match and says so once, and the lint loses the
   length floor and the machinery around it. Less code than today.
+
+**Divergence, 2026-09-07:** Task 4 was to delete the test that a short generic
+account name is dropped. It is kept and renamed instead. Without the floor it proves
+something no other test does, that a two-character generic word is dropped before the
+search rather than flooding 56 lines, and it was break-verified by taking `ci` off
+`GENERIC_ACCOUNTS`. Nothing else in the plan changed.
 
 **Estimated diff:** ~110 added lines and ~130 removed across 4 tasks, the plan excluded;
 the plan itself stays about the same length. The cap is 2,500 lines or 12 tasks (constitution
@@ -257,12 +264,12 @@ the file still passes.
 
 **Steps**
 
-- [ ] Add the test, using the same `leak-me-please` token the first test uses, and
+- [x] Add the test, using the same `leak-me-please` token the first test uses, and
       see it fail against the current `Makefile`.
-- [ ] Replace the `cat` line with the brace-group shape from the Design section.
-- [ ] Run `make check`, then commit, then run `bats tests/identifiers.bats` again on the
+- [x] Replace the `cat` line with the brace-group shape from the Design section.
+- [x] Run `make check`, then commit, then run `bats tests/identifiers.bats` again on the
       committed state.
-- [ ] Break-verify: put the plain `cat` back, run, confirm the new test fails, restore,
+- [x] Break-verify: put the plain `cat` back, run, confirm the new test fails, restore,
       paste the failure into the commit body (constitution principle 3).
 
 ## Task 2: Say what the worktree test proves
@@ -279,10 +286,10 @@ says why. `make check` is green.
 
 **Steps**
 
-- [ ] Reword the comment. Keep the sentence about the check silently passing where the
+- [x] Reword the comment. Keep the sentence about the check silently passing where the
       code gets written; it is the reason the test exists.
-- [ ] Run `make check`; commit as `docs(tests): ...`.
-- [ ] Break-verify: nothing to break. This task adds no assertion, and it says so in
+- [x] Run `make check`; commit as `docs(tests): ...`.
+- [x] Break-verify: nothing to break. This task adds no assertion, and it says so in
       the commit body rather than claiming a verification it did not run.
 
 ## Task 3: Leave this repository and short names out at install
@@ -307,13 +314,13 @@ passages read as quoted in Design.
 
 **Steps**
 
-- [ ] Amend the two spec passages first.
-- [ ] Rewrite installer tests 208 and 220, add the worktree test and the one assertion
+- [x] Amend the two spec passages first.
+- [x] Rewrite installer tests 208 and 220, add the worktree test and the one assertion
       in 233; see the three rewritten or new tests fail against today's installer.
-- [ ] Rewrite the installer's denylist block and its comment: identity by git common
+- [x] Rewrite the installer's denylist block and its comment: identity by git common
       dir, unconditional self skip, length skip after it, the two log lines. Green.
-- [ ] Run `make check`, commit, run both bats files again on the committed state.
-- [ ] Break-verify, one at a time, six distinct failures pasted into the commit body,
+- [x] Run `make check`, commit, run both bats files again on the committed state.
+- [x] Break-verify, one at a time, six distinct failures pasted into the commit body,
       each failing a different assertion line, all in `tests/dux-install.bats`: put a
       content `git grep` condition back on the self skip (208's absence assertion fails);
       compare `pwd -P` of the directories instead of the common dir (the worktree test
@@ -338,12 +345,12 @@ the count, because that is now the operator's own doing and not the tool's.
 
 **Steps**
 
-- [ ] Remove the floor from the `Makefile` and fix the `GENERIC_ACCOUNTS` comment.
-- [ ] With the old tests still present, run `tests/identifiers.bats`, run the hand flood,
+- [x] Remove the floor from the `Makefile` and fix the `GENERIC_ACCOUNTS` comment.
+- [x] With the old tests still present, run `tests/identifiers.bats`, run the hand flood,
       and record the three results the Design section asks for.
-- [ ] Apply the `identifiers.bats` dispositions.
-- [ ] Run `make check`, commit, run both bats files again on the committed state.
-- [ ] No break-verification: this task adds no assertion, it deletes four and trims one.
+- [x] Apply the `identifiers.bats` dispositions.
+- [x] Run `make check`, commit, run both bats files again on the committed state.
+- [x] No break-verification: this task adds no assertion, it deletes four and trims one.
       The commit body says so, and carries the three recorded results instead, which are
       what accounts for the deleted guard's coverage.
 
