@@ -108,7 +108,12 @@ case "$cmd" in
     printf -- '- %s path=%s base=%s worktree=%s issues=%s (added %s)\n' \
       "$name" "$path" "$base" "$wt" "$issues" "$(date -u +%Y-%m-%d)" >> "$registry"
     echo "$template_msg"
-    log "registered $name base=$base worktree=$wt issues=$issues" ;;
+    log "registered $name base=$base worktree=$wt issues=$issues"
+    # bin/dux-install decides what the denylist holds, and it leaves out a name this
+    # short. Said again here so the operator hears it when they pick the name.
+    if [ "${#name}" -lt 4 ]; then
+      log "$name will be left out of the denylist: shorter than four characters, and the lint would match nearly every file; register it under a longer name with dux-project add --name"
+    fi ;;
   list) [ $# -eq 0 ] || usage "usage: dux-project list"; sed -n 's/^- \([^ ]*\) .*/\1/p' "$registry" ;;
   get)
     [ $# -eq 2 ] || usage "usage: dux-project get <name> <key>"
