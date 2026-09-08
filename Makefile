@@ -114,6 +114,14 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 # so a name never matches inside a longer word. Both are git-ignored, written by
 # bin/dux-install; a missing or empty one is skipped.
 #
+# Being git-ignored means a worktree never has them, and every feature branch is
+# written in a worktree, so the check was silently passing in the one place the
+# code gets written. The lists are read from the main checkout instead, which
+# `git rev-parse --git-common-dir` names: it prints the main repository's .git
+# from inside a worktree, and a bare .git from the main checkout, so one path
+# serves both. CI still has neither file and is still skipped, which is the case
+# the skip is actually for.
+#
 # An entry shorter than DENYLIST_MIN cannot be matched without flooding: this
 # repo is registered as a project called "dux", that name reached the paths list,
 # and every tracked file matched. A check that fires on every line is a check
@@ -128,16 +136,17 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 DENYLIST_MIN := 4
 lint-identifiers:
 	@tmp="$$(mktemp -d)"; rc=0; \
+	dl="$$(dirname "$$(git rev-parse --git-common-dir 2>/dev/null || echo .git)")"; \
 	printf '%s\n' $(GENERIC_ACCOUNTS) > "$$tmp/generic"; \
 	for f in personal-identifiers personal-names; do \
 	  : > "$$tmp/$$f"; \
-	  [ -s "tests/$$f.txt" ] || continue; \
-	  grep -v '^$$' "tests/$$f.txt" | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
+	  [ -s "$$dl/tests/$$f.txt" ] || continue; \
+	  grep -v '^$$' "$$dl/tests/$$f.txt" | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
 	  [ "$$f" = personal-identifiers ] || continue; \
 	  while IFS= read -r e; do \
 	    [ "$$(printf '%s' "$$e" | wc -c)" -lt $(DENYLIST_MIN) ] || continue; \
 	    echo "denylist entry [$$e] is too short to match safely as a substring; at least $(DENYLIST_MIN) characters"; \
-	    echo "  tests/$$f.txt is written by dux-install from data/projects.md; rename or drop that project there, then run dux-install again"; \
+	    echo "  $$dl/tests/$$f.txt is written by dux-install from data/projects.md; rename or drop that project there, then run dux-install again"; \
 	    rc=1; \
 	  done < "$$tmp/$$f"; \
 	done; \
