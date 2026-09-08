@@ -15,8 +15,8 @@
   sentence and a `/ship` base-branch hint are recorded. Approved by the operator on
   2026-09-08, who chose option 3 below. No decisions are open.
 - On branch `feat/pr-template-consent`, worktree `.worktrees/pr-template-consent`, based
-  on `origin/main` at `fd0cb6c`. Tasks 1 and 2 done and break-verified, eight breaks
-  and ten. Task 3, the prose, not started.
+  on `origin/main` at `fd0cb6c`. All three tasks done. Eighteen breaks seen to fail, eight
+  and ten; three skill dry-runs run. The ship gate is what is left.
 - Picks up the one exception to hard rule 1, which `dux-project` has taken without asking
   since milestone 1, and the one-path template check the kickoff found.
 - When this merges, `dux-project add` writes a PR template only with `--pr-template
@@ -265,11 +265,11 @@ bundled copy when it has none or only the folder form.
 
 **Steps**
 
-- [ ] Add the step as 3b after the issues question in `skills/dux-project/SKILL.md`, the
+- [x] Add the step as 3b after the issues question in `skills/dux-project/SKILL.md`, the
       clause on step 5, and the Never line.
-- [ ] Amend `AGENTS.md` line 16, the two `docs/ARCHITECTURE.md` lines, spec sections 11
+- [x] Amend `AGENTS.md` line 16, the two `docs/ARCHITECTURE.md` lines, spec sections 11
       and 12, and the roadmap row. Run `make job/contract` for the line cap.
-- [ ] Dry-run the skill against a throwaway repo under a temporary `DUX_HOME`, three
+- [x] Dry-run the skill against a throwaway repo under a temporary `DUX_HOME`, three
       times: no template and the operator says no; no template and yes; a template at
       `docs/`. Paste the three excerpts into the pull request body (constitution
       principle 3). This is the prose guard's break-verification: the "no" run must show
