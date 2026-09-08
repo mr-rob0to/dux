@@ -100,10 +100,9 @@ lint-shell:
 # CI account is named after one of them, and matching it fails every tracked file
 # that uses the word normally.
 #
-# This list is the only volume limit the names half has. It is matched as a
-# whole word, so the length floor does not apply and cannot: the floor is for
-# substring matching. Whole words flood too when the word is ordinary. Counted
-# on this repo: run 1624 lines, test 1171, dev 643, git 527, log 435, tmp 204.
+# This list is the volume limit the names half has. A whole word floods too when
+# the word is ordinary. Counted on this repo: run 1624 lines, test 1171, dev 643,
+# git 527, log 435, tmp 204.
 # An operator whose account is one of those would get that on every lint run,
 # and the way out of an unreadable check is to delete the file it comes from.
 GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docker \
@@ -132,18 +131,17 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 # superproject's .git/modules and the lists are not found. That skips, which is
 # what it already did before the lists were resolved at all.
 #
-# An entry shorter than DENYLIST_MIN cannot be matched without flooding: this
-# repo is registered as a project called "dux", that name reached the paths list,
-# and every tracked file matched. A check that fires on every line is a check
-# nobody reads, so a short entry is refused by name instead.
+# The two locations are read with an echo after each, not by handing both to one
+# cat. cat joins files with nothing between them, so a list hand-edited and saved
+# without a final newline fuses its last entry to the next file's first, and in a
+# main checkout, where both paths are the same file, to its own first entry. The
+# fused token matches nothing and the whole list stops working while the target
+# reports success. The blank line each echo leaves is dropped by the grep below.
 #
-# Only the paths list. It is matched as a substring, which is what floods; the
-# names list is matched as a whole word, where a three-letter account name is
-# an ordinary entry and not a problem. The two lists also come from different
-# places, so one refusal message could not tell the truth about both: the paths
-# list is built from data/projects.md, the names list from whoami and the home
-# directory name, which an operator cannot rename to clear a build.
-DENYLIST_MIN := 4
+# There is no length rule here. What is worth writing is decided once, by
+# bin/dux-install, which leaves out the project whose repository is the checkout
+# it is installing into and any name shorter than four characters, and says so
+# each time. This target checks whatever it is given.
 lint-identifiers:
 	@tmp="$$(mktemp -d)"; rc=0; \
 	[ "$$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ] \
@@ -152,18 +150,9 @@ lint-identifiers:
 	printf '%s\n' $(GENERIC_ACCOUNTS) > "$$tmp/generic"; \
 	for f in personal-identifiers personal-names; do \
 	  : > "$$tmp/$$f"; \
-	  cat "tests/$$f.txt" "$$dl/tests/$$f.txt" 2>/dev/null \
+	  { cat "tests/$$f.txt" 2>/dev/null; echo; cat "$$dl/tests/$$f.txt" 2>/dev/null; echo; } \
 	    | grep -v '^$$' | sort -u | grep -vxF -f "$$tmp/generic" > "$$tmp/$$f" || true; \
-	  [ -s "$$tmp/$$f" ] || continue; \
-	  [ "$$f" = personal-identifiers ] || continue; \
-	  while IFS= read -r e; do \
-	    [ "$$(printf '%s' "$$e" | wc -c)" -lt $(DENYLIST_MIN) ] || continue; \
-	    echo "denylist entry [$$e] is too short to match safely as a substring; at least $(DENYLIST_MIN) characters"; \
-	    echo "  tests/$$f.txt, here or in the main checkout, is written by dux-install from data/projects.md; rename or drop that project there, then run dux-install again"; \
-	    rc=1; \
-	  done < "$$tmp/$$f"; \
 	done; \
-	[ "$$rc" -eq 0 ] || { rm -rf "$$tmp"; exit 1; }; \
 	if [ -s "$$tmp/personal-identifiers" ]; then \
 	  git ls-files -z | xargs -0 grep -nF -f "$$tmp/personal-identifiers" -- 2>/dev/null \
 	    | grep -v '^tests/personal-' && rc=1 || true; \
@@ -173,4 +162,5 @@ lint-identifiers:
 	    | grep -v '^tests/personal-' && rc=1 || true; \
 	fi; \
 	rm -rf "$$tmp"; \
-	[ "$$rc" -eq 0 ] || { echo "personal identifiers found"; exit 1; }
+	[ "$$rc" -eq 0 ] || { echo "personal identifiers found"; \
+	  echo "  the lists in tests/personal-*.txt are written by dux-install, from data/projects.md and this account; an entry that looks wrong rather than leaked is stale, so run the installer again"; exit 1; }

@@ -153,6 +153,9 @@ which is what the operator reaches for first; `--name` is for two repos with the
 same folder name, a folder name outside the id charset, or a name too long to
 want in every branch. A derived name that is unusable or already registered is a
 finding that names the flag.
+A name of three characters or fewer registers, but the identifier lint leaves it
+unchecked (section 18); `--name` is how to give it a longer one. Run
+`dux-install` again after registering, which is what rewrites the denylist.
 `dux-project add --worktree make|script|git` records the mechanism explicitly; the
 flag is required when the project's `CLAUDE.md` or `AGENTS.md` carries a
 `Worktrees` heading, because prose is not something a script can follow.
@@ -963,9 +966,21 @@ product; there is no build or package.
   the operator confirms, then moved to `<name>.bak`. `bin/dux-uninstall` removes
   only symlinks that point into this repo. Updating the repo updates the skills.
 - **No personal identifiers in tracked files**: no operator paths, usernames,
-  project names, or accounts. `make lint` greps for a denylist kept in
-  `tests/personal-identifiers.txt`, which is itself gitignored and seeded by
-  `dux-install` from the operator's home directory name and registry.
+  project names, or accounts. `make lint` greps for two gitignored denylists
+  that `dux-install` writes: `tests/personal-identifiers.txt`, the operator's
+  home path and registered project names, matched as substrings; and
+  `tests/personal-names.txt`, the account name and home directory name, matched
+  as whole words. Two kinds of registered name are left out, and the installer
+  says so each time: the project whose repository is the checkout being
+  installed into, and any name shorter than four characters, which would match
+  nearly every file. The first is left out on the identity of the repository, not
+  on the name: for Dux's own name there is nothing to leak, since it is the
+  repository's name in the README and in every script, and for an alias the
+  operator chose for this checkout the install says on every run that it is not
+  being checked. Registering this checkout under a name that must not appear in
+  its tracked files is therefore not protected against. A short name gets no lint
+  coverage until it is registered under a longer one with
+  `dux-project add --name`.
 - **The operator's global rules stay global.** `/ship` must stand alone for a
   stranger: every rule it depends on is either in its own text or a config
   default. The operator's global CLAUDE.md may be stricter, never required.
