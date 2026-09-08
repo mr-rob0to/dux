@@ -143,7 +143,7 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 DENYLIST_MIN := 4
 lint-identifiers:
 	@tmp="$$(mktemp -d)"; rc=0; \
-	git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+	[ "$$(git rev-parse --is-inside-work-tree 2>/dev/null)" = true ] \
 	  || { echo "cannot check identifiers: not inside a git work tree"; rm -rf "$$tmp"; exit 1; }; \
 	dl="$$(dirname "$$(git rev-parse --git-common-dir)")"; \
 	printf '%s\n' $(GENERIC_ACCOUNTS) > "$$tmp/generic"; \

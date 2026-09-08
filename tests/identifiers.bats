@@ -110,6 +110,17 @@ tok_a=qx; tok_b=zw; boundary_entry="$tok_a$tok_b"
   [[ "$output" == *"not inside a git work tree"* ]]
 }
 
+# A bare repository is the case that exits 0 while printing "false", so a guard
+# reading only the exit status lets it through and the target checks nothing.
+@test "lint refuses a bare repository, which has no work tree to check" {
+  tmp="$(mktemp -d)"
+  git init -q --bare "$tmp/bare.git"
+  cp "$DUX_ROOT/Makefile" "$tmp/bare.git/Makefile"
+  run make -C "$tmp/bare.git" lint-identifiers
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not inside a git work tree"* ]]
+}
+
 # The skip has to stay for the case it was written for: CI checks out the repo
 # and has no denylist anywhere, and that is not a leak.
 @test "lint passes when no denylist exists in the worktree or the main checkout" {
