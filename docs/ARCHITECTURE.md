@@ -22,7 +22,8 @@ skills/
                            a project worktree with no DUX_HOME
 bin/
   dux-env                  sourced by every script: paths, log, die, finding, now,
-                           task_harness, harness_refusal, require_cmd
+                           task_harness, harness_refusal, require_cmd, take_bytes,
+                           take_line
   dux-lock                 single live session; starts and stops its watcher
   dux-project              registry add/list/get/resolve-base, PR template install, --worktree
   dux-ledger               add/set/set-if/get/list/ack/unack over data/backlog.md; the only writer

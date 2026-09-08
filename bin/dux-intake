@@ -71,12 +71,12 @@ field() {  # $1 field name, $2 issue number
 write_issue_file() {  # $1 id, $2 number; title and body cleaned and capped, one rename
   local f="$DUX_TASKS/$1/issue.md" tmp title bytes
   tmp="$f.tmp"
-  title="$(cap_line "$(field title "$2" | head -c "$TITLE_BYTES")")"
+  title="$(cap_line "$(field title "$2" | take_bytes "$TITLE_BYTES")")"
   bytes="$(field body "$2" | wc -c | tr -d ' ')"
   {
     printf '%s#%s: %s\n\n' "$slug" "$2" "$title"
     if [ "$bytes" -gt 0 ]; then
-      field body "$2" | head -c "$BODY_BYTES" | LC_ALL=C tr -d '\000-\010\013-\037\177' | strip_format_chars
+      field body "$2" | take_bytes "$BODY_BYTES" | LC_ALL=C tr -d '\000-\010\013-\037\177' | strip_format_chars
       echo
     fi
     [ "$bytes" -le "$BODY_BYTES" ] || echo "[truncated at $BODY_BYTES bytes]"

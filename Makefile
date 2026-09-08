@@ -43,7 +43,7 @@ else \
 fi
 endef
 
-.PHONY: test unit matrix check check-branch check-bash32 lint lint-shell lint-identifiers \
+.PHONY: test unit matrix check check-branch check-bash32 lint lint-shell lint-identifiers lint-pipes \
         $(UNIT_JOBS) $(MATRIX_JOBS)
 
 test:
@@ -90,10 +90,20 @@ check-branch:
 	@$(MAKE) --no-print-directory check
 	@$(MAKE) --no-print-directory check-bash32
 
-lint: lint-shell lint-identifiers
+SHELL_FILES = bin/dux-* bin/backends/*.sh bin/workers/*.sh templates/hooks/pre-push \
+              tests/fakes/* tests/helpers/*.bash skills/ship/ship-guard
+
+lint: lint-shell lint-identifiers lint-pipes
+
+# tests/lint-pipes.awk says what this rejects and why.
+LINT_FILES ?= $(SHELL_FILES)
+
+lint-pipes:
+	@awk -f tests/lint-pipes.awk $(LINT_FILES) \
+	|| { echo "the lines above stop reading before their producer is done; use take_bytes, take_line, or grep ... >/dev/null" >&2; exit 1; }
 
 lint-shell:
-	shellcheck -s bash bin/dux-* bin/backends/*.sh bin/workers/*.sh templates/hooks/pre-push tests/fakes/* tests/helpers/*.bash skills/ship/ship-guard
+	shellcheck -s bash $(SHELL_FILES)
 
 # Account names that are also ordinary English words or shared CI defaults. A
 # denylist entry equal to one of these is dropped before the search: this repo's

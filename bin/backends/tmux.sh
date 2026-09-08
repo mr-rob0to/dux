@@ -58,7 +58,7 @@ backend_exists() {  # endpoint: 0 present, 1 gone, finding when tmux did not ans
   out="$(_tmux list-windows -a -F '#{window_id}' 2>"$errfile")"; rc=$?
   err="$(cat "$errfile")"; rm -f "$errfile"
   if [ "$rc" -ne 0 ]; then _absent_or_finding "checking $1" "$err" "$rc"; return 1; fi
-  printf '%s\n' "$out" | grep -q "^$wid$"
+  printf '%s\n' "$out" | grep "^$wid$" >/dev/null
 }
 
 backend_find() {  # id: prints the endpoint of the window named dux-<id>, nothing when there is none

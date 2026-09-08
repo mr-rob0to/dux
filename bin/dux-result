@@ -20,7 +20,7 @@ fail_mode=no_result
 reject() { case "$fail_mode" in finding) finding "$@" ;; *) no_result "$@" ;; esac; }
 
 tab="$(printf '\t')"
-kv() { sed -n "s/^$1=//p" "$2" | head -1; }
+kv() { sed -n "s/^$1=//p" "$2" | take_line; }
 
 # ---- the run record ------------------------------------------------------
 # Written before the worker could change anything, and hashed into the run so a
@@ -275,14 +275,14 @@ check_plan_tasks() {
         }
         if (inside) print "0:" $0
       }' "$f")"
-    printf '%s\n' "$section" | grep -q '^H:$' \
+    printf '%s\n' "$section" | grep '^H:$' >/dev/null \
       || reject "task $n is not in $plan_path"
     # Broad, over fenced lines too: "-", "*", "+" and "1." all open a list item,
     # the indent may be tabs, and the gap may be any run of blanks.
-    printf '%s\n' "$section" | grep -qE "^[01]:[$ht>]*([-*+]|[0-9]+[.)])[$ht]+\\[[$ht]*\\]" \
+    printf '%s\n' "$section" | grep -E "^[01]:[$ht>]*([-*+]|[0-9]+[.)])[$ht]+\\[[$ht]*\\]" >/dev/null \
       && reject "task $n in $plan_path still has an unchecked box"
     # Narrow, outside fences only.
-    printf '%s\n' "$section" | grep -qE "^0:[$ht]*([-*+]|[0-9]+[.)])[$ht]+\\[[$ht]*[xX][$ht]*\\]" \
+    printf '%s\n' "$section" | grep -E "^0:[$ht]*([-*+]|[0-9]+[.)])[$ht]+\\[[$ht]*[xX][$ht]*\\]" >/dev/null \
       || reject "task $n in $plan_path has no checkboxes to prove it was done"
   done
   return 0
@@ -313,7 +313,7 @@ check_receipt() {
   got="$(recorded_phases "$receipt")"
   [ "$got" = "checks review security pr ci " ] \
     || reject "the /ship receipt for this task is not the five phases in order: ${got:-none recorded}"
-  sha="$(sed -n 's/^phase=ci sha=\([0-9a-f]*\).*/\1/p' "$receipt" | head -1)"
+  sha="$(sed -n 's/^phase=ci sha=\([0-9a-f]*\).*/\1/p' "$receipt" | take_line)"
   [ "$sha" = "$head_local" ] \
     || reject "the /ship receipt for this task was recorded against another commit"
 }
@@ -391,7 +391,7 @@ case "$cmd" in
           || no_result "the report for this scout task is not a regular file"
         size="$(wc -c < "$report" | tr -d ' ')"
         [ "$size" -le "$REPORT_CAP" ] || no_result "the report for this scout task is larger than 1 MiB"
-        [ -n "$(LC_ALL=C tr -d '[:space:]' < "$report" | head -c 1)" ] \
+        [ -n "$(LC_ALL=C tr -d '[:space:]' < "$report" | take_bytes 1)" ] \
           || no_result "the report for this scout task has no text in it"
         echo "done: report" ;;
       plan|ship)

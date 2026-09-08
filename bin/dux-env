@@ -37,7 +37,7 @@ github_slug() {  # $1 repo path; prints owner/name, or returns 1
   host="${auth#*@}"
   [ "$host" = github.com ] || return 1
   slug="${rest#"$auth"}"; slug="${slug#[:/]}"; slug="${slug%/}"; slug="${slug%.git}"
-  printf '%s' "$slug" | grep -qE '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' || return 1
+  printf '%s' "$slug" | grep -E '^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$' >/dev/null || return 1
   printf '%s' "$slug"
 }
 
@@ -161,6 +161,17 @@ cap_line() {  # $1 text; one clean line of at most 200 characters
   [ "${#s}" -le "$HANDOFF_LINE_CAP" ] || s="${s:0:197}..."
   printf '%s' "$s"
 }
+
+# Take the front of a stream without leaving the producer writing into a closed
+# pipe. `producer | head -c N` stops reading at N and closes the pipe, and a
+# producer that handles SIGPIPE rather than dying on it then reports the failed
+# write on stderr: jq says "writing output failed: Broken pipe", GNU sed
+# "couldn't flush stdout". Dux prints findings on stderr and nothing else, so
+# that line is read as one. Reading the rest away costs nothing and removes the
+# whole class. Reading a file directly, `head -c N file`, has no producer and
+# needs neither of these.
+take_bytes() { head -c "$1"; cat >/dev/null; }   # $1 bytes; filter
+take_line()  { head -n 1;    cat >/dev/null; }   # first line only; filter
 
 handoff_home() { printf '%s' "$DUX_STATE/$1.handoffs"; }
 

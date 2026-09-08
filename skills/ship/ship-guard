@@ -30,7 +30,10 @@ state="$gitdir/dux-ship/$encoded"
 # Every key is a fixed word from this file, never anything a caller supplies.
 kv() {  # $1 key; prints the value, or nothing
   [ -f "$state" ] || return 0
-  sed -n "s/^$1=//p" "$state" | head -1
+  # head closes the pipe when it has its line, and sed reports the failed write
+  # on stderr rather than dying quietly. Read the rest away. This script is
+  # installed by symlink and cannot source dux-env's take_line.
+  sed -n "s/^$1=//p" "$state" | { head -n 1; cat >/dev/null; }
 }
 
 put() {  # $1 key, $2 value

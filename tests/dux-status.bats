@@ -143,3 +143,19 @@ unacknowledged
   run dux-status
   [ "$output" = "watcher: not running" ]
 }
+
+@test "--intake still names a reason when the failure prints no line of its own" {
+  # The reason is chosen on the text, not on an exit status: the pipeline that
+  # looks for a structured line ends in a drain, which succeeds whether or not
+  # anything matched. A failure that prints nothing Dux recognises must still
+  # produce a reason rather than an empty one.
+  export DUX_SESSION_PID=$$; dux-lock acquire >/dev/null
+  make_github_repo api; dux-project add "$DUX_HOME/api" --base main --issues label:dux >/dev/null
+  fr="$DUX_HOME/fr"; mkdir -p "$fr"; cp -R "$DUX_ROOT/bin" "$fr/bin"
+  printf '#!/usr/bin/env bash\nprintf "something the digest does not parse\\n" >&2\nexit 2\n' > "$fr/bin/dux-intake"
+  chmod +x "$fr/bin/dux-intake"
+  DUX_ROOT="$fr" run dux-status --intake
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"  api: skipped: intake failed"* ]] \
+    || { echo "wanted 'api: skipped: intake failed', got:"; echo "$output"; return 1; }
+}

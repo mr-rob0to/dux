@@ -55,7 +55,7 @@ source "$DUX_ROOT/bin/workers/$harness.sh"
 # One model file per harness: config/models for claude, config/models-<name> for the rest.
 models="$DUX_CONFIG/models"; [ "$harness" = claude ] || models="$DUX_CONFIG/models-$harness"
 [ -s "$models" ] || refuse "missing $models; run dux-install"
-spec="$(tr ' ' '\n' < "$models" | sed -n "s/^$shape=//p" | head -1)"
+spec="$(tr ' ' '\n' < "$models" | sed -n "s/^$shape=//p" | take_line)"
 case "$spec" in *:*) ;; *) refuse "model entry for $shape in $models must be <model>:<effort>, got '${spec:-nothing}'" ;; esac
 model="${spec%%:*}"; effort="${spec#*:}"
 [ -n "$model" ] || refuse "empty model for $shape in $models"
@@ -172,8 +172,8 @@ slug="$(github_slug .)" || slug="-"
   echo "version=1"; echo "id=$id"; echo "run=$run"; echo "shape=$shape"
   echo "project=$project"; echo "repo=$slug"; echo "base=$base"; echo "branch=$branch"
   echo "worktree=$worktree_path"
-  echo "plan=$(sed -n 's/^- Plan: //p' "$brief" | head -1)"
-  echo "tasks=$(sed -n 's/^- Tasks: //p' "$brief" | head -1)"
+  echo "plan=$(sed -n 's/^- Plan: //p' "$brief" | take_line)"
+  echo "tasks=$(sed -n 's/^- Tasks: //p' "$brief" | take_line)"
 } > "$context" || refuse "cannot write $context"
 context_id="$(git hash-object --stdin < "$context" 2>/dev/null)" \
   || refuse "cannot hash $context"
@@ -294,11 +294,11 @@ import_proposals() {  # $1 "final" when nothing more is coming
   # and bytes past that point belong to the next pass, not this one.
   # A line it has not finished writing is not a proposal yet either, so the
   # bytes after the last newline stay unread too.
-  partial=""; [ -n "$(tail -c "+$size" "$status_outbox" | head -c 1)" ] && partial=yes
+  partial=""; [ -n "$(tail -c "+$size" "$status_outbox" | take_bytes 1)" ] && partial=yes
   lines=(); i=0
   while IFS= read -r line || [ -n "$line" ]; do
     i=$((i + 1)); lines[i]="$line"
-  done < <(tail -c "+$((accepted + 1))" "$status_outbox" | head -c "$((size - accepted))")
+  done < <(tail -c "+$((accepted + 1))" "$status_outbox" | take_bytes "$((size - accepted))")
   count=$i
   plen=0
   if [ -n "$partial" ] && [ "$count" -gt 0 ]; then

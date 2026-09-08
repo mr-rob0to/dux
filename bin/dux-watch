@@ -98,13 +98,13 @@ last_activity() {  # $1 id; newer of the status log and wrapper pidfile
 run_of() {  # $1 id; the run recorded for the task, or nothing
   local f="$DUX_STATE/$1.run"
   { [ ! -L "$f" ] && [ -f "$f" ]; } || return 0
-  sed -n 's/^run=//p' "$f" | head -1
+  sed -n 's/^run=//p' "$f" | take_line
 }
 
 context_field() {  # $1 id, $2 key
   local f="$DUX_STATE/$1.result-context"
   { [ ! -L "$f" ] && [ -f "$f" ]; } || return 0
-  sed -n "s/^$2=//p" "$f" | head -1
+  sed -n "s/^$2=//p" "$f" | take_line
 }
 
 receipt_complete() {  # $1 id; the five /ship phases, in order, and nothing else

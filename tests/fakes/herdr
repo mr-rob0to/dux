@@ -83,7 +83,7 @@ case "$1 ${2:-}" in
     # Matching it here too is what puts the adapter's prompt pattern under test:
     # FAKE_HERDR_PROMPT stands in for the operator's own prompt.
     re=""; while [ $# -gt 0 ]; do [ "$1" = "--regex" ] && re="$2"; shift; done
-    if [ -n "$re" ] && ! printf '%s' "${FAKE_HERDR_PROMPT:-bash-3.2$ }" | grep -qE "$re"; then
+    if [ -n "$re" ] && ! printf '%s' "${FAKE_HERDR_PROMPT:-bash-3.2$ }" | grep -E "$re" >/dev/null; then
       echo '{"error":{"code":"timeout"}}' >&2; exit 1
     fi
     echo '{"result":{}}' ;;
