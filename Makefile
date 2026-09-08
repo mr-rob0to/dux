@@ -122,6 +122,13 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 # serves both. CI still has neither file and is still skipped, which is the case
 # the skip is actually for.
 #
+# Without a git repository the whole target is a lie: the search below is
+# `git ls-files`, its failure is swallowed, and the target would exit 0 having
+# read nothing. So that is refused rather than skipped. The one case still not
+# handled is this repo vendored as a submodule of another, where git names the
+# superproject's .git/modules and the lists are not found. That skips, which is
+# what it already did before the lists were resolved at all.
+#
 # An entry shorter than DENYLIST_MIN cannot be matched without flooding: this
 # repo is registered as a project called "dux", that name reached the paths list,
 # and every tracked file matched. A check that fires on every line is a check
@@ -136,7 +143,9 @@ GENERIC_ACCOUNTS := runner ubuntu root admin build ci user vagrant jenkins docke
 DENYLIST_MIN := 4
 lint-identifiers:
 	@tmp="$$(mktemp -d)"; rc=0; \
-	dl="$$(dirname "$$(git rev-parse --git-common-dir 2>/dev/null || echo .git)")"; \
+	git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
+	  || { echo "cannot check identifiers: not inside a git work tree"; rm -rf "$$tmp"; exit 1; }; \
+	dl="$$(dirname "$$(git rev-parse --git-common-dir)")"; \
 	printf '%s\n' $(GENERIC_ACCOUNTS) > "$$tmp/generic"; \
 	for f in personal-identifiers personal-names; do \
 	  : > "$$tmp/$$f"; \

@@ -98,6 +98,18 @@ tok_a=qx; tok_b=zw; boundary_entry="$tok_a$tok_b"
   [[ "$output" == *"LEAK.md"* ]]
 }
 
+# The search is git ls-files, and its failure is swallowed, so outside a git
+# repository the target would exit 0 having read nothing at all. A check that
+# passes without looking is worse than one that is not run.
+@test "lint refuses to run outside a git work tree instead of passing" {
+  tmp="$(mktemp -d)"
+  cp "$DUX_ROOT/Makefile" "$tmp/Makefile"
+  mkdir -p "$tmp/tests"
+  run make -C "$tmp" lint-identifiers
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not inside a git work tree"* ]]
+}
+
 # The skip has to stay for the case it was written for: CI checks out the repo
 # and has no denylist anywhere, and that is not a leak.
 @test "lint passes when no denylist exists in the worktree or the main checkout" {
