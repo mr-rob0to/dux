@@ -224,7 +224,7 @@ deviate from a principle says so in its header and names the principle.
 
 **Version**: 2.0.4 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-08
 
-Version 2.0.4 corrects principle 4's account of the identifier lint. It named one denylist
+Version 2.0.4 corrects principle 2's account of the identifier lint. It named one denylist
 file and put the username in it. There are two, matched differently, and the username is in
 the other one: `tests/personal-identifiers.txt` holds the home path and project names and is
 matched as substrings, `tests/personal-names.txt` holds the account name and home directory
