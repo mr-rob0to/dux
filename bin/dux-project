@@ -30,7 +30,7 @@ resolve_base() {  # $1 path. Spec section 4 and /ship step 0.
   for f in CLAUDE.md AGENTS.md CONTRIBUTING.md; do
     [ -f "$p/$f" ] || continue
     # shellcheck disable=SC2016
-    docs="$(grep -oiE '(base|default|trunk) branch[^`]{0,12}`[a-z0-9_./-]+`' "$p/$f" | head -1 | grep -oE '`[^`]+`' | tr -d '`' || true)"
+    docs="$(grep -oiE '(base|default|trunk) branch[^`]{0,12}`[a-z0-9_./-]+`' "$p/$f" | take_line | grep -oE '`[^`]+`' | tr -d '`' || true)"
     [ -n "$docs" ] && break
   done
   local candidates

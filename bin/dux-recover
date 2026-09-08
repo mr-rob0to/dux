@@ -227,7 +227,7 @@ dead() {
 ended() {
   local run proof reason prc n err
   already_settled && return 0
-  run="$(sed -n 's/^run=//p' "$DUX_STATE/$id.run" 2>/dev/null | head -n 1)"
+  run="$(sed -n 's/^run=//p' "$DUX_STATE/$id.run" 2>/dev/null | take_line)"
   [ -n "$run" ] \
     || finding "no run record at state/$id.run; nothing is left to prove a result for $id against"
   err="$DUX_STATE/$id.recover-result.err"
@@ -319,8 +319,8 @@ retry() {
     fi
   } > "$new_intent" || finding "cannot write $new_intent"
   cp "$criteria" "$DUX_TASKS/$new/criteria.md" || finding "cannot copy $criteria"
-  plan="$(sed -n 's/^- Plan: //p' "$brief" | head -n 1)"
-  tasks="$(sed -n 's/^- Tasks: //p' "$brief" | head -n 1)"
+  plan="$(sed -n 's/^- Plan: //p' "$brief" | take_line)"
+  tasks="$(sed -n 's/^- Tasks: //p' "$brief" | take_line)"
   set -- --intent-file "$new_intent" --criteria-file "$DUX_TASKS/$new/criteria.md"
   # A gh-sourced retry keeps the issue text beside it; dux-brief refuses without it.
   if [ -f "$task/issue.md" ]; then
