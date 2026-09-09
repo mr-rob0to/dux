@@ -28,7 +28,10 @@ setup() {
     [ "$(readlink "$DUX_SKILLS_DIR/$n")" = "$DUX_ROOT/skills/$n" ]
   done
   [ -f "$DUX_HOME/config/reviewer" ]
-  grep -q 'codex exec' "$DUX_HOME/config/reviewer"
+  # Byte for byte, not a phrase from it. The bundled reviewer default is a word
+  # the gate resolves at run time, so a grep for any particular command would
+  # either fail or, worse, pass on a note line that merely mentions one.
+  cmp -s "$DUX_ROOT/templates/config/reviewer" "$DUX_HOME/config/reviewer"
 }
 
 @test "install writes the denylist under DUX_ROOT, never the source tree" {

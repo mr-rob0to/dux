@@ -28,13 +28,22 @@ Plans: `docs/plans/`.
 
 Verified orchestrator harness: Claude Code. Worker harnesses: Claude Code and Codex, selected by `config/worker-harness` or `dux-spawn --harness`. Codex as orchestrator: milestone 8.
 
-The `/ship` gate runs on the bundled defaults, so a fresh clone needs no setup:
-its code reviewer comes from `templates/config/reviewer` and its security
-reviewer from `templates/config/security-reviewer`. To use different ones, put
-your values in `config/reviewer` and `config/security-reviewer`, which win over
-the bundled files. `bin/dux-install` seeds both on first run and never
-overwrites one you have edited. A recording of the whole gate, run from a fresh
-clone against a real remote, is in `tests/harness/ship.md`.
+The `/ship` gate runs on the bundled defaults, so a fresh clone needs no setup.
+Both defaults are the word `auto`, which means the gate picks its reviewers from
+what your machine has, each time it runs. The code review goes to codex when
+`codex` is on your `PATH` and to Claude Code otherwise; the security pass goes to
+a `security-reviewer` agent when you have one defined and to Claude Code
+otherwise. With neither the gate stops and names the file to edit rather than
+running a command that is not there. Nothing is written down, so installing
+codex later is enough to start using it.
+
+To pin a reviewer instead, put the command line in `config/reviewer` or
+`config/security-reviewer`. Those win over the bundled files and are never
+probed. `bin/dux-install` seeds both on first run and never overwrites one you
+have edited, so a machine installed before this change keeps whatever it seeded;
+delete those two files to get the picked defaults back. A recording of the whole
+gate, run from a fresh clone against a real remote, is in
+`tests/harness/ship.md`.
 
 ## Run
 

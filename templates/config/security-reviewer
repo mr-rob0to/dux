@@ -1,8 +1,17 @@
 # The reviewer /ship runs for step 7, the security pass. Two shapes: agent:<name>
 # dispatches that agent on this host, and anything else is a command line the
 # audit prompt is appended to.
-# A host that cannot dispatch agents stops the gate and names this file, rather
-# than quietly running a different reviewer.
+#
+# `auto` means the shape is chosen when the gate runs: the security-reviewer
+# agent when a definition for it is on this host or in the project, otherwise
+# Claude Code with Fable in plan mode. With neither one there the gate stops and
+# names this file rather than running nothing.
+#
+# The probe reads agent definition files, so an agent that arrives through a
+# plugin is invisible to it. On such a host write agent:security-reviewer here;
+# an explicit value is never probed. An explicit agent: value on a host that
+# cannot dispatch agents still stops the gate rather than running something else.
+#
 # Copy this file to config/security-reviewer to change it: /ship reads config/
 # first and falls back here.
-agent:security-reviewer
+auto

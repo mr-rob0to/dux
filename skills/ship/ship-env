@@ -37,13 +37,65 @@ first_value() {  # $1 file
   return 1
 }
 
+# Both reviewers are commands, and which command a host can run is not a
+# property of this repository. `auto`, the value both bundled defaults hold,
+# means choose here, on every run, from what this host has. Nothing is written
+# down: a machine that installs codex a week from now starts using it with no
+# edit anywhere, and one that loses it stops naming a command that is not there.
+# Deciding once, when the installer runs, is the shape of defect this repo has
+# fixed before.
+#
+# The choice is not a silent one. It is only ever made where nobody has stated a
+# preference, an explicit value is never probed, `ship-env reviewer` prints what
+# was chosen before the gate runs, and step 6 makes the pull request name the
+# reviewer that actually ran.
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Claude Code reads agent definitions from the user's own config directory and
+# from the project it runs in. A plugin can supply one as well, and no shell can
+# see that, so this answers no on a host where the answer is yes. The cure is
+# one line in config/security-reviewer, which is never probed.
+agent_defined() {  # $1 name
+  local d
+  for d in "${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/agents" "$PWD/.claude/agents"; do
+    [ -f "$d/$1.md" ] && return 0
+  done
+  return 1
+}
+
+# Fable at high effort in plan mode: a fresh session that reads the tree and the
+# diff and can change neither, which is what the codex line gets from its own
+# read-only sandbox.
+claude_reviewer='claude -p --model claude-fable-5-1 --effort high --permission-mode plan'
+
+probe() {  # $1 key; prints the command this host can actually run
+  case "$1" in
+    reviewer)
+      if have codex; then printf 'codex exec -m gpt-5.6-sol --sandbox read-only\n'
+      elif have claude; then printf '%s\n' "$claude_reviewer"
+      else finding "no code reviewer on this host: neither codex nor claude is on PATH; put a command line in $root/config/reviewer"
+      fi ;;
+    security-reviewer)
+      if agent_defined security-reviewer; then printf 'agent:security-reviewer\n'
+      elif have claude; then printf '%s\n' "$claude_reviewer"
+      else finding "no security reviewer on this host: no security-reviewer agent definition and no claude on PATH; put a command line in $root/config/security-reviewer"
+      fi ;;
+    *) finding "nothing to probe for $1" ;;
+  esac
+}
+
 # config/ is what the operator edits; templates/config/ is what ships. Reading
 # both is what lets a fresh clone run the gate before the installer has run.
+# A file holding `auto` states no preference, so the host is asked instead. A
+# file holding nothing states nothing either and falls through to the next one,
+# as it always did; only when neither file holds a value is it a finding.
 value() {  # $1 key
-  local f
+  local f v
   for f in "$root/config/$1" "$root/templates/config/$1"; do
     [ -f "$f" ] || continue
-    first_value "$f" && return 0
+    v="$(first_value "$f")" || continue
+    if [ "$v" = auto ]; then probe "$1"; else printf '%s\n' "$v"; fi
+    return 0
   done
   finding "no value for $1 in $root/config/$1 or $root/templates/config/$1"
 }

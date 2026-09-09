@@ -849,6 +849,35 @@ cannot dispatch agents stops on an `agent:` value and names the config file:
 falling back to some other reviewer would be the silent degradation the rest of
 this section exists to remove.
 
+Both reviewer defaults are the word `auto`, and `auto` means `ship-env` chooses
+the command when the gate runs, from what the host has. For the code review that
+is codex when `codex` is on `PATH`, otherwise Claude Code with Fable in plan
+mode, which reads the tree and the diff and can change neither. For the security
+pass it is `agent:security-reviewer` when a definition for that agent is in the
+user's Claude config directory or in the project, otherwise the same Claude
+command line. With neither available `ship-env` stops the gate and names the
+config file, which is a better failure than a command that is not there.
+
+The choice is made again on every run and never written to disk. Deciding it
+once, when `bin/dux-install` runs, would freeze it: the installer never
+overwrites an existing `config/` file, so a machine that installs codex a week
+later would keep the wrong default forever, which is the shape of the
+install-time denylist defect this repository has already fixed once. It also
+cannot be decided reliably at install time, since `codex` may reach `PATH` only
+through a shell the installer was not run from.
+
+This does not reopen the silent degradation the paragraph above closes, on three
+counts. The probe never overrules a stated value: an explicit `agent:` on a host
+that cannot dispatch agents still stops the gate, exactly as before. It runs only
+where nobody has stated anything, where the alternative is not a better reviewer
+but a command that does not exist. And it is inspectable in both directions:
+`ship-env reviewer` prints the choice before the gate runs, and step 6 requires
+the pull request to name the reviewer that actually ran. A degradation the
+operator can read on the pull request is not a silent one. The cost is a probe
+that can be wrong in one direction: an agent supplied by a plugin is invisible to
+a shell, so a host with one gets the command line instead. The cure is one line
+in `config/security-reviewer`, which is never probed.
+
 The two recorders have different rules and the skill keeps their calls apart.
 `$DUX_SHIP_RECORD <phase>` runs once per phase per gate and is never repeated:
 `record-ship` refuses a repeated or out-of-order phase, so a second call stops a
@@ -1020,12 +1049,14 @@ product; there is no build or package.
   every default under `templates/`.
 - **Personal, gitignored**: `data/`, `state/`, `config/`. `templates/config/`
   holds the defaults `dux-install` copies into `config/` on first run:
-  `reviewer` (default `codex exec -m gpt-5.6-sol --sandbox read-only`),
-  `security-reviewer` (default: the Claude `security-reviewer` agent, Codex
-  variant documented), `models` (per shape), `backend` (empty means
-  auto-detect). `/ship` reads the two reviewer files through
-  `skills/ship/ship-env`, which falls back to `templates/config/` so the gate
-  runs before the installer has. `models` is read by `bin/dux-worker-wrap` for
+  `reviewer` and `security-reviewer` (both default to `auto`, which `ship-env`
+  resolves against the host at gate time: codex or Claude Code for the code
+  review, the `security-reviewer` agent or Claude Code for the security pass,
+  and a finding naming the file when there is neither), `models` (per shape),
+  `backend` (empty means auto-detect). `/ship` reads the two reviewer files
+  through `skills/ship/ship-env`, which falls back to `templates/config/` so the
+  gate runs before the installer has. An explicit value in either file is never
+  probed. `models` is read by `bin/dux-worker-wrap` for
   workers; the gate does not use it.
 - **Install**: `bin/dux-install` symlinks each bundled skill into
   `~/.claude/skills/<name>`. An existing real directory there is refused until

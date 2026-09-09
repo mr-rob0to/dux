@@ -24,6 +24,48 @@ env_at() {  # $1 checkout, $2.. arguments
   "$c/skills/ship/ship-env" "$@"
 }
 
+# The probe reads three things off the host: PATH, the user's agent directory
+# and the project directory the gate runs in. Every test that reaches it builds
+# all three, so the answer is the one the test asked for and never the machine's
+# own codex install or the operator's own agents. Run against the real host,
+# these tests would pass here and say nothing about anywhere else.
+host() {  # $1.. any of: codex claude user-agent project-agent
+  STUB="$DUX_HOME/host/bin"; PROBE_HOME="$DUX_HOME/host/home"
+  PROJECT="$DUX_HOME/host/project"
+  mkdir -p "$STUB" "$PROBE_HOME/.claude/agents" "$PROJECT/.claude/agents"
+  local w
+  for w in "$@"; do
+    case "$w" in
+      codex | claude) printf '#!/bin/sh\nexit 0\n' > "$STUB/$w"; chmod +x "$STUB/$w" ;;
+      user-agent)     : > "$PROBE_HOME/.claude/agents/security-reviewer.md" ;;
+      project-agent)  : > "$PROJECT/.claude/agents/security-reviewer.md" ;;
+      *) echo "host: unknown ingredient $w"; return 1 ;;
+    esac
+  done
+}
+
+# $STUB first and never an empty field: an empty PATH entry means the working
+# directory, which would let a stray file in the checkout answer the probe.
+on_host() {  # $1 checkout, $2.. arguments
+  local c="$1"; shift
+  ( cd "$PROJECT" && env PATH="$STUB:/usr/bin:/bin" HOME="$PROBE_HOME" \
+      CLAUDE_CONFIG_DIR="$PROBE_HOME/.claude" "$c/skills/ship/ship-env" "$@" )
+}
+
+# The claude command line the probe falls back to, in one place, so a test that
+# asserts it cannot drift from the one ship-env prints.
+claude_line='claude -p --model claude-fable-5-1 --effort high --permission-mode plan'
+codex_line='codex exec -m gpt-5.6-sol --sandbox read-only'
+
+# A checkout whose bundled defaults are the real ones, so the probe is reached
+# the way a fresh clone reaches it.
+auto_checkout() {  # prints the checkout path
+  local c; c="$(fake_checkout)"
+  printf 'auto\n' > "$c/templates/config/reviewer"
+  printf 'auto\n' > "$c/templates/config/security-reviewer"
+  echo "$c"
+}
+
 @test "a seeded config supplies both reviewers" {
   c="$(fake_checkout)"
   mkdir -p "$c/config"
@@ -126,19 +168,127 @@ env_at() {  # $1 checkout, $2.. arguments
 # them must not read the operator's config/ instead. A fake checkout carrying
 # the real templates and no config/ is the only way to ask that question: run
 # against the real root, this test would pass on whatever the operator seeded.
-@test "the bundled defaults are answerable by the reader that ships with them" {
+@test "the bundled defaults hand both keys to the probe" {
   c="$DUX_HOME/bundled"
   mkdir -p "$c/skills/ship" "$c/templates"
   cp "$DUX_ROOT/skills/ship/ship-env" "$c/skills/ship/ship-env"
   cp -R "$DUX_ROOT/templates/config" "$c/templates/config"
   [ ! -d "$c/config" ]
+  host codex user-agent
   for k in reviewer security-reviewer; do
     grep -q '^#' "$c/templates/config/$k" || { echo "$k ships with no note line"; return 1; }
-    run --separate-stderr env_at "$c" "$k"
+    # The word itself, not merely a file the reader can answer from: a bundled
+    # default that had gone back to naming a command would still answer.
+    [ "$(grep -v '^#' "$c/templates/config/$k" | grep -v '^$')" = auto ] \
+      || { echo "templates/config/$k does not ship as auto"; return 1; }
+    run --separate-stderr on_host "$c" "$k"
     [ "$status" -eq 0 ]
     [ -n "$output" ]
     case "$output" in '#'*) echo "ship-env answered a note line for $k"; return 1 ;; esac
   done
+}
+
+@test "auto picks codex for the code review when codex is on this host" {
+  c="$(auto_checkout)"
+  host codex claude
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "$codex_line" ]
+}
+
+@test "auto picks claude for the code review when codex is not on this host" {
+  c="$(auto_checkout)"
+  host claude
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "$claude_line" ]
+}
+
+@test "auto with no reviewer on the host stops the gate and names the file" {
+  c="$(auto_checkout)"
+  host
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [ "$stderr" = "finding: no code reviewer on this host: neither codex nor claude is on PATH; put a command line in $c/config/reviewer" ]
+}
+
+@test "auto picks the agent for the security pass when the user has defined one" {
+  c="$(auto_checkout)"
+  host claude user-agent
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "agent:security-reviewer" ]
+}
+
+@test "auto picks the agent for the security pass when the project defines one" {
+  c="$(auto_checkout)"
+  host claude project-agent
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "agent:security-reviewer" ]
+}
+
+@test "auto picks claude for the security pass when no agent is defined" {
+  c="$(auto_checkout)"
+  host codex claude
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 0 ]
+  # codex is on this host and is not the answer: the security pass is its own
+  # reviewer and never inherits the code reviewer's command.
+  [ "$output" = "$claude_line" ]
+}
+
+@test "auto with no security reviewer on the host stops the gate and names the file" {
+  c="$(auto_checkout)"
+  host codex
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [ "$stderr" = "finding: no security reviewer on this host: no security-reviewer agent definition and no claude on PATH; put a command line in $c/config/security-reviewer" ]
+}
+
+# The probe exists to answer where nobody has said what they want. A stated
+# value is the whole reason the gate is configurable, and a probe that could
+# overrule it would take the operator's reviewer away on a machine that happens
+# to have another one.
+@test "a stated value is never probed, whatever the host has" {
+  c="$(auto_checkout)"
+  mkdir -p "$c/config"
+  printf 'my own reviewer command\n' > "$c/config/reviewer"
+  printf 'agent:my-own-security-reviewer\n' > "$c/config/security-reviewer"
+  host codex claude user-agent
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "my own reviewer command" ]
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "agent:my-own-security-reviewer" ]
+}
+
+# What the installer leaves behind on first run is a copy of the bundled file,
+# so the copy has to reach the probe as well. A seeded answer that froze the
+# host's state at install time is the defect this change exists to remove.
+@test "an auto seeded into config reaches the probe like the bundled file" {
+  c="$(auto_checkout)"
+  mkdir -p "$c/config"
+  printf '# a note the installer copied\nauto\n' > "$c/config/reviewer"
+  host claude
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "$claude_line" ]
+}
+
+# Commenting the value out asks for the bundled default back, and the bundled
+# default is the probe. Emptying both files is still a finding, above.
+@test "a config of notes alone over an auto template still reaches the probe" {
+  c="$(auto_checkout)"
+  mkdir -p "$c/config"
+  printf '# the operator commented the value out\n\n' > "$c/config/reviewer"
+  host claude
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "$claude_line" ]
 }
 
 # A repository under the test's own home, since dux-project only reads the path.
