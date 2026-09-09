@@ -94,6 +94,11 @@ fix_count() {
     # the same provenance as a garbled one: neither is a count of zero.
     '') finding "the guard file has no fix count; open the gate again" ;;
     *[!0-9]*) finding "the guard file's fix count is not a number; open the gate again" ;;
+    # A leading zero is digits and arithmetic reads it, so every other caller
+    # would carry on. attest prints the count into JSON unquoted, where 00 is
+    # not a number: the attestation stops parsing and the gate still says it
+    # succeeded, which is the one failure the attestation exists to rule out.
+    0?*) finding "the guard file's fix count has a leading zero: $n; open the gate again" ;;
   esac
   printf '%s' "$n"
 }

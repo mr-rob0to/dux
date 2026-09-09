@@ -285,10 +285,14 @@ the body. The repository was deleted after this line.
 ## What this run does not prove
 
 - **The refusal paths.** Everything above is the happy path. The guard refusing
-  a stale phase, the ancestor test rejecting a remote the branch has not seen,
-  the lease losing a race: those are covered by `tests/ship-guard.bats` and
-  `tests/ship-env.bats`, each broken and seen to fail. A green transcript says
-  nothing about them.
+  a stale phase and `ship-env` refusing a checkout it cannot read are covered by
+  `tests/ship-guard.bats` and `tests/ship-env.bats`, each broken and seen to
+  fail. The ancestor test rejecting a remote this branch has never seen, and the
+  lease losing a race, are **not** covered by any test: they are prose in
+  `SKILL.md`, and `tests/contract.bats` only proves the prose still says them.
+  The empty-expect lease was exercised by hand at milestone 6 and refused with
+  `stale info`; the ancestor test was not. A green transcript says nothing about
+  any of them.
 - **A fix pass.** CI passed first time, so `fix-pass`, the re-review of new
   commits, and step 9's rebuilt body were not exercised end to end here.
 - **A repository that has its own template.** This one had none, so the fallback

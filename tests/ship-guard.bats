@@ -357,6 +357,30 @@ full_gate() {
   [[ "$output" == "finding: the guard file's fix count is not a number; open the gate again"* ]]
 }
 
+@test "a fix count with a leading zero is a finding, so attest cannot print bad JSON" {
+  cd "$(new_repo main)"
+  full_gate
+  f="$(state_file main)"
+  # 00 is digits, and every caller that does arithmetic on it reads it as zero.
+  # attest prints it into the JSON unquoted, where it is not a number at all, so
+  # the attestation would stop parsing while the gate reported success.
+  sed -i.bak 's/^fix_passes=0$/fix_passes=00/' "$f" && rm -f "$f.bak"
+  run guard attest
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the guard file's fix count has a leading zero: 00; open the gate again"* ]]
+  run guard push-ok
+  [ "$status" -eq 2 ]
+  run guard fix-pass
+  [ "$status" -eq 2 ]
+  # A plain zero is the count open writes, and it stays valid.
+  sed -i.bak 's/^fix_passes=00$/fix_passes=0/' "$f" && rm -f "$f.bak"
+  run guard attest
+  [ "$status" -eq 0 ]
+  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  run jq -e . <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
 @test "record and push-ok refuse a fix that was never committed" {
   cd "$(new_repo main)"
   guard open
