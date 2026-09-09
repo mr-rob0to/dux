@@ -66,12 +66,16 @@ agent_defined() {  # $1 name
   [ -f "${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/agents/$1.md" ]
 }
 
-# Fable at high effort in plan mode, with the two tools that reach the network
-# taken away. Plan mode is a permission rule and not the operating-system
-# sandbox the codex line runs under, so it is worth being plain about what it
-# buys: the session reads the tree and the diff and does not change them. The
-# diff is adversarial input by the time a reviewer reads it, and a review has no
-# use for the network, so nothing is lost by removing it.
+# Fable at high effort in plan mode, with the two tools that fetch a url taken
+# away. Be plain about what that buys and what it does not. Plan mode is a
+# permission rule, not the operating-system sandbox the codex line runs under:
+# it means the session reads the tree and the diff and does not change them.
+# Dropping WebFetch and WebSearch closes the two obvious ways out, and a review
+# has no use for either. It does not put the session offline: the reviewer needs
+# a shell to read a diff at all, and a shell can reach the network. Sealing that
+# would mean taking the shell away, which leaves nothing that can review. The
+# codex line is the one with a real sandbox; this is the fallback for a host
+# that does not have it.
 #
 # --disallowedTools takes a list and keeps taking words until the next flag, so
 # it cannot be last: the prompt the gate appends as one argument would be eaten
