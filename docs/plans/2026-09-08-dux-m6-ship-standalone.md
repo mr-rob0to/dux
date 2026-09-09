@@ -8,9 +8,24 @@
 > outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted 2026-09-08 on `plan/m6-ship-standalone` from `main` at ee4064e, reviewed once
-  by a fresh independent session, all 18 findings folded in. Awaiting approval.
-  0 of 4 tasks.
+- Approved and merged as PR #22. Implemented on `feat/m6-ship-standalone` from
+  `main` at 1147060. 4 of 4 tasks, ready to ship: reviewers come from config,
+  every push tests the ancestor before it anchors the lease, step 8 fills the
+  repo's own template and signs the body with the attestation, and the whole
+  gate has been run once from a fresh clone against a real remote and real CI,
+  recorded in `tests/harness/ship.md`.
+
+**Divergences from the approved plan**
+- Task 4 adds one contract test, "the recorded dry run names the reviewers the
+  bundled defaults hold". The plan said the transcript asserts nothing on its
+  own and left it to the identifier lint. That lint only proves the recording
+  leaks no paths; it cannot notice a bundled reviewer changing while the
+  recording still quotes the old one, which would leave the file claiming
+  something untrue. The test pins both values, both review headers, and the
+  attestation, ancestor, lease and verify lines.
+- `skills/ship/SKILL.md` gains one line saying the reviewer blocks are bash. The
+  dry run hit it: `zsh` does not split an unquoted `$REVIEWER` into words and
+  reported the whole reviewer command line as a command not found.
 - Milestone 5 gave the gate a memory but left it wearing the operator's own reviewer
   command, model name and pull request habits, so a stranger who installs Dux cannot
   run it.
@@ -123,19 +138,19 @@ lists `ship/ship-env`.
 
 **Steps**
 
-- [ ] Write `tests/ship-env.bats` first and see it fail. It builds a fake checkout per
+- [x] Write `tests/ship-env.bats` first and see it fail. It builds a fake checkout per
       test, since two-levels-up from the real script is the operator's own checkout:
       both keys from `config/`, both from `templates/config/` with no `config/`, notes
       and blank lines skipped, each refusal, and resolution through a directory symlink.
-- [ ] Write `skills/ship/ship-env`.
-- [ ] Add note lines to `templates/config/reviewer` and `templates/config/security-reviewer`.
-- [ ] Edit `SKILL.md`: step 0 resolves `$SHIP_ENV`; steps 6 and 7 take their reviewer
+- [x] Write `skills/ship/ship-env`.
+- [x] Add note lines to `templates/config/reviewer` and `templates/config/security-reviewer`.
+- [x] Edit `SKILL.md`: step 0 resolves `$SHIP_ENV`; steps 6 and 7 take their reviewer
       from it and step 7 handles both value shapes; Tool notes lose the model names and
       the Sol fallback line.
-- [ ] Re-point the step 6 prompt assertion in `tests/contract.bats`; add the
+- [x] Re-point the step 6 prompt assertion in `tests/contract.bats`; add the
       no-model-identifier assertion; add `ship-env` to `SHELL_FILES`; update
       `docs/ARCHITECTURE.md`.
-- [ ] Break-verify: break each assertion alone, run, confirm N distinct failures,
+- [x] Break-verify: break each assertion alone, run, confirm N distinct failures,
       restore, paste them into the commit body (constitution principle 3).
 
 ## Task 2: Evidence, anchored lease, remote verify
@@ -172,14 +187,14 @@ same four lines; and that the stop table names both new rows. One dry run.
 
 **Steps**
 
-- [ ] Add the contract tests to `tests/contract.bats` and see them fail against today's
+- [x] Add the contract tests to `tests/contract.bats` and see them fail against today's
       `SKILL.md`.
-- [ ] Edit `SKILL.md` steps 5, 8 and 9 and the stop table.
-- [ ] Dry run G: against a throwaway repository, push a commit from a second clone, then
+- [x] Edit `SKILL.md` steps 5, 8 and 9 and the stop table.
+- [x] Dry run G: against a throwaway repository, push a commit from a second clone, then
       run step 8's four lines in full, fetch included; confirm the ancestor test stops
       the gate rather than the lease accepting the fetched value. Paste the excerpt into
       the commit body.
-- [ ] Break-verify: break each assertion this task added, one at a time, run, confirm N
+- [x] Break-verify: break each assertion this task added, one at a time, run, confirm N
       distinct failures, restore, paste them into the commit body.
 
 ## Task 3: The template lookup and the attestation
@@ -227,15 +242,15 @@ new verbs.
 
 **Steps**
 
-- [ ] Add the `pr-template` and `attest` tests to `tests/ship-env.bats` and
+- [x] Add the `pr-template` and `attest` tests to `tests/ship-env.bats` and
       `tests/ship-guard.bats` and see them fail.
-- [ ] Add the two verbs to `ship-env`, propagating a non-zero exit as a finding.
-- [ ] Add `attest` to `ship-guard` and its usage line.
-- [ ] Add the contract tests for step 8 and see them fail; edit `SKILL.md` steps 8 and 9.
-- [ ] Dry run H: a throwaway repository with a template in `docs/`, then one with none,
+- [x] Add the two verbs to `ship-env`, propagating a non-zero exit as a finding.
+- [x] Add `attest` to `ship-guard` and its usage line.
+- [x] Add the contract tests for step 8 and see them fail; edit `SKILL.md` steps 8 and 9.
+- [x] Dry run H: a throwaway repository with a template in `docs/`, then one with none,
       then one with only the folder form; confirm the fill, the fallback and that the
       body names which was used. Paste the excerpts into the commit body.
-- [ ] Break-verify: break each assertion alone, run, confirm N distinct failures,
+- [x] Break-verify: break each assertion alone, run, confirm N distinct failures,
       restore, paste them into the commit body.
 
 ## Task 4: Fresh-clone dry run
@@ -265,11 +280,11 @@ defaults and names `config/reviewer` and `config/security-reviewer` as what to c
 
 **Steps**
 
-- [ ] Create the throwaway repository and the clone; run the gate; capture the
+- [x] Create the throwaway repository and the clone; run the gate; capture the
       transcript into `tests/harness/ship.md`.
-- [ ] Update `README.md` and `docs/ARCHITECTURE.md`.
-- [ ] Delete the throwaway repository.
-- [ ] Break-verify: the transcript asserts nothing on its own, so break the guard that
+- [x] Update `README.md` and `docs/ARCHITECTURE.md`.
+- [x] Delete the throwaway repository.
+- [x] Break-verify: the transcript asserts nothing on its own, so break the guard that
       protects it. Plant an operator home path in `tests/harness/ship.md`, run
       `make lint`, confirm `lint-identifiers` fails and names the file, remove it, paste
       the failure into the commit body.

@@ -1,1 +1,8 @@
+# The reviewer /ship runs for step 7, the security pass. Two shapes: agent:<name>
+# dispatches that agent on this host, and anything else is a command line the
+# audit prompt is appended to.
+# A host that cannot dispatch agents stops the gate and names this file, rather
+# than quietly running a different reviewer.
+# Copy this file to config/security-reviewer to change it: /ship reads config/
+# first and falls back here.
 agent:security-reviewer

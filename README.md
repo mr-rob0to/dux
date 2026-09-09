@@ -28,6 +28,14 @@ Plans: `docs/plans/`.
 
 Verified orchestrator harness: Claude Code. Worker harnesses: Claude Code and Codex, selected by `config/worker-harness` or `dux-spawn --harness`. Codex as orchestrator: milestone 8.
 
+The `/ship` gate runs on the bundled defaults, so a fresh clone needs no setup:
+its code reviewer comes from `templates/config/reviewer` and its security
+reviewer from `templates/config/security-reviewer`. To use different ones, put
+your values in `config/reviewer` and `config/security-reviewer`, which win over
+the bundled files. `bin/dux-install` seeds both on first run and never
+overwrites one you have edited. A recording of the whole gate, run from a fresh
+clone against a real remote, is in `tests/harness/ship.md`.
+
 ## Run
 
     cd ~/Documents/dev/projects/dux && claude

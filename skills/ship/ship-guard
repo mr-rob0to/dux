@@ -12,7 +12,7 @@ set -u
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 die()     { printf 'ship-guard: %s\n' "$*" >&2; exit 1; }
 
-usage="usage: ship-guard open | record <phase> | check <phase> | fix-pass | push-ok"
+usage="usage: ship-guard open | record <phase> | check <phase> | fix-pass | attest | push-ok"
 
 gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" \
   || finding "/ship guard must run inside a git repository"
@@ -94,6 +94,11 @@ fix_count() {
     # the same provenance as a garbled one: neither is a count of zero.
     '') finding "the guard file has no fix count; open the gate again" ;;
     *[!0-9]*) finding "the guard file's fix count is not a number; open the gate again" ;;
+    # A leading zero is digits and arithmetic reads it, so every other caller
+    # would carry on. attest prints the count into JSON unquoted, where 00 is
+    # not a number: the attestation stops parsing and the gate still says it
+    # succeeded, which is the one failure the attestation exists to rule out.
+    0?*) finding "the guard file's fix count has a leading zero: $n; open the gate again" ;;
   esac
   printf '%s' "$n"
 }
@@ -164,6 +169,36 @@ case "$cmd" in
     # all, because push-ok wants every phase at the commit going out.
     drop checks review security
     printf 'fix pass %s of 3\n' "$n"
+    ;;
+
+  # The attestation is built here because this file's format has one owner.
+  # It carries the three guard phases and nothing else: step 8 writes it before
+  # pr and ci have happened, and a record claiming a step that has not run is
+  # worse than no record. The guard file is untracked and anything running as
+  # this account can write it, so a phase that is missing or is not a commit id
+  # is a finding rather than an entry left out.
+  attest)
+    [ $# -eq 0 ] || finding "$usage"
+    require_file
+    n="$(fix_count)" || exit $?
+    # One read per phase, and the value that is printed is the value that was
+    # checked. Reading the file again for the printout would mean the checked
+    # value and the printed value are two different reads of a file this script
+    # has already said it does not trust: anything running as this account can
+    # rewrite it in between, and what lands in the attestation is then whatever
+    # the second read saw. That is a small window and the same account could
+    # write a plausible sha with no race at all, so this is not a defence. It is
+    # the file doing what its own comment says it does.
+    steps=""; sep=""
+    for phase in checks review security; do
+      sha="$(recorded_sha "$phase")" || exit $?
+      [ "${#sha}" -eq 40 ] || finding "the $phase commit is not a commit id: $sha"
+      case "$sha" in *[!0-9a-f]*) finding "the $phase commit is not a commit id: $sha" ;; esac
+      steps="$steps$sep{\"step\":\"$phase\",\"status\":\"completed\",\"sha\":\"$sha\"}"
+      sep=","
+    done
+    printf '<!-- dux-attestation:v1 {"head_sha":"%s","fix_passes":%s,"steps":[%s]} -->\n' \
+      "$(git rev-parse HEAD)" "$n" "$steps"
     ;;
 
   push-ok)

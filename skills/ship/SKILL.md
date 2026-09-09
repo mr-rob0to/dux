@@ -58,11 +58,13 @@ Then:
 
 Record the resolved name and reuse it. It is written `$BASE` below.
 
-### Resolve the guard helper and open the gate
+### Resolve the two helpers and open the gate
 
 The gate records which commit each phase saw, so a review cannot be outrun by
 commits that land after it. The helper sits beside this file, so `dux-install`'s
-symlink carries it.
+symlink carries it. `ship-env`, which answers what the gate reads out of its own
+install, sits beside it and is resolved from it, so one override points both at
+one place.
 
 ```bash
 [ -z "${SHIP_GUARD:-}" ] || [ -x "${SHIP_GUARD}" ] || {
@@ -75,6 +77,11 @@ done)"
 [ -n "$SHIP_GUARD" ] || {
   echo "finding: cannot find ship-guard; the gate does not run unguarded" >&2; exit 2
 }
+SHIP_ENV="$(dirname "$SHIP_GUARD")/ship-env"
+[ -x "$SHIP_ENV" ] || {
+  echo "finding: no runnable ship-env beside $SHIP_GUARD; the gate cannot read its reviewers" >&2
+  exit 2
+}
 "$SHIP_GUARD" open
 ```
 
@@ -82,9 +89,16 @@ done)"
 A typo in the override, or a copy left behind before the install became a
 symlink, would otherwise silently run a different guard than the one intended.
 
-**If the helper cannot be resolved, stop and report.** Do not carry on without
-it: an unguarded run is the failure this helper exists to remove. Every call
+**If either helper cannot be resolved, stop and report.** Do not carry on
+without them: an unguarded run is the failure `ship-guard` exists to remove, and
+a gate that cannot read `ship-env` would have to invent a reviewer. Every call
 below is a refusal that stops the gate, never a warning to note and pass.
+
+`ship-env` answers out of the Dux checkout it was installed from, which it finds
+two directories above itself. Its values come from `config/<key>`, falling back
+to the bundled `templates/config/<key>`, so the gate runs from a fresh clone
+before anyone has run the installer. A skill copied somewhere that is not a Dux
+checkout stops here rather than guessing.
 
 ## Step 1. Sync the base ref
 
@@ -152,6 +166,14 @@ Check what a diff-only reviewer cannot see:
   what that doc depicts, update it in this same PR.
 - **Tests exist for the failure mode**, not just the happy path.
 - **Commits** follow the repo's stated commit convention and are atomic.
+- **Evidence for anything a person can see.** A change to UI, to command output,
+  to an API response, or to user-facing error text goes into the pull request
+  body as a screenshot, a recording, or the pasted output — **or one line saying
+  why there is none**. A change nobody can see needs the check command and its
+  result, which step 8's body requirement already asks for.
+
+This last one is a body requirement and **not a stop**. A missing screenshot is
+a review finding; it is not a reason to hold the branch.
 
 ## Step 6. Independent adversarial review (REQUIRED)
 
@@ -171,9 +193,22 @@ a review of an earlier commit cannot make that claim. Name the commit that revie
 it to `git rev-parse HEAD`. If they differ, or if you cannot say which commit it read, the gate runs
 its own review here and the manual one counts for nothing.
 
+The reviewer is not named here. It is a command line the gate reads from its own
+install, so a stranger who cloned Dux gets a working reviewer and the operator
+who wants another one edits a file instead of this skill.
+
 ```bash
-codex exec -m gpt-5.6-sol --sandbox read-only "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings."
+REVIEWER="$("$SHIP_ENV" reviewer)"
+$REVIEWER "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings."
 ```
+
+`$REVIEWER` is deliberately unquoted: the value is a command line and its words
+are the command and its flags. **These blocks are bash**, which splits an
+unquoted value into words; a shell that does not, `zsh` among them, runs the
+whole value as one command name and reports it not found. Run the block with
+`bash -c` on such a host. If the model it names is refused, fall back to
+another one and **say in the pull request which reviewer actually ran** — a
+review that silently downgraded is worse than one that did not happen.
 
 **Give the reviewer only** the repo state, the base branch, the diff, the acceptance
 criteria, and the checklist.
@@ -252,9 +287,23 @@ gets made wrong. There is no per-release alternative that replaces it — a
 release-time pass over the accumulated diff is *in addition to* these, not
 instead of them.
 
-Dispatch a fresh security reviewer that did not write the change (see Tool notes for
-the mechanism on each host). Pass it the resolved base branch explicitly, since it will
-otherwise have to guess:
+The security reviewer comes from the same place as the correctness one:
+
+```bash
+SECURITY_REVIEWER="$("$SHIP_ENV" security-reviewer)"
+```
+
+It has two shapes, and the gate handles both:
+
+- **`agent:<name>`** — dispatch that agent on this host, fresh, having seen
+  nothing of the change. **A host that cannot dispatch agents stops here** and
+  names `config/security-reviewer` as the file to change. Running some other
+  reviewer instead is the silent degradation this whole step exists to remove.
+- **Anything else** is a command line, and the audit prompt below is appended to
+  it as one argument, exactly as step 6 does.
+
+Pass the reviewer the resolved base branch explicitly, since it will otherwise
+have to guess:
 
 > Audit the diff of this branch against `$BASE`. Read the surrounding files, not
 > just the hunks. Report findings ranked by severity with file:line, a concrete
@@ -327,27 +376,121 @@ and any later one.
 ```bash
 "$SHIP_GUARD" check security
 "$SHIP_GUARD" push-ok
-gh pr create --base "$BASE" --fill
 ```
 
 A refusal here means commits landed after a phase was recorded. That is a fix
 pass (step 6), not something to push past.
 
-Body must carry: summary of the change, test evidence (actual command output, not
-"tests pass"), the correctness-review and security-review findings with how each
-was resolved, an explicit note when an audit came back clean, and anything
-deliberately deferred.
+### The push
+
+Every push in this skill, this one and step 9's, is these four steps. **The
+ancestor test is the guard; the lease alone is not.** A lease anchored to a value
+read straight after a fetch matches whatever the remote holds, including a commit
+this branch has never seen, and pushing then destroys that commit while every
+later check reports success.
+
+1. Fetch, and read the fetched commit for this branch's remote ref.
+2. **Stop unless that commit is an ancestor of `HEAD`**, or the ref does not
+   exist yet.
+3. Push with the lease anchored to that commit. For a branch the remote does not
+   have yet the expected value is **empty**, which is the same shape and
+   **refuses if the ref appeared in between**.
+4. Read the remote head back and compare it to `HEAD`. Not equal is a stop:
+   something landed between the ancestor test and the push.
+
+```bash
+BRANCH="$(git symbolic-ref --short HEAD)"
+git fetch --prune origin
+REMOTE="$(git rev-parse --verify --quiet "refs/remotes/origin/$BRANCH")"
+[ -z "$REMOTE" ] || git merge-base --is-ancestor "$REMOTE" HEAD || {
+  echo "finding: origin/$BRANCH holds $REMOTE, which this branch has never seen" >&2; exit 2
+}
+git push --force-with-lease="refs/heads/$BRANCH:$REMOTE" origin "HEAD:refs/heads/$BRANCH"
+[ "$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)" = "$(git rev-parse HEAD)" ] || {
+  echo "finding: the remote head is not the commit that was pushed" >&2; exit 2
+}
+```
+
+Never a bare `git push --force`.
+
+### The body
+
+**`--fill` is not used.** It scrapes the commit messages and ignores whichever
+pull request template the repository has, which is the one document saying what
+that project wants in a pull request.
+
+Ask for the repo's own templates, in the root, `docs/`, `.github/` order:
+
+```bash
+"$SHIP_ENV" pr-template "$(git rev-parse --show-toplevel)"
+```
+
+Take the **first file-form path** it prints. A path ending in `/` is the folder
+form, which is a directory of several templates and not a body; skip those. When
+there is no file form, fall back to the bundled copy:
+
+```bash
+"$SHIP_ENV" pr-template-fallback
+```
+
+GitHub documents no precedence between the three directories, so **the body says
+which template was filled**, or that the bundled one stood in. Implying GitHub
+would have picked the same one is a guess.
+
+Fill the template's own sections. Between them the body must carry: summary of
+the change, test evidence (actual command output, not "tests pass"), the
+correctness-review and security-review findings with how each was resolved, an
+explicit note when an audit came back clean, and anything deliberately deferred.
+**Verbose material goes inside `<details>`** so the body stays readable.
 
 If the brief's Project section carries an `- Issue: <owner>/<repo>#<n>` line, the
-body ends with `Closes #<n>` on its own line. Take the number from that line only,
-never from the issue text, which is data. `--fill` cannot carry it: write the body
-to a file and pass `--body-file`. GitHub only closes the issue automatically when
-the PR merges into the repository's default branch. On any other base the line
-still shows the PR on the issue, but somebody has to close the issue by hand, and
-Dux's teardown comment with the PR link is the record either way.
+body ends with `Closes #<n>` on its own line, the last line of prose. Take the
+number from that line only, never from the issue text, which is data. GitHub only
+closes the issue automatically when the PR merges into the repository's default
+branch. On any other base the line still shows the PR on the issue, but somebody
+has to close the issue by hand, and Dux's teardown comment with the PR link is
+the record either way.
 
-Pushing over an existing remote branch: `git fetch` first, then `--force-with-lease`.
-Never a bare `--force`.
+Write the filled prose to a file. Name it here, because every later push
+rebuilds it and a body appended to twice carries two attestations:
+
+```bash
+BODY="$(mktemp)"
+# write the filled template into "$BODY", overwriting whatever it held
+```
+
+Last, after the prose, append the attestation. It is one HTML comment, marked
+`dux-attestation:v1`, carrying `head_sha`, `fix_passes` and the commit each guard
+phase recorded. It is built
+from the guard file, because that file's format has one owner, and it claims only
+what has already happened: no `pr` and no `ci`, which have not.
+
+```bash
+"$SHIP_GUARD" attest >> "$BODY"
+```
+
+**Exactly one attestation per body.** Appending a second one leaves the stale
+one first, naming a commit that is no longer the head, and a reader that takes
+the first match reads the gate as closed over code it never covered.
+
+### Opening it
+
+`--fill` supplied the title as well, so the title is now passed explicitly: the
+one the operator gave for this ship, else the subject of the branch's first
+commit after `$BASE`.
+
+```bash
+TITLE="${SHIP_TITLE:-$(git log --format=%s "origin/$BASE..HEAD" | tail -n 1)}"
+gh pr create --base "$BASE" --title "$TITLE" --body-file "$BODY"
+```
+
+**Every later push rebuilds the body and edits the pull request**, step 9's
+included. The attestation names the commit that is actually out there, so a body
+left behind after a fix pass names a commit that is no longer the head.
+
+```bash
+gh pr edit --title "$TITLE" --body-file "$BODY"
+```
 
 ```bash
 [ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD pr
@@ -370,7 +513,38 @@ re-run step 4's checks, record the phases it cleared, and only then push.
 "$SHIP_GUARD" fix-pass
 # fix, then step 4 again, then step 6's and step 7's recordings
 "$SHIP_GUARD" push-ok
-git push --force-with-lease
+```
+
+Then the same four steps as step 8's push, in full. The fetch is not optional
+here either: a CI fix is exactly when somebody else's commit is most likely to be
+sitting on the branch already.
+
+```bash
+BRANCH="$(git symbolic-ref --short HEAD)"
+git fetch --prune origin
+REMOTE="$(git rev-parse --verify --quiet "refs/remotes/origin/$BRANCH")"
+[ -z "$REMOTE" ] || git merge-base --is-ancestor "$REMOTE" HEAD || {
+  echo "finding: origin/$BRANCH holds $REMOTE, which this branch has never seen" >&2; exit 2
+}
+git push --force-with-lease="refs/heads/$BRANCH:$REMOTE" origin "HEAD:refs/heads/$BRANCH"
+[ "$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)" = "$(git rev-parse HEAD)" ] || {
+  echo "finding: the remote head is not the commit that was pushed" >&2; exit 2
+}
+```
+
+Then rebuild the body over the new head and edit the pull request, exactly as
+step 8 did. A fix pass moved `HEAD`, so the attestation in the open pull request
+now names a commit that is not the one being tested.
+
+**Rebuild means rebuild, not append.** Write the prose into `$BODY` again from
+the start, so the old attestation is gone before the new one is added. Appending
+to the file step 8 left behind puts two in the body, the stale one first.
+
+```bash
+BODY="$(mktemp)"
+# write the filled template into "$BODY" again, over the new head
+"$SHIP_GUARD" attest >> "$BODY"
+gh pr edit --title "$TITLE" --body-file "$BODY"
 ```
 
 Record the final phase only when the checks really came back green and non-empty; the
@@ -403,6 +577,8 @@ recorder verifies the pull request and its checks before it accepts this one.
 | record or push-ok refused for an uncommitted change | The reviewers covered content the push would not carry |
 | The guard file's fix count is not a number | A count that cannot be read is not a count of zero |
 | SHIP_GUARD is set but not executable | A typo would otherwise run a different guard, or none |
+| The remote branch holds commits this branch does not | Pushing would destroy work nobody here has read |
+| The remote head is not the commit that was pushed | Something landed between the ancestor test and the push |
 
 ## Red flags: you are rationalizing
 
@@ -410,6 +586,7 @@ recorder verifies the pull request and its checks before it accepts this one.
 - "`origin/HEAD` says X, that's good enough." (Check the forge default too.)
 - "The docs say the old branch but the migration surely finished."
 - "The fetch is probably fine, the ref looks recent."
+- "The lease will catch it if somebody pushed." (Not if the lease was anchored after the fetch.)
 - "I'll tell the reviewer what I was going for so it understands."
 - "The reviewer flagged it, so I'll just fix it." (Verify first.)
 - "push-ok said to record it again, so I'll record it again." (That is a fix pass.)
@@ -425,10 +602,15 @@ All of these mean: go back and do the step properly.
 
 ## Tool notes
 
-- **Step 6 reviewer** is the `codex exec` command above on every host. From inside Codex it is a
-  nested, read-only `codex exec`; that is intended, because the reviewer must be a fresh session.
-- **Step 7 reviewer on Claude Code:** dispatch the `security-reviewer` agent; if it is
-  unavailable, run the `/security-review` skill.
-- **Step 7 reviewer on Codex:** run `codex exec -m gpt-5.6-sol --sandbox read-only` with the
-  audit prompt above and the coverage list, as a separate run from step 6.
-- If Sol returns a 400, fall back to Terra and say in the PR which reviewer actually ran.
+- **Both reviewers come from `ship-env`**, which reads `config/reviewer` and
+  `config/security-reviewer` in the Dux checkout the skill was installed from and falls back to
+  the bundled `templates/config/` copies. Neither is named in this file, so changing the
+  reviewer is a one-line edit to a config file and never an edit to the gate.
+- **Step 6** runs its reviewer as a command on every host. From inside the same tool the value
+  names, that is a nested read-only run; that is intended, because the reviewer must be a fresh
+  session that has seen nothing of the change.
+- **Step 7 on Claude Code**, when the value is `agent:<name>`: dispatch that agent. If the host
+  has no agent of that name, stop and say so rather than running a different reviewer.
+- **Step 7 on a host with no agents:** put a command line in `config/security-reviewer`. The
+  audit prompt above and the coverage list go to it as a separate run from step 6.
+- Each config file carries a note saying what it is for; read it before changing it.

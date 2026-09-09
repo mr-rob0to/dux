@@ -17,9 +17,17 @@ skills/
   dux-status/SKILL.md      show the fleet digest and explain its next actions
   dux-recover/SKILL.md     judge and handle stale, dead, ended, or failed work
   ship/SKILL.md            bundled delivery gate, installed by dux-install (milestone 1, task 8)
-  ship/ship-guard          binds each gate phase to the commit it saw; refuses a push the
-                           review never covered (milestone 5). Sources nothing: it runs in
-                           a project worktree with no DUX_HOME
+  ship/ship-guard          open/record/check/fix-pass/attest/push-ok: binds each gate phase
+                           to the commit it saw, refuses a push the review never covered
+                           (milestone 5), and builds the pull request attestation from the
+                           guard file (milestone 6). Sources nothing: it runs in a project
+                           worktree with no DUX_HOME
+  ship/ship-env            reviewer/security-reviewer/pr-template/pr-template-fallback/--root:
+                           what the gate reads out of the Dux checkout it was installed
+                           from. Values come from config/ and fall back to templates/config/;
+                           pr-template delegates to bin/dux-project so the lookup has one
+                           owner (milestone 6). Sources nothing either, and stops when it is
+                           not inside a checkout
 bin/
   dux-env                  sourced by every script: paths, log, die, finding, now,
                            task_harness, harness_refusal, require_cmd, take_bytes,
@@ -70,11 +78,9 @@ state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            worker-settings.json,hooks/}
 config/       (gitignored) backend override, reviewer defaults, models, models-codex,
                            worker-harness
-tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash
+tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash;
+                           harness/ship.md, the /ship gate recorded from a fresh clone
 ```
-
-Planned for later milestones (spec section 16): the changes that let `/ship` stand alone
-(milestone 6).
 
 Rules that shape every component:
 

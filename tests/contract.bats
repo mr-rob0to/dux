@@ -256,8 +256,10 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   # prompt stripped and only the prose about it left: it asserted on the file,
   # not on what the reviewer is told.
   ship="$DUX_ROOT/skills/ship/SKILL.md"
-  prompt="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$ship" | grep -F 'codex exec')"
-  [ -n "$prompt" ] || { echo "step 6 sends no codex prompt"; return 1; }
+  # The reviewer command left this file for config/reviewer, so the prompt is
+  # the line that runs the resolved command, not the one that names a tool.
+  prompt="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$ship" | grep -F '$REVIEWER "')"
+  [ -n "$prompt" ] || { echo "step 6 sends no reviewer prompt"; return 1; }
   [[ "$prompt" == *"'## Findings'"* ]]
   [[ "$prompt" == *"'No findings.'"* ]]
   # Step 7 sends its prompt as a blockquote, so the quoted lines are the prompt.
@@ -313,4 +315,163 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$six" == *'in letter but not in substance'* ]]
   # The withholding rule the criteria travel alongside, unchanged.
   [[ "$six" == *'Never tell it'*'what the change is for'* ]]
+}
+
+@test "the ship skill names no model and reads both reviewers from ship-env" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  # A model name in the gate's own text is the thing that stopped a stranger
+  # running it: changing the reviewer meant editing the skill. Both reviewers
+  # now come out of config, so no model identifier belongs in this file.
+  run grep -nE 'gpt-[0-9]|claude-[a-z]*-[0-9]' "$ship"
+  [ "$status" -ne 0 ] || { echo "SKILL.md still names a model: $output"; return 1; }
+  [ -x "$DUX_ROOT/skills/ship/ship-env" ]
+  zero="$(unwrapped '/^### Resolve the two helpers/,/^## Step 1\./p' "$ship")"
+  [[ "$zero" == *'SHIP_ENV="$(dirname "$SHIP_GUARD")/ship-env"'* ]]
+  [[ "$zero" == *'no runnable ship-env beside'* ]]
+  six="$(unwrapped '/^## Step 6\./,/^## Step 7\./p' "$ship")"
+  [[ "$six" == *'REVIEWER="$("$SHIP_ENV" reviewer)"'* ]]
+  seven="$(unwrapped '/^## Step 7\./,/^## Step 8\./p' "$ship")"
+  [[ "$seven" == *'SECURITY_REVIEWER="$("$SHIP_ENV" security-reviewer)"'* ]]
+  # The agent: shape is the one that can degrade quietly, so the skill has to
+  # say that a host without agents stops rather than picking another reviewer.
+  [[ "$seven" == *'A host that cannot dispatch agents stops here'* ]]
+  [[ "$seven" == *'config/security-reviewer'* ]]
+}
+
+@test "the ship skill demands evidence a person can see, or a reason there is none" {
+  five="$(unwrapped '/^## Step 5\./,/^## Step 6\./p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$five" == *'screenshot'* ]]
+  [[ "$five" == *'or one line saying why there is none'* ]]
+  # It is a body requirement, not a new stop. Reading it as a stop would hold a
+  # branch for a missing picture.
+  [[ "$five" == *'not a stop'* ]]
+}
+
+# A lease anchored to a value read straight after a fetch matches whatever the
+# remote holds, including a commit this branch has never seen. The ancestor test
+# is the guard; the lease alone is not.
+@test "every push tests the ancestor, anchors the lease, and verifies the remote" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  # One range per step, spelled out. An alternation in the end pattern was tried
+  # and is a GNU extension: BSD sed never matched it, the step 8 range ran to the
+  # end of the file, and step 9's push satisfied every assertion about step 8.
+  # Breaking step 8 changed nothing, which is how that was found.
+  for step in 8 9; do
+    case "$step" in
+      8) body="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$ship")" ;;
+      9) body="$(unwrapped '/^## Step 9\./,/^## Stop and report/p' "$ship")" ;;
+    esac
+    [ -n "$body" ] || { echo "step $step is empty"; return 1; }
+    # The range has to stop where the step does, or one step's push proves the
+    # other's. sed prints the line the range ends on, so the marker checked here
+    # is content from inside the next section, not its header.
+    case "$step" in
+      8) [[ "$body" != *'gh run watch'* ]] || { echo "the step 8 range ran into step 9"; return 1; } ;;
+      9) [[ "$body" != *'you are rationalizing'* ]] || { echo "the step 9 range ran into the red flags"; return 1; } ;;
+    esac
+    [[ "$body" == *'git merge-base --is-ancestor "$REMOTE" HEAD'* ]] \
+      || { echo "step $step has no ancestor test"; return 1; }
+    [[ "$body" == *'--force-with-lease="refs/heads/$BRANCH:$REMOTE"'* ]] \
+      || { echo "step $step does not anchor the lease"; return 1; }
+    [[ "$body" == *'git ls-remote origin "refs/heads/$BRANCH"'* ]] \
+      || { echo "step $step does not verify the remote after the push"; return 1; }
+  done
+  # An empty expected value is the same shape for a branch the remote does not
+  # have yet, and it refuses if the ref appeared in between.
+  eight="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$ship")"
+  [[ "$eight" == *'empty'* ]]
+  [[ "$eight" == *'refuses if the ref appeared'* ]]
+  # A bare force never comes back.
+  flat="$(unwrapped '1,$p' "$ship")"
+  [[ "$flat" != *'git push --force '* ]]
+}
+
+@test "the stop table names the two ways a push can be wrong" {
+  table="$(unwrapped '/^## Stop and report/,/^## Red flags/p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$table" == *'The remote branch holds commits this branch does not'* ]]
+  [[ "$table" == *'The remote head is not the commit that was pushed'* ]]
+}
+
+@test "step 8 fills the repo's own template and passes a title and a body file" {
+  eight="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$eight" != *'gh run watch'* ]] || { echo "the step 8 range ran into step 9"; return 1; }
+  # --fill ignores the repository's template and scrapes the commits instead.
+  # The prose explains why it is gone, so the assertion is on the command line
+  # rather than on the step's text: a flat search for the flag matches the
+  # sentence that retires it, and would pass with the old command still there.
+  create="$(grep -n '^gh pr create' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [ -n "$create" ] || { echo "step 8 never opens the pull request"; return 1; }
+  [[ "$create" != *'--fill'* ]] || { echo "gh pr create still uses --fill: $create"; return 1; }
+  [[ "$create" == *'--title'* ]]
+  [[ "$create" == *'--body-file'* ]]
+  # The whole invocation, not a prefix of it: "$SHIP_ENV" pr-template is also
+  # the first half of the fallback line, so a prefix assertion stayed green with
+  # the lookup gone. Breaking the lookup changed nothing, which is how that
+  # was found.
+  [[ "$eight" == *'"$SHIP_ENV" pr-template "$(git rev-parse --show-toplevel)"'* ]]
+  [[ "$eight" == *'"$SHIP_ENV" pr-template-fallback'* ]]
+  # GitHub documents no precedence between root, docs/ and .github/, so the body
+  # says which template was filled rather than implying GitHub would agree.
+  [[ "$eight" == *'root, `docs/`, `.github/` order'* ]]
+  [[ "$eight" == *'says which template'* ]]
+  [[ "$eight" == *'folder form'* ]]
+  [[ "$eight" == *'--title'* ]]
+  [[ "$eight" == *'--body-file'* ]]
+  [[ "$eight" == *'<details>'* ]]
+  [[ "$eight" == *'"$SHIP_GUARD" attest >> "$BODY"'* ]]
+  [[ "$eight" == *'dux-attestation:v1'* ]]
+}
+
+@test "a rebuilt body follows every push after a fix pass, step 9's included" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  eight="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$ship")"
+  nine="$(unwrapped '/^## Step 9\./,/^## Stop and report/p' "$ship")"
+  [[ "$nine" != *'you are rationalizing'* ]] || { echo "the step 9 range ran on"; return 1; }
+  # The attestation names the commit that is out there. A push that does not
+  # rebuild it leaves the body naming a commit that is no longer the head.
+  [[ "$eight" == *'gh pr edit'* ]]
+  [[ "$nine" == *'gh pr edit --title'* ]]
+  [[ "$nine" == *'--body-file'* ]]
+  # The command, not the word. The prose above it says "attestation", so a
+  # search for "attest" passed with the call itself deleted.
+  [[ "$nine" == *'"$SHIP_GUARD" attest >> "$BODY"'* ]]
+  # attest appends, so a body reused from step 8 gets a second attestation with
+  # the stale one first, naming a commit that is no longer the head. Both steps
+  # name the file before they append to it, and step 9 says rebuild is not
+  # append. $BODY was never assigned anywhere in the skill until this was found.
+  [[ "$eight" == *'BODY="$(mktemp'* ]]
+  [[ "$nine" == *'BODY="$(mktemp'* ]]
+  [[ "$eight" == *'Exactly one attestation per body'* ]]
+  [[ "$nine" == *'Rebuild means rebuild, not append'* ]]
+}
+
+@test "the recorded dry run names the reviewers the bundled defaults hold" {
+  t="$DUX_ROOT/tests/harness/ship.md"
+  [ -f "$t" ] || { echo "no recording at tests/harness/ship.md"; return 1; }
+  # The recording says a fresh clone reads its reviewers from templates/config/.
+  # If a bundled default changes and the recording does not, the recording is
+  # claiming something that is no longer true. Nothing else checks that: it is
+  # prose, and the run it describes cannot be repeated by the suite.
+  #
+  # First value line, comments and blanks skipped, which is what ship-env reads.
+  for key in reviewer security-reviewer; do
+    value="$(grep -v '^#' "$DUX_ROOT/templates/config/$key" | grep -v '^$' | head -1)"
+    [ -n "$value" ]
+    grep -qxF "$value" "$t" \
+      || { echo "tests/harness/ship.md does not carry '$value' from templates/config/$key"; return 1; }
+  done
+  # Both reviews answered with the headers the skill demands. A recording of a
+  # run that skipped either one is a recording of a gate that did not close.
+  # Counted, not merely present: step 6 and step 7 each print one, and a single
+  # `grep -q` stayed green with either review's header deleted.
+  found="$(grep -cxF '## Findings' "$t")"
+  [ "$found" -ge 2 ] || { echo "only $found '## Findings' headers; both reviews print one"; return 1; }
+  grep -qxF '## Checked clean' "$t"
+  # The three phases of the guard, the ancestor test, the anchored push and the
+  # verify after it. These are the steps the milestone added; a recording that
+  # does not show them is not evidence for it.
+  grep -qF 'dux-attestation:v1' "$t"
+  grep -qF 'merge-base --is-ancestor' "$t"
+  grep -qF 'force-with-lease' "$t"
+  grep -qF 'ls-remote' "$t"
 }
