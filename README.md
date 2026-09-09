@@ -46,8 +46,9 @@ dux   Plan task started. You'll get a docs-only PR to approve.
 
 - **One conversation, many agents.** Say what you want. Dux writes the brief,
   opens an isolated worktree, starts the worker, and reports back in plain words.
-- **Supervision that costs nothing.** A background watcher turns worker state
-  into one line each. Nothing polls, nothing tails, and your context stays yours.
+- **Supervision that costs no tokens.** A background watcher checks on workers
+  and turns state changes into one line each. Your session never tails their
+  output, so your context stays yours.
 - **Interrupted on purpose.** One phone notification for a finished PR, a
   blocking question, or a failure. Nothing else.
 - **No shared checkout, ever.** Every task gets its own git worktree and branch
@@ -91,8 +92,12 @@ bin/dux-doctor
 
 ```
 ok claude      ok gh        ok git        ok registry
-ok codex       ok jq        ok gh auth    ok watcher
+ok codex       ok jq        ok gh auth    backend: tmux
+watcher: no session
 ```
+
+`watcher: no session` is expected here — the watcher starts with your first
+session, in the next step. Everything else should read `ok`.
 
 **5. Run it.**
 
@@ -114,9 +119,13 @@ lock, starts the watcher, and shows you the fleet digest. Then just talk to it.
 | `tmux` or [Herdr](https://herdr.dev) | Gives each worker its own pane or tab |
 | [`codex`](https://developers.openai.com/codex/cli) | The gate's preferred code reviewer |
 
-macOS or Linux. `codex` is optional — the gate falls back to Claude Code — but
-`dux-doctor` reports it missing, because a review by a second vendor is the point
-of the step.
+macOS or Linux.
+
+**`codex` is required in practice.** The gate falls back to Claude Code without
+it, so nothing is broken — but `bin/dux-doctor` reports it missing, and Dux's own
+instructions say to fix every doctor failure before dispatching. Treat it as
+required unless you also mean to ignore that. It is there so the code review
+comes from a second vendor, which is the point of the step.
 
 ---
 
