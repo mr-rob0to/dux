@@ -5,8 +5,10 @@
 - Milestone 2 (dispatch) is merged in PR #4: plan `2026-09-03-dux-m2-dispatch.md`, 12 of 12 tasks.
 - Milestone 3 (supervision) is merged 2026-09-06 as PR #6, rebased onto `main` at 9a7e524: plan `2026-09-04-dux-m3-supervision.md`, 8 of 8 tasks, plus the 5-task security amendment `2026-09-05-dux-m3-security-amendment.md`.
 - Milestone 4 (intake) is merged as PR #8: plan `2026-09-06-dux-m4-intake.md`, 4 of 4 tasks.
-- Current milestone: 5 (`/ship` guard), planned 2026-09-07 in `2026-09-07-dux-m5-ship-guard.md`, 4 tasks, ~1,100 estimated added lines. It is the first milestone under the size cap and the plan rules below.
-- Milestones 5 to 8 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
+- Milestone 5 (`/ship` guard) is merged as PR #14: plan `2026-09-07-dux-m5-ship-guard.md`, 4 of 4 tasks. It was the first milestone under the size cap and the plan rules below.
+- Three smaller changes merged after it, outside the milestone numbering: the identifier-lint work (PRs #15 to #19), the pull request template consent rule (PR #20, plan `2026-09-08-pr-template-consent.md`), and the pipeline lint that constitution 2.0.5 carries (PR #21).
+- Current milestone: 6 (`/ship` stands alone), planned 2026-09-08 in `2026-09-08-dux-m6-ship-standalone.md`, 4 tasks, ~1,350 estimated added lines.
+- Milestones 6 to 8 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
 - Re-scoped 2026-09-06 against the size cap below. The old milestone 5 was too big for one session and is now milestones 5 and 6; dogfood and the Codex harness moved to 7 and 8. Nothing was dropped. `ship-guard` is still milestone 5 task 1, so earlier references to it still resolve.
 - Spec: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
 

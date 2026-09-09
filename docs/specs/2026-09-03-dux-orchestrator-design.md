@@ -729,9 +729,10 @@ skill calls, kept in the ship skill directory.
    back the dodge. A `git status` that errors is a stop, not a clean tree, and a
    `fix_passes` line that is missing is a finding like one that is unreadable. Commits made after a phase was recorded reach a
    push only through a fix pass and a recording of each cleared phase again.
-2. Head continuity. Five verbs, the whole interface: `ship-guard open` in step 0,
+2. Head continuity. Six verbs, the whole interface: `ship-guard open` in step 0,
    `record <phase>` after steps 4, 6, 7, `check <phase>` before 6, 7, 8 naming the
-   previous phase, `fix-pass`, and `push-ok` before every push and before
+   previous phase, `fix-pass`, `attest` in step 8 (change 8), and `push-ok`
+   before every push and before
    `gh pr create`. Exit 0 success, 1 unexpected, 2 finding, findings on stderr. A
    backward or divergent `HEAD` stops the gate, tested by `record` as well as by
    `check`. `record review` is refused unless `checks` is recorded and `record
@@ -773,14 +774,26 @@ skill calls, kept in the ship skill directory.
 7. Anchored lease. `git fetch`, then `--force-with-lease=<ref>:<sha>` with the
    fetched SHA, then `git ls-remote` to confirm the remote head equals the
    pushed SHA.
-8. Attestation. Step 8 appends
-   `<!-- dux-attestation:v1 {"head_sha":"…","steps":[{"step":"checks","status":"completed"},…]} -->`
-   to the PR body. Data only, no policy claim.
-9. PR body. Step 8 fills whichever pull request template the repo has, found by
-   the same rule as `dux-project pr-template` (section 12), and passes it with
-   `gh pr create --body-file`, since `--fill` ignores the template. A repo with
-   none, or with only the `PULL_REQUEST_TEMPLATE/` folder form, gets the copy in
-   `templates/`. Verbose material goes inside `<details>`.
+8. Attestation. `ship-guard attest` prints
+   `<!-- dux-attestation:v1 {"head_sha":"…","fix_passes":N,"steps":[{"step":"checks","status":"completed","sha":"…"},…]} -->`
+   and step 8 appends it to the PR body. Data only, no policy claim. It is
+   built from the guard file, because that file's format has one owner, and it
+   carries only the three guard phases: step 8 writes it before `pr` and `ci`
+   have happened, and a record that claims a step ran before it did is worse
+   than no record at all. A phase with nothing recorded is a finding, not an
+   entry left out.
+9. PR body. Step 8 fills whichever pull request template the repo has and passes
+   it with `gh pr create --body-file`, since `--fill` ignores the template. A
+   repo with none, or with only the `PULL_REQUEST_TEMPLATE/` folder form, gets
+   the copy in `templates/`. Verbose material goes inside `<details>`.
+
+   The lookup is not copied. `/ship` cannot call `bin/dux-project`, so the rule
+   moves the other way: it lives in `skills/ship/ship-env`, which travels with
+   the skill and needs no `DUX_HOME`, and `dux-project` calls it. One
+   implementation and two callers, rather than two implementations and a test
+   holding them equal. Section 12 still owns what the rule says. `dux-project`'s
+   own output does not change, and a checkout with no ship skill refuses
+   registration with a finding rather than looking the other way.
 
 The ship skill is bundled in this repo at `skills/ship/` from milestone 1 and
 installed by `dux-install` (section 18), so this is an ordinary PR with a diff
@@ -803,6 +816,17 @@ file only. A worker that skips the helper altogether is the trust boundary in
 section 6, not something a local file can settle. Teaching the receipt to carry
 the guard's verdict is a change to section 5.6 for a later milestone.
 
+`skills/ship/ship-env` sits beside it for the same reasons and answers the
+questions the gate has about the Dux checkout it was installed from: the step 6
+reviewer, the step 7 reviewer, and the pull request template lookup and its
+fallback. It finds that checkout by resolving its own directory through
+`dux-install`'s symlink and taking the two levels above it, so a skill copied
+rather than installed lands outside a Dux checkout and the gate stops. A value
+comes from `config/<key>` and falls back to `templates/config/<key>`, which is
+what lets a fresh clone run the gate before anyone has run the installer. The
+`security-reviewer` value is either `agent:<name>`, meaning dispatch that agent
+on this host, or a command line the audit prompt is appended to.
+
 The two recorders have different rules and the skill keeps their calls apart.
 `$DUX_SHIP_RECORD <phase>` runs once per phase per gate and is never repeated:
 `record-ship` refuses a repeated or out-of-order phase, so a second call stops a
@@ -824,7 +848,9 @@ Installed by `dux-project` only when the operator says so and only when the repo
 has none. `dux-project pr-template <path>` lists what a repo already has: GitHub
 reads a template from the repository root, from `docs/` and from `.github/`, in
 any letter case, with any extension, and as a `PULL_REQUEST_TEMPLATE/` folder of
-several. An existing template is left alone and its path reported, and Dux never
+several. The lookup itself lives in `skills/ship/ship-env` from milestone 6, so
+`dux-project` and `/ship` cannot disagree about what a repo has (section 11
+change 9); this section still owns the rule. An existing template is left alone and its path reported, and Dux never
 adds a second one beside it.
 
 That last rule is a decision, taken 2026-09-08 and recorded in
@@ -975,7 +1001,10 @@ product; there is no build or package.
   `reviewer` (default `codex exec -m gpt-5.6-sol --sandbox read-only`),
   `security-reviewer` (default: the Claude `security-reviewer` agent, Codex
   variant documented), `models` (per shape), `backend` (empty means
-  auto-detect).
+  auto-detect). `/ship` reads the two reviewer files through
+  `skills/ship/ship-env`, which falls back to `templates/config/` so the gate
+  runs before the installer has. `models` is read by `bin/dux-worker-wrap` for
+  workers; the gate does not use it.
 - **Install**: `bin/dux-install` symlinks each bundled skill into
   `~/.claude/skills/<name>`. An existing real directory there is refused until
   the operator confirms, then moved to `<name>.bak`. `bin/dux-uninstall` removes
