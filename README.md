@@ -1,8 +1,13 @@
 # Dux
 
-**An orchestrator you talk to.** Dux runs coding agents across your repositories,
-supervises them while you do something else, and comes back with pull request
-links and decisions.
+*Dux* is Latin for leader, from *dūcere*, to lead. It is where English gets
+*duke*. A dux commanded a force; the work was done by the people in it.
+
+That division is the design.
+
+**Dux is an orchestrator you talk to.** It runs coding agents across your
+repositories, supervises them while you do something else, and comes back with
+pull request links and decisions.
 
 You talk to one agent. It dispatches the others.
 
