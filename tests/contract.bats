@@ -436,3 +436,34 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   # search for "attest" passed with the call itself deleted.
   [[ "$nine" == *'"$SHIP_GUARD" attest >> "$BODY"'* ]]
 }
+
+@test "the recorded dry run names the reviewers the bundled defaults hold" {
+  t="$DUX_ROOT/tests/harness/ship.md"
+  [ -f "$t" ] || { echo "no recording at tests/harness/ship.md"; return 1; }
+  # The recording says a fresh clone reads its reviewers from templates/config/.
+  # If a bundled default changes and the recording does not, the recording is
+  # claiming something that is no longer true. Nothing else checks that: it is
+  # prose, and the run it describes cannot be repeated by the suite.
+  #
+  # First value line, comments and blanks skipped, which is what ship-env reads.
+  for key in reviewer security-reviewer; do
+    value="$(grep -v '^#' "$DUX_ROOT/templates/config/$key" | grep -v '^$' | head -1)"
+    [ -n "$value" ]
+    grep -qxF "$value" "$t" \
+      || { echo "tests/harness/ship.md does not carry '$value' from templates/config/$key"; return 1; }
+  done
+  # Both reviews answered with the headers the skill demands. A recording of a
+  # run that skipped either one is a recording of a gate that did not close.
+  # Counted, not merely present: step 6 and step 7 each print one, and a single
+  # `grep -q` stayed green with either review's header deleted.
+  found="$(grep -cxF '## Findings' "$t")"
+  [ "$found" -ge 2 ] || { echo "only $found '## Findings' headers; both reviews print one"; return 1; }
+  grep -qxF '## Checked clean' "$t"
+  # The three phases of the guard, the ancestor test, the anchored push and the
+  # verify after it. These are the steps the milestone added; a recording that
+  # does not show them is not evidence for it.
+  grep -qF 'dux-attestation:v1' "$t"
+  grep -qF 'merge-base --is-ancestor' "$t"
+  grep -qF 'force-with-lease' "$t"
+  grep -qF 'ls-remote' "$t"
+}

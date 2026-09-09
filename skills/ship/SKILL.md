@@ -203,7 +203,10 @@ $REVIEWER "Review the diff of this branch against $BASE for correctness, regress
 ```
 
 `$REVIEWER` is deliberately unquoted: the value is a command line and its words
-are the command and its flags. If the model it names is refused, fall back to
+are the command and its flags. **These blocks are bash**, which splits an
+unquoted value into words; a shell that does not, `zsh` among them, runs the
+whole value as one command name and reports it not found. Run the block with
+`bash -c` on such a host. If the model it names is refused, fall back to
 another one and **say in the pull request which reviewer actually ran** — a
 review that silently downgraded is worse than one that did not happen.
 

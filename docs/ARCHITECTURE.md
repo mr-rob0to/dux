@@ -78,11 +78,9 @@ state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            worker-settings.json,hooks/}
 config/       (gitignored) backend override, reviewer defaults, models, models-codex,
                            worker-harness
-tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash
+tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash;
+                           harness/ship.md, the /ship gate recorded from a fresh clone
 ```
-
-Planned for later milestones (spec section 16): the changes that let `/ship` stand alone
-(milestone 6).
 
 Rules that shape every component:
 

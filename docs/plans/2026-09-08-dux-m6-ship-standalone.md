@@ -8,10 +8,24 @@
 > outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #22. Implementation runs on `feat/m6-ship-standalone`
-  from `main` at 1147060. 3 of 4 tasks: reviewers come from config, every push
-  tests the ancestor before it anchors the lease, and step 8 fills the repo's own
-  template and signs the body with the attestation.
+- Approved and merged as PR #22. Implemented on `feat/m6-ship-standalone` from
+  `main` at 1147060. 4 of 4 tasks, ready to ship: reviewers come from config,
+  every push tests the ancestor before it anchors the lease, step 8 fills the
+  repo's own template and signs the body with the attestation, and the whole
+  gate has been run once from a fresh clone against a real remote and real CI,
+  recorded in `tests/harness/ship.md`.
+
+**Divergences from the approved plan**
+- Task 4 adds one contract test, "the recorded dry run names the reviewers the
+  bundled defaults hold". The plan said the transcript asserts nothing on its
+  own and left it to the identifier lint. That lint only proves the recording
+  leaks no paths; it cannot notice a bundled reviewer changing while the
+  recording still quotes the old one, which would leave the file claiming
+  something untrue. The test pins both values, both review headers, and the
+  attestation, ancestor, lease and verify lines.
+- `skills/ship/SKILL.md` gains one line saying the reviewer blocks are bash. The
+  dry run hit it: `zsh` does not split an unquoted `$REVIEWER` into words and
+  reported the whole reviewer command line as a command not found.
 - Milestone 5 gave the gate a memory but left it wearing the operator's own reviewer
   command, model name and pull request habits, so a stranger who installs Dux cannot
   run it.
@@ -266,11 +280,11 @@ defaults and names `config/reviewer` and `config/security-reviewer` as what to c
 
 **Steps**
 
-- [ ] Create the throwaway repository and the clone; run the gate; capture the
+- [x] Create the throwaway repository and the clone; run the gate; capture the
       transcript into `tests/harness/ship.md`.
-- [ ] Update `README.md` and `docs/ARCHITECTURE.md`.
-- [ ] Delete the throwaway repository.
-- [ ] Break-verify: the transcript asserts nothing on its own, so break the guard that
+- [x] Update `README.md` and `docs/ARCHITECTURE.md`.
+- [x] Delete the throwaway repository.
+- [x] Break-verify: the transcript asserts nothing on its own, so break the guard that
       protects it. Plant an operator home path in `tests/harness/ship.md`, run
       `make lint`, confirm `lint-identifiers` fails and names the file, remove it, paste
       the failure into the commit body.
