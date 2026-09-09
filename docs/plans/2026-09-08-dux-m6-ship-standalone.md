@@ -9,8 +9,8 @@
 
 **Where this stands**
 - Approved and merged as PR #22. Implementation runs on `feat/m6-ship-standalone`
-  from `main` at 1147060. 1 of 4 tasks: Task 1 landed, both reviewers now come
-  from config with the bundled templates as fallback.
+  from `main` at 1147060. 2 of 4 tasks: reviewers come from config, and every
+  push now tests the ancestor before it anchors the lease.
 - Milestone 5 gave the gate a memory but left it wearing the operator's own reviewer
   command, model name and pull request habits, so a stranger who installs Dux cannot
   run it.
@@ -172,14 +172,14 @@ same four lines; and that the stop table names both new rows. One dry run.
 
 **Steps**
 
-- [ ] Add the contract tests to `tests/contract.bats` and see them fail against today's
+- [x] Add the contract tests to `tests/contract.bats` and see them fail against today's
       `SKILL.md`.
-- [ ] Edit `SKILL.md` steps 5, 8 and 9 and the stop table.
-- [ ] Dry run G: against a throwaway repository, push a commit from a second clone, then
+- [x] Edit `SKILL.md` steps 5, 8 and 9 and the stop table.
+- [x] Dry run G: against a throwaway repository, push a commit from a second clone, then
       run step 8's four lines in full, fetch included; confirm the ancestor test stops
       the gate rather than the lease accepting the fetched value. Paste the excerpt into
       the commit body.
-- [ ] Break-verify: break each assertion this task added, one at a time, run, confirm N
+- [x] Break-verify: break each assertion this task added, one at a time, run, confirm N
       distinct failures, restore, paste them into the commit body.
 
 ## Task 3: The template lookup and the attestation

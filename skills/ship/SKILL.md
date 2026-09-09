@@ -166,6 +166,14 @@ Check what a diff-only reviewer cannot see:
   what that doc depicts, update it in this same PR.
 - **Tests exist for the failure mode**, not just the happy path.
 - **Commits** follow the repo's stated commit convention and are atomic.
+- **Evidence for anything a person can see.** A change to UI, to command output,
+  to an API response, or to user-facing error text goes into the pull request
+  body as a screenshot, a recording, or the pasted output — **or one line saying
+  why there is none**. A change nobody can see needs the check command and its
+  result, which step 8's body requirement already asks for.
+
+This last one is a body requirement and **not a stop**. A missing screenshot is
+a review finding; it is not a reason to hold the branch.
 
 ## Step 6. Independent adversarial review (REQUIRED)
 
@@ -365,11 +373,46 @@ and any later one.
 ```bash
 "$SHIP_GUARD" check security
 "$SHIP_GUARD" push-ok
-gh pr create --base "$BASE" --fill
 ```
 
 A refusal here means commits landed after a phase was recorded. That is a fix
 pass (step 6), not something to push past.
+
+### The push
+
+Every push in this skill, this one and step 9's, is these four steps. **The
+ancestor test is the guard; the lease alone is not.** A lease anchored to a value
+read straight after a fetch matches whatever the remote holds, including a commit
+this branch has never seen, and pushing then destroys that commit while every
+later check reports success.
+
+1. Fetch, and read the fetched commit for this branch's remote ref.
+2. **Stop unless that commit is an ancestor of `HEAD`**, or the ref does not
+   exist yet.
+3. Push with the lease anchored to that commit. For a branch the remote does not
+   have yet the expected value is **empty**, which is the same shape and
+   **refuses if the ref appeared in between**.
+4. Read the remote head back and compare it to `HEAD`. Not equal is a stop:
+   something landed between the ancestor test and the push.
+
+```bash
+BRANCH="$(git symbolic-ref --short HEAD)"
+git fetch --prune origin
+REMOTE="$(git rev-parse --verify --quiet "refs/remotes/origin/$BRANCH")"
+[ -z "$REMOTE" ] || git merge-base --is-ancestor "$REMOTE" HEAD || {
+  echo "finding: origin/$BRANCH holds $REMOTE, which this branch has never seen" >&2; exit 2
+}
+git push --force-with-lease="refs/heads/$BRANCH:$REMOTE" origin "HEAD:refs/heads/$BRANCH"
+[ "$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)" = "$(git rev-parse HEAD)" ] || {
+  echo "finding: the remote head is not the commit that was pushed" >&2; exit 2
+}
+```
+
+Never a bare `git push --force`.
+
+```bash
+gh pr create --base "$BASE" --fill
+```
 
 Body must carry: summary of the change, test evidence (actual command output, not
 "tests pass"), the correctness-review and security-review findings with how each
@@ -408,7 +451,23 @@ re-run step 4's checks, record the phases it cleared, and only then push.
 "$SHIP_GUARD" fix-pass
 # fix, then step 4 again, then step 6's and step 7's recordings
 "$SHIP_GUARD" push-ok
-git push --force-with-lease
+```
+
+Then the same four steps as step 8's push, in full. The fetch is not optional
+here either: a CI fix is exactly when somebody else's commit is most likely to be
+sitting on the branch already.
+
+```bash
+BRANCH="$(git symbolic-ref --short HEAD)"
+git fetch --prune origin
+REMOTE="$(git rev-parse --verify --quiet "refs/remotes/origin/$BRANCH")"
+[ -z "$REMOTE" ] || git merge-base --is-ancestor "$REMOTE" HEAD || {
+  echo "finding: origin/$BRANCH holds $REMOTE, which this branch has never seen" >&2; exit 2
+}
+git push --force-with-lease="refs/heads/$BRANCH:$REMOTE" origin "HEAD:refs/heads/$BRANCH"
+[ "$(git ls-remote origin "refs/heads/$BRANCH" | cut -f1)" = "$(git rev-parse HEAD)" ] || {
+  echo "finding: the remote head is not the commit that was pushed" >&2; exit 2
+}
 ```
 
 Record the final phase only when the checks really came back green and non-empty; the
@@ -441,6 +500,8 @@ recorder verifies the pull request and its checks before it accepts this one.
 | record or push-ok refused for an uncommitted change | The reviewers covered content the push would not carry |
 | The guard file's fix count is not a number | A count that cannot be read is not a count of zero |
 | SHIP_GUARD is set but not executable | A typo would otherwise run a different guard, or none |
+| The remote branch holds commits this branch does not | Pushing would destroy work nobody here has read |
+| The remote head is not the commit that was pushed | Something landed between the ancestor test and the push |
 
 ## Red flags: you are rationalizing
 
@@ -448,6 +509,7 @@ recorder verifies the pull request and its checks before it accepts this one.
 - "`origin/HEAD` says X, that's good enough." (Check the forge default too.)
 - "The docs say the old branch but the migration surely finished."
 - "The fetch is probably fine, the ref looks recent."
+- "The lease will catch it if somebody pushed." (Not if the lease was anchored after the fetch.)
 - "I'll tell the reviewer what I was going for so it understands."
 - "The reviewer flagged it, so I'll just fix it." (Verify first.)
 - "push-ok said to record it again, so I'll record it again." (That is a fix pass.)

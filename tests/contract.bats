@@ -337,3 +337,57 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$seven" == *'A host that cannot dispatch agents stops here'* ]]
   [[ "$seven" == *'config/security-reviewer'* ]]
 }
+
+@test "the ship skill demands evidence a person can see, or a reason there is none" {
+  five="$(unwrapped '/^## Step 5\./,/^## Step 6\./p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$five" == *'screenshot'* ]]
+  [[ "$five" == *'or one line saying why there is none'* ]]
+  # It is a body requirement, not a new stop. Reading it as a stop would hold a
+  # branch for a missing picture.
+  [[ "$five" == *'not a stop'* ]]
+}
+
+# A lease anchored to a value read straight after a fetch matches whatever the
+# remote holds, including a commit this branch has never seen. The ancestor test
+# is the guard; the lease alone is not.
+@test "every push tests the ancestor, anchors the lease, and verifies the remote" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  # One range per step, spelled out. An alternation in the end pattern was tried
+  # and is a GNU extension: BSD sed never matched it, the step 8 range ran to the
+  # end of the file, and step 9's push satisfied every assertion about step 8.
+  # Breaking step 8 changed nothing, which is how that was found.
+  for step in 8 9; do
+    case "$step" in
+      8) body="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$ship")" ;;
+      9) body="$(unwrapped '/^## Step 9\./,/^## Stop and report/p' "$ship")" ;;
+    esac
+    [ -n "$body" ] || { echo "step $step is empty"; return 1; }
+    # The range has to stop where the step does, or one step's push proves the
+    # other's. sed prints the line the range ends on, so the marker checked here
+    # is content from inside the next section, not its header.
+    case "$step" in
+      8) [[ "$body" != *'gh run watch'* ]] || { echo "the step 8 range ran into step 9"; return 1; } ;;
+      9) [[ "$body" != *'you are rationalizing'* ]] || { echo "the step 9 range ran into the red flags"; return 1; } ;;
+    esac
+    [[ "$body" == *'git merge-base --is-ancestor "$REMOTE" HEAD'* ]] \
+      || { echo "step $step has no ancestor test"; return 1; }
+    [[ "$body" == *'--force-with-lease="refs/heads/$BRANCH:$REMOTE"'* ]] \
+      || { echo "step $step does not anchor the lease"; return 1; }
+    [[ "$body" == *'git ls-remote origin "refs/heads/$BRANCH"'* ]] \
+      || { echo "step $step does not verify the remote after the push"; return 1; }
+  done
+  # An empty expected value is the same shape for a branch the remote does not
+  # have yet, and it refuses if the ref appeared in between.
+  eight="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$ship")"
+  [[ "$eight" == *'empty'* ]]
+  [[ "$eight" == *'refuses if the ref appeared'* ]]
+  # A bare force never comes back.
+  flat="$(unwrapped '1,$p' "$ship")"
+  [[ "$flat" != *'git push --force '* ]]
+}
+
+@test "the stop table names the two ways a push can be wrong" {
+  table="$(unwrapped '/^## Stop and report/,/^## Red flags/p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$table" == *'The remote branch holds commits this branch does not'* ]]
+  [[ "$table" == *'The remote head is not the commit that was pushed'* ]]
+}
