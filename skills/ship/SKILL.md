@@ -58,11 +58,13 @@ Then:
 
 Record the resolved name and reuse it. It is written `$BASE` below.
 
-### Resolve the guard helper and open the gate
+### Resolve the two helpers and open the gate
 
 The gate records which commit each phase saw, so a review cannot be outrun by
 commits that land after it. The helper sits beside this file, so `dux-install`'s
-symlink carries it.
+symlink carries it. `ship-env`, which answers what the gate reads out of its own
+install, sits beside it and is resolved from it, so one override points both at
+one place.
 
 ```bash
 [ -z "${SHIP_GUARD:-}" ] || [ -x "${SHIP_GUARD}" ] || {
@@ -75,6 +77,11 @@ done)"
 [ -n "$SHIP_GUARD" ] || {
   echo "finding: cannot find ship-guard; the gate does not run unguarded" >&2; exit 2
 }
+SHIP_ENV="$(dirname "$SHIP_GUARD")/ship-env"
+[ -x "$SHIP_ENV" ] || {
+  echo "finding: no runnable ship-env beside $SHIP_GUARD; the gate cannot read its reviewers" >&2
+  exit 2
+}
 "$SHIP_GUARD" open
 ```
 
@@ -82,9 +89,16 @@ done)"
 A typo in the override, or a copy left behind before the install became a
 symlink, would otherwise silently run a different guard than the one intended.
 
-**If the helper cannot be resolved, stop and report.** Do not carry on without
-it: an unguarded run is the failure this helper exists to remove. Every call
+**If either helper cannot be resolved, stop and report.** Do not carry on
+without them: an unguarded run is the failure `ship-guard` exists to remove, and
+a gate that cannot read `ship-env` would have to invent a reviewer. Every call
 below is a refusal that stops the gate, never a warning to note and pass.
+
+`ship-env` answers out of the Dux checkout it was installed from, which it finds
+two directories above itself. Its values come from `config/<key>`, falling back
+to the bundled `templates/config/<key>`, so the gate runs from a fresh clone
+before anyone has run the installer. A skill copied somewhere that is not a Dux
+checkout stops here rather than guessing.
 
 ## Step 1. Sync the base ref
 
@@ -171,9 +185,19 @@ a review of an earlier commit cannot make that claim. Name the commit that revie
 it to `git rev-parse HEAD`. If they differ, or if you cannot say which commit it read, the gate runs
 its own review here and the manual one counts for nothing.
 
+The reviewer is not named here. It is a command line the gate reads from its own
+install, so a stranger who cloned Dux gets a working reviewer and the operator
+who wants another one edits a file instead of this skill.
+
 ```bash
-codex exec -m gpt-5.6-sol --sandbox read-only "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings."
+REVIEWER="$("$SHIP_ENV" reviewer)"
+$REVIEWER "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings."
 ```
+
+`$REVIEWER` is deliberately unquoted: the value is a command line and its words
+are the command and its flags. If the model it names is refused, fall back to
+another one and **say in the pull request which reviewer actually ran** — a
+review that silently downgraded is worse than one that did not happen.
 
 **Give the reviewer only** the repo state, the base branch, the diff, the acceptance
 criteria, and the checklist.
@@ -252,9 +276,23 @@ gets made wrong. There is no per-release alternative that replaces it — a
 release-time pass over the accumulated diff is *in addition to* these, not
 instead of them.
 
-Dispatch a fresh security reviewer that did not write the change (see Tool notes for
-the mechanism on each host). Pass it the resolved base branch explicitly, since it will
-otherwise have to guess:
+The security reviewer comes from the same place as the correctness one:
+
+```bash
+SECURITY_REVIEWER="$("$SHIP_ENV" security-reviewer)"
+```
+
+It has two shapes, and the gate handles both:
+
+- **`agent:<name>`** — dispatch that agent on this host, fresh, having seen
+  nothing of the change. **A host that cannot dispatch agents stops here** and
+  names `config/security-reviewer` as the file to change. Running some other
+  reviewer instead is the silent degradation this whole step exists to remove.
+- **Anything else** is a command line, and the audit prompt below is appended to
+  it as one argument, exactly as step 6 does.
+
+Pass the reviewer the resolved base branch explicitly, since it will otherwise
+have to guess:
 
 > Audit the diff of this branch against `$BASE`. Read the surrounding files, not
 > just the hunks. Report findings ranked by severity with file:line, a concrete
@@ -425,10 +463,15 @@ All of these mean: go back and do the step properly.
 
 ## Tool notes
 
-- **Step 6 reviewer** is the `codex exec` command above on every host. From inside Codex it is a
-  nested, read-only `codex exec`; that is intended, because the reviewer must be a fresh session.
-- **Step 7 reviewer on Claude Code:** dispatch the `security-reviewer` agent; if it is
-  unavailable, run the `/security-review` skill.
-- **Step 7 reviewer on Codex:** run `codex exec -m gpt-5.6-sol --sandbox read-only` with the
-  audit prompt above and the coverage list, as a separate run from step 6.
-- If Sol returns a 400, fall back to Terra and say in the PR which reviewer actually ran.
+- **Both reviewers come from `ship-env`**, which reads `config/reviewer` and
+  `config/security-reviewer` in the Dux checkout the skill was installed from and falls back to
+  the bundled `templates/config/` copies. Neither is named in this file, so changing the
+  reviewer is a one-line edit to a config file and never an edit to the gate.
+- **Step 6** runs its reviewer as a command on every host. From inside the same tool the value
+  names, that is a nested read-only run; that is intended, because the reviewer must be a fresh
+  session that has seen nothing of the change.
+- **Step 7 on Claude Code**, when the value is `agent:<name>`: dispatch that agent. If the host
+  has no agent of that name, stop and say so rather than running a different reviewer.
+- **Step 7 on a host with no agents:** put a command line in `config/security-reviewer`. The
+  audit prompt above and the coverage list go to it as a separate run from step 6.
+- Each config file carries a note saying what it is for; read it before changing it.

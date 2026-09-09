@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# Answers what /ship needs to know about the Dux checkout it was installed
+# from: the step 6 reviewer and the step 7 reviewer. Called by SKILL.md; see
+# spec section 11, change 9, and section 18.
+#
+# It lives beside SKILL.md for the reasons ship-guard does: dux-install
+# symlinks the skill directory and the helper travels with it, and /ship runs
+# inside a project worktree that knows nothing about DUX_HOME. So it sources
+# nothing and carries its own finding(); the plan's header records that
+# deviation from constitution principle 2.
+#
+# Unlike ship-guard, this one cannot work from a copy. Everything it answers
+# lives in the checkout, so a skill copied somewhere else stops the gate rather
+# than answering from nowhere.
+set -u
+
+finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
+
+usage="usage: ship-env reviewer | security-reviewer | --root"
+
+# pwd -P resolves dux-install's directory symlink, so the checkout is the one
+# the skill was installed from and not wherever the link sits.
+here="$(cd "$(dirname "$0")" && pwd -P)" || finding "cannot resolve the directory ship-env runs from"
+root="${here%/*/*}"
+[ -d "$root/templates/config" ] \
+  || finding "ship-env is not inside a Dux checkout: $root/templates/config is not a directory"
+
+# A note line and a blank line are skipped; the first line that is neither is
+# the value. Returns 1 when the file holds no value, so the caller can fall back.
+first_value() {  # $1 file
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '#'* | '') continue ;; esac
+    printf '%s\n' "$line"
+    return 0
+  done < "$1"
+  return 1
+}
+
+# config/ is what the operator edits; templates/config/ is what ships. Reading
+# both is what lets a fresh clone run the gate before the installer has run.
+value() {  # $1 key
+  local f
+  for f in "$root/config/$1" "$root/templates/config/$1"; do
+    [ -f "$f" ] || continue
+    first_value "$f" && return 0
+  done
+  finding "no value for $1 in $root/config/$1 or $root/templates/config/$1"
+}
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  '') finding "$usage" ;;
+  --root)
+    [ $# -eq 0 ] || finding "$usage"
+    printf '%s\n' "$root" ;;
+  reviewer | security-reviewer)
+    [ $# -eq 0 ] || finding "$usage"
+    value "$cmd" ;;
+  *) finding "unknown key '$cmd' (reviewer, security-reviewer)" ;;
+esac
+exit 0

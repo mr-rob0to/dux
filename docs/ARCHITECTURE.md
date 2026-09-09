@@ -20,6 +20,11 @@ skills/
   ship/ship-guard          binds each gate phase to the commit it saw; refuses a push the
                            review never covered (milestone 5). Sources nothing: it runs in
                            a project worktree with no DUX_HOME
+  ship/ship-env            answers the gate's questions about the Dux checkout it was
+                           installed from: reviewer, security-reviewer, each read from
+                           config/ and falling back to templates/config/ (milestone 6).
+                           Sources nothing either, and stops when it is not inside a
+                           checkout
 bin/
   dux-env                  sourced by every script: paths, log, die, finding, now,
                            task_harness, harness_refusal, require_cmd, take_bytes,

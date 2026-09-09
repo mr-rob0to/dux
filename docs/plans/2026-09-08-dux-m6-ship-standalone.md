@@ -8,9 +8,9 @@
 > outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted 2026-09-08 on `plan/m6-ship-standalone` from `main` at ee4064e, reviewed once
-  by a fresh independent session, all 18 findings folded in. Awaiting approval.
-  0 of 4 tasks.
+- Approved and merged as PR #22. Implementation runs on `feat/m6-ship-standalone`
+  from `main` at 1147060. 1 of 4 tasks: Task 1 landed, both reviewers now come
+  from config with the bundled templates as fallback.
 - Milestone 5 gave the gate a memory but left it wearing the operator's own reviewer
   command, model name and pull request habits, so a stranger who installs Dux cannot
   run it.
@@ -123,19 +123,19 @@ lists `ship/ship-env`.
 
 **Steps**
 
-- [ ] Write `tests/ship-env.bats` first and see it fail. It builds a fake checkout per
+- [x] Write `tests/ship-env.bats` first and see it fail. It builds a fake checkout per
       test, since two-levels-up from the real script is the operator's own checkout:
       both keys from `config/`, both from `templates/config/` with no `config/`, notes
       and blank lines skipped, each refusal, and resolution through a directory symlink.
-- [ ] Write `skills/ship/ship-env`.
-- [ ] Add note lines to `templates/config/reviewer` and `templates/config/security-reviewer`.
-- [ ] Edit `SKILL.md`: step 0 resolves `$SHIP_ENV`; steps 6 and 7 take their reviewer
+- [x] Write `skills/ship/ship-env`.
+- [x] Add note lines to `templates/config/reviewer` and `templates/config/security-reviewer`.
+- [x] Edit `SKILL.md`: step 0 resolves `$SHIP_ENV`; steps 6 and 7 take their reviewer
       from it and step 7 handles both value shapes; Tool notes lose the model names and
       the Sol fallback line.
-- [ ] Re-point the step 6 prompt assertion in `tests/contract.bats`; add the
+- [x] Re-point the step 6 prompt assertion in `tests/contract.bats`; add the
       no-model-identifier assertion; add `ship-env` to `SHELL_FILES`; update
       `docs/ARCHITECTURE.md`.
-- [ ] Break-verify: break each assertion alone, run, confirm N distinct failures,
+- [x] Break-verify: break each assertion alone, run, confirm N distinct failures,
       restore, paste them into the commit body (constitution principle 3).
 
 ## Task 2: Evidence, anchored lease, remote verify

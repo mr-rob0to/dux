@@ -256,8 +256,10 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   # prompt stripped and only the prose about it left: it asserted on the file,
   # not on what the reviewer is told.
   ship="$DUX_ROOT/skills/ship/SKILL.md"
-  prompt="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$ship" | grep -F 'codex exec')"
-  [ -n "$prompt" ] || { echo "step 6 sends no codex prompt"; return 1; }
+  # The reviewer command left this file for config/reviewer, so the prompt is
+  # the line that runs the resolved command, not the one that names a tool.
+  prompt="$(sed -n '/^## Step 6\./,/^## Step 7\./p' "$ship" | grep -F '$REVIEWER "')"
+  [ -n "$prompt" ] || { echo "step 6 sends no reviewer prompt"; return 1; }
   [[ "$prompt" == *"'## Findings'"* ]]
   [[ "$prompt" == *"'No findings.'"* ]]
   # Step 7 sends its prompt as a blockquote, so the quoted lines are the prompt.
@@ -313,4 +315,25 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$six" == *'in letter but not in substance'* ]]
   # The withholding rule the criteria travel alongside, unchanged.
   [[ "$six" == *'Never tell it'*'what the change is for'* ]]
+}
+
+@test "the ship skill names no model and reads both reviewers from ship-env" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  # A model name in the gate's own text is the thing that stopped a stranger
+  # running it: changing the reviewer meant editing the skill. Both reviewers
+  # now come out of config, so no model identifier belongs in this file.
+  run grep -nE 'gpt-[0-9]|claude-[a-z]*-[0-9]' "$ship"
+  [ "$status" -ne 0 ] || { echo "SKILL.md still names a model: $output"; return 1; }
+  [ -x "$DUX_ROOT/skills/ship/ship-env" ]
+  zero="$(unwrapped '/^### Resolve the two helpers/,/^## Step 1\./p' "$ship")"
+  [[ "$zero" == *'SHIP_ENV="$(dirname "$SHIP_GUARD")/ship-env"'* ]]
+  [[ "$zero" == *'no runnable ship-env beside'* ]]
+  six="$(unwrapped '/^## Step 6\./,/^## Step 7\./p' "$ship")"
+  [[ "$six" == *'REVIEWER="$("$SHIP_ENV" reviewer)"'* ]]
+  seven="$(unwrapped '/^## Step 7\./,/^## Step 8\./p' "$ship")"
+  [[ "$seven" == *'SECURITY_REVIEWER="$("$SHIP_ENV" security-reviewer)"'* ]]
+  # The agent: shape is the one that can degrade quietly, so the skill has to
+  # say that a host without agents stops rather than picking another reviewer.
+  [[ "$seven" == *'A host that cannot dispatch agents stops here'* ]]
+  [[ "$seven" == *'config/security-reviewer'* ]]
 }
