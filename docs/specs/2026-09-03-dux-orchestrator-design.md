@@ -771,29 +771,43 @@ skill calls, kept in the ship skill directory.
 6. Evidence. UI or user-visible changes require a screenshot or recording
    attached to the PR, or a stated reason. Non-UI changes require the check
    command and its result.
-7. Anchored lease. `git fetch`, then `--force-with-lease=<ref>:<sha>` with the
-   fetched SHA, then `git ls-remote` to confirm the remote head equals the
-   pushed SHA.
+7. Anchored lease. `git fetch`, then stop unless the fetched commit is an
+   ancestor of `HEAD`, then `--force-with-lease=<ref>:<sha>` with the fetched
+   SHA, then `git ls-remote` to confirm the remote head equals the pushed SHA.
+   The ancestor test is the guard and the lease is not: a lease anchored to a
+   value read straight after a fetch matches whatever the remote holds,
+   including a commit this branch has never seen, and pushing then destroys it
+   while every later check reports success. A branch the remote does not have
+   yet uses the same form with an empty expected value, which refuses if the ref
+   appeared in between.
 8. Attestation. `ship-guard attest` prints
    `<!-- dux-attestation:v1 {"head_sha":"…","fix_passes":N,"steps":[{"step":"checks","status":"completed","sha":"…"},…]} -->`
    and step 8 appends it to the PR body. Data only, no policy claim. It is
    built from the guard file, because that file's format has one owner, and it
    carries only the three guard phases: step 8 writes it before `pr` and `ci`
    have happened, and a record that claims a step ran before it did is worse
-   than no record at all. A phase with nothing recorded is a finding, not an
-   entry left out.
+   than no record at all. A phase with nothing recorded, or holding anything but
+   forty hex characters, is a finding, not an entry left out. Every push after a
+   fix pass rebuilds the body and edits the pull request, or the attestation
+   names a commit that is no longer the head.
 9. PR body. Step 8 fills whichever pull request template the repo has and passes
    it with `gh pr create --body-file`, since `--fill` ignores the template. A
    repo with none, or with only the `PULL_REQUEST_TEMPLATE/` folder form, gets
-   the copy in `templates/`. Verbose material goes inside `<details>`.
+   the copy in `templates/`; where several file forms exist the first in root,
+   `docs/`, `.github/` order is filled and the body says which. Verbose material
+   goes inside `<details>`. Dropping `--fill` drops the title with it, so step 8
+   passes `--title`: the one the operator gave, else the subject of the branch's
+   first commit after the base.
 
-   The lookup is not copied. `/ship` cannot call `bin/dux-project`, so the rule
-   moves the other way: it lives in `skills/ship/ship-env`, which travels with
-   the skill and needs no `DUX_HOME`, and `dux-project` calls it. One
-   implementation and two callers, rather than two implementations and a test
-   holding them equal. Section 12 still owns what the rule says. `dux-project`'s
-   own output does not change, and a checkout with no ship skill refuses
-   registration with a finding rather than looking the other way.
+   The lookup is not copied, and it does not move. An earlier draft had `/ship`
+   carry its own copy, on the grounds that it cannot call `bin/dux-project`. It
+   can: `skills/ship/ship-env` resolves the Dux checkout before it answers
+   anything, so `<root>/bin/dux-project pr-template <repo>` is reachable, and
+   `ship-env pr-template` delegates to it. `find_templates` therefore stays
+   where section 12 put it, with one implementation, no move of reviewed code,
+   and no dependency from `bin/` into `skills/`. A non-zero exit from the
+   delegate is a finding in `ship-env`, never empty output: empty means the repo
+   has no template, and a lookup that failed must not be read as one.
 
 The ship skill is bundled in this repo at `skills/ship/` from milestone 1 and
 installed by `dux-install` (section 18), so this is an ordinary PR with a diff
@@ -820,12 +834,20 @@ the guard's verdict is a change to section 5.6 for a later milestone.
 questions the gate has about the Dux checkout it was installed from: the step 6
 reviewer, the step 7 reviewer, and the pull request template lookup and its
 fallback. It finds that checkout by resolving its own directory through
-`dux-install`'s symlink and taking the two levels above it, so a skill copied
-rather than installed lands outside a Dux checkout and the gate stops. A value
-comes from `config/<key>` and falls back to `templates/config/<key>`, which is
-what lets a fresh clone run the gate before anyone has run the installer. The
+`dux-install`'s symlink and taking the two levels above it; a checkout is one
+whose `templates/config` is a directory, and anything else stops the gate. So a
+skill copied rather than installed stops it, unlike `ship-guard`, which needs
+nothing but the repository it is run in and keeps working when copied. Step 0
+derives `SHIP_ENV` from `SHIP_GUARD`'s directory, so one override points both
+helpers at one checkout. A value comes from `config/<key>` and falls back to
+`templates/config/<key>`, which is what lets a fresh clone run the gate before
+anyone has run the installer; there is no environment override, since
+`dux-worker-wrap` scrubs every `DUX_*` variable but three from a worker. The
 `security-reviewer` value is either `agent:<name>`, meaning dispatch that agent
-on this host, or a command line the audit prompt is appended to.
+on this host, or a command line the audit prompt is appended to. A host that
+cannot dispatch agents stops on an `agent:` value and names the config file:
+falling back to some other reviewer would be the silent degradation the rest of
+this section exists to remove.
 
 The two recorders have different rules and the skill keeps their calls apart.
 `$DUX_SHIP_RECORD <phase>` runs once per phase per gate and is never repeated:
@@ -848,9 +870,9 @@ Installed by `dux-project` only when the operator says so and only when the repo
 has none. `dux-project pr-template <path>` lists what a repo already has: GitHub
 reads a template from the repository root, from `docs/` and from `.github/`, in
 any letter case, with any extension, and as a `PULL_REQUEST_TEMPLATE/` folder of
-several. The lookup itself lives in `skills/ship/ship-env` from milestone 6, so
-`dux-project` and `/ship` cannot disagree about what a repo has (section 11
-change 9); this section still owns the rule. An existing template is left alone and its path reported, and Dux never
+several. `/ship` asks the same question through `skills/ship/ship-env`, which
+delegates to this subcommand rather than reimplementing it, so the two cannot
+disagree about what a repo has (section 11 change 9). An existing template is left alone and its path reported, and Dux never
 adds a second one beside it.
 
 That last rule is a decision, taken 2026-09-08 and recorded in
