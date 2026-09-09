@@ -32,8 +32,10 @@ The `/ship` gate runs on the bundled defaults, so a fresh clone needs no setup.
 Both defaults are the word `auto`, which means the gate picks its reviewers from
 what your machine has, each time it runs. The code review goes to codex when
 `codex` is on your `PATH` and to Claude Code otherwise; the security pass goes to
-a `security-reviewer` agent when you have one defined and to Claude Code
-otherwise. With neither the gate stops and names the file to edit rather than
+a `security-reviewer` agent when you have one defined in your own agents
+directory and to Claude Code otherwise. Only your directory is read, never the
+repository being reviewed, so a branch cannot appoint the reviewer that audits
+it. With neither the gate stops and names the file to edit rather than
 running a command that is not there. Nothing is written down, so installing
 codex later is enough to start using it.
 

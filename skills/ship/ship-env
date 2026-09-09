@@ -51,22 +51,33 @@ first_value() {  # $1 file
 # reviewer that actually ran.
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# Claude Code reads agent definitions from the user's own config directory and
-# from the project it runs in. A plugin can supply one as well, and no shell can
-# see that, so this answers no on a host where the answer is yes. The cure is
-# one line in config/security-reviewer, which is never probed.
+# The operator's own agent directory, and only that one. Claude Code also reads
+# agent definitions out of the project it runs in, and the project here is the
+# repository whose diff is being audited: a branch that commits
+# .claude/agents/security-reviewer.md would be choosing, and writing, the auditor
+# that reads it. Workers are untrusted by construction, so that file is exactly
+# what a worker would add to have its own change waved through.
+#
+# A plugin can supply an agent as well, and no shell can see that, so this
+# answers no on a host where the answer is yes. So can a project that has a real
+# reason for its own reviewer. The cure for both is one line in
+# config/security-reviewer, which belongs to the operator and is never probed.
 agent_defined() {  # $1 name
-  local d
-  for d in "${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/agents" "$PWD/.claude/agents"; do
-    [ -f "$d/$1.md" ] && return 0
-  done
-  return 1
+  [ -f "${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/agents/$1.md" ]
 }
 
-# Fable at high effort in plan mode: a fresh session that reads the tree and the
-# diff and can change neither, which is what the codex line gets from its own
-# read-only sandbox.
-claude_reviewer='claude -p --model claude-fable-5-1 --effort high --permission-mode plan'
+# Fable at high effort in plan mode, with the two tools that reach the network
+# taken away. Plan mode is a permission rule and not the operating-system
+# sandbox the codex line runs under, so it is worth being plain about what it
+# buys: the session reads the tree and the diff and does not change them. The
+# diff is adversarial input by the time a reviewer reads it, and a review has no
+# use for the network, so nothing is lost by removing it.
+#
+# --disallowedTools takes a list and keeps taking words until the next flag, so
+# it cannot be last: the prompt the gate appends as one argument would be eaten
+# as three more tool names and the run would end asking for a prompt. Every flag
+# that takes a list goes before one that does not.
+claude_reviewer='claude -p --disallowedTools WebFetch,WebSearch --model claude-fable-5-1 --effort high --permission-mode plan'
 
 probe() {  # $1 key; prints the command this host can actually run
   case "$1" in

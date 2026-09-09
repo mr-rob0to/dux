@@ -54,7 +54,7 @@ on_host() {  # $1 checkout, $2.. arguments
 
 # The claude command line the probe falls back to, in one place, so a test that
 # asserts it cannot drift from the one ship-env prints.
-claude_line='claude -p --model claude-fable-5-1 --effort high --permission-mode plan'
+claude_line='claude -p --disallowedTools WebFetch,WebSearch --model claude-fable-5-1 --effort high --permission-mode plan'
 codex_line='codex exec -m gpt-5.6-sol --sandbox read-only'
 
 # A checkout whose bundled defaults are the real ones, so the probe is reached
@@ -221,12 +221,34 @@ auto_checkout() {  # prints the checkout path
   [ "$output" = "agent:security-reviewer" ]
 }
 
-@test "auto picks the agent for the security pass when the project defines one" {
+# The project the gate runs in is the repository whose diff is being audited, and
+# Claude Code would prefer a definition committed there over the operator's own.
+# A branch that could put one in the probe's path would be appointing and writing
+# the agent that reviews it, which is the whole of the security pass handed to
+# the change under review.
+@test "a security-reviewer definition committed to the project is not the agent" {
   c="$(auto_checkout)"
   host claude project-agent
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
-  [ "$output" = "agent:security-reviewer" ]
+  [ "$output" = "$claude_line" ]
+  [ "$output" != "agent:security-reviewer" ]
+  # The file really is where the gate would run, so the test is asking the
+  # question it means to ask and not passing because nothing was written.
+  [ -f "$PROJECT/.claude/agents/security-reviewer.md" ]
+}
+
+# A list-taking flag last would swallow the prompt the gate appends as one
+# argument, and the run would end asking for a prompt it was given.
+@test "the claude fallback ends on a flag that takes no list" {
+  c="$(auto_checkout)"
+  host claude
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  case "$output" in
+    *--disallowedTools*--permission-mode*) ;;
+    *) echo "a list-taking flag is last in: $output"; return 1 ;;
+  esac
 }
 
 @test "auto picks claude for the security pass when no agent is defined" {

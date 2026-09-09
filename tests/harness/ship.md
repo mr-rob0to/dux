@@ -154,7 +154,7 @@ Same lookup, same absent `config/`, so this came from
 agent rather than run a command, which is what happened.
 
 That default is `auto` now too: the agent when a `security-reviewer` definition
-is on the host or in the project, otherwise Claude Code in plan mode, and a
+is in the operator's own agents directory, otherwise Claude Code in plan mode, and a
 finding naming the config file when there is neither. This machine defines the
 agent, so the line above is still what it resolves. An explicit `agent:` value
 on a host that cannot dispatch agents still stops the gate.

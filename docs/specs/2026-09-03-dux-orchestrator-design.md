@@ -854,8 +854,12 @@ the command when the gate runs, from what the host has. For the code review that
 is codex when `codex` is on `PATH`, otherwise Claude Code with Fable in plan
 mode, which reads the tree and the diff and can change neither. For the security
 pass it is `agent:security-reviewer` when a definition for that agent is in the
-user's Claude config directory or in the project, otherwise the same Claude
-command line. With neither available `ship-env` stops the gate and names the
+user's own Claude agents directory, otherwise the same Claude command line. That
+directory is the only one read. The project the gate runs in is the repository
+whose diff is being audited, and Claude Code would prefer a definition committed
+there, so a branch carrying `.claude/agents/security-reviewer.md` would be
+appointing and writing its own auditor. Workers are untrusted by construction,
+which is exactly who would write that file. With neither available `ship-env` stops the gate and names the
 config file, which is a better failure than a command that is not there.
 
 The choice is made again on every run and never written to disk. Deciding it
@@ -875,8 +879,9 @@ but a command that does not exist. And it is inspectable in both directions:
 the pull request to name the reviewer that actually ran. A degradation the
 operator can read on the pull request is not a silent one. The cost is a probe
 that can be wrong in one direction: an agent supplied by a plugin is invisible to
-a shell, so a host with one gets the command line instead. The cure is one line
-in `config/security-reviewer`, which is never probed.
+a shell, and one a project defines for itself is deliberately not looked at, so
+either host gets the command line instead. The cure for both is one line in
+`config/security-reviewer`, which belongs to the operator and is never probed.
 
 The two recorders have different rules and the skill keeps their calls apart.
 `$DUX_SHIP_RECORD <phase>` runs once per phase per gate and is never repeated:
