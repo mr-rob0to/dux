@@ -38,15 +38,21 @@ repository being reviewed, so a branch cannot appoint the reviewer that audits
 it. If that repository holds an agent definition file of the same name, the gate
 stops rather than guess which one it would run. That check reads one path and is
 a speed bump rather than a wall: the gate still dispatches its reviewer inside
-the repository being reviewed, which wants a different design. For a real
-boundary, name a command line in `config/security-reviewer`, which nothing in the
-reviewed repository can reach. With neither the gate stops and names the file to edit rather than
-running a command that is not there. Nothing is written down, so installing
+the repository being reviewed, which wants a different design. With neither the
+gate stops and names the file to edit rather than running a command that is not
+there. Nothing is written down, so installing
 codex later is enough to start using it.
 
 To pin a reviewer instead, put the command line in `config/reviewer` or
 `config/security-reviewer`. Those win over the bundled files and are never
-probed. `bin/dux-install` seeds both on first run and never overwrites one you
+probed. Two limits on "win", both deliberate. The gate still refuses an `agent:`
+value, stated here as much as picked, when the repository being reviewed holds an
+agent definition file of that name: it stops rather than run one of two
+definitions it cannot choose between. And a command line you name here runs with
+its working directory inside that repository, so how far it is isolated from the
+change it is reading is a property of the command, not of this file; the bundled
+fallback uses Claude Code's safe mode for that reason. What this file does buy is
+that the repository being reviewed cannot change *which* reviewer runs. `bin/dux-install` seeds both on first run and never overwrites one you
 have edited, so a machine installed before this change keeps whatever it seeded;
 delete those two files to get the picked defaults back. A recording of the whole
 gate, run from a fresh clone against a real remote, is in

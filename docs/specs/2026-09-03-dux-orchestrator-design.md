@@ -881,9 +881,13 @@ gate dispatches its reviewer inside the repository being reviewed.** Every
 version of a detect-the-hostile-file guard loses to the next file. It wants a
 different shape — the security pass run from a directory the branch cannot write
 to, or an `agent:` value that is not dispatched by bare name — and that is its
-own design, not a patch on this one. Until then the answer for anyone who needs a
-real boundary is a command line in `config/security-reviewer`, which no
-repository under review can reach.
+own design, not a patch on this one. Until then a command line in
+`config/security-reviewer` is the better answer, and it is worth being exact
+about why: that file is out of the reviewed repository's reach, so the repository
+cannot change *which* reviewer runs. It does not follow that the reviewer is
+isolated once it runs, because it still runs with its working directory inside
+that repository. How much isolation there is belongs to the command named, which
+is why the bundled fallback names safe mode.
 
 The command-line fallback runs with its working directory in that repository
 too, so it is launched in Claude Code's safe mode, which leaves the project's
