@@ -435,6 +435,14 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   # The command, not the word. The prose above it says "attestation", so a
   # search for "attest" passed with the call itself deleted.
   [[ "$nine" == *'"$SHIP_GUARD" attest >> "$BODY"'* ]]
+  # attest appends, so a body reused from step 8 gets a second attestation with
+  # the stale one first, naming a commit that is no longer the head. Both steps
+  # name the file before they append to it, and step 9 says rebuild is not
+  # append. $BODY was never assigned anywhere in the skill until this was found.
+  [[ "$eight" == *'BODY="$(mktemp'* ]]
+  [[ "$nine" == *'BODY="$(mktemp'* ]]
+  [[ "$eight" == *'Exactly one attestation per body'* ]]
+  [[ "$nine" == *'Rebuild means rebuild, not append'* ]]
 }
 
 @test "the recorded dry run names the reviewers the bundled defaults hold" {

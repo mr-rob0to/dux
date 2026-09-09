@@ -357,6 +357,45 @@ full_gate() {
   [[ "$output" == "finding: the guard file's fix count is not a number; open the gate again"* ]]
 }
 
+@test "attest lets no unchecked phase value into the attestation" {
+  cd "$(new_repo main)"
+  full_gate
+  head_sha="$(git rev-parse HEAD)"
+  f="$(state_file main)"
+
+  # Two planted values, because one is not enough to tell the two checks apart.
+  # A single "not-a-sha" is caught by the length check and by the hex check, so
+  # deleting either one on its own left the test green. That was a finding: the
+  # assertion never reached the check it was written for.
+  #
+  # 40 characters, several of them not hex. Only the hex check sees this. The
+  # length is asserted here so a later edit cannot quietly make it 39 and hand
+  # the catch back to the length check.
+  bad="zzzzzzzz--> injected zzzzzzzzzzzzzzzzzzz"
+  [ "${#bad}" -eq 40 ]
+  sed -i.bak "s|^review=.*|review=$bad|" "$f" && rm -f "$f.bak"
+  run guard attest
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the review commit is not a commit id: "* ]]
+  [[ "$output" != *"dux-attestation"* ]]
+
+  # Valid hex, 39 characters. Only the length check sees this.
+  short="${head_sha%?}"
+  sed -i.bak "s|^review=.*|review=$short|" "$f" && rm -f "$f.bak"
+  run guard attest
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the review commit is not a commit id: $short"* ]]
+  [[ "$output" != *"dux-attestation"* ]]
+
+  # Restored: one attestation comment, and the value in it is the checked one.
+  sed -i.bak "s|^review=.*|review=$head_sha|" "$f" && rm -f "$f.bak"
+  run guard attest
+  [ "$status" -eq 0 ]
+  [ "$(grep -c -- '-->' <<< "$output")" -eq 1 ]
+  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  [ "$(jq -r '.steps[] | select(.step == "review") | .sha' <<< "$json")" = "$head_sha" ]
+}
+
 @test "a fix count with a leading zero is a finding, so attest cannot print bad JSON" {
   cd "$(new_repo main)"
   full_gate

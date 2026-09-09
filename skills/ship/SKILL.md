@@ -451,6 +451,14 @@ branch. On any other base the line still shows the PR on the issue, but somebody
 has to close the issue by hand, and Dux's teardown comment with the PR link is
 the record either way.
 
+Write the filled prose to a file. Name it here, because every later push
+rebuilds it and a body appended to twice carries two attestations:
+
+```bash
+BODY="$(mktemp)"
+# write the filled template into "$BODY", overwriting whatever it held
+```
+
 Last, after the prose, append the attestation. It is one HTML comment, marked
 `dux-attestation:v1`, carrying `head_sha`, `fix_passes` and the commit each guard
 phase recorded. It is built
@@ -460,6 +468,10 @@ what has already happened: no `pr` and no `ci`, which have not.
 ```bash
 "$SHIP_GUARD" attest >> "$BODY"
 ```
+
+**Exactly one attestation per body.** Appending a second one leaves the stale
+one first, naming a commit that is no longer the head, and a reader that takes
+the first match reads the gate as closed over code it never covered.
 
 ### Opening it
 
@@ -524,7 +536,13 @@ Then rebuild the body over the new head and edit the pull request, exactly as
 step 8 did. A fix pass moved `HEAD`, so the attestation in the open pull request
 now names a commit that is not the one being tested.
 
+**Rebuild means rebuild, not append.** Write the prose into `$BODY` again from
+the start, so the old attestation is gone before the new one is added. Appending
+to the file step 8 left behind puts two in the body, the stale one first.
+
 ```bash
+BODY="$(mktemp)"
+# write the filled template into "$BODY" again, over the new head
 "$SHIP_GUARD" attest >> "$BODY"
 gh pr edit --title "$TITLE" --body-file "$BODY"
 ```

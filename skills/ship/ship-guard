@@ -181,19 +181,24 @@ case "$cmd" in
     [ $# -eq 0 ] || finding "$usage"
     require_file
     n="$(fix_count)" || exit $?
+    # One read per phase, and the value that is printed is the value that was
+    # checked. Reading the file again for the printout would mean the checked
+    # value and the printed value are two different reads of a file this script
+    # has already said it does not trust: anything running as this account can
+    # rewrite it in between, and what lands in the attestation is then whatever
+    # the second read saw. That is a small window and the same account could
+    # write a plausible sha with no race at all, so this is not a defence. It is
+    # the file doing what its own comment says it does.
+    steps=""; sep=""
     for phase in checks review security; do
       sha="$(recorded_sha "$phase")" || exit $?
       [ "${#sha}" -eq 40 ] || finding "the $phase commit is not a commit id: $sha"
       case "$sha" in *[!0-9a-f]*) finding "the $phase commit is not a commit id: $sha" ;; esac
-    done
-    printf '<!-- dux-attestation:v1 {"head_sha":"%s","fix_passes":%s,"steps":[' \
-      "$(git rev-parse HEAD)" "$n"
-    sep=""
-    for phase in checks review security; do
-      printf '%s{"step":"%s","status":"completed","sha":"%s"}' "$sep" "$phase" "$(kv "$phase")"
+      steps="$steps$sep{\"step\":\"$phase\",\"status\":\"completed\",\"sha\":\"$sha\"}"
       sep=","
     done
-    printf ']} -->\n'
+    printf '<!-- dux-attestation:v1 {"head_sha":"%s","fix_passes":%s,"steps":[%s]} -->\n' \
+      "$(git rev-parse HEAD)" "$n" "$steps"
     ;;
 
   push-ok)
