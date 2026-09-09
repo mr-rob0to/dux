@@ -11,6 +11,11 @@
 # that could put an agent definition in the probe's path would be appointing the
 # reviewer that audits it.
 #
+# For the same reason the gate refuses an agent: value, stated or chosen, when
+# the repository being reviewed defines an agent of that name. The gate cannot
+# tell which of the two definitions it would dispatch, so it stops and says so.
+# Remove that file from the worktree, or name a command line here.
+#
 # So an agent that arrives through a plugin is invisible to the probe, and so is
 # one a project defines for itself. On such a host write agent:security-reviewer
 # here; an explicit value is never probed. An explicit agent: value on a host

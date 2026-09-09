@@ -35,7 +35,8 @@ what your machine has, each time it runs. The code review goes to codex when
 a `security-reviewer` agent when you have one defined in your own agents
 directory and to Claude Code otherwise. Only your directory is read, never the
 repository being reviewed, so a branch cannot appoint the reviewer that audits
-it. With neither the gate stops and names the file to edit rather than
+it; and if that repository defines an agent of the same name, the gate stops
+rather than guess which one it would run. With neither the gate stops and names the file to edit rather than
 running a command that is not there. Nothing is written down, so installing
 codex later is enough to start using it.
 

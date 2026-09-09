@@ -856,10 +856,23 @@ mode, which reads the tree and the diff and can change neither. For the security
 pass it is `agent:security-reviewer` when a definition for that agent is in the
 user's own Claude agents directory, otherwise the same Claude command line. That
 directory is the only one read. The project the gate runs in is the repository
-whose diff is being audited, and Claude Code would prefer a definition committed
-there, so a branch carrying `.claude/agents/security-reviewer.md` would be
-appointing and writing its own auditor. Workers are untrusted by construction,
-which is exactly who would write that file. With neither available `ship-env` stops the gate and names the
+whose diff is being audited, and a definition committed there is a second one of
+the same name, so a branch carrying `.claude/agents/security-reviewer.md` would
+otherwise be appointing and writing its own auditor. Workers are untrusted by
+construction, which is exactly who would write that file.
+
+Not looking at that file is only half of it, because step 7 dispatches an
+`agent:` value by name from a session whose project directory is that same
+repository: the branch's definition reaches the dispatch even though it never
+reached the choice. So `ship-env` refuses any `agent:` value, stated as well as
+probed, when the repository being reviewed defines an agent of that name, and
+names the file to remove. Reading the project in order to refuse is not the same
+as reading it in order to choose; the most a branch wins is stopping its own gate.
+
+The command-line fallback runs with its working directory in that repository
+too, so it is launched in Claude Code's safe mode, which leaves the project's
+own `CLAUDE.md`, skills, plugins, hooks and agents unloaded. Without it the
+change under review would write part of its reviewer's instructions. With neither available `ship-env` stops the gate and names the
 config file, which is a better failure than a command that is not there.
 
 The choice is made again on every run and never written to disk. Deciding it

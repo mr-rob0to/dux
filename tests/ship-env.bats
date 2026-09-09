@@ -54,7 +54,7 @@ on_host() {  # $1 checkout, $2.. arguments
 
 # The claude command line the probe falls back to, in one place, so a test that
 # asserts it cannot drift from the one ship-env prints.
-claude_line='claude -p --disallowedTools WebFetch,WebSearch --model claude-fable-5-1 --effort high --permission-mode plan'
+claude_line='claude -p --safe-mode --disallowedTools WebFetch,WebSearch --model claude-fable-5-1 --effort high --permission-mode plan'
 codex_line='codex exec -m gpt-5.6-sol --sandbox read-only'
 
 # A checkout whose bundled defaults are the real ones, so the probe is reached
@@ -236,6 +236,58 @@ auto_checkout() {  # prints the checkout path
   # The file really is where the gate would run, so the test is asking the
   # question it means to ask and not passing because nothing was written.
   [ -f "$PROJECT/.claude/agents/security-reviewer.md" ]
+}
+
+# The reviewer runs with its working directory in the repository it reviews, so
+# a session that read that repository's own instructions would be taking its
+# brief partly from the change under review.
+@test "the claude fallback does not read the reviewed repository's instructions" {
+  c="$(auto_checkout)"
+  host claude
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  case "$output" in
+    *" --safe-mode "*) ;;
+    *) echo "the fallback loads project configuration: $output"; return 1 ;;
+  esac
+}
+
+# A stated agent: value is not probed, and it is still dispatched by name into
+# the worktree, so the refusal has to cover it too. This is the one the probe
+# fix does not reach.
+@test "a stated agent value is refused when the project defines that agent" {
+  c="$(auto_checkout)"
+  mkdir -p "$c/config"
+  printf 'agent:security-reviewer\n' > "$c/config/security-reviewer"
+  host claude user-agent project-agent
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"the repository being reviewed defines an agent called security-reviewer"* ]]
+  [[ "$stderr" == *"$c/config/security-reviewer"* ]]
+}
+
+# The probed answer reaches the same dispatch, so it is refused on the same
+# terms. Without this the operator's own machine, which defines the agent, is
+# exactly the host the branch can hijack.
+@test "a probed agent value is refused when the project defines that agent" {
+  c="$(auto_checkout)"
+  host claude user-agent project-agent
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"remove .claude/agents/security-reviewer.md from the worktree"* ]]
+}
+
+# The refusal is about a name collision, not about the project having a .claude
+# directory. A project agent by some other name is nobody's business here.
+@test "a project agent of another name does not refuse the gate" {
+  c="$(auto_checkout)"
+  host claude user-agent
+  : > "$PROJECT/.claude/agents/some-other-agent.md"
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 0 ]
+  [ "$output" = "agent:security-reviewer" ]
 }
 
 # A list-taking flag last would swallow the prompt the gate appends as one
