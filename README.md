@@ -235,16 +235,8 @@ default and is never probed.
 <details>
 <summary><strong>Honest limits</strong></summary>
 
-- **Workers are Claude Code only.** Codex is refused as a worker: the deny rules
-  that stop a worker pushing to your base branch have no Codex equivalent. Codex
-  is used as the gate's reviewer, which is a different job.
-- **Dux itself runs under Claude Code.** Running Dux under Codex is planned.
-- **The gate's receipt is a record, not proof.** It says the phases ran in order,
-  and the worker's own run writes it. The independent evidence is the branch, the
-  PR and CI, which Dux checks directly.
-- **The reviewer runs inside the repo it reviews.** The gate stops that repo
-  supplying the reviewer's instructions, but a stronger boundary wants a
-  different design, written up as an open problem in the spec.
+- **Claude Code only, today.** Dux runs under Claude Code, and workers are Claude
+  Code. Codex is used as the gate's code reviewer, which is a different job.
 - **One machine, one fleet.** No server, no remote state.
 
 </details>
@@ -252,19 +244,16 @@ default and is never probed.
 <details>
 <summary><strong>Upgrading</strong></summary>
 
-Dux keeps its state on disk, so pulling and restarting the session is normally
-the whole upgrade. Re-run `bin/dux-install` to pick up new or renamed skills; it
-will not overwrite a config file you have edited.
-
-One exception, for installs predating the rule that a worker's word is a request
-rather than evidence. A task already running across that change is retired once:
+Dux keeps its state on disk, so pulling and restarting the session is the whole
+upgrade.
 
 ```bash
-bin/dux-recover <id> --retire-legacy
+cd ~/dux && git pull && bin/dux-install
 ```
 
-That stops its worker, records it failed, and keeps its branch and worktree for
-one retry.
+`bin/dux-install` picks up new or renamed skills. It never overwrites a config
+file you have edited, so your settings survive. Finish any running task first —
+a worker started under the old version keeps running under it.
 
 </details>
 
