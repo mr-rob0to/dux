@@ -1,8 +1,22 @@
 # The reviewer /ship runs for step 6, the pull request's one code review. It is
 # a command line; the review prompt is appended to it as one argument.
-# Copy this file to config/reviewer to change it: /ship reads config/ first and
-# falls back here, so a fresh clone runs the gate on this line.
+#
+# `auto` means the command is chosen when the gate runs, from what this host
+# has: codex when it is on PATH, otherwise Claude Code with Fable in plan mode,
+# which reads the tree and the diff and can change neither. Either way the
+# command is told not to read the reviewed repository's own AGENTS.md or
+# CLAUDE.md, which would otherwise let the change under review write part of its
+# reviewer's instructions. A command line written here is not given that
+# treatment; it is yours, and isolating it is yours too. With neither one
+# there the gate stops and names this file. The choice is made again on every
+# run and never written down, so a machine that installs codex later starts
+# using it without an edit here.
+#
+# To pin one instead, put the command line here: an explicit value is never
+# probed. Copy this file to config/reviewer to change it: /ship reads config/
+# first and falls back here, so a fresh clone runs the gate on this line.
+#
 # If the model named here is refused, fall back to another one and say in the
 # pull request which reviewer actually ran. A review that silently downgraded is
 # worse than one that did not happen.
-codex exec -m gpt-5.6-sol --sandbox read-only
+auto

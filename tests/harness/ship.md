@@ -14,8 +14,9 @@ This file is what it printed.
 A fresh clone of `feat/m6-ship-standalone` at `cd792f2`, with **no `config/`
 directory at all**. That is the point: every reviewer value below came from
 `templates/config/`, the bundled defaults, because there was nothing else for
-`ship-env` to read. A machine that has never run `bin/dux-install` gets the
-same answers.
+`ship-env` to read. A machine that has never run `bin/dux-install` reads the
+same files; what those files resolve to now depends on what that machine has,
+which the two reviewer steps below say more about.
 
 The repository under review was a throwaway created for this run and deleted
 when it finished. It held a `Makefile` whose `check` target compares
@@ -101,8 +102,24 @@ $ echo "$REVIEWER"
 codex exec -m gpt-5.6-sol --sandbox read-only
 ```
 
-No `config/reviewer` existed. That line is `templates/config/reviewer`, read
-past its comment lines, and it is byte-for-byte the value the file holds.
+No `config/reviewer` existed, so the value came from `templates/config/reviewer`.
+
+Since this run the bundled default is the word `auto`, and `ship-env` chooses
+the command when the gate runs: codex when it is on `PATH`, otherwise Claude
+Code in plan mode, and a finding naming the config file when there is neither.
+An explicit value in `config/reviewer` is never probed.
+
+The recorded line above is what that run printed. The machine that made this
+recording has codex, so a fresh clone still resolves the codex reviewer here, but
+the line itself has gained a flag since, and this is it:
+
+```
+codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0
+```
+
+The flag stops codex reading the reviewed repository's own `AGENTS.md` as its
+instructions, which is the change under review writing part of its reviewer's
+brief. Nothing else about the recorded run changed.
 
 The block was run under `bash -c`. Under `zsh` the unquoted `$REVIEWER` is one
 word, and the shell reports the whole line as a command that does not exist.
@@ -142,9 +159,15 @@ $ echo "$SECURITY_REVIEWER"
 agent:security-reviewer
 ```
 
-Same lookup, same absent `config/`, so this is `templates/config/security-reviewer`
-byte for byte. The `agent:` form means dispatch the named agent rather than run
-a command, which is what happened.
+Same lookup, same absent `config/`, so this came from
+`templates/config/security-reviewer`. The `agent:` form means dispatch the named
+agent rather than run a command, which is what happened.
+
+That default is `auto` now too: the agent when a `security-reviewer` definition
+is in the operator's own agents directory, otherwise Claude Code in plan mode, and a
+finding naming the config file when there is neither. This machine defines the
+agent, so the line above is still what it resolves. An explicit `agent:` value
+on a host that cannot dispatch agents still stops the gate.
 
 ```
 $ dispatch agent security-reviewer with the step 7 prompt

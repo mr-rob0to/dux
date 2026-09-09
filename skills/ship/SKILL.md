@@ -606,6 +606,9 @@ All of these mean: go back and do the step properly.
   `config/security-reviewer` in the Dux checkout the skill was installed from and falls back to
   the bundled `templates/config/` copies. Neither is named in this file, so changing the
   reviewer is a one-line edit to a config file and never an edit to the gate.
+- **`auto`, the bundled default for both, means `ship-env` picks the command from what this
+  host has** and prints what it picked. A value written in a config file is never probed. Say
+  in the pull request which reviewer ran, as step 6 already requires.
 - **Step 6** runs its reviewer as a command on every host. From inside the same tool the value
   names, that is a nested read-only run; that is intended, because the reviewer must be a fresh
   session that has seen nothing of the change.

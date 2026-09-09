@@ -849,6 +849,79 @@ cannot dispatch agents stops on an `agent:` value and names the config file:
 falling back to some other reviewer would be the silent degradation the rest of
 this section exists to remove.
 
+Both reviewer defaults are the word `auto`, and `auto` means `ship-env` chooses
+the command when the gate runs, from what the host has. For the code review that
+is codex when `codex` is on `PATH`, otherwise Claude Code with Fable in plan
+mode, which reads the tree and the diff and can change neither. For the security
+pass it is `agent:security-reviewer` when a definition for that agent is in the
+user's own Claude agents directory, otherwise the same Claude command line. That
+directory is the only one read. The project the gate runs in is the repository
+whose diff is being audited, and a definition committed there is a second one of
+the same name, so a branch carrying `.claude/agents/security-reviewer.md` would
+otherwise be appointing and writing its own auditor. Workers are untrusted by
+construction, which is exactly who would write that file.
+
+Not looking at that file is only half of it, because step 7 dispatches an
+`agent:` value by name from a session whose project directory is that same
+repository: the branch's definition reaches the dispatch even though it never
+reached the choice. So `ship-env` refuses any `agent:` value, stated as well as
+probed, when the repository being reviewed holds `.claude/agents/<name>.md`, and
+names the file to remove. Reading the project in order to refuse is not the same
+as reading it in order to choose; the most a branch wins is stopping its own gate.
+
+That refusal raises the cost of the obvious attempt and is **not a boundary, and
+must not be described as one**. It reads one path. Claude Code identifies an
+agent by a `name:` line inside the file rather than by the file's name, so a
+definition under another filename or in a subdirectory is not caught, and no
+better pattern fixes that: a branch can always write another file, and nothing
+run from outside the dispatch can settle which definition it would resolve.
+
+The open problem this leaves is older than the probe and larger than it: **the
+gate dispatches its reviewer inside the repository being reviewed.** Every
+version of a detect-the-hostile-file guard loses to the next file. It wants a
+different shape — the security pass run from a directory the branch cannot write
+to, or an `agent:` value that is not dispatched by bare name — and that is its
+own design, not a patch on this one. Until then a command line in
+`config/security-reviewer` is the better answer, and it is worth being exact
+about why: that file is out of the reviewed repository's reach, so the repository
+cannot change *which* reviewer runs. It does not follow that the reviewer is
+isolated once it runs, because it still runs with its working directory inside
+that repository. How much isolation there is belongs to the command named, which
+is why the bundled fallback names safe mode.
+
+Both reviewer commands run with their working directory in that repository, and
+either would otherwise read its `AGENTS.md` or `CLAUDE.md` as instructions:
+the change under review writing part of its own reviewer's brief, one committed
+line at a time. So each turns that off in its own tool's spelling, codex with
+`project_doc_max_bytes=0` and Claude Code with safe mode, which also leaves that
+repository's skills, plugins, hooks and agents unloaded. Both were checked by
+running them against a repository whose instructions told the reviewer what to
+say, not by reading the flag list. What separates the two lines is file access
+and only that: codex has an operating-system sandbox, and plan mode is a
+permission rule, so it means the session reads and does not write. With neither available `ship-env` stops the gate and names the
+config file, which is a better failure than a command that is not there.
+
+The choice is made again on every run and never written to disk. Deciding it
+once, when `bin/dux-install` runs, would freeze it: the installer never
+overwrites an existing `config/` file, so a machine that installs codex a week
+later would keep the wrong default forever, which is the shape of the
+install-time denylist defect this repository has already fixed once. It also
+cannot be decided reliably at install time, since `codex` may reach `PATH` only
+through a shell the installer was not run from.
+
+This does not reopen the silent degradation the paragraph above closes, on three
+counts. The probe never overrules a stated value: an explicit `agent:` on a host
+that cannot dispatch agents still stops the gate, exactly as before. It runs only
+where nobody has stated anything, where the alternative is not a better reviewer
+but a command that does not exist. And it is inspectable in both directions:
+`ship-env reviewer` prints the choice before the gate runs, and step 6 requires
+the pull request to name the reviewer that actually ran. A degradation the
+operator can read on the pull request is not a silent one. The cost is a probe
+that can be wrong in one direction: an agent supplied by a plugin is invisible to
+a shell, and one a project defines for itself is deliberately not looked at, so
+either host gets the command line instead. The cure for both is one line in
+`config/security-reviewer`, which belongs to the operator and is never probed.
+
 The two recorders have different rules and the skill keeps their calls apart.
 `$DUX_SHIP_RECORD <phase>` runs once per phase per gate and is never repeated:
 `record-ship` refuses a repeated or out-of-order phase, so a second call stops a
@@ -1020,12 +1093,14 @@ product; there is no build or package.
   every default under `templates/`.
 - **Personal, gitignored**: `data/`, `state/`, `config/`. `templates/config/`
   holds the defaults `dux-install` copies into `config/` on first run:
-  `reviewer` (default `codex exec -m gpt-5.6-sol --sandbox read-only`),
-  `security-reviewer` (default: the Claude `security-reviewer` agent, Codex
-  variant documented), `models` (per shape), `backend` (empty means
-  auto-detect). `/ship` reads the two reviewer files through
-  `skills/ship/ship-env`, which falls back to `templates/config/` so the gate
-  runs before the installer has. `models` is read by `bin/dux-worker-wrap` for
+  `reviewer` and `security-reviewer` (both default to `auto`, which `ship-env`
+  resolves against the host at gate time: codex or Claude Code for the code
+  review, the `security-reviewer` agent or Claude Code for the security pass,
+  and a finding naming the file when there is neither), `models` (per shape),
+  `backend` (empty means auto-detect). `/ship` reads the two reviewer files
+  through `skills/ship/ship-env`, which falls back to `templates/config/` so the
+  gate runs before the installer has. An explicit value in either file is never
+  probed. `models` is read by `bin/dux-worker-wrap` for
   workers; the gate does not use it.
 - **Install**: `bin/dux-install` symlinks each bundled skill into
   `~/.claude/skills/<name>`. An existing real directory there is refused until

@@ -448,17 +448,28 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
 @test "the recorded dry run names the reviewers the bundled defaults hold" {
   t="$DUX_ROOT/tests/harness/ship.md"
   [ -f "$t" ] || { echo "no recording at tests/harness/ship.md"; return 1; }
-  # The recording says a fresh clone reads its reviewers from templates/config/.
-  # If a bundled default changes and the recording does not, the recording is
-  # claiming something that is no longer true. Nothing else checks that: it is
-  # prose, and the run it describes cannot be repeated by the suite.
+  # The recording shows a fresh clone reading its reviewers with no config/ of
+  # its own. If what a fresh clone resolves changes and the recording does not,
+  # the recording is claiming something that is no longer true. Nothing else
+  # checks that: it is prose, and the run it describes cannot be repeated.
   #
-  # First value line, comments and blanks skipped, which is what ship-env reads.
+  # The bundled defaults name no command any more, so the value is asked of the
+  # real ship-env on a stand-in host built like the one that made the recording:
+  # codex on PATH and a security-reviewer agent defined. Reading the templates
+  # for a command line instead would assert on nothing.
+  c="$DUX_HOME/fresh"; stub="$DUX_HOME/fresh-bin"; agents="$DUX_HOME/fresh-home/.claude/agents"
+  mkdir -p "$c/skills/ship" "$c/templates" "$stub" "$agents"
+  cp "$DUX_ROOT/skills/ship/ship-env" "$c/skills/ship/ship-env"
+  cp -R "$DUX_ROOT/templates/config" "$c/templates/config"
+  printf '#!/bin/sh\nexit 0\n' > "$stub/codex"; chmod +x "$stub/codex"
+  : > "$agents/security-reviewer.md"
+  [ ! -d "$c/config" ]
   for key in reviewer security-reviewer; do
-    value="$(grep -v '^#' "$DUX_ROOT/templates/config/$key" | grep -v '^$' | head -1)"
+    value="$(env PATH="$stub:/usr/bin:/bin" HOME="$DUX_HOME/fresh-home" \
+      CLAUDE_CONFIG_DIR="$DUX_HOME/fresh-home/.claude" "$c/skills/ship/ship-env" "$key")"
     [ -n "$value" ]
     grep -qxF "$value" "$t" \
-      || { echo "tests/harness/ship.md does not carry '$value' from templates/config/$key"; return 1; }
+      || { echo "tests/harness/ship.md does not carry '$value', what a fresh clone resolves for $key"; return 1; }
   done
   # Both reviews answered with the headers the skill demands. A recording of a
   # run that skipped either one is a recording of a gate that did not close.

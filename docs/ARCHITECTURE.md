@@ -25,9 +25,12 @@ skills/
   ship/ship-env            reviewer/security-reviewer/pr-template/pr-template-fallback/--root:
                            what the gate reads out of the Dux checkout it was installed
                            from. Values come from config/ and fall back to templates/config/;
-                           pr-template delegates to bin/dux-project so the lookup has one
-                           owner (milestone 6). Sources nothing either, and stops when it is
-                           not inside a checkout
+                           both reviewers default to auto, which picks the command from what
+                           the host has, on every run and never written down, and stops the
+                           gate when the host has nothing to run; a stated value is never
+                           probed. pr-template delegates to bin/dux-project so the lookup has
+                           one owner (milestone 6). Sources nothing either, and stops when it
+                           is not inside a checkout
 bin/
   dux-env                  sourced by every script: paths, log, die, finding, now,
                            task_harness, harness_refusal, require_cmd, take_bytes,
