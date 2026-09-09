@@ -16,7 +16,7 @@ set -u
 
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 
-usage="usage: ship-env reviewer | security-reviewer | --root"
+usage="usage: ship-env reviewer | security-reviewer | pr-template <repo> | pr-template-fallback | --root"
 
 # pwd -P resolves dux-install's directory symlink, so the checkout is the one
 # the skill was installed from and not wherever the link sits.
@@ -48,6 +48,17 @@ value() {  # $1 key
   finding "no value for $1 in $root/config/$1 or $root/templates/config/$1"
 }
 
+# The lookup is not copied here. bin/dux-project owns it and is reachable,
+# because the checkout is resolved before anything is answered. Empty output
+# means the repo has no template; a delegate that failed must never be read as
+# one, so a non-zero exit is a finding and nothing is printed.
+pr_template() {  # $1 repo path
+  local out
+  out="$("$root/bin/dux-project" pr-template "$1")" \
+    || finding "dux-project pr-template failed for $1"
+  [ "$out" = none ] || printf '%s\n' "$out"
+}
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   '') finding "$usage" ;;
@@ -57,6 +68,14 @@ case "$cmd" in
   reviewer | security-reviewer)
     [ $# -eq 0 ] || finding "$usage"
     value "$cmd" ;;
+  pr-template)
+    [ $# -eq 1 ] || finding "$usage"
+    pr_template "$1" ;;
+  pr-template-fallback)
+    [ $# -eq 0 ] || finding "$usage"
+    [ -f "$root/templates/PULL_REQUEST_TEMPLATE.md" ] \
+      || finding "no bundled pull request template at $root/templates/PULL_REQUEST_TEMPLATE.md"
+    printf '%s\n' "$root/templates/PULL_REQUEST_TEMPLATE.md" ;;
   *) finding "unknown key '$cmd' (reviewer, security-reviewer)" ;;
 esac
 exit 0

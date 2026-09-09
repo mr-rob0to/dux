@@ -12,7 +12,7 @@ set -u
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 die()     { printf 'ship-guard: %s\n' "$*" >&2; exit 1; }
 
-usage="usage: ship-guard open | record <phase> | check <phase> | fix-pass | push-ok"
+usage="usage: ship-guard open | record <phase> | check <phase> | fix-pass | attest | push-ok"
 
 gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" \
   || finding "/ship guard must run inside a git repository"
@@ -164,6 +164,31 @@ case "$cmd" in
     # all, because push-ok wants every phase at the commit going out.
     drop checks review security
     printf 'fix pass %s of 3\n' "$n"
+    ;;
+
+  # The attestation is built here because this file's format has one owner.
+  # It carries the three guard phases and nothing else: step 8 writes it before
+  # pr and ci have happened, and a record claiming a step that has not run is
+  # worse than no record. The guard file is untracked and anything running as
+  # this account can write it, so a phase that is missing or is not a commit id
+  # is a finding rather than an entry left out.
+  attest)
+    [ $# -eq 0 ] || finding "$usage"
+    require_file
+    n="$(fix_count)" || exit $?
+    for phase in checks review security; do
+      sha="$(recorded_sha "$phase")" || exit $?
+      [ "${#sha}" -eq 40 ] || finding "the $phase commit is not a commit id: $sha"
+      case "$sha" in *[!0-9a-f]*) finding "the $phase commit is not a commit id: $sha" ;; esac
+    done
+    printf '<!-- dux-attestation:v1 {"head_sha":"%s","fix_passes":%s,"steps":[' \
+      "$(git rev-parse HEAD)" "$n"
+    sep=""
+    for phase in checks review security; do
+      printf '%s{"step":"%s","status":"completed","sha":"%s"}' "$sep" "$phase" "$(kv "$phase")"
+      sep=","
+    done
+    printf ']} -->\n'
     ;;
 
   push-ok)

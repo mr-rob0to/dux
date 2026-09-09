@@ -9,8 +9,9 @@
 
 **Where this stands**
 - Approved and merged as PR #22. Implementation runs on `feat/m6-ship-standalone`
-  from `main` at 1147060. 2 of 4 tasks: reviewers come from config, and every
-  push now tests the ancestor before it anchors the lease.
+  from `main` at 1147060. 3 of 4 tasks: reviewers come from config, every push
+  tests the ancestor before it anchors the lease, and step 8 fills the repo's own
+  template and signs the body with the attestation.
 - Milestone 5 gave the gate a memory but left it wearing the operator's own reviewer
   command, model name and pull request habits, so a stranger who installs Dux cannot
   run it.
@@ -227,15 +228,15 @@ new verbs.
 
 **Steps**
 
-- [ ] Add the `pr-template` and `attest` tests to `tests/ship-env.bats` and
+- [x] Add the `pr-template` and `attest` tests to `tests/ship-env.bats` and
       `tests/ship-guard.bats` and see them fail.
-- [ ] Add the two verbs to `ship-env`, propagating a non-zero exit as a finding.
-- [ ] Add `attest` to `ship-guard` and its usage line.
-- [ ] Add the contract tests for step 8 and see them fail; edit `SKILL.md` steps 8 and 9.
-- [ ] Dry run H: a throwaway repository with a template in `docs/`, then one with none,
+- [x] Add the two verbs to `ship-env`, propagating a non-zero exit as a finding.
+- [x] Add `attest` to `ship-guard` and its usage line.
+- [x] Add the contract tests for step 8 and see them fail; edit `SKILL.md` steps 8 and 9.
+- [x] Dry run H: a throwaway repository with a template in `docs/`, then one with none,
       then one with only the folder form; confirm the fill, the fallback and that the
       body names which was used. Paste the excerpts into the commit body.
-- [ ] Break-verify: break each assertion alone, run, confirm N distinct failures,
+- [x] Break-verify: break each assertion alone, run, confirm N distinct failures,
       restore, paste them into the commit body.
 
 ## Task 4: Fresh-clone dry run

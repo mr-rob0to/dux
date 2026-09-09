@@ -8,8 +8,12 @@ load helpers/setup
 # runs a copy of the script from inside it.
 fake_checkout() {  # prints the checkout path
   local c="$DUX_HOME/checkout"
-  mkdir -p "$c/skills/ship" "$c/templates/config" "$c/bin"
+  mkdir -p "$c/skills/ship" "$c/templates/config"
   cp "$DUX_ROOT/skills/ship/ship-env" "$c/skills/ship/ship-env"
+  cp "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md" "$c/templates/PULL_REQUEST_TEMPLATE.md"
+  # The real bin/, so pr-template is asked of the real dux-project and the two
+  # cannot drift. A test that needs the delegate to fail overwrites this.
+  ln -s "$DUX_ROOT/bin" "$c/bin"
   printf 'template reviewer command\n' > "$c/templates/config/reviewer"
   printf 'agent:template-security-reviewer\n' > "$c/templates/config/security-reviewer"
   echo "$c"
@@ -135,4 +139,102 @@ env_at() {  # $1 checkout, $2.. arguments
     [ -n "$output" ]
     case "$output" in '#'*) echo "ship-env answered a note line for $k"; return 1 ;; esac
   done
+}
+
+# A repository under the test's own home, since dux-project only reads the path.
+a_repo() {  # $1 name; prints the path
+  local d="$DUX_HOME/$1"
+  mkdir -p "$d"
+  git init -q "$d"
+  echo "$d"
+}
+
+# Swap the symlinked bin/ for one holding a stand-in dux-project.
+stub_project() {  # $1 checkout, $2 script body
+  rm "$1/bin"
+  mkdir -p "$1/bin"
+  { echo '#!/usr/bin/env bash'; echo "$2"; } > "$1/bin/dux-project"
+  chmod +x "$1/bin/dux-project"
+}
+
+@test "pr-template gives back what dux-project found, one path per line" {
+  c="$(fake_checkout)"
+  r="$(a_repo withtemplate)"
+  mkdir -p "$r/docs"
+  : > "$r/docs/pull_request_template.md"
+  run --separate-stderr env_at "$c" pr-template "$r"
+  [ "$status" -eq 0 ]
+  [ "$output" = "docs/pull_request_template.md" ]
+  # The same question asked of the owner of the lookup gives the same answer.
+  run "$DUX_ROOT/bin/dux-project" pr-template "$r"
+  [ "$output" = "docs/pull_request_template.md" ]
+}
+
+@test "pr-template says nothing for a repo that has none" {
+  c="$(fake_checkout)"
+  r="$(a_repo notemplate)"
+  run --separate-stderr env_at "$c" pr-template "$r"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [ -z "$stderr" ]
+  # dux-project's own word for it is "none", and that word never travels.
+  run "$DUX_ROOT/bin/dux-project" pr-template "$r"
+  [ "$output" = none ]
+}
+
+@test "pr-template reports the folder form as the folder form" {
+  c="$(fake_checkout)"
+  r="$(a_repo folderform)"
+  mkdir -p "$r/.github/PULL_REQUEST_TEMPLATE"
+  : > "$r/.github/PULL_REQUEST_TEMPLATE/one.md"
+  run --separate-stderr env_at "$c" pr-template "$r"
+  [ "$status" -eq 0 ]
+  [ "$output" = ".github/PULL_REQUEST_TEMPLATE/" ]
+}
+
+# Empty output means "this repo has no template". A lookup that failed must
+# never be read as one, or the gate quietly fills the bundled copy instead.
+@test "a delegate that fails is a finding, never an empty answer" {
+  c="$(fake_checkout)"
+  r="$(a_repo brokenlookup)"
+  stub_project "$c" 'echo "finding: something broke" >&2; exit 2'
+  run --separate-stderr env_at "$c" pr-template "$r"
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"finding: something broke"* ]]
+  [[ "$stderr" == *"dux-project pr-template failed for $r"* ]]
+}
+
+@test "a delegate that exits non-zero after printing paths is still a finding" {
+  c="$(fake_checkout)"
+  r="$(a_repo halflookup)"
+  stub_project "$c" 'echo docs/pull_request_template.md; exit 1'
+  run --separate-stderr env_at "$c" pr-template "$r"
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"dux-project pr-template failed for $r"* ]]
+}
+
+@test "pr-template needs exactly one repository" {
+  c="$(fake_checkout)"
+  run --separate-stderr env_at "$c" pr-template
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == "finding: usage: ship-env "* ]]
+}
+
+@test "pr-template-fallback names the bundled copy" {
+  c="$(fake_checkout)"
+  run --separate-stderr env_at "$c" pr-template-fallback
+  [ "$status" -eq 0 ]
+  [ "$output" = "$c/templates/PULL_REQUEST_TEMPLATE.md" ]
+  [ -f "$output" ]
+}
+
+@test "a checkout with no bundled template is a finding, not a silent empty path" {
+  c="$(fake_checkout)"
+  rm "$c/templates/PULL_REQUEST_TEMPLATE.md"
+  run --separate-stderr env_at "$c" pr-template-fallback
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [ "$stderr" = "finding: no bundled pull request template at $c/templates/PULL_REQUEST_TEMPLATE.md" ]
 }

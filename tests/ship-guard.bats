@@ -230,7 +230,7 @@ full_gate() {
   guard open
   run guard fix-pass security
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: ship-guard open | record <phase> | check <phase> | fix-pass | push-ok"* ]]
+  [[ "$output" == "finding: usage: ship-guard open | record <phase> | check <phase> | fix-pass | attest | push-ok"* ]]
 }
 
 @test "the fourth fix pass is refused" {
@@ -292,7 +292,7 @@ full_gate() {
   cd "$(new_repo main)"
   run guard verify
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: ship-guard open | record <phase> | check <phase> | fix-pass | push-ok"* ]]
+  [[ "$output" == "finding: usage: ship-guard open | record <phase> | check <phase> | fix-pass | attest | push-ok"* ]]
 }
 
 @test "push-ok refuses a guard file counting more fix passes than the gate allows" {
@@ -415,4 +415,89 @@ full_gate() {
   run guard push-ok
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: the guard file has no fix count; open the gate again"* ]]
+}
+
+# The attestation is derived from the guard file, so it lives with the one thing
+# that knows that file's format. Building the JSON in prose would put the format
+# in two places and let them drift.
+@test "attest carries the head, the fix count and the three phases" {
+  cd "$(new_repo main)"
+  full_gate
+  head_sha="$(git rev-parse HEAD)"
+  run --separate-stderr guard attest
+  [ "$status" -eq 0 ]
+  [ -z "$stderr" ]
+  [[ "$output" == '<!-- dux-attestation:v1 '* ]]
+  [[ "$output" == *' -->' ]]
+  json="${output#<!-- dux-attestation:v1 }"
+  json="${json% -->}"
+  run jq -e . <<< "$json"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .head_sha <<< "$json")" = "$head_sha" ]
+  [ "$(jq -r .fix_passes <<< "$json")" = 0 ]
+  [ "$(jq -r '.steps | length' <<< "$json")" = 3 ]
+  [ "$(jq -r '[.steps[].step] | join(",")' <<< "$json")" = "checks,review,security" ]
+  for p in checks review security; do
+    [ "$(jq -r --arg p "$p" '.steps[] | select(.step == $p) | .sha' <<< "$json")" = "$head_sha" ]
+    [ "$(jq -r --arg p "$p" '.steps[] | select(.step == $p) | .status' <<< "$json")" = completed ]
+  done
+  # Step 8 writes it before pr and ci have happened, so it never claims them.
+  [ "$(jq -r '[.steps[].step] | index("pr")' <<< "$json")" = null ]
+  [ "$(jq -r '[.steps[].step] | index("ci")' <<< "$json")" = null ]
+}
+
+@test "attest reports the fix count it was given" {
+  cd "$(new_repo main)"
+  full_gate
+  guard fix-pass > /dev/null
+  guard record checks && guard record review && guard record security
+  run guard attest
+  [ "$status" -eq 0 ]
+  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  [ "$(jq -r .fix_passes <<< "$json")" = 1 ]
+}
+
+@test "attest refuses each phase that was never recorded" {
+  cd "$(new_repo main)"
+  guard open
+  run guard attest
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: no checks recorded for main; the gate did not run in order"* ]]
+  guard record checks
+  run guard attest
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: no review recorded for main; the gate did not run in order"* ]]
+  guard record review
+  run guard attest
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: no security recorded for main; the gate did not run in order"* ]]
+}
+
+@test "attest refuses a phase whose value is not a commit id" {
+  cd "$(new_repo main)"
+  for bad in deadbeef "$(git rev-parse HEAD)x" "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"; do
+    full_gate
+    f="$(state_file main)"
+    # The file is untracked and anything running as this account can write it,
+    # so what it says about itself is checked before it reaches the pull request.
+    { grep -v '^review=' "$f"; echo "review=$bad"; } > "$f.next" && mv "$f.next" "$f"
+    run guard attest
+    [ "$status" -eq 2 ]
+    [[ "$output" == "finding: the review commit is not a commit id: $bad"* ]] \
+      || { echo "wrong refusal for '$bad': $output"; return 1; }
+    [[ "$output" != *dux-attestation* ]]
+  done
+}
+
+@test "attest takes no arguments and needs a gate that was opened" {
+  cd "$(new_repo main)"
+  full_gate
+  run guard attest extra
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: usage: ship-guard "* ]]
+  [[ "$output" == *attest* ]]
+  rm "$(state_file main)"
+  run guard attest
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: no guard file for main; the gate was never opened"* ]]
 }

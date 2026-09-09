@@ -391,3 +391,48 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$table" == *'The remote branch holds commits this branch does not'* ]]
   [[ "$table" == *'The remote head is not the commit that was pushed'* ]]
 }
+
+@test "step 8 fills the repo's own template and passes a title and a body file" {
+  eight="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$eight" != *'gh run watch'* ]] || { echo "the step 8 range ran into step 9"; return 1; }
+  # --fill ignores the repository's template and scrapes the commits instead.
+  # The prose explains why it is gone, so the assertion is on the command line
+  # rather than on the step's text: a flat search for the flag matches the
+  # sentence that retires it, and would pass with the old command still there.
+  create="$(grep -n '^gh pr create' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [ -n "$create" ] || { echo "step 8 never opens the pull request"; return 1; }
+  [[ "$create" != *'--fill'* ]] || { echo "gh pr create still uses --fill: $create"; return 1; }
+  [[ "$create" == *'--title'* ]]
+  [[ "$create" == *'--body-file'* ]]
+  # The whole invocation, not a prefix of it: "$SHIP_ENV" pr-template is also
+  # the first half of the fallback line, so a prefix assertion stayed green with
+  # the lookup gone. Breaking the lookup changed nothing, which is how that
+  # was found.
+  [[ "$eight" == *'"$SHIP_ENV" pr-template "$(git rev-parse --show-toplevel)"'* ]]
+  [[ "$eight" == *'"$SHIP_ENV" pr-template-fallback'* ]]
+  # GitHub documents no precedence between root, docs/ and .github/, so the body
+  # says which template was filled rather than implying GitHub would agree.
+  [[ "$eight" == *'root, `docs/`, `.github/` order'* ]]
+  [[ "$eight" == *'says which template'* ]]
+  [[ "$eight" == *'folder form'* ]]
+  [[ "$eight" == *'--title'* ]]
+  [[ "$eight" == *'--body-file'* ]]
+  [[ "$eight" == *'<details>'* ]]
+  [[ "$eight" == *'"$SHIP_GUARD" attest >> "$BODY"'* ]]
+  [[ "$eight" == *'dux-attestation:v1'* ]]
+}
+
+@test "a rebuilt body follows every push after a fix pass, step 9's included" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  eight="$(unwrapped '/^## Step 8\./,/^## Step 9\./p' "$ship")"
+  nine="$(unwrapped '/^## Step 9\./,/^## Stop and report/p' "$ship")"
+  [[ "$nine" != *'you are rationalizing'* ]] || { echo "the step 9 range ran on"; return 1; }
+  # The attestation names the commit that is out there. A push that does not
+  # rebuild it leaves the body naming a commit that is no longer the head.
+  [[ "$eight" == *'gh pr edit'* ]]
+  [[ "$nine" == *'gh pr edit --title'* ]]
+  [[ "$nine" == *'--body-file'* ]]
+  # The command, not the word. The prose above it says "attestation", so a
+  # search for "attest" passed with the call itself deleted.
+  [[ "$nine" == *'"$SHIP_GUARD" attest >> "$BODY"'* ]]
+}
