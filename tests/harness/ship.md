@@ -107,9 +107,19 @@ No `config/reviewer` existed, so the value came from `templates/config/reviewer`
 Since this run the bundled default is the word `auto`, and `ship-env` chooses
 the command when the gate runs: codex when it is on `PATH`, otherwise Claude
 Code in plan mode, and a finding naming the config file when there is neither.
-The machine that made this recording has codex, so the line above is still what
-a fresh clone resolves here. An explicit value in `config/reviewer` is never
-probed.
+An explicit value in `config/reviewer` is never probed.
+
+The recorded line above is what that run printed. The machine that made this
+recording has codex, so a fresh clone still resolves the codex reviewer here, but
+the line itself has gained a flag since, and this is it:
+
+```
+codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0
+```
+
+The flag stops codex reading the reviewed repository's own `AGENTS.md` as its
+instructions, which is the change under review writing part of its reviewer's
+brief. Nothing else about the recorded run changed.
 
 The block was run under `bash -c`. Under `zsh` the unquoted `$REVIEWER` is one
 word, and the shell reports the whole line as a command that does not exist.

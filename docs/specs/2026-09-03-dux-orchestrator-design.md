@@ -889,10 +889,16 @@ isolated once it runs, because it still runs with its working directory inside
 that repository. How much isolation there is belongs to the command named, which
 is why the bundled fallback names safe mode.
 
-The command-line fallback runs with its working directory in that repository
-too, so it is launched in Claude Code's safe mode, which leaves the project's
-own `CLAUDE.md`, skills, plugins, hooks and agents unloaded. Without it the
-change under review would write part of its reviewer's instructions. With neither available `ship-env` stops the gate and names the
+Both reviewer commands run with their working directory in that repository, and
+either would otherwise read its `AGENTS.md` or `CLAUDE.md` as instructions:
+the change under review writing part of its own reviewer's brief, one committed
+line at a time. So each turns that off in its own tool's spelling, codex with
+`project_doc_max_bytes=0` and Claude Code with safe mode, which also leaves that
+repository's skills, plugins, hooks and agents unloaded. Both were checked by
+running them against a repository whose instructions told the reviewer what to
+say, not by reading the flag list. What separates the two lines is file access
+and only that: codex has an operating-system sandbox, and plan mode is a
+permission rule, so it means the session reads and does not write. With neither available `ship-env` stops the gate and names the
 config file, which is a better failure than a command that is not there.
 
 The choice is made again on every run and never written to disk. Deciding it

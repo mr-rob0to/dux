@@ -66,16 +66,22 @@ agent_defined() {  # $1 name
   [ -f "${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/agents/$1.md" ]
 }
 
-# Fable at high effort in plan mode, with the two tools that fetch a url taken
-# away. Be plain about what that buys and what it does not. Plan mode is a
-# permission rule, not the operating-system sandbox the codex line runs under:
-# it means the session reads the tree and the diff and does not change them.
-# Dropping WebFetch and WebSearch closes the two obvious ways out, and a review
-# has no use for either. It does not put the session offline: the reviewer needs
-# a shell to read a diff at all, and a shell can reach the network. Sealing that
-# would mean taking the shell away, which leaves nothing that can review. The
-# codex line is the one with a real sandbox; this is the fallback for a host
-# that does not have it.
+# Both reviewer commands run with their working directory inside the repository
+# they are reviewing, and both would otherwise take instructions from it. That is
+# the change under review writing part of its own reviewer's brief, and one line
+# in a committed AGENTS.md or CLAUDE.md does it. So each line turns that off in
+# its own tool's spelling: project_doc_max_bytes=0 for codex, safe mode for
+# Claude Code, which also leaves that repository's skills, plugins, hooks and
+# agents unloaded. Verified by running both, not by reading the flags.
+#
+# What separates them is file access, and only that. Codex has an
+# operating-system sandbox; plan mode is a permission rule, so it means the
+# session reads the tree and the diff and does not change them. Neither is
+# offline. Dropping WebFetch and WebSearch closes the two direct ways out of the
+# Claude line, and a review has no use for either, but a reviewer needs a shell
+# to read a diff at all and a shell can reach the network. Sealing that means
+# taking the shell away, which leaves nothing that can review.
+codex_reviewer='codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0'
 #
 # --disallowedTools takes a list and keeps taking words until the next flag, so
 # it cannot be last: the prompt the gate appends as one argument would be eaten
@@ -100,13 +106,16 @@ claude_reviewer='claude -p --safe-mode --disallowedTools WebFetch,WebSearch --mo
 # much as a probed one. Reading the project to refuse is not reading it to
 # choose: the most a branch wins here is stopping its own gate.
 #
-# Read what this catches and what it does not. It catches the file at that path,
-# which is where an agent of that name is normally written. It does not catch a
-# definition under another filename or in a subdirectory, because Claude Code
-# identifies an agent by a name: line inside the file rather than by what the
-# file is called. Closing that is not a matter of a better pattern here: a branch
-# can always write another file, so no test run from outside can settle which
-# definition a dispatch would resolve.
+# Read what this catches and what it does not. It catches that one path under the
+# repository's root, which is where an agent of that name is normally written.
+# The root and not $PWD: nothing pins the directory the gate calls from, and a
+# call from a subdirectory would miss the ordinary spelling, which is the case
+# this exists for. It does not catch a definition under another filename or in a
+# subdirectory of the agents folder, because Claude Code identifies an agent by a
+# name: line inside the file rather than by what the file is called. Closing that
+# is not a matter of a better pattern here: a branch can always write another
+# file, so no test run from outside can settle which definition a dispatch would
+# resolve.
 #
 # The real limit is that the gate dispatches its reviewer inside the repository
 # being reviewed at all, and that predates this file. It wants a different shape
@@ -114,15 +123,18 @@ claude_reviewer='claude -p --safe-mode --disallowedTools WebFetch,WebSearch --mo
 # value not dispatched by bare name -- and that is its own piece of work. What is
 # here raises the cost of the obvious attempt and is not a boundary. Anyone who
 # needs one states a command line in config/security-reviewer.
-agent_hijacked() {  # $1 value; true when the project holds a file defining the agent it names
+agent_hijacked() {  # $1 value; true when the reviewed repository holds a file naming that agent
+  local top
   case "$1" in agent:*) ;; *) return 1 ;; esac
-  [ -f "$PWD/.claude/agents/${1#agent:}.md" ]
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || top=""
+  [ -n "$top" ] || top="$PWD"
+  [ -f "$top/.claude/agents/${1#agent:}.md" ]
 }
 
 probe() {  # $1 key; prints the command this host can actually run
   case "$1" in
     reviewer)
-      if have codex; then printf 'codex exec -m gpt-5.6-sol --sandbox read-only\n'
+      if have codex; then printf '%s\n' "$codex_reviewer"
       elif have claude; then printf '%s\n' "$claude_reviewer"
       else finding "no code reviewer on this host: neither codex nor claude is on PATH; put a command line in $root/config/reviewer"
       fi ;;

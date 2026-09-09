@@ -3,7 +3,11 @@
 #
 # `auto` means the command is chosen when the gate runs, from what this host
 # has: codex when it is on PATH, otherwise Claude Code with Fable in plan mode,
-# which reads the tree and the diff and can change neither. With neither one
+# which reads the tree and the diff and can change neither. Either way the
+# command is told not to read the reviewed repository's own AGENTS.md or
+# CLAUDE.md, which would otherwise let the change under review write part of its
+# reviewer's instructions. A command line written here is not given that
+# treatment; it is yours, and isolating it is yours too. With neither one
 # there the gate stops and names this file. The choice is made again on every
 # run and never written down, so a machine that installs codex later starts
 # using it without an edit here.

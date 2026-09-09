@@ -32,7 +32,8 @@ env_at() {  # $1 checkout, $2.. arguments
 host() {  # $1.. any of: codex claude user-agent project-agent
   STUB="$DUX_HOME/host/bin"; PROBE_HOME="$DUX_HOME/host/home"
   PROJECT="$DUX_HOME/host/project"
-  mkdir -p "$STUB" "$PROBE_HOME/.claude/agents" "$PROJECT/.claude/agents"
+  mkdir -p "$STUB" "$PROBE_HOME/.claude/agents" "$PROJECT/.claude/agents" "$PROJECT/sub"
+  [ -d "$PROJECT/.git" ] || git init -q "$PROJECT"
   local w
   for w in "$@"; do
     case "$w" in
@@ -48,14 +49,14 @@ host() {  # $1.. any of: codex claude user-agent project-agent
 # directory, which would let a stray file in the checkout answer the probe.
 on_host() {  # $1 checkout, $2.. arguments
   local c="$1"; shift
-  ( cd "$PROJECT" && env PATH="$STUB:/usr/bin:/bin" HOME="$PROBE_HOME" \
+  ( cd "${PROJECT_CWD:-$PROJECT}" && env PATH="$STUB:/usr/bin:/bin" HOME="$PROBE_HOME" \
       CLAUDE_CONFIG_DIR="$PROBE_HOME/.claude" "$c/skills/ship/ship-env" "$@" )
 }
 
 # The claude command line the probe falls back to, in one place, so a test that
 # asserts it cannot drift from the one ship-env prints.
 claude_line='claude -p --safe-mode --disallowedTools WebFetch,WebSearch --model claude-fable-5-1 --effort high --permission-mode plan'
-codex_line='codex exec -m gpt-5.6-sol --sandbox read-only'
+codex_line='codex exec -m gpt-5.6-sol --sandbox read-only -c project_doc_max_bytes=0'
 
 # A checkout whose bundled defaults are the real ones, so the probe is reached
 # the way a fresh clone reaches it.
@@ -238,20 +239,6 @@ auto_checkout() {  # prints the checkout path
   [ -f "$PROJECT/.claude/agents/security-reviewer.md" ]
 }
 
-# The reviewer runs with its working directory in the repository it reviews, so
-# a session that read that repository's own instructions would be taking its
-# brief partly from the change under review.
-@test "the claude fallback does not read the reviewed repository's instructions" {
-  c="$(auto_checkout)"
-  host claude
-  run --separate-stderr on_host "$c" reviewer
-  [ "$status" -eq 0 ]
-  case "$output" in
-    *" --safe-mode "*) ;;
-    *) echo "the fallback loads project configuration: $output"; return 1 ;;
-  esac
-}
-
 # A stated agent: value is not probed, and it is still dispatched by name into
 # the worktree, so the refusal has to cover it too. This is the one the probe
 # fix does not reach.
@@ -288,6 +275,52 @@ auto_checkout() {  # prints the checkout path
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
   [ "$output" = "agent:security-reviewer" ]
+}
+
+# Nothing pins the directory the gate calls from, so a refusal anchored on it
+# would miss a definition at the repository root, which is the ordinary place to
+# put one and the whole case this check exists for.
+@test "the refusal finds a root definition when the gate is called from a subdirectory" {
+  c="$(auto_checkout)"
+  host claude user-agent project-agent
+  PROJECT_CWD="$PROJECT/sub"
+  run --separate-stderr on_host "$c" security-reviewer
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"the repository being reviewed defines an agent called security-reviewer"* ]]
+  # The definition really is at the root and not in the directory called from,
+  # so the test cannot pass by finding it under $PWD.
+  [ -f "$PROJECT/.claude/agents/security-reviewer.md" ]
+  [ ! -f "$PROJECT/sub/.claude/agents/security-reviewer.md" ]
+}
+
+# Both reviewer commands run inside the repository they read, and neither may
+# take its instructions from it, or the change under review writes part of its
+# own reviewer's brief. One test each: host() adds to the machine it is building
+# rather than replacing it, so asking both questions in one test asks the first
+# one twice.
+@test "the codex reviewer does not read the reviewed repository's instructions" {
+  c="$(auto_checkout)"
+  host codex
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  case "$output" in
+    *" -c project_doc_max_bytes=0"*) ;;
+    *) echo "the codex reviewer loads the project's own instructions: $output"; return 1 ;;
+  esac
+}
+
+@test "the claude reviewer does not read the reviewed repository's instructions" {
+  c="$(auto_checkout)"
+  host claude
+  run --separate-stderr on_host "$c" reviewer
+  [ "$status" -eq 0 ]
+  # Named, so this cannot pass on the codex line, which answers the same
+  # question with a different flag.
+  case "$output" in
+    claude\ *" --safe-mode "*) ;;
+    *) echo "the claude reviewer loads the project's own instructions: $output"; return 1 ;;
+  esac
 }
 
 # A list-taking flag last would swallow the prompt the gate appends as one
