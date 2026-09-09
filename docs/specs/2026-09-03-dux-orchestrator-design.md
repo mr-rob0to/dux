@@ -865,9 +865,25 @@ Not looking at that file is only half of it, because step 7 dispatches an
 `agent:` value by name from a session whose project directory is that same
 repository: the branch's definition reaches the dispatch even though it never
 reached the choice. So `ship-env` refuses any `agent:` value, stated as well as
-probed, when the repository being reviewed defines an agent of that name, and
+probed, when the repository being reviewed holds `.claude/agents/<name>.md`, and
 names the file to remove. Reading the project in order to refuse is not the same
 as reading it in order to choose; the most a branch wins is stopping its own gate.
+
+That refusal raises the cost of the obvious attempt and is **not a boundary, and
+must not be described as one**. It reads one path. Claude Code identifies an
+agent by a `name:` line inside the file rather than by the file's name, so a
+definition under another filename or in a subdirectory is not caught, and no
+better pattern fixes that: a branch can always write another file, and nothing
+run from outside the dispatch can settle which definition it would resolve.
+
+The open problem this leaves is older than the probe and larger than it: **the
+gate dispatches its reviewer inside the repository being reviewed.** Every
+version of a detect-the-hostile-file guard loses to the next file. It wants a
+different shape — the security pass run from a directory the branch cannot write
+to, or an `agent:` value that is not dispatched by bare name — and that is its
+own design, not a patch on this one. Until then the answer for anyone who needs a
+real boundary is a command line in `config/security-reviewer`, which no
+repository under review can reach.
 
 The command-line fallback runs with its working directory in that repository
 too, so it is launched in Claude Code's safe mode, which leaves the project's

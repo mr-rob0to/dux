@@ -12,9 +12,15 @@
 # reviewer that audits it.
 #
 # For the same reason the gate refuses an agent: value, stated or chosen, when
-# the repository being reviewed defines an agent of that name. The gate cannot
+# the repository being reviewed holds .claude/agents/<name>.md. The gate cannot
 # tell which of the two definitions it would dispatch, so it stops and says so.
 # Remove that file from the worktree, or name a command line here.
+#
+# That refusal reads one path, and an agent is named by a line inside the file
+# rather than by the file's name, so it catches the obvious case and not every
+# case. The gate still dispatches its reviewer inside the repository being
+# reviewed. If you need a boundary rather than a speed bump, put a command line
+# here: nothing in the reviewed repository can reach it.
 #
 # So an agent that arrives through a plugin is invisible to the probe, and so is
 # one a project defines for itself. On such a host write agent:security-reviewer

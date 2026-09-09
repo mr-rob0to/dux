@@ -35,8 +35,12 @@ what your machine has, each time it runs. The code review goes to codex when
 a `security-reviewer` agent when you have one defined in your own agents
 directory and to Claude Code otherwise. Only your directory is read, never the
 repository being reviewed, so a branch cannot appoint the reviewer that audits
-it; and if that repository defines an agent of the same name, the gate stops
-rather than guess which one it would run. With neither the gate stops and names the file to edit rather than
+it. If that repository holds an agent definition file of the same name, the gate
+stops rather than guess which one it would run. That check reads one path and is
+a speed bump rather than a wall: the gate still dispatches its reviewer inside
+the repository being reviewed, which wants a different design. For a real
+boundary, name a command line in `config/security-reviewer`, which nothing in the
+reviewed repository can reach. With neither the gate stops and names the file to edit rather than
 running a command that is not there. Nothing is written down, so installing
 codex later is enough to start using it.
 

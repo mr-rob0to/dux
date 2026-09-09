@@ -96,12 +96,25 @@ claude_reviewer='claude -p --safe-mode --disallowedTools WebFetch,WebSearch --mo
 # repository, which is a second place a definition of that name can live. A
 # branch carrying .claude/agents/<name>.md therefore reaches the dispatch even
 # though it never reached the choice, and the gate cannot say which of the two
-# definitions it is about to run.
+# definitions it is about to run. So it refuses, for a stated `agent:` value as
+# much as a probed one. Reading the project to refuse is not reading it to
+# choose: the most a branch wins here is stopping its own gate.
 #
-# So it refuses instead, for a stated `agent:` value as much as a probed one.
-# Reading the project to refuse is not reading it to choose: the most a branch
-# wins here is stopping its own gate, which is the direction to fail in.
-agent_hijacked() {  # $1 value; true when the project defines the agent it names
+# Read what this catches and what it does not. It catches the file at that path,
+# which is where an agent of that name is normally written. It does not catch a
+# definition under another filename or in a subdirectory, because Claude Code
+# identifies an agent by a name: line inside the file rather than by what the
+# file is called. Closing that is not a matter of a better pattern here: a branch
+# can always write another file, so no test run from outside can settle which
+# definition a dispatch would resolve.
+#
+# The real limit is that the gate dispatches its reviewer inside the repository
+# being reviewed at all, and that predates this file. It wants a different shape
+# -- the security pass run from somewhere the branch cannot write, or an agent:
+# value not dispatched by bare name -- and that is its own piece of work. What is
+# here raises the cost of the obvious attempt and is not a boundary. Anyone who
+# needs one states a command line in config/security-reviewer.
+agent_hijacked() {  # $1 value; true when the project holds a file defining the agent it names
   case "$1" in agent:*) ;; *) return 1 ;; esac
   [ -f "$PWD/.claude/agents/${1#agent:}.md" ]
 }
