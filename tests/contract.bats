@@ -198,10 +198,9 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$skill" == *'branch and the worktree are kept'* ]]
 }
 
-@test "the README says a worker's word is not a result and how to retire an old one" {
+@test "the README says a worker's word is not a result" {
   readme="$(unwrapped '1,$p' "$DUX_ROOT/README.md")"
   [[ "$readme" == *'never because a worker'*'said so'* ]]
-  [[ "$readme" == *'--retire-legacy'* ]]
 }
 
 @test "the ship skill closes the brief's issue from the PR body" {

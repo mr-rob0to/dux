@@ -1,69 +1,297 @@
+<div align="center">
+
+<!-- LOGO: drop the file at docs/assets/dux-logo.png and uncomment.
+     Keep it square, transparent, and readable at 120px.
+<img src="docs/assets/dux-logo.png" alt="Dux" width="120" />
+-->
+
 # Dux
 
-An orchestrator you talk to. Dux runs worker agents across your repos in isolated
-worktrees, supervises them without spending tokens, and brings back PR links and
-decisions. Delivery goes through `/ship`.
+**Run coding agents across your repos without babysitting them.**
 
-Dux watches every running worker, wakes only when work needs attention, and
-shows missed events in the next session's fleet digest. Register a repository
-with `bin/dux-project add <path>`; its folder name becomes the project name unless
-you pass `--name <name>`.
+[![check](https://github.com/mr-rob0to/dux/actions/workflows/check.yml/badge.svg)](https://github.com/mr-rob0to/dux/actions/workflows/check.yml)
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#requirements)
+[![bash](https://img.shields.io/badge/bash-3.2%2B-green.svg)](#contributing)
 
-Register with `--issues label:<name>` and every open issue carrying that label
-becomes a queued task at the next session start; the issue text rides in the
-brief as data, the PR body carries `Closes #<n>`, and a closed issue that was
-never started is dropped. GitHub closes the issue by itself only when the PR
-merges into the repository's default branch; on any other base branch the PR is
-shown on the issue and you close it yourself.
+</div>
 
-A worker is trusted to act with your account, so what it writes is treated as
-untrusted text rather than as evidence: a task is done when Dux has proved it
-against the repository, GitHub and the `/ship` receipt, never because a worker
-said so. If a task was already running when this boundary landed, retire it
-once with `bin/dux-recover <id> --retire-legacy`; that stops its worker and
-records it failed, and keeps its branch and worktree for one retry.
+---
 
-Design: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
-Plans: `docs/plans/`.
+*Dux* is Latin for leader. A dux commanded a force; the work was done by the
+people in it. That division is the design: you talk to one agent, and it
+dispatches the rest.
 
-Verified orchestrator harness: Claude Code. Worker harnesses: Claude Code and Codex, selected by `config/worker-harness` or `dux-spawn --harness`. Codex as orchestrator: milestone 8.
+<!-- DEMO: record a terminal GIF of a dispatch-to-PR run and drop it here.
+     asciinema + agg works well. Keep it under 30 seconds.
+<img src="docs/assets/demo.gif" alt="Dispatching a task and getting a PR back" />
+-->
 
-The `/ship` gate runs on the bundled defaults, so a fresh clone needs no setup.
-Both defaults are the word `auto`, which means the gate picks its reviewers from
-what your machine has, each time it runs. The code review goes to codex when
-`codex` is on your `PATH` and to Claude Code otherwise; the security pass goes to
-a `security-reviewer` agent when you have one defined in your own agents
-directory and to Claude Code otherwise. Only your directory is read, never the
-repository being reviewed, so a branch cannot appoint the reviewer that audits
-it. If that repository holds an agent definition file of the same name, the gate
-stops rather than guess which one it would run. That check reads one path and is
-a speed bump rather than a wall: the gate still dispatches its reviewer inside
-the repository being reviewed, which wants a different design. With neither the
-gate stops and names the file to edit rather than running a command that is not
-there. Nothing is written down, so installing
-codex later is enough to start using it.
+```
+you   Have a look at how auth works in my-project and report back.
+dux   Scout task started. Read-only. I'll have it when you're back.
 
-To pin a reviewer instead, put the command line in `config/reviewer` or
-`config/security-reviewer`. Those win over the bundled files and are never
-probed. Two limits on "win", both deliberate. The gate still refuses an `agent:`
-value, stated here as much as picked, when the repository being reviewed holds an
-agent definition file of that name: it stops rather than run one of two
-definitions it cannot choose between. And a command line you name here runs with
-its working directory inside that repository, so how far it is isolated from the
-change it is reading is a property of the command, not of this file; the bundled
-fallback uses Claude Code's safe mode for that reason. What this file does buy is
-that the repository being reviewed cannot change *which* reviewer runs. `bin/dux-install` seeds both on first run and never overwrites one you
-have edited, so a machine installed before this change keeps whatever it seeded;
-delete those two files to get the picked defaults back. A recording of the whole
-gate, run from a fresh clone against a real remote, is in
-`tests/harness/ship.md`.
+      ... you close the laptop ...
 
-## Run
+dux   my-project scout is done. Auth is split across two middlewares and
+      one of them is dead code. Report is in the task folder.
 
-    cd ~/Documents/dev/projects/dux && claude
+you   Plan the fix.
+dux   Plan task started. You'll get a docs-only PR to approve.
+```
 
-## Develop
+---
 
-    brew install bats-core shellcheck
-    make check         # after a task, about two minutes
-    make check-branch  # once before /ship, adds the bash 3.2 pass
+## Features
+
+- **One conversation, many agents.** Say what you want. Dux writes the brief,
+  opens an isolated worktree, starts the worker, and reports back in plain words.
+- **Supervision that costs no tokens.** A background watcher checks on workers
+  and turns state changes into one line each. Your session never tails their
+  output, so your context stays yours.
+- **Interrupted on purpose.** One phone notification for a finished PR, a
+  blocking question, or a failure. Nothing else.
+- **No shared checkout, ever.** Every task gets its own git worktree and branch
+  cut from a freshly fetched base. Agents cannot corrupt each other.
+- **Nothing merges on a claim.** Dux checks the branch, the PR and CI before it
+  agrees a task is finished, never because a worker said so.
+- **A pre-merge gate that ships with it.** `/ship` runs your project's checks, an
+  independent code review, a separate security pass, and CI — then opens the PR
+  and stops. It works in any repo, with or without Dux.
+- **GitHub issues as a queue.** Label an issue; it becomes a queued task, and the
+  PR carries `Closes #n`.
+
+---
+
+## Quick start
+
+**1. Clone and install.**
+
+```bash
+git clone https://github.com/mr-rob0to/dux.git ~/dux
+cd ~/dux && bin/dux-install
+```
+
+**2. Sign in to GitHub.**
+
+```bash
+gh auth login
+```
+
+**3. Register a repo.**
+
+```bash
+bin/dux-project add ~/code/my-project
+```
+
+**4. Check the install.**
+
+```bash
+bin/dux-doctor
+```
+
+```
+ok claude      ok gh        ok git        ok registry
+ok codex       ok jq        ok gh auth    backend: tmux
+watcher: no session
+```
+
+`watcher: no session` is expected here — the watcher starts with your first
+session, in the next step. Everything else should read `ok`.
+
+**5. Run it.**
+
+```bash
+cd ~/dux && claude
+```
+
+That is the whole thing. Claude Code starts in the Dux repo, takes the session
+lock, starts the watcher, and shows you the fleet digest. Then just talk to it.
+
+### Requirements
+
+| Tool | Why |
+|---|---|
+| [Claude Code](https://claude.com/claude-code) | Runs Dux and runs the workers |
+| `git` 2.5+ | Worktrees |
+| [`gh`](https://cli.github.com) | PRs, issues, CI status. Must be signed in |
+| `jq` | Reads GitHub's JSON |
+| `tmux` or [Herdr](https://herdr.dev) | Gives each worker its own pane or tab |
+| [`codex`](https://developers.openai.com/codex/cli) | The gate's preferred code reviewer |
+
+macOS or Linux.
+
+**`codex` is required in practice.** The gate falls back to Claude Code without
+it, so nothing is broken — but `bin/dux-doctor` reports it missing, and Dux's own
+instructions say to fix every doctor failure before dispatching. Treat it as
+required unless you also mean to ignore that. It is there so the code review
+comes from a second vendor, which is the point of the step.
+
+---
+
+## What you can ask for
+
+Three shapes, from safest to most involved.
+
+**Scout — reads, changes nothing.**
+
+> *"Have a look at how auth works in my-project and report back."*
+
+**Plan — produces a design and plan as a docs-only PR for you to approve.**
+
+> *"Plan the notifications feature in my-project."*
+
+**Ship — implements one milestone, runs the gate, opens a PR.**
+
+> *"Build milestone 2 of that plan."*
+
+And any time, in any repo, with no Dux involved:
+
+> *"Ship it."*
+
+---
+
+## How a task runs
+
+1. You say what you want. Dux writes the intent and acceptance criteria and reads
+   them back in two lines.
+2. It cuts a worktree on a new branch from a freshly fetched base and starts a
+   worker in its own pane.
+3. The worker works. Dux sees state changes, not output.
+4. It finishes, gets stuck, or asks a question. You get one line.
+5. Dux checks the branch, the PR and CI before agreeing it is done.
+6. You review and merge. Dux tears the worktree down, refusing if anything there
+   is uncommitted or unpushed.
+
+<details>
+<summary><strong>Why this shape — the four problems it is built around</strong></summary>
+
+**Watching an agent burns the context you need to think.** A session that tails a
+worker's output fills up with its output. Dux supervises from a background
+process that costs no tokens.
+
+**Agents in one checkout corrupt each other.** Two sessions sharing a working
+tree share `HEAD` and `git stash`, and quietly undo each other. Every task gets
+its own worktree.
+
+**"Done" is not evidence.** An agent that says it finished is making a claim. Dux
+checks the branch, the PR and CI before calling anything done.
+
+**Nothing should merge because an agent was confident.** Delivery goes through a
+gate that runs the checks, the reviews and CI, opens the PR, and stops there.
+
+</details>
+
+---
+
+## The `/ship` gate
+
+Installing Dux puts the gate in your skills directory, so it works in any
+repository whether or not Dux dispatched the work.
+
+1. Resolve the base branch from the repo, never assumed, then fetch it and
+   confirm the branch is based on it.
+2. Run the project's own checks — whatever CI runs.
+3. Self-audit what a diff reviewer cannot see: backwards compatibility, docs the
+   repo keeps in sync, tests for the failure modes.
+4. **One independent code review**, by a reviewer that did not write the change
+   and is not told what it is for.
+5. **A separate security pass**, on every ship.
+6. Open the PR, body filled from your repo's own template.
+7. Watch CI to green.
+
+Each phase records the commit it saw, so a review cannot be outrun by later
+commits. Three fix passes per gate; the fourth is refused, because by then the
+design is the problem. **The gate never merges.**
+
+---
+
+## What Dux will not do
+
+Refusals in code, not guidelines.
+
+- **Never writes to your repos.** Workers change code inside worktrees. The one
+  exception is installing a PR template, when you ask for it.
+- **Never merges.** No PR merges without you saying so.
+- **Never reads raw worker text into the conversation.** Worker output is
+  untrusted until it passes through the one command that caps and fences it.
+- **Never tears down work.** A worktree with uncommitted or unpushed changes is a
+  refusal, not an obstacle to route around.
+- **Never runs two orchestrators at once.** A second session is read-only.
+
+---
+
+<details>
+<summary><strong>Configuration</strong></summary>
+
+Everything lives in `config/`, seeded on install and ignored by git. Each file
+explains itself in comments. An explicit value always wins over the bundled
+default and is never probed.
+
+| File | What it sets |
+|---|---|
+| `reviewer` | Code reviewer for the gate. `auto` picks from your machine |
+| `security-reviewer` | Security reviewer. `auto` picks from your machine |
+| `models` | Model and effort per task shape |
+| `worker-harness` | Which agent runs workers |
+| `backend` | `tmux` or `herdr`. Empty means detect |
+
+`bin/dux-project add` also takes `--name`, `--base`, `--issues label:<name>`,
+`--worktree make|script|git`, and `--pr-template install|skip`.
+
+</details>
+
+<details>
+<summary><strong>Honest limits</strong></summary>
+
+- **Claude Code only, today.** Dux runs under Claude Code, and workers are Claude
+  Code. Codex is used as the gate's code reviewer, which is a different job.
+- **One machine, one fleet.** No server, no remote state.
+
+</details>
+
+<details>
+<summary><strong>Upgrading</strong></summary>
+
+Dux keeps its state on disk, so pulling and restarting the session is the whole
+upgrade.
+
+```bash
+cd ~/dux && git pull && bin/dux-install
+```
+
+`bin/dux-install` picks up new or renamed skills. It never overwrites a config
+file you have edited, so your settings survive. Finish any running task first —
+a worker started under the old version keeps running under it.
+
+</details>
+
+---
+
+## Documentation
+
+| Document | What is in it |
+|---|---|
+| [`docs/specs/`](docs/specs/) | The design, and every decision behind it |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | What each script owns |
+| [`docs/constitution.md`](docs/constitution.md) | Engineering standards |
+| [`docs/plans/`](docs/plans/) | Roadmap and milestone plans |
+| [`tests/harness/ship.md`](tests/harness/ship.md) | A full gate run, from a fresh clone |
+
+## Contributing
+
+Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first. In short:
+
+```bash
+brew install bats-core shellcheck
+make check         # after a change, about two minutes
+make check-branch  # before /ship, adds the bash 3.2 pass
+```
+
+Scripts are bash 3.2 and shellcheck clean, because macOS still ships bash 3.2.
+Findings go to stderr with exit 2. Every guard is broken once and seen to fail
+before it counts.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).
