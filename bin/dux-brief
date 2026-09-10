@@ -102,7 +102,7 @@ while IFS= read -r line || [ -n "$line" ]; do
 done < "$DUX_ROOT/templates/brief.md" > "$tmp"
 
 n="$(awk '/^<untrusted-issue>$/{skip=1} !skip{n++} /^<\/untrusted-issue>$/{skip=0} END{print n+0}' "$tmp")"
-if [ "$n" -gt 60 ]; then rm -f "$tmp"; finding "brief is $n lines excluding the issue block; the limit is 60"; fi
+if [ "$n" -gt 100 ]; then rm -f "$tmp"; finding "brief is $n lines excluding the issue block; the limit is 100"; fi
 
 s="$(cat "$DUX_ROOT/templates/worker-settings.json")"; t='__BASE__'; s="${s//$t/$base}"
 printf '%s\n' "$s" > "$settings.tmp"

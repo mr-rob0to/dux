@@ -33,7 +33,7 @@ when something is off; relay the finding verbatim and stop.
    `needs-decision` copies this file and appends the answer.
 4. Write numbered, testable acceptance criteria to `data/tasks/<id>/criteria.md`.
 5. `bin/dux-brief <id> --intent-file data/tasks/<id>/intent.md --criteria-file data/tasks/<id>/criteria.md [--plan <path> --tasks <a-b>] [--issue-file <f>]`.
-   A brief over 60 lines is a finding: shorten the intent, never split the
+   A brief over 100 lines is a finding: shorten the intent, never split the
    goal into two tasks without saying so. For a `gh:` task,
    `--issue-file data/tasks/<id>/issue.md` is required.
 6. Read the brief's Intent and criteria back in two lines. Spawn unless the

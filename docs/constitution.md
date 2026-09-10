@@ -123,7 +123,7 @@ Tokens are a cost the operator sees; the design keeps them bounded.
 
 - Dux idle MUST cost zero: waiting is done by bash and the harness's event mechanism.
 - Dux MUST NOT read worker output outside `dux-recover`, and then at most 40 lines.
-- Briefs are at most 60 lines and never carry conversation history.
+- Briefs are at most 100 lines and never carry conversation history.
 - The Dux session restarts daily or after 40 wakes.
 - Any feature that adds an agent invocation to the idle path or to every wake MUST be opt-in.
 
@@ -234,7 +234,16 @@ that edits this file, bumps the version, and updates Last Amended: MAJOR for a r
 removed principle, MINOR for a new principle, PATCH for a clarification. A plan that must
 deviate from a principle says so in its header and names the principle.
 
-**Version**: 2.0.5 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-08
+**Version**: 2.0.6 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-10
+
+Version 2.0.6 raises the brief cap in principle 5 from 60 lines to 100. The cap counts the
+whole rendered brief, and the fixed template is about 26 lines of it, so 60 left the operator
+about 34 lines for the intent and the acceptance criteria together. Building four briefs on
+2026-09-09 took seven rebuilds, each one over by a line or two and each fixed by rewording an
+intent that was already right; a retry made it worse, because `dux-recover` appends about ten
+lines to the intent. What the count includes is unchanged, and so is what the cap is for: a
+pasted transcript runs to hundreds of lines and 100 still refuses it. This is a PATCH: the rule
+stands, only its number moves.
 
 Version 2.0.5 adds the pipeline rule to principle 2. The same defect had been fixed three
 times as three separate bugs: a reader that stops early closes the pipe, and jq or GNU sed then
