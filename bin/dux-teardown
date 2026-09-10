@@ -51,10 +51,19 @@ if [ "$abandon" = 1 ]; then
     "finding: no worktree on dux/$id in "*) ;;
     *) finding "cannot tell whether $id has a worktree: $(cap_line "$wt")" ;;
   esac
-  # The ledger first: a folder removal that fails leaves a dropped task whose
-  # rerun still works, and a ledger write that fails leaves a queued task whose
-  # folder is already gone, which reruns too.
-  "$ledger" set "$id" state dropped || exit $?
+  # Compare and set, not set: the state was read at the top of this block and the
+  # proof above takes time, so a spawn that got the task to running in between
+  # must win. The ledger does the comparison under its own lock and refuses with
+  # a finding naming the state that won, before anything is removed. This does
+  # not close the window entirely: a spawn still between its worktree and its own
+  # state write leaves the ledger reading queued, and abandon goes ahead. Nothing
+  # of the worker's is lost when it does, because dux-worker-wrap refuses at once
+  # on a missing task folder.
+  #
+  # The ledger first either way: a folder removal that fails leaves a dropped
+  # task whose rerun still works, and a ledger write that fails leaves a queued
+  # task whose folder is already gone, which reruns too.
+  "$ledger" set-if "$id" state "$lstate" dropped || exit $?
   rm -rf "${DUX_TASKS:?}/$id" || finding "cannot remove $DUX_TASKS/$id; the ledger now reads dropped"
   echo "abandoned $id"
   exit 0
