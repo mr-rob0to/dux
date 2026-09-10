@@ -1,10 +1,6 @@
 bats_require_minimum_version 1.5.0
 load helpers/setup
 
-hooks_env() {  # $1 id; prints the env assignments that activate the task's hooks dir
-  echo "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=$DUX_HOME/data/tasks/$1/hooks"
-}
-
 register() {  # $1 name [--worktree m]; registers $DUX_HOME/<name> on main
   local n="$1"; shift
   make_repo "$DUX_HOME/$n" main
@@ -38,6 +34,41 @@ custom_target='worktree:
   [ -x "$DUX_HOME/data/tasks/$id/hooks/pre-push" ]
   [ ! -e "$wt/.env" ]
   [ "$(dux-worktree path "$id")" = "$wt" ]
+  # The guard is the worktree's own git configuration, so it travels with the
+  # worktree and reaches nothing else. The registered checkout keeps its own
+  # hooks and still pushes to its base branch.
+  [ "$(git -C "$wt" config --worktree --get core.hooksPath)" = "$DUX_HOME/data/tasks/$id/hooks" ]
+  [ -z "$(git -C "$DUX_HOME/proj" config --get core.hooksPath)" ]
+  (cd "$DUX_HOME/proj" && git commit -q --allow-empty -m "operator work")
+  run git -C "$DUX_HOME/proj" push -q origin main
+  [ "$status" -eq 0 ]
+}
+
+@test "a repository that shares core.worktree with its worktrees is refused, and nothing is written" {
+  register proj
+  git -C "$DUX_HOME/proj" config core.worktree "$DUX_HOME/proj"
+  id="$(dux-task-new proj scout)"
+  run dux-worktree create "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $DUX_HOME/proj shares core.worktree with its worktrees; move it to the main worktree's config.worktree (git help worktree, CONFIGURATION FILE) before Dux can scope its hooks"* ]]
+  [ -z "$(git -C "$DUX_HOME/proj" config --get extensions.worktreeConfig)" ]
+}
+
+@test "a bare repository shared with its worktrees is refused, and nothing is written" {
+  register proj
+  # A bare clone of the fixture origin, so create's fetch of origin/main has a
+  # remote to reach, and core.bare = true sits in the shared config that the
+  # registered path, a linked worktree of that clone, reads.
+  bare="$DUX_HOME/bare.git"
+  git clone -q --bare "$DUX_HOME/proj.origin" "$bare"
+  git -C "$bare" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+  git -C "$bare" worktree add --quiet "$DUX_HOME/bareproj" main
+  dux-project add "$DUX_HOME/bareproj" --base main >/dev/null
+  id="$(dux-task-new bareproj scout)"
+  run dux-worktree create "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $DUX_HOME/bareproj shares core.bare with its worktrees; move it to the main worktree's config.worktree (git help worktree, CONFIGURATION FILE) before Dux can scope its hooks"* ]]
+  [ -z "$(git -C "$bare" config --get extensions.worktreeConfig)" ]
 }
 
 ignore_env() {  # $1 project name; the project ignores the real env files, not the examples
@@ -278,13 +309,13 @@ commit_in() {  # $1 project name, $2... paths to add and push
   id="$(dux-task-new proj scout)"
   wt="$(dux-worktree create "$id")"
   (cd "$wt" && git commit -q --allow-empty -m work)
-  run env $(hooks_env "$id") git -C "$wt" push -q origin "HEAD:refs/heads/main"
+  run git -C "$wt" push -q origin "HEAD:refs/heads/main"
   [ "$status" -ne 0 ]
   [[ "$output" == *"finding: refusing to push to main from a Dux worktree"* ]]
   [ "$(git -C "$DUX_HOME/proj.origin" rev-parse main)" != "$(git -C "$wt" rev-parse HEAD)" ]
-  run env $(hooks_env "$id") git -C "$wt" push -q -u origin "dux/$id"
+  run git -C "$wt" push -q -u origin "dux/$id"
   [ "$status" -eq 0 ]
-  run env $(hooks_env "$id") git -C "$wt" push -q origin "dux/$id:main"
+  run git -C "$wt" push -q origin "dux/$id:main"
   [ "$status" -ne 0 ]
 }
 
@@ -298,7 +329,7 @@ commit_in() {  # $1 project name, $2... paths to add and push
   [ -L "$DUX_HOME/data/tasks/$id/hooks/pre-commit" ]
   [ ! -L "$DUX_HOME/data/tasks/$id/hooks/pre-push" ]
   (cd "$wt" && git commit -q --allow-empty -m work)
-  env $(hooks_env "$id") git -C "$wt" push -q -u origin "dux/$id"
+  git -C "$wt" push -q -u origin "dux/$id"
   grep -q "refs/heads/dux/$id" "$DUX_HOME/proj/.worktrees/upstream-saw-refs"
 }
 

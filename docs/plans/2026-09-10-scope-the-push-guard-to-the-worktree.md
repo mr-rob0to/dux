@@ -7,6 +7,8 @@
 > review and its security pass (constitution principle 9).
 
 **Where this stands**
+- Task 1 landed 2026-09-10: the hooks path is now the worktree's own git configuration
+  and the two shared-config layouts are refused. Tasks 2 and 3 next.
 - Drafted 2026-09-10 by a Dux plan worker. One independent design review by a fresh
   session; its findings and what was done with each are at the bottom.
 - Picks up the defect that makes every worker's `make check` red: 107 fixture pushes
@@ -152,7 +154,7 @@ push from the worktree with no environment help at all. Both refusals are reache
 
 **Steps**
 
-- [ ] Tests first. Delete the `hooks_env` helper and every `env $(hooks_env ...)` prefix
+- [x] Tests first. Delete the `hooks_env` helper and every `env $(hooks_env ...)` prefix
       in `tests/dux-worktree.bats`; the three hook tests ("refuses the base branch and
       allows the task branch", "chains the project's own pre-push", "the rendered hook
       never re-evaluates") push plainly from the worktree. Add to the scout create test:
@@ -163,12 +165,12 @@ push from the worktree with no environment help at all. Both refusals are reache
       the fixture origin (`git clone --bare`, so `create`'s fetch of `origin/<base>` has
       a remote to reach; `core.bare = true` sits in its shared config); each is refused
       with the finding above and no config written.
-- [ ] Run them and see the base-branch test push succeed (that is the defect) and the
+- [x] Run them and see the base-branch test push succeed (that is the defect) and the
       new assertions fail.
-- [ ] Implement in `install_hooks`, in the order the interface gives: read, refuse,
+- [x] Implement in `install_hooks`, in the order the interface gives: read, refuse,
       enable, write. Use `git -C <wt>` for both writes, never `git_repo`: for a clone
       mechanism the shared config is the clone's.
-- [ ] Break-verify, one at a time, each failure pasted into the commit body:
+- [x] Break-verify, one at a time, each failure pasted into the commit body:
       1. skip the `core.hooksPath` write: the base-branch push succeeds, the refusal
          test fails.
       2. skip the extension write: `--worktree` refuses, create fails with the
