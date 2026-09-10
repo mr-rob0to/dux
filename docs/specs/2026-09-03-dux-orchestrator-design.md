@@ -213,7 +213,7 @@ chooses the path and Dux discovers it from `git worktree list --porcelain`.
 
 ### 5.3 Brief (`dux-brief`)
 
-Under 60 lines. Sections, all required:
+Under 100 lines. Sections, all required:
 
 1. Intent: the operator's goal in their words, including constraints, exclusions,
    and decisions already made. Never a diff summary.
@@ -240,7 +240,7 @@ expected to exceed 10 minutes; for `plan`, the design review is a subagent
 inside the task, the docs-only PR is the approval artifact, never wait on the
 operator. Issue text arrives through `--issue-file`, fenced as
 `<untrusted-issue>`, capped at 4,000 characters, control characters stripped,
-and excluded from the 60-line count. A task whose source is an issue must be
+and excluded from the 100-line count. A task whose source is an issue must be
 given `--issue-file`, and its Project section carries
 `- Issue: <owner>/<repo>#<n>` rendered from the ledger source, never from the
 issue text; that line is what `/ship` reads for `Closes #<n>`.
@@ -1020,7 +1020,7 @@ ordering, deferred follow-ups.
 | Dux per wake | one event line + <= 5 status lines; target < 2k tokens |
 | Dux idle | zero; Monitor and bash wait |
 | Dux lifetime | restart daily or after 40 wakes; each wake re-reads the whole context at cache rates |
-| Brief | <= 60 lines; no conversation history |
+| Brief | <= 100 lines; no conversation history |
 | Worker | owns its cost; one task per session; model per shape |
 | Reviews | unchanged: one Codex review, one security pass, inside `/ship` |
 

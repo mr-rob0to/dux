@@ -109,7 +109,7 @@ queued -> running -> (stale)* -> needs-decision | blocked | done | failed | dead
 
 ## Project Constitution
 
-Engineering standards for this project live in `docs/constitution.md` (v2.0.5).
+Engineering standards for this project live in `docs/constitution.md` (v2.0.6).
 Read it before planning or implementing changes; all work must comply.
 Key gates: TDD with guards break-verified at the task that added them and never
 deferred to the ship gate, bash 3.2 and shellcheck clean, no personal identifiers

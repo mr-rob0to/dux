@@ -154,7 +154,7 @@ backend started it and catches a worker in a server whose socket vanished.
 1. Operator states a goal; Dux writes intent and criteria files and runs
    `dux-task-new <project> <shape>`, which allocates the id and folder and
    appends the `queued` ledger line (`dux-ledger add`).
-2. `dux-brief <id> ...` renders `tasks/<id>/brief.md` (<=60 lines outside the
+2. `dux-brief <id> ...` renders `tasks/<id>/brief.md` (<=100 lines outside the
    fenced issue block) and `tasks/<id>/worker-settings.json`. A task with a
    `gh:` source needs `--issue-file`, and its brief carries one
    `- Issue: <owner>/<repo>#<n>` line taken from the ledger, never from the
