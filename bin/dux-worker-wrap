@@ -135,15 +135,6 @@ if [ -s "$settings" ]; then
   { cp "$settings" "$c_settings" && chmod 400 "$c_settings"; } \
     || refuse "cannot stage the worker settings in the task channel"
 fi
-# The worker's git runs the channel's copy of the hooks, so the set it obeys is
-# the set Dux staged for this run and nothing in the task folder is on its path.
-cp -R "$hooks" "$channel/hooks" || refuse "cannot stage the task hooks in the task channel"
-# Read-only files, but a writable directory: a channel a refusal leaves behind
-# has to stay removable, and a mode the worker can lift anyway is worth nothing
-# bought at the price of a tree nothing can clear.
-chmod 700 "$channel/hooks" || refuse "cannot restrict $channel/hooks"
-[ ! -f "$channel/hooks/pre-push" ] || chmod 500 "$channel/hooks/pre-push" \
-  || refuse "cannot restrict $channel/hooks/pre-push"
 # A ship worker records each /ship phase through a recorder made for this task
 # and this run. It is a script in the channel rather than a variable because the
 # worker's environment carries no Dux path of any kind, and the id and run are
@@ -224,9 +215,11 @@ stop_group() {  # TERM, then KILL; returns 1 if anything is still there
 # Nothing of Dux's session reaches the worker: not the orchestrator's own
 # harness variables, not the backend it runs under, not a git config the
 # operator set for themselves, and not the directory the dux commands live in.
-# It gets its task channel back, and the hook path for this run. Matched with
-# case, not a regex: BSD sed has no \| alternation, so a GNU pattern here would
-# unset nothing.
+# It gets its task channel back and nothing else. No git configuration is handed
+# over: an environment setting reaches every repository the worker touches, and
+# the push guard belongs to the task worktree alone, which is where dux-worktree
+# wrote it. Matched with case, not a regex: BSD sed has no \| alternation, so a
+# GNU pattern here would unset nothing.
 scrub_worker_env() {
   local v
   for v in $(env | cut -d= -f1); do
@@ -237,7 +230,6 @@ scrub_worker_env() {
   export PATH="$worker_path"
   export DUX_STATUS_LOG="$status_outbox" DUX_REPORT="$report_outbox"
   [ -z "$ship_record" ] || export DUX_SHIP_RECORD="$ship_record"
-  export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$channel/hooks"
 }
 
 mirroring=1

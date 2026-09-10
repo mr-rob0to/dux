@@ -7,8 +7,9 @@
 > review and its security pass (constitution principle 9).
 
 **Where this stands**
-- Task 1 landed 2026-09-10: the hooks path is now the worktree's own git configuration
-  and the two shared-config layouts are refused. Tasks 2 and 3 next.
+- Tasks 1 and 2 landed 2026-09-10: the hooks path is now the worktree's own git
+  configuration, the two shared-config layouts are refused, and the wrapper hands the
+  worker no git configuration at all. Task 3 next.
 - Drafted 2026-09-10 by a Dux plan worker. One independent design review by a fresh
   session; its findings and what was done with each are at the bottom.
 - Picks up the defect that makes every worker's `make check` red: 107 fixture pushes
@@ -195,13 +196,13 @@ worktree's task branch pushes with the project's own `pre-push` seeing the same 
 
 **Steps**
 
-- [ ] Tests first, in `tests/dux-worker-wrap.bats`. "the worker inherits its task
+- [x] Tests first, in `tests/dux-worker-wrap.bats`. "the worker inherits its task
       interfaces and nothing else of Dux's": the `GIT_CONFIG_` count becomes 0. "the
       worker's status log is its own channel outbox": the three `GIT_CONFIG_` greps
       become one count-0 assertion. "the channel holds the worker's own copies": no
       `hooks` entry in the listing. In `tests/e2e-dispatch.bats`, "a worker gets its own
       channel and nothing of Dux's own session": the same flip.
-- [ ] New test, "a worker's git guard stops at its worktree". Install a marker
+- [x] New test, "a worker's git guard stops at its worktree". Install a marker
       `pre-push` in the project before `dux-worktree create`, as the dux-worktree
       chaining test does. The fake worker's script, through its `run` verb, does three
       things and leaves each exit code in a file: build a throwaway repository beside
@@ -210,12 +211,12 @@ worktree's task branch pushes with the project's own `pre-push` seeing the same 
       upstream. Assert: first exit 0 and the throwaway origin's `main` moved; second
       non-zero, the project origin's `main` unmoved, and the finding line in
       `state/<id>.out`; third exit 0 and the marker file holding the task branch ref.
-- [ ] Run and see the new test fail on its first assertion (the fixture push is
+- [x] Run and see the new test fail on its first assertion (the fixture push is
       refused) and the count assertions fail on 3.
-- [ ] Remove the `GIT_CONFIG_*` export from `scrub_worker_env`, and the `cp -R` of the
+- [x] Remove the `GIT_CONFIG_*` export from `scrub_worker_env`, and the `cp -R` of the
       hooks into the channel with its two `chmod` lines. Re-read `scrub_worker_env` and
       the channel block whole afterwards.
-- [ ] Break-verify, one at a time, each failure pasted into the commit body:
+- [x] Break-verify, one at a time, each failure pasted into the commit body:
       1. put the export back: the count-0 assertions fail and the fixture push is
          refused.
       2. export the same three names with the value `/dev/null`: the worktree push to
