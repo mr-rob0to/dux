@@ -61,14 +61,35 @@ setup_task() {  # $1 shape; prints id
   grep -qF 'never wait on the operator' "$DUX_HOME/data/tasks/$id/brief.md"
 }
 
-@test "a brief over 60 lines is a finding and nothing is written" {
+@test "a brief over 100 lines is a finding and nothing is written" {
   id="$(setup_task scout)"
-  for i in $(seq 1 50); do echo "line $i"; done > "$DUX_HOME/intent"
+  for i in $(seq 1 120); do echo "line $i"; done > "$DUX_HOME/intent"
   run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria"
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: brief is "*" lines excluding the issue block; the limit is 60"* ]]
+  [[ "$output" == "finding: brief is "*" lines excluding the issue block; the limit is 100"* ]]
   [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+  # The half-built file too, or "nothing is written" is only true of the name
+  # the renderer moves it to at the very end.
+  [ ! -e "$DUX_HOME/data/tasks/$id/brief.md.tmp" ]
   [ ! -e "$DUX_HOME/data/tasks/$id/worker-settings.json" ]
+}
+
+@test "a brief of exactly 100 lines is written and one line more is a finding" {
+  id="$(setup_task scout)"
+  # The template and the shape lines render to 26, the criteria fixture to 2,
+  # so 72 lines of intent land on the cap exactly.
+  for i in $(seq 1 72); do echo "intent line $i"; done > "$DUX_HOME/intent"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria"
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "$DUX_HOME/data/tasks/$id/brief.md" | tr -d " ")" -eq 100 ]
+
+  # The same fixture, one line longer, into a fresh task: a brief is written once.
+  echo "intent line 73" >> "$DUX_HOME/intent"
+  id2="$(dux-task-new proj scout)"
+  run dux-brief "$id2" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: brief is 101 lines excluding the issue block; the limit is 100"* ]]
+  [ ! -e "$DUX_HOME/data/tasks/$id2/brief.md" ]
 }
 
 @test "issue text is fenced, capped at 4000 characters, stripped of control characters, and not counted" {
