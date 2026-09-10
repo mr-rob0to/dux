@@ -57,6 +57,13 @@ operator has said the PR is merged or the task is abandoned:
   torn down before its wake was handled is not pushed again at the next session
   start.
 
+Plain teardown is for a task that ran and finished. A task that never started is
+`bin/dux-teardown --abandon <id>`: it takes `queued` or `dropped` only, and only
+when the task has no run record, pid file, pgid file, portal or worktree, so a
+spawn killed before the state was written is refused rather than let go of. It
+sets the ledger to `dropped`, removes the task folder, and touches no project
+repo, branch or pull request. The operator's word is required before either one.
+
 ## Never
 
 - Never edit `brief.md` after spawn. A changed answer is a new task.

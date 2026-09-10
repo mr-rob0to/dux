@@ -4,7 +4,13 @@ set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
-id="${1:-}"; [ -n "$id" ] || die "usage: dux-teardown <id>"
+usage="usage: dux-teardown [--abandon] <id>"
+# Two verbs, one script. Plain teardown ends work that ran; --abandon lets go of
+# work that never started. They are kept apart because the uncommitted-work and
+# live-worker refusals below have nothing to refuse on a task with no worktree.
+abandon=0
+if [ "${1:-}" = --abandon ]; then abandon=1; shift; fi
+id="${1:-}"; [ -n "$id" ] || die "$usage"
 valid_task_id "$id"
 epfile="$DUX_STATE/$id.endpoint"
 pidfile="$DUX_STATE/$id.pid"; pgidfile="$DUX_STATE/$id.pgid"
@@ -13,6 +19,55 @@ ledger="$DUX_ROOT/bin/dux-ledger"; backend="$DUX_ROOT/bin/dux-backend"
 is_terminal() { case "$1" in done|failed) return 0 ;; *) return 1 ;; esac; }
 
 "$DUX_ROOT/bin/dux-lock" mine || finding "the Dux lock is not held by this session; refusing to tear down"
+
+# ---- abandon -------------------------------------------------------------
+# A task created and briefed, then superseded before it ever spawned, has no
+# worktree, no branch and no pull request, and nothing here to protect. Same for
+# one intake dropped when its issue closed, or recovery dropped when it could
+# not render the retry's brief. Without this they stay in the digest for good.
+#
+# Never having run is proved from the filesystem, not the ledger: a spawn killed
+# between the worktree and the state write leaves a live task still reading
+# queued. The worktree is made first and cleared last, so it covers the whole of
+# that window; the four state files cover a wrapper that got further.
+if [ "$abandon" = 1 ]; then
+  lstate="$("$ledger" get "$id" state)" || exit $?
+  case "$lstate" in
+    queued|dropped) ;;
+    *) finding "task $id is $lstate, not queued or dropped; use bin/dux-teardown $id" ;;
+  esac
+  # -L as well as -e: a dangling symlink is a reference a run left too.
+  for f in run pid pgid portal; do
+    { [ ! -e "$DUX_STATE/$id.$f" ] && [ ! -L "$DUX_STATE/$id.$f" ]; } \
+      || finding "task $id has a $f file at state/$id.$f, so it has run; use bin/dux-teardown $id"
+  done
+  wt="$("$DUX_ROOT/bin/dux-worktree" path "$id" 2>&1)"; rc=$?
+  [ "$rc" -ne 0 ] || finding "task $id has a worktree at $(cap_line "$wt"), so it has run; use bin/dux-teardown $id"
+  # Only one reading means no worktree. A project that is no longer registered,
+  # a repository that is not a checkout, a git that printed something else: all
+  # of those are "could not tell", and the folder about to be removed is where a
+  # live wrapper appends its status log and its report.
+  case "$wt" in
+    "finding: no worktree on dux/$id in "*) ;;
+    *) finding "cannot tell whether $id has a worktree: $(cap_line "$wt")" ;;
+  esac
+  # Compare and set, not set: the state was read at the top of this block and the
+  # proof above takes time, so a spawn that got the task to running in between
+  # must win. The ledger does the comparison under its own lock and refuses with
+  # a finding naming the state that won, before anything is removed. This does
+  # not close the window entirely: a spawn still between its worktree and its own
+  # state write leaves the ledger reading queued, and abandon goes ahead. Nothing
+  # of the worker's is lost when it does, because dux-worker-wrap refuses at once
+  # on a missing task folder.
+  #
+  # The ledger first either way: a folder removal that fails leaves a dropped
+  # task whose rerun still works, and a ledger write that fails leaves a queued
+  # task whose folder is already gone, which reruns too.
+  "$ledger" set-if "$id" state "$lstate" dropped || exit $?
+  rm -rf "${DUX_TASKS:?}/$id" || finding "cannot remove $DUX_TASKS/$id; the ledger now reads dropped"
+  echo "abandoned $id"
+  exit 0
+fi
 # The ledger, and nothing else. A status log that reads done is a worker talking
 # about itself; only a proved handoff the watcher applied puts a task here, and
 # removing a worktree on anything less would throw away unproved work.
