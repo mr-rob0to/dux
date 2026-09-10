@@ -79,7 +79,7 @@ state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            <id>.endpoint; <id>.pid; <id>.pgid; <id>.out; events.log;
                            <id>.run; <id>.portal; <id>.result-context;
                            channels/<id>.<run>/{status.outbox,report.outbox,brief.md,
-                           worker-settings.json,hooks/}
+                           worker-settings.json}
 config/       (gitignored) backend override, reviewer defaults, models, models-codex,
                            worker-harness
 tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash;
@@ -177,7 +177,12 @@ backend started it and catches a worker in a server whose socket vanished.
 4. `dux-worktree create <id>`: fetch `origin/<base>`, create the worktree
    (project mechanism for `ship`, `git worktree add` otherwise), discover the
    path, refuse the primary checkout or a stale tip, build
-   `tasks/<id>/hooks/` with the base-branch `pre-push` guard, and for `ship`
+   `tasks/<id>/hooks/` with the base-branch `pre-push` guard and point the
+   worktree's own git configuration at it with `git config --worktree
+   core.hooksPath`, which needs `extensions.worktreeConfig` in the shared config
+   and refuses a repository that shares `core.worktree` or `core.bare` with its
+   worktrees. The guard therefore holds for the worktree's whole life and
+   reaches no other repository. For `ship`
    under `git` copy the project's committed `.env*.example` and `.env*.sample`
    files, renamed to the name the project expects. A real ignored `.env` is
    never copied. Each copy is staged at `<dest>.dux-part` and renamed over
@@ -228,8 +233,8 @@ canonical and nothing it says is evidence. It writes into a channel of its own
 and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
 
 - The channel is `state/channels/<id>.<run>`, mode 700, named with a random
-  run id. It holds read-only copies of the brief, the worker settings and the
-  task hooks, and two mode-600 files the worker appends to: `status.outbox` and
+  run id. It holds read-only copies of the brief and the worker settings, not
+  the hooks, and two mode-600 files the worker appends to: `status.outbox` and
   `report.outbox`. `state/<id>.portal` names it, `state/<id>.run` records the
   run, and `state/<id>.result-context` records the facts a result is later
   proved against. This run refuses to start if any of those four already exists,
@@ -243,9 +248,11 @@ and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
   to answer with. Both readings fail the task.
 - The worker's environment is scrubbed of `DUX_*`, `CLAUDE_*`, `HERDR_*`,
   `TMUX*` and `GIT_CONFIG_*`, and of Dux's own `PATH` entry. Only
-  `DUX_STATUS_LOG`, `DUX_REPORT` and the three `GIT_CONFIG_*` values that point
-  git at the channel's hooks are put back. The brief names those two variables;
-  no Dux path is handed to a worker.
+  `DUX_STATUS_LOG` and `DUX_REPORT` are put back, and no `GIT_CONFIG_` name at
+  all: an environment setting applies in every repository the worker touches,
+  and the push guard belongs to the task worktree alone, which is where
+  `dux-worktree` wrote it. The brief names those two variables; no Dux path is
+  handed to a worker.
 - The worker runs in its own process group with stdin on `/dev/null`. Before any
   terminal state is written the wrapper stops that whole group, TERM then KILL,
   and proves it gone. A survivor is a cleanup finding and no terminal state, so

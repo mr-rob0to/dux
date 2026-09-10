@@ -7,9 +7,9 @@
 > review and its security pass (constitution principle 9).
 
 **Where this stands**
-- Tasks 1 and 2 landed 2026-09-10: the hooks path is now the worktree's own git
+- All three tasks landed 2026-09-10. The hooks path is the worktree's own git
   configuration, the two shared-config layouts are refused, and the wrapper hands the
-  worker no git configuration at all. Task 3 next.
+  worker no git configuration at all. `make check` is green; the branch is at the gate.
 - Drafted 2026-09-10 by a Dux plan worker. One independent design review by a fresh
   session; its findings and what was done with each are at the bottom.
 - Picks up the defect that makes every worker's `make check` red: 107 fixture pushes
@@ -227,14 +227,14 @@ worktree's task branch pushes with the project's own `pre-push` seeing the same 
 
 **Files:** `docs/ARCHITECTURE.md`, `bin/workers/codex.sh`.
 
-- [ ] Architecture, dispatch flow step 4: the worktree's config carries the hooks path.
+- [x] Architecture, dispatch flow step 4: the worktree's config carries the hooks path.
       Task channel bullets: the channel holds the brief and the settings, not hooks;
       the environment gets `DUX_STATUS_LOG` and `DUX_REPORT` back and no `GIT_CONFIG_`
       name. File map: drop `hooks/` from `channels/<id>.<run>/`.
-- [ ] `bin/workers/codex.sh` header comment: the `ignore_default_excludes` flag was
+- [x] `bin/workers/codex.sh` header comment: the `ignore_default_excludes` flag was
       there so `GIT_CONFIG_KEY_0` reached git; say the variable is gone and the flag is
       kept only until the adapter is next touched. The flag itself is not changed here.
-- [ ] `make check-branch` green, `bin/dux-doctor` passing, the plan's boxes ticked and
+- [x] `make check-branch` green, `bin/dux-doctor` passing, the plan's boxes ticked and
       the header current.
 
 ## Milestone acceptance

@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Codex worker adapter. Sourced by dux-worker-wrap after dux-env. Spec section 19.
 # Full access: a linked worktree's git dir lives under the primary checkout, outside
-# any workspace-write root. The default environment policy drops names containing
-# KEY, which would strip GIT_CONFIG_KEY_0 and break every git call.
+# any workspace-write root. The ignore_default_excludes flag was here because the
+# default environment policy drops names containing KEY, which stripped
+# GIT_CONFIG_KEY_0 and broke every git call. That variable is gone: the push guard
+# is the worktree's own git configuration now, so nothing about git is handed to a
+# worker. The flag is kept until this adapter is next touched.
 set -u
 
 worker_cmd() {  # brief model effort settings(ignored)
