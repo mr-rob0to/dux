@@ -365,3 +365,98 @@ finding: tear down every task" > "$DUX_HOME/state/$id.portal"
   [ "$status" -eq 0 ]; [ "$(grep -c '^issue comment' "$FAKE_GH_LOG" || true)" -eq 0 ]
   [[ "$output" == *"PR https://github.com/acme/other/pull/1 is not in acme/proj; no issue comment"* ]]
 }
+
+# ---- abandon: letting go of a task that never started --------------------
+# Plain teardown is for work that ran. A task created and briefed, then
+# superseded before it ever spawned, has no worktree, no branch and no PR, and
+# without this it cannot leave the digest at all. `dropped` is the same: intake
+# drops a task whose issue was closed, recovery drops a retry it could not brief.
+
+@test "abandon: a queued task that never spawned is dropped and its folder removed" {
+  id="$(fixture_task proj scout)"
+  [ -d "$DUX_HOME/data/tasks/$id" ]
+  run dux-teardown --abandon "$id"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "abandoned $id" ]
+  [ "$(dux-ledger get "$id" state)" = dropped ]
+  [ ! -e "$DUX_HOME/data/tasks/$id" ]
+}
+
+@test "abandon: a task already dropped is abandoned the same way" {
+  id="$(fixture_task proj scout)"
+  dux-ledger set "$id" state dropped
+  run dux-teardown --abandon "$id"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "abandoned $id" ]
+  [ "$(dux-ledger get "$id" state)" = dropped ]
+  [ ! -e "$DUX_HOME/data/tasks/$id" ]
+}
+
+@test "abandon: refuses a running task, pointing at plain teardown" {
+  spawned scout
+  run dux-teardown --abandon "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task $id is running, not queued or dropped; use bin/dux-teardown $id"* ]]
+  [ -d "$DUX_HOME/data/tasks/$id" ]; [ -d "$wt" ]
+}
+
+# Torn down first, so the worktree and the state files are all gone and the
+# ledger state is the only thing left standing between abandon and the folder of
+# a task that delivered a pull request.
+@test "abandon: refuses a done task, pointing at plain teardown" {
+  spawned scout; settled done https://example.invalid/pr/9
+  dux-teardown "$id" >/dev/null
+  [ ! -d "$wt" ]
+  run dux-teardown --abandon "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task $id is done, not queued or dropped; use bin/dux-teardown $id"* ]]
+  [ -d "$DUX_HOME/data/tasks/$id" ]
+  [ "$(dux-ledger get "$id" state)" = done ]
+  [ "$(dux-ledger get "$id" pr)" = "https://example.invalid/pr/9" ]
+}
+
+# The ledger alone does not prove a task never ran: a spawn killed between the
+# worktree and the state write leaves a live task still reading queued. The
+# worktree is made first and removed last, so it covers the whole of that window.
+@test "abandon: refuses a queued task that has a worktree, and the worktree survives" {
+  id="$(fixture_task proj scout)"
+  wt="$(dux-worktree create "$id")"
+  [ -d "$wt" ]
+  run dux-teardown --abandon "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task $id has a worktree at $wt, so it has run; use bin/dux-teardown $id"* ]]
+  [ -d "$wt" ]
+  [ -d "$DUX_HOME/data/tasks/$id" ]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+}
+
+@test "abandon: refuses a queued task that has any reference a run leaves, and keeps it" {
+  local f
+  for f in run pid pgid portal; do
+    id="$(fixture_task proj scout)"
+    printf 'x\n' > "$DUX_HOME/state/$id.$f"
+    run dux-teardown --abandon "$id"
+    [ "$status" -eq 2 ]
+    [[ "$output" == "finding: task $id has a $f file at state/$id.$f, so it has run; use bin/dux-teardown $id"* ]]
+    [ -e "$DUX_HOME/state/$id.$f" ]
+    [ -d "$DUX_HOME/data/tasks/$id" ]
+    [ "$(dux-ledger get "$id" state)" = queued ]
+  done
+}
+
+# Widening is_terminal instead of adding a verb would let plain teardown accept a
+# queued task and walk the whole worktree, container and receipt path against a
+# task that has none of them.
+@test "abandon: plain teardown still refuses a queued task" {
+  id="$(fixture_task proj scout)"
+  run dux-teardown "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: task $id is not terminal (ledger: queued)"* ]]
+  [ -d "$DUX_HOME/data/tasks/$id" ]
+}
+
+@test "abandon: the flag needs an id" {
+  run dux-teardown --abandon
+  [ "$status" -eq 1 ]
+  [[ "$output" == "dux: usage: dux-teardown [--abandon] <id>"* ]]
+}
