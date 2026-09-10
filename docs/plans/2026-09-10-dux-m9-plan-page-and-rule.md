@@ -1,4 +1,4 @@
-# Dux Milestone 8: The plan as a page, and the rule for when a plan is warranted
+# Dux Milestone 9: The plan as a page, and the rule for when a plan is warranted
 
 > **For the implementer:** one task at a time, in order. Tick each `- [ ]` box as it
 > lands and keep the "where this stands" block current: the plan file is the state of
@@ -8,21 +8,24 @@
 > outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted 2026-09-10, design-reviewed once (the record is at the end of the milestone 7
-  plan; findings 10, 11 and 16 shaped this one), awaiting the operator.
-- Follows milestone 7 (`2026-09-10-dux-m7-plan-ready-and-resume.md`), which lands
-  `plan-ready`, `state/<id>.plan` and the resume path. Tasks 4 to 6 do not depend on it.
+- Drafted 2026-09-10, design-reviewed (the records are at the end of the milestone 7
+  plan; findings 10, 11 and 16 shaped this one), awaiting the operator. This was
+  milestone 8 in pull request #26; `--fresh` moved out of it to milestone 7 and it
+  moved behind the plan-ready milestone.
+- Follows milestone 8 (`2026-09-10-dux-m8-plan-ready-and-implement.md`), which lands
+  `plan-ready` and `state/<id>.plan`, and milestone 7, which lands the resume path.
+  Tasks 4 to 6 depend on neither.
 - When this merges, a ready plan opens as a page in the operator's browser, the
   dispatch skill applies a written rule for when a plan is warranted, a small change
   ships as a `ship` task with no plan, and the whole loop has an end-to-end test.
 
-**Estimated diff:** ~1,650 added lines across 8 tasks. The cap is 2,500 lines or 12 tasks
+**Estimated diff:** ~1,500 added lines across 7 tasks. The cap is 2,500 lines or 12 tasks
 (constitution principle 1). Sizing procedure: roadmap, "How a milestone is sized".
 
 **Goal:** The operator reads a milestone-sized plan as a page with its shape visible,
 not as a diff, and never sees a plan for a change too small to need one.
 
-**Spec:** `docs/specs/2026-09-10-one-session-planning.md` sections 5, 6 (`--fresh`), 8, 9, 10.
+**Spec:** `docs/specs/2026-09-10-one-session-planning.md` sections 6, 10, 11, 12.
 
 ## Design
 
@@ -34,8 +37,8 @@ not as a diff, and never sees a plan for a change too small to need one.
 - **Template:** the head (meta, CSP, style) and the frame (title, callout, panels) are
   fixed strings in the script. No template file: the page has one owner and one reader.
 - **Order:** Task 1 and 2 are the page; 3 wires it; 4 and 5 are the rule and what it
-  dispatches; 6 is the documentation; 7 is the end-to-end test of the loop milestone 7
-  built; 8 is `--fresh`. Tasks 4 to 6 can land before milestone 7 merges.
+  dispatches; 6 is the documentation; 7 is the end-to-end test of the loop milestones 7
+  and 8 built. Tasks 4 to 6 can land before milestone 8 merges.
 
 ## Task 1: The renderer
 
@@ -134,15 +137,15 @@ and exits 0.
 **Files:** `skills/dux-dispatch/SKILL.md`, `templates/brief.md`, `bin/dux-brief`,
 `tests/dux-brief.bats`, `tests/contract.bats`.
 
-**Interface:** The dispatch skill's step 1 becomes: apply spec section 8's five clauses
+**Interface:** The dispatch skill's step 1 becomes: apply spec section 10's five clauses
 in order, name the first that fires, and choose `plan` when one does or `ship` with no
 plan when none does; documents-only never gets a plan; nothing steps down; the report to
 the operator names the clause. A `ship` brief with no plan carries one extra rules line:
-`If the change meets a clause of the plan rule (spec section 8) once you have read the
+`If the change meets a clause of the plan rule (spec section 10) once you have read the
 code, write blocked: needs a plan: <clause> and stop.` The contract test asserts the
 skill names all five clauses by their headings.
 
-**Acceptance:** the rendered no-plan ship brief has the line and stays under 60 lines; a
+**Acceptance:** the rendered no-plan ship brief has the line and stays under 100 lines; a
 ship brief with a plan does not have it; the contract test passes.
 
 **Steps**
@@ -161,7 +164,7 @@ ship brief with a plan does not have it; the contract test passes.
 criteria met, /ship run, CI green; then append done: PR <url>` and the Project section
 has no plan lines. The wrapper writes empty `plan=` and `tasks=` for such a run.
 `dux-result verify` for `kind=ship` with both empty skips `check_plan_tasks` and keeps
-every other ship check; one empty and one set is a finding. `dux-recover --retry` copies
+every other ship check; one empty and one set is a finding. A `retry` round copies
 the absence as it copies the presence.
 
 **Acceptance:** the no-plan brief renders and proves with a receipt, a pull request and
@@ -170,7 +173,7 @@ rejected as a ship result; a context with `plan=` set and `tasks=` empty is a fi
 
 **Steps**
 
-- [ ] Brief; wrapper context; retry copy.
+- [ ] Brief; wrapper context; the retry round's copy.
 - [ ] Result proof; tests.
 - [ ] Break-verify: skip `check_plan_tasks` whenever `tasks=` is empty regardless of
       `plan=`, confirm the mixed-context test fails; restore. Paste the failure.
@@ -182,8 +185,8 @@ rejected as a ship result; a context with `plan=` set and `tasks=` empty is a fi
 **Interface:** `ARCHITECTURE.md` gains `dux-plan-page` in the component list, the page in
 the wake flow, and the no-plan ship shape. `README.md`'s "what a task looks like" section
 describes the pause, the page and the three answers in the operator's words, and says a
-small change ships without a plan. The roadmap's "where this stands" gains milestones 7
-and 8.
+small change ships without a plan. The roadmap's "where this stands" records milestones
+7 to 9 as merged.
 
 **Acceptance:** `make check-branch` green; the README section reads without a task id, a
 path or a flag in it.
@@ -217,33 +220,9 @@ result is `ended:` with the frozen-text reason.
 - [ ] Break-verify: make the fake implement worker leave one box unticked in the happy
       path, confirm the e2e ends `ended:` and the test fails; restore. Paste the failure.
 
-## Task 8: `--fresh`, for a session the harness can no longer find
-
-**Files:** `bin/dux-spawn`, `bin/dux-worker-wrap`, `tests/dux-spawn.bats`, `tests/dux-worker-wrap.bats`.
-
-**Interface:** `dux-spawn <id> --resume <kind> --fresh` writes a new session id over
-`tasks/<id>/session`, keeps the old one in `tasks/<id>/session.<n>`, and starts the
-wrapper with a prompt file staged at `tasks/<id>/round-<n>.fresh.md` that is the brief
-followed by the round file; the adapter is called with `first`. It is refused when the
-previous run did not fail with the harness's exit code (`--fresh is for a resume the
-harness refused; the last run ended <state>`). `dux-recover <id>` inspect on such a
-failure names the flag in its `next:` line.
-
-**Acceptance:** with the fake claude made to exit 1 on `--resume`, a retry round without
-`--fresh` fails and the inspect output names the flag; the same with `--fresh` starts
-with `--session-id <new>` and the combined prompt; `--fresh` after a clean `plan-ready`
-refuses.
-
-**Steps**
-
-- [ ] The flag; the session rotation; the combined prompt.
-- [ ] The refusal; the inspect hint.
-- [ ] Break-verify: allow `--fresh` after `plan-ready`, confirm its test fails; restore.
-      Paste the failure.
-
 ## Milestone acceptance
 
-Constitution gates as for milestone 7. Specific to this milestone: every fixture's
+Constitution gates as for milestones 7 and 8. Specific to this milestone: every fixture's
 output passes the one no-active-content regex; the rule's worked examples in the spec
 stay true of the skill text.
 
@@ -257,11 +236,12 @@ stay true of the skill text.
 
 ## Open questions for the operator
 
-None. Spec section 12 records the recommendations taken (no links, no external renderer).
+None. Spec section 14 records the recommendations taken (no links, no external renderer).
 
 ## Design review
 
-The one independent review covered both milestones; its record is at the end of
-`2026-09-10-dux-m7-plan-ready-and-resume.md`. Findings 10 (sizing) and 16 (scope) moved
-Tasks 7 and 8 here and trimmed Task 1; finding 11 (what the operator is approving) added
-the changed-documents list and the spec sections to Task 3.
+Both reviews are recorded at the end of `2026-09-10-dux-m7-resume-any-worker.md`. From
+the first: findings 10 (sizing) and 16 (scope) moved Task 7 here and trimmed Task 1;
+finding 11 (what the operator is approving) added the changed-documents list and the
+spec sections to Task 3. The operator's rule then moved `--fresh` to milestone 7, where
+the retired respawn path needs it.

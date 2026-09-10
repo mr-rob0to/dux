@@ -1,21 +1,37 @@
-# Dux: one session, from plan to pull request
+# Dux: one session, from plan to pull request, and back
 
 Design authority for the change that lets the operator talk to the Dux session and
 nothing else: a plan comes back to that session, is read as a page, is approved
-there, and the worker that wrote it goes on to build it. The orchestrator design
-(`2026-09-03-dux-orchestrator-design.md`) stays the authority for everything this
-document does not change; sections 5.1, 5.3, 5.4, 5.5 and 17 of it point here.
+there, and the worker that wrote it goes on to build it. A worker's question comes
+back the same way, and the answer goes back to the worker that asked. The
+orchestrator design (`2026-09-03-dux-orchestrator-design.md`) stays the authority for
+everything this document does not change; sections 5.1, 5.3, 5.4, 5.5 and 17 of it
+point here.
 
-Plans: `docs/plans/2026-09-10-dux-m7-plan-ready-and-resume.md` (milestone 7) and
-`docs/plans/2026-09-10-dux-m8-plan-page-and-rule.md` (milestone 8). The design
-review is recorded at the end of the milestone 7 plan.
+Amended 2026-09-10, superseding the version in pull request #26, with three decisions
+the operator made after the first draft: resume, never respawn (section 2); waiting is
+a status line, not something Dux infers from elapsed time (section 4); stop the worker
+process and resume its session later, rather than keeping it alive (section 4). The
+first draft resumed only `plan` tasks; this one resumes every shape, retires the
+respawn path, and says what a resume costs and what a pause can lose.
+
+Plans: `docs/plans/2026-09-10-dux-m7-resume-any-worker.md` (milestone 7),
+`docs/plans/2026-09-10-dux-m8-plan-ready-and-implement.md` (milestone 8) and
+`docs/plans/2026-09-10-dux-m9-plan-page-and-rule.md` (milestone 9). The design
+reviews are recorded at the end of the milestone 7 plan.
 
 ## 1. What the operator gets
 
 Today a plan task ends with a docs-only pull request the operator has to go and find,
-read as a diff, merge, and then dispatch a second task to implement. After this
-change:
+read as a diff, merge, and then dispatch a second task to implement. A worker that
+asks the operator anything is thrown away: the answer is appended to its brief and a
+new worker starts in a new worktree, with a new session that has to read everything
+again. After this change:
 
+- A worker that asks a question, or hits a wall, stops. The operator answers in the
+  Dux session and the same worker picks up where it left off, in the same worktree, on
+  the same branch, with everything it had read still in its context. This holds for
+  every shape: `plan`, `ship` and `scout`.
 - A plan task pauses when its plan is written. Dux tells the operator, on the phone
   and in the session, that a plan is waiting.
 - The operator reads the plan as a page, rendered by Dux from the plan file, opened
@@ -25,20 +41,66 @@ change:
   pauses again. An approval goes back to the same worker, which implements the plan,
   ticks its boxes, runs `/ship`, and ends with one pull request holding the spec, the
   plan and the code.
+- A worker that fails part-way is resumed once, not restarted. What it had done stays.
 - Dux and the worker decide whether a change needs a plan at all by a written rule
-  (section 8). A change that meets none of its clauses ships without one.
+  (section 10). A change that meets none of its clauses ships without one.
 
 Out of scope: the two branches in flight on `bin/dux-project` and `bin/dux-teardown`.
-Neither script is edited. Section 10 lists what teardown therefore leaves behind.
+Neither script is edited. Section 12 lists what teardown therefore leaves behind.
 
-## 2. The shape of a task after this change
+## 2. The rule: resume, never respawn
+
+The operator's rule, which this design applies and does not weigh:
+
+> The existing worker is resumed for anything that continues its own work. That means
+> implementation it has already started, and any question it needs the operator to
+> answer. A separate fresh worker is right only when the task is purely to write a
+> plan.
+
+Applied to Dux:
+
+- **Every question resumes.** A `needs-decision:` or `blocked:` line from any shape
+  parks the task. The operator's answer becomes a round (section 7) and the same
+  session continues. This replaces `dux-recover --retry --answer-file`, which made a
+  new task, a new branch and a new session for every question, and which could not
+  retry a brief near its line cap at all because it appended the answer to the intent.
+- **Every failure resumes, once.** `failed:` from any shape, a `dead` worker, or a
+  `stale` one the operator stopped, is continued by a `retry` round in the same
+  session. The worker's uncommitted work is still in its worktree. This replaces the
+  automatic retry that copied the brief into a new task.
+- **Approval resumes.** A `plan` task that pauses at `plan-ready` is approved or
+  changed by a round to the same session; the worker that reasoned the plan out builds
+  it.
+- **The one fresh worker.** A `plan` task dispatched as **plan only** (section 3) ends
+  at a docs-only pull request, as every plan task does today. It is for a document the
+  operator wants merged before anything is built on it: a roadmap, a design amendment
+  such as this one, a plan that spans more than one milestone. Its implementer, later,
+  is a fresh `ship` worker with `--plan` and `--tasks`, reading the merged plan. That
+  is the only place a fresh worker is the design; everywhere else it is a defect.
+- **A session the harness has lost** is the one case where continuing means a new
+  session (`--fresh`, section 7). It is the same task, branch and worktree, and the new
+  session is given the brief and every round so far. It is a fallback, recorded as a
+  finding when it happens, never the normal path.
+
+`dux-recover --retry` is retired. Its two users, the answer and the automatic retry,
+are rounds now. Nothing else made a second task from a first one.
+
+## 3. The shape of a task after this change
 
 ```
-queued -> running -(plan proved)-> plan-ready -(approve)-> running -> done | failed | ended
-                                      |  ^                                   |
-                                      |  '-(change)-- running <-'            '-(retry once)-> running
-                                      '-(drop)-> failed
+queued -> running -+-(plan proved)-> plan-ready -(approve)-> running -> done | ended
+                   |                    |  ^
+                   |                    |  '-(change)-- running <-'
+                   |                    '-(drop)-> failed
+                   |
+                   +-(question)-> needs-decision | blocked -(answer)-> running
+                   |
+                   +-(stopped or exited)-> failed | dead -(retry, once)-> running
 ```
+
+The middle and bottom arms are every shape. The top arm is a `plan` task that is not
+plan only. `done`, `ended` after a failed proof, and `failed` after a drop or a second
+failure are where a task ends.
 
 One task, one branch, one worktree, several runs. A run is what it is today: one
 wrapper process, one task channel, one run record, one handoff. What is new is that
@@ -46,28 +108,35 @@ a task can have more than one, and that each run has a **kind**:
 
 | Kind | Which run | Worker may propose | Proof that ends it |
 |---|---|---|---|
-| `plan` | first run of a `plan` task, and every run after a change request or an answer given in a plan round | `plan-ready:`, `needs-decision:`, `blocked:`, `failed:` | section 4 |
-| `implement` | the run after approval, an answer given in an implement round, and one retry | `done:`, `needs-decision:`, `blocked:`, `failed:` | section 7 |
-| `ship` | a `ship` task | `done:` and the rest, as today | unchanged, plus section 9 |
-| `scout` | a `scout` task | `done: report` and the rest | unchanged |
+| `plan` | first run of a `plan` task, and every run after a change request or an answer given in a plan round | `plan-ready:`, `needs-decision:`, `blocked:`, `failed:` | section 5 |
+| `implement` | the run after approval, an answer given in an implement round, and one retry | `done:`, `needs-decision:`, `blocked:`, `failed:` | section 9 |
+| `plan-only` | every run of a `plan` task dispatched plan only | `done:` and the rest, as a plan task today | unchanged: the docs-only proof `dux-result` has today |
+| `ship` | every run of a `ship` task | `done:` and the rest, as today | unchanged, plus section 11 |
+| `scout` | every run of a `scout` task | `done: report` and the rest | unchanged |
 
 The kind is decided by Dux when the run starts and written into the run's result
 context, so `dux-result` proves a run against its kind rather than the task's shape.
-A `plan` shape task keeps its name and its model: every run of it, resumed or not, is
+A resumed run keeps the shape's model: every run of a `plan` task, resumed or not, is
 started with the `plan` entry of `config/models` (Fable, high effort), and the approve
 round tells it to delegate each task's code to a subagent on the operator's
-implementation model. What changes is that the task no longer ends when the plan is
-written.
+implementation model; every run of a `ship` task uses the `ship` entry, and of a
+`scout` task the `scout` entry.
 
-Why one task and not two: the operator asked for approval to travel back to the same
-worker. The worker runs headless as `claude -p`, and that harness can continue a
-session by id (`--session-id` on the first run, `--resume <id>` on later ones; both
-present in Claude Code 2.1.267). So "the same worker" is literal: the same session,
-with the reasoning behind its plan and its rejected alternatives still in context,
-picks up the approval or the change request as its next prompt. A second task would
-have a new branch, a fresh session and a brief that restates the plan; it would also
-need the plan merged first, which is the pull request the operator does not want to
-go and find.
+**Plan only** is a flag on the brief, `dux-brief <id> --plan-only`, recorded as a
+line under the brief's project facts and read by the wrapper into the kind. The
+dispatch skill asks for it when the intent is a document the operator wants merged on
+its own; the default is plan and build. A plan-only task keeps today's rules text, its
+worktree is made the plain `git` way, and it never reaches `plan-ready`.
+
+Why one task and not two: the operator asked for approval and answers to travel back
+to the same worker. The worker runs headless as `claude -p`, and that harness can
+continue a session by id (`--session-id` on the first run, `--resume <id>` on later
+ones; both present in Claude Code 2.1.267). So "the same worker" is literal: the same
+session, with the reasoning behind its plan and its rejected alternatives still in
+context, picks up the approval, the change request or the answer as its next prompt.
+A second task would have a new branch, a fresh session and a brief that restates the
+plan; it would also need the plan merged first, which is the pull request the operator
+does not want to go and find.
 
 Because a `plan` task's worker will implement, its worktree is made the way a `ship`
 worktree is: with the project's own mechanism (`make worktree`, a script, or plain
@@ -75,46 +144,96 @@ worktree is: with the project's own mechanism (`make worktree`, a script, or pla
 `git` mechanism. A plan spawn on a project with a slow mechanism takes the minutes a
 ship spawn takes; the dispatch skill already raises the tool timeout for that.
 
-## 3. The pause: `plan-ready`
+## 4. The pause: three parked states, one stopped process
+
+A task is **parked** in `plan-ready`, `needs-decision` or `blocked`. In all three the
+worker process is gone and the operator is the only thing that can move the task.
 
 `plan-ready` is a new task state, not a reuse of `needs-decision`. The two differ in
 every way that matters:
 
-| | `needs-decision` | `plan-ready` |
+| | `needs-decision`, `blocked` | `plan-ready` |
 |---|---|---|
-| What arrives | the worker's own words, a question | a file on the branch, proved from Git |
+| What arrives | the worker's own words, a question or a wall | a file on the branch, proved from Git |
 | What the operator answers | free text | approve, change, or drop |
 | What Dux reads | nothing but the ledger; the question only through `dux-recover` | nothing but the ledger and Dux's own page |
-| Pushed to the phone | yes | yes |
+| Pushed to the phone | `needs-decision` yes, `blocked` no, as today | yes |
+| Worktree | as the worker left it, possibly dirty | clean and pushed, the proof required it |
 
-A `plan` task's worker may still write `needs-decision:` or `blocked:` in any round,
-for a real question or a wall. For a `plan` task those are answered the same way a
-change request is: the operator's answer goes into a round file and the same session
-resumes (section 6). `dux-recover --retry`, which makes a new task, refuses a `plan`
-shape task and names the resume path instead; `ship` and `scout` tasks keep the retry
-path unchanged.
+**The worker's side.** A worker parks by appending one terminal line, `plan-ready:`,
+`needs-decision:` or `blocked:`, to its status outbox and exiting. That is the rule the
+brief already gives for the last two, and the wrapper enforces it: one terminal line,
+then exit, and a second line or any text after it is a violation. In a `plan` round
+`done:` is a rule violation and fails the run, so a worker following the old brief
+cannot slip a docs-only "done" past the new proof. `plan-ready:` outside a `plan`
+round is the same kind of violation. The wrapper holds a `plan-ready:` line back
+exactly as it holds `done:`, and asks `dux-result` to prove it (section 5). What
+reaches `status.log` is the proof's own line, never the worker's.
 
-**The worker's side.** In a `plan` round `done:` is a rule violation and fails the run,
-so a worker following the old brief cannot slip a docs-only "done" past the new proof.
-`plan-ready:` outside a `plan` round is the same kind of violation. The worker writes
-the plan, pushes its branch, appends one `plan-ready: <one line>` to its status outbox,
-and exits. The wrapper holds that line back exactly as it holds `done:`, and asks
-`dux-result` to prove it (section 4). What reaches `status.log` is the proof's own
-line, never the worker's.
+**How a parked worker is told apart from a hung one.** By the ledger state, which was
+set from a status line the worker wrote, and never by elapsed time. This is the
+operator's first decision, and the watcher already works this way:
 
-**While it waits.** The wrapper has exited, so no worker process is alive. The
-container stays: a tmux window with remain-on-exit, or a Herdr tab, showing the
-wrapper's last log line. The worktree is clean and its branch is pushed, which the
-proof required. The watcher does not look at `plan-ready` tasks, so the task cannot go
-`stale` or `dead` however long the operator takes; it lists them only to finish a
-handoff a crash interrupted. `dux-ledger list --unacked` includes `plan-ready`, so a
-wake that lands while no Monitor is armed is still under `unacknowledged` at the next
-session start. The digest counts it under "awaiting you" with the GitHub link and, from
-milestone 8, the page path. There is no pull request yet. `dux-spawn` refuses a plain
-spawn of it (not `queued`), `dux-teardown` refuses it (not terminal), and the only
-ways out are the answers in section 6.
+- A parked task is `plan-ready`, `needs-decision` or `blocked` because the wrapper
+  published a handoff carrying that word after the worker exited, and the watcher
+  consumed it. The watcher's liveness pass lists only `running` and `stale` tasks
+  (`bin/dux-watch`, `watched_ids`), so a parked task is never measured against the
+  20-minute silence clock and cannot go `stale` or `dead`, however long the operator
+  takes. The watcher touches a parked task only to finish a handoff a crash
+  interrupted. `dux-ledger list --unacked` includes all three, so a wake that lands
+  while no Monitor is armed is still under `unacknowledged` at the next session start.
+- A hung worker is `running` with no status line for 20 minutes. It goes `stale`, the
+  operator or `dux-recover --stop` sends it a signal, and it is `dead` or `failed`. A
+  worker that has decided to wait for the operator but not written the line is hung by
+  definition: the brief says write the line and exit, and Dux does not guess.
+- A worker that wrote its terminal line and then kept running is the one ambiguous
+  shape. The wrapper buffers the line and waits for the process to exit, so the task
+  stays `running` and goes `stale` after 20 minutes. When `--stop` ends the worker, the
+  wrapper publishes the buffered line as the result, so the task parks late instead of
+  failing. Nothing new is needed for this; it is what the wrapper does today.
 
-## 4. Proof at `plan-ready`
+**The process is stopped; the session is resumed.** This is the operator's second
+decision, and the alternative is recorded so it is not re-argued:
+
+- *Stopped and resumed* (chosen). The worker exits. What it holds is its session
+  transcript, which the harness keeps on disk under its own project directory, keyed by
+  the session id Dux chose and the worktree it ran in. Nothing of the worker's is in
+  memory while it waits. The costs, each met as stated:
+  - The first turn after a resume re-reads the whole transcript into the model's
+    context, so a resume costs one full-context prompt. The harness's prompt cache
+    expires within an hour of the last turn, so a live process waiting longer than
+    that, which every wait on the operator is, pays the same. Met by the round cap:
+    at most eight rounds, so at most eight such prompts.
+  - The container has to be closed and opened again, because the backend runs one
+    command per pane. A close the backend refuses (the operator's focused pane) is a
+    finding that names the tab to switch away from. Met by the resume step that does
+    it, section 7.
+  - The transcript is the harness's file, not Dux's. It can be deleted by the harness's
+    own retention (`cleanupPeriodDays`, thirty days by default) or by a harness upgrade
+    that cannot read it. Met by `--fresh`, section 7, which is why it is in milestone 7.
+  - The context is as long on resume as it was at the stop, and grows with every round.
+    A task that goes eight rounds is a long session. Met by the round cap, which is also
+    the point at which the plan is not converging and the operator should redispatch
+    with a sharper intent.
+- *Kept alive* (rejected). The harness's headless mode prints one result and exits;
+  keeping it waiting would need `--input-format stream-json` and a writer Dux does not
+  have. Each parked task would hold a process, its memory and a pane for hours or days,
+  and the watcher would need a second signal to separate "waiting" from "hung", which
+  is the ambiguity the operator's first decision removes. The prompt cache would have
+  expired anyway. Nothing is bought.
+
+**While it waits.** The container stays: a tmux window with remain-on-exit, or a Herdr
+tab, showing the wrapper's last log line. That is the one thing a parked task holds,
+one pane, and it is reused by the resume. At `plan-ready` the worktree is clean and its
+branch is pushed, which the proof required. At `needs-decision` or `blocked` the
+worktree is however the worker left it, dirty included, and is not touched: the
+uncommitted work is the worker's own to continue. The digest counts all three under
+"awaiting you"; for `plan-ready` it adds the GitHub link and, from milestone 9, the
+page path. There is no pull request yet for a plan. `dux-spawn` refuses a plain spawn
+of a parked task (not `queued`), `dux-teardown` refuses it (not terminal), and the
+only ways out are the rounds in section 7 and a drop.
+
+## 5. Proof at `plan-ready`
 
 `dux-result verify <id> <run>` for a run of kind `plan` proves, in this order, and
 prints one line or exits 1 with a reason:
@@ -177,7 +296,7 @@ the proof's line (`plan-ready` or `done`) rather than assuming `done`, so a plan
 that ended because the push had not landed yet is recovered by one command after the
 push. An unproved result still publishes nothing and says why.
 
-## 5. How the plan reaches the operator without breaking hard rule 3
+## 6. How the plan reaches the operator without breaking hard rule 3
 
 Hard rule 3 says Dux never reads raw worker text. A plan is worker text, and the
 operator has to read it. The resolution is the same one `dux-recover` uses: the
@@ -188,7 +307,7 @@ and never reach Dux's own context at all.
 
 1. The worker writes markdown only. The brief's plan rules say so: no HTML, no
    published artifact, no waiting in-session for approval.
-2. `dux-result` proves the branch and names the plan's path from Git (section 4).
+2. `dux-result` proves the branch and names the plan's path from Git (section 5).
 3. The watcher writes `state/<id>.plan` and raises `plan-ready`.
 4. On the wake Dux runs `bin/dux-notify <id>`, which prints a fixed line from the
    ledger (`Approve or change: <project> plan is ready (<id>)`) for the phone, and
@@ -196,18 +315,18 @@ and never reach Dux's own context at all.
    (`https://github.com/<repo>/blob/dux/<id>/<path>`, built from the registry and the
    proven path) and one link per other document the plan round changed, read from
    Git's name-only diff between the merge base and the proven commit. From milestone
-   8 Dux also runs `bin/dux-plan-page <id> --open`, which renders `state/<id>.plan.html`
+   9 Dux also runs `bin/dux-plan-page <id> --open`, which renders `state/<id>.plan.html`
    and opens it in the operator's browser. Dux repeats the links and the page path in
    fixed text and says: approve, say what to change, or drop.
 5. The operator reads the page. Dux reads nothing: not the markdown, not the page.
-   Until milestone 8 lands, the GitHub links are the reading surface; GitHub renders
+   Until milestone 9 lands, the GitHub links are the reading surface; GitHub renders
    the markdown through its own sanitiser.
 
 **What the operator is approving.** Everything the plan round changed: the plan and
 every other document on the branch, which check 5 says includes at least one spec
 file. The page therefore lists every changed document path, renders the plan first,
 and renders each changed `docs/specs/*.md` after it as a folded section. The approval
-covers that set, and section 7 freezes it.
+covers that set, and section 9 freezes it.
 
 **The page (`bin/dux-plan-page <id> [--open]`).** A fixed HTML template that Dux
 owns, with the documents' text placed into it as data:
@@ -268,10 +387,12 @@ file name into an `ended:` reason (`check_plan_shape`), which reaches the operat
 only fenced through `dux-recover`; and the GitHub links are clickable in the Dux
 session, as a pull request link is today.
 
-## 6. Approve, change, answer, drop, retry
+## 7. Approve, change, answer, retry, fresh, drop
 
-Four answers, one mechanism. Every answer is a **round**: a prompt file Dux renders
+Five answers, one mechanism. Every answer is a **round**: a prompt file Dux renders
 from fixed text, and a new run of the same task started by `dux-spawn <id> --resume`.
+Rounds apply to every shape; only `approve` and `change` are particular to a `plan`
+task that is not plan only.
 
 **Round files.** `dux-brief <id> --round approve|change|answer|retry [--answer-file <f>]`
 renders `tasks/<id>/round-<n>.md` from `templates/round.md`, `n` counting from 1. The
@@ -289,13 +410,17 @@ file is under 40 lines and contains:
 - `change` (from `plan-ready`): the operator's answer file, verbatim (it is the
   operator's text, trusted as the intent is); the instruction to revise the same plan
   file on this branch, push, and append `plan-ready:` again.
-- `answer` (from `needs-decision` or `blocked`): the operator's answer file, verbatim;
-  the instruction to continue the round that asked. The new run's kind is the kind of
-  the run that asked.
-- `retry` (from `failed`, only after an approval): the last status lines and the
+- `answer` (from `needs-decision` or `blocked`, any shape): the operator's answer
+  file, verbatim; the instruction to continue the run that asked, from the state of
+  the worktree as it stands, and to finish with the terminal line that run's kind
+  allows. The new run's kind is the kind of the run that asked.
+- `retry` (from `failed`, any shape, once; a `dead` task is marked `failed` by
+  `dux-recover` first, as today): the last status lines and the
   failure tail of the previous run, cleaned, capped and fenced exactly as
-  `dux-recover --retry` does today; the instruction to continue implementing from the
-  plan file's boxes, then `/ship`, then `done:`.
+  `dux-recover` fences them today; the instruction to look at `git status` and the
+  plan's boxes before anything else, because the last turn may have been cut off
+  mid-edit, and then continue to the terminal line the kind allows. For `implement`
+  and `ship` that is the plan file's boxes, then `/ship`, then `done:`.
 
 Refusals, each a finding: the state does not fit the kind; `change` or `answer`
 without `--answer-file`; an answer file containing an `<untrusted-` fence; a second
@@ -308,15 +433,18 @@ and redispatch with a sharper intent.
 receipt leaves the run `ended`, as a ship task's does today. The path is
 `dux-recover <id> --classify failed`, then `--round retry` and `--resume retry`, once.
 
-**`dux-spawn <id> --resume <round-kind>`.** In order, each step a finding when it
-fails:
+**`dux-spawn <id> --resume <round-kind> [--fresh]`.** In order, each step a finding
+when it fails:
 
 1. Lock held; the state fits the kind (`plan-ready` for approve and change;
-   `needs-decision` or `blocked` for answer; `failed` with `tasks/<id>/approved`
-   present for retry); the round file for this round exists and is the newest.
+   `needs-decision` or `blocked` for answer; `failed` for retry); the round
+   file for this round exists and is the newest.
 2. No live worker: the pidfile and process-group checks a first spawn makes. A
    wrapper that is somehow still running is a finding, never a signal.
-3. The worktree recorded in the brief exists, is on `dux/<id>`, and is clean.
+3. The worktree recorded in the brief exists and is on `dux/<id>`. For `approve` and
+   `change` it is also clean, which the plan proof already required. For `answer` and
+   `retry` it is left as it is: a dirty worktree is the worker's own work in progress,
+   and the round tells the worker to start from `git status`.
 4. For `approve`: write `tasks/<id>/approved`, one line, the time and the plan's
    commit.
 5. Archive the previous run's references (`state/<id>.run`, `.portal`, `.pgid`,
@@ -331,10 +459,10 @@ fails:
    pane) is a finding that names the tab to switch away from. Record the new
    endpoint.
 7. Start the wrapper with the round file as the prompt. The result context carries
-   the kind (`implement` for approve and retry; `plan` for change; the asking run's
-   kind for answer), and for `implement` the `plan=` and `tasks=` from
-   `state/<id>.plan`. The wrapper sets `DUX_SHIP_RECORD` and the ship-only
-   environment for `implement` runs exactly as it does for a `ship` task.
+   the kind (`implement` for approve; `plan` for change; the asking run's kind for
+   answer; the failed run's kind for retry), and for `implement` the `plan=` and
+   `tasks=` from `state/<id>.plan`. The wrapper sets `DUX_SHIP_RECORD` and the
+   ship-only environment for `implement` runs exactly as it does for a `ship` task.
 8. Ledger `set-if <state> running`; acknowledgement cleared so the next wake counts.
 
 **Session continuity.** The first spawn chooses a UUID (`uuidgen`, else 32 hex from
@@ -342,24 +470,42 @@ fails:
 passes `--session-id <uuid>`. Every resume passes `--resume <uuid>` with the round
 file as the prompt; the session already holds the brief. The adapter's signature
 becomes `worker_run <prompt-file> <model> <effort> <settings> <session> <first|resume>`.
-A resume the harness refuses (its session file removed by the harness's own cleanup,
-or a harness upgrade) fails the run with the harness's exit code, and the operator's
-options are the retry above, which resumes again, or drop. Milestone 8 adds
-`--fresh`: a new session id, with the brief followed by the round file as the prompt,
-for the case where the session is gone for good.
+The harness keys a session by the directory it started in, so a resume runs from the
+worktree, which the wrapper does already.
 
-**Drop.** `dux-recover <id> --classify failed` accepts `plan-ready` as well as
-`ended`. The status line is `failed: plan dropped by the operator`, the branch and
-worktree are kept, and teardown proceeds as for any failed task.
+**`--fresh`, for a session the harness cannot find.** A resume the harness refuses
+(its transcript removed by the harness's own retention, or a harness upgrade that
+cannot read it) fails the run with the harness's exit code, and `dux-recover <id>`
+names the flag in its `next:` line. `dux-spawn <id> --resume retry --fresh` writes a
+new session id over `tasks/<id>/session`, keeps the old one in
+`tasks/<id>/session.<n>`, and starts the wrapper with a prompt file staged at
+`tasks/<id>/round-<n>.fresh.md`: the brief, then every round file so far in order, then
+the retry round. The adapter is called with `first`. What the new session has is
+everything Dux ever said to the old one and everything the operator answered; what it
+does not have is the old session's reasoning, which is the loss section 8 names.
+`--fresh` is refused when the previous run did not fail with the harness's exit code
+(`--fresh is for a resume the harness refused; the last run ended <state>`), so it
+cannot be used to dodge a worker's own failure. It counts as the one retry.
+
+**Drop.** `dux-recover <id> --classify failed` accepts `plan-ready`, `needs-decision`
+and `blocked` as well as `ended`. The status line is `failed: dropped by the
+operator`, the branch and worktree are kept, and teardown proceeds as for any failed
+task.
 
 **The Dux session.** On a `plan-ready` wake: `dux-notify` and push; `dux-recover <id>`
-for the links; from milestone 8, `dux-plan-page --open`; tell the operator in fixed
-words; acknowledge. On the operator's answer, all through `skills/dux-recover`:
+for the links; from milestone 9, `dux-plan-page --open`; tell the operator in fixed
+words; acknowledge. On a `needs-decision` or `blocked` wake: as today, the question
+through `dux-recover`, fenced. On the operator's answer, all through
+`skills/dux-recover`:
 
 - "approve": `bin/dux-brief <id> --round approve`, then `bin/dux-spawn <id> --resume approve`.
 - a change, or an answer to a question: write it to `data/tasks/<id>/answer.md`,
   `bin/dux-brief <id> --round change|answer --answer-file ...`, then
   `bin/dux-spawn <id> --resume change|answer`.
+- "retry", on a failed task (a dead one is first marked failed by `bin/dux-recover
+  <id>`, as today): `bin/dux-brief <id> --round retry`, then
+  `bin/dux-spawn <id> --resume retry`, with `--fresh` only when the previous run's
+  inspect output named it.
 - "drop": `bin/dux-recover <id> --classify failed`, then teardown when the operator
   says so.
 
@@ -367,7 +513,26 @@ The operator can ask Dux nothing about the plan's content. Dux has not read it a
 says so; the page is the answer. This is the cost of hard rule 3 and it is stated in
 the skill so the operator is not surprised by it.
 
-## 7. Proof after implementation, and why it stays one task
+## 8. A worker that dies mid-pause, and what is recovered
+
+While a task is parked there is no worker process, so "dies" means one of four
+things. In every case the operator's answer, the plan and Dux's record are on disk
+and survive; only the session can be lost, and it is the harness's file, not Dux's.
+
+| What happens | What is on disk | What Dux does |
+|---|---|---|
+| The machine or Dux restarts during the pause | everything: the ledger state, the branch (pushed at `plan-ready`), the worktree as the worker left it, `state/<id>.plan`, `tasks/<id>/session`, every round file and answer, `tasks/<id>/approved` if given | nothing is needed; after a restart Dux reconciles from the ledger, the wake is still under `unacknowledged`, and a round resumes the session as if no time had passed |
+| The harness's transcript is gone (retention, upgrade, the operator cleaned it) | as above, minus the session | the resume fails with the harness's exit code; `dux-recover` names `--fresh`; the operator's retry starts a new session with the brief and every round so far. Lost: the worker's reasoning, its rejected alternatives and what it had read. Kept: every decision that was written down, which is why approvals, answers and the plan are files |
+| The resumed run dies before it finishes (a rate limit, a crash, a kill) | the transcript up to the last completed turn; the worktree with whatever the last turn had half-done; the status log up to the last `working:` line | the wrapper publishes `failed: worker exited <code>` with the failure tail, or the watcher marks it `dead`; one `retry` round resumes the session, and the round's first instruction is to read `git status` and the plan's boxes before continuing. A second death is `failed` for good, and the path is drop |
+| The worktree is gone or on the wrong branch | the ledger and the session, but not the work | the resume refuses at step 3 and names the worktree; there is no automatic repair, because rebuilding a worktree around uncommitted work is not something a script should guess at |
+
+What is never recovered from the worker's own words: the ledger state comes from the
+handoff, the plan's path and commit from Git, the round count from the files Dux
+wrote. The one thing that lives only in the session, the worker's reasoning, is the
+one thing this design accepts losing, because the alternative is a worker that never
+stops.
+
+## 9. Proof after implementation, and why it stays one task
 
 `dux-result verify` for a run of kind `implement` is the ship proof with two inputs
 that come from Dux's state rather than the brief, and one check that is new:
@@ -412,9 +577,10 @@ by the roadmap's sizing) is written as a spec, a roadmap and the first milestone
 plan. The approve round implements that first milestone. Every later milestone is a
 new `plan` task pointed at the merged spec and roadmap, which writes its own plan and
 implements it the same way. `ship` tasks with a plan path and task range remain for
-the case where a plan was merged earlier and only its implementation is wanted.
+the case where a plan was merged earlier and only its implementation is wanted, which
+is the plan-only task's second half.
 
-## 8. When a plan is warranted
+## 10. When a plan is warranted
 
 The rule is applied twice: by Dux, with the operator, when choosing the shape at
 dispatch (`plan`, or `ship` without a plan); and by a `ship` worker with no plan, who
@@ -473,7 +639,7 @@ even when it is small; a plan for a small change is a short page.
   run-record field, and the wrapper's proposal rules. Clauses 1 and 4. **Plan**, and
   more than one milestone.
 
-## 9. Ship without a plan
+## 11. Ship without a plan
 
 A change the rule clears is dispatched as a `ship` task with no plan. `dux-brief`
 accepts a `ship` brief without `--plan` and `--tasks`; its definition of done becomes
@@ -483,81 +649,111 @@ check when both are empty and keeps every other ship check: a change outside
 documents, the receipt, the open pull request, green checks. The dispatch skill
 records which clause of the rule cleared it, in the report to the operator.
 
-## 10. What changes where
+## 12. What changes where
 
 | Component | Change |
 |---|---|
 | `bin/dux-ledger` | state `plan-ready`, in `list --unacked` too |
-| `bin/dux-worker-wrap` | `plan-ready:` proposal in a `plan` round, `done:` refused there; run kind in the context; session id and resume through the adapter; unconsumed-handoff refusal; prompt from a round file |
+| `bin/dux-worker-wrap` | prompt from a round file; run kind in the context; session id and resume through the adapter; unconsumed-handoff refusal; `plan-ready:` proposal in a `plan` round, `done:` refused there |
 | `bin/workers/claude.sh` | `--session-id` on a first run, `--resume` on a resume |
-| `bin/dux-result` | `verify` by kind: `plan` (section 4), `implement` (section 7, with the frozen-text check), `ship` without a plan (section 9) |
-| `bin/dux-watch` | apply `plan-ready` handoffs, write `state/<id>.plan`, leave `plan-ready` tasks alone, receipt cross-check by kind |
-| `bin/dux-brief` | `--round`; `ship` without a plan; plan rules text; `templates/round.md` |
-| `bin/dux-spawn` | `--resume <kind>`; session id at first spawn; `--fresh` in milestone 8 |
-| `bin/dux-worktree` | a `plan` worktree is made like a `ship` one: the project's mechanism, and env examples under `git` |
+| `bin/dux-result` | `verify` by kind: `plan` (section 5), `implement` (section 9, with the frozen-text check), `plan-only` (today's plan proof), `ship` without a plan (section 11) |
+| `bin/dux-watch` | apply `plan-ready` handoffs, write `state/<id>.plan`, leave parked tasks alone, receipt cross-check by kind |
+| `bin/dux-brief` | `--round` for the four kinds; `--plan-only`; `ship` without a plan; plan rules text; `templates/round.md` |
+| `bin/dux-spawn` | `--resume <kind>` and `--fresh`; session id at first spawn |
+| `bin/dux-worktree` | a `plan` worktree that is not plan only is made like a `ship` one |
 | `bin/dux-notify`, `bin/dux-status` | the `plan-ready` line; "awaiting you" with the GitHub link and, later, the page path |
-| `bin/dux-recover` | `plan-ready` inspect with the document links; `--classify failed` from `plan-ready`; `ended` re-proof publishes the proof's own event; `--retry` refuses a `plan` shape task |
-| `bin/dux-plan-page` | new, section 5 |
-| `skills/dux-dispatch`, `skills/dux-recover`, `AGENTS.md` | the rule; the four answers; the wake |
+| `bin/dux-recover` | `--retry` retired; inspect on a parked or failed task prints the round commands as `next:`; `--classify failed` from any parked state; `ended` re-proof publishes the proof's own event; `--fresh` named when the harness refused |
+| `bin/dux-plan-page` | new, section 6 |
+| `skills/dux-dispatch`, `skills/dux-recover`, `AGENTS.md` | the rule; the five answers; plan only; the wakes |
 | `docs/ARCHITECTURE.md` | components and the wake flow, in the same pull request as each milestone |
 
 Not changed: `bin/dux-teardown` and `bin/dux-project` (out of scope, in flight),
 `skills/ship`, the backends' interfaces, `data/backlog.md`'s line format. Because
 teardown is not changed, it leaves `state/<id>.plan`, `state/<id>.plan.html`,
-`state/<id>.runs/`, `tasks/<id>/session`, `tasks/<id>/approved` and the round files
-behind; that is a chore for the teardown branch once it lands, recorded here so it is
-not lost.
+`state/<id>.runs/`, `tasks/<id>/session`, `tasks/<id>/session.<n>`,
+`tasks/<id>/approved` and the round files behind; that is a chore for the teardown
+branch once it lands, recorded here so it is not lost.
 
-## 11. Milestones
+## 13. Milestones
 
-Two, in this order. Each merges on its own.
+Three, in this order. Each merges on its own. The first draft had two; the operator's
+rule moved the question and retry rounds from a `plan`-only feature to every shape,
+and that piece is worth merging first, on its own, because it fixes the cost the
+operator named today (a one-word question costs a whole new session) before any of
+the plan machinery exists.
 
-- **Milestone 7, pause and resume** (plan
-  `2026-09-10-dux-m7-plan-ready-and-resume.md`, 8 tasks, about 1,900 added lines).
-  Sections 2, 3, 4, 6, 7. After it, a plan task pauses at `plan-ready`, the operator
-  reads the plan through the GitHub links, and approves, changes, answers or drops it
-  in the Dux session; the same session implements and ships. No page yet.
-- **Milestone 8, the page and the rule** (plan
-  `2026-09-10-dux-m8-plan-page-and-rule.md`, 8 tasks, about 1,650 added lines).
-  Sections 5, 8, 9, plus `--fresh` and the end-to-end test of the whole loop. After
-  it, the plan opens as a page in the browser, the rule is in the dispatch skill, and
-  small changes ship without a plan.
+- **Milestone 7, resume any worker** (plan `2026-09-10-dux-m7-resume-any-worker.md`,
+  8 tasks, about 1,500 added lines). Sections 2, 4 (the parked states that exist
+  today), 7 (answer, retry, fresh) and 8. After it, a `ship`, `scout` or `plan` worker
+  that asks a question or fails is resumed in its own session with the operator's
+  answer, `dux-recover --retry` is gone, and a lost session has `--fresh`. No
+  `plan-ready` yet; a plan task still ends at a docs-only pull request.
+- **Milestone 8, a plan pauses and the same worker builds it** (plan
+  `2026-09-10-dux-m8-plan-ready-and-implement.md`, 7 tasks, about 1,600 added lines).
+  Sections 3, 4 (`plan-ready`), 5, 7 (approve, change, drop) and 9, and plan only.
+  After it, a plan task pauses at `plan-ready`, the operator reads the plan through
+  the GitHub links and approves, changes or drops it in the Dux session; the same
+  session implements and ships. No page yet.
+- **Milestone 9, the page and the rule** (plan
+  `2026-09-10-dux-m9-plan-page-and-rule.md`, 7 tasks, about 1,500 added lines).
+  Sections 6, 10, 11 and the end-to-end test of the whole loop. After it, the plan
+  opens as a page in the browser, the rule is in the dispatch skill, and small changes
+  ship without a plan.
 
-Together they are about 3,550 lines and 16 tasks, over the cap for one plan, which is
-why there are two. Milestone 8 depends on milestone 7 for `state/<id>.plan` and the
-resume path; its rule and its ship-without-a-plan tasks do not, and could ship first
-if milestone 7 slips.
+Together they are about 4,600 lines and 22 tasks, over the cap for one plan twice,
+which is why there are three. Milestone 8 depends on milestone 7 for the session id,
+the round files and `dux-spawn --resume`. Milestone 9 depends on milestone 8 for
+`state/<id>.plan`; its rule and its ship-without-a-plan tasks do not, and could ship
+first if milestone 8 slips.
 
-## 12. Open questions, each with a recommendation
+## 14. Open questions, each with a recommendation
 
-1. **Resume the session, or start a fresh one with the plan as its brief?** The
-   operator's own "one session, one task" rule argues for fresh; their ask, and the
-   plan skill they use themselves, argue for the same session. Recommendation:
-   resume, with `--fresh` as the recorded fallback in milestone 8. The plan file
-   stays the state either way, so switching later is a one-flag change.
+Closed by the operator on 2026-09-10, recorded so they are not reopened: resume the
+session rather than start fresh (was question 1 of the first draft); `needs-decision`
+and `blocked` on `ship` and `scout` resume too, from milestone 7 rather than later
+(was question 3).
+
+1. **Should a `retry` round on a `ship` task be allowed more than once?** Today's
+   automatic retry is once. A resumed retry is cheaper than a respawn, so two might
+   be affordable. Recommendation: once, as today. The second failure in a row is the
+   signal the operator's own rules name ("two consecutive rounds of fresh defects
+   means the design is wrong"), and the eight-round cap already bounds a task that
+   keeps asking.
 2. **Should a plan round also open a draft pull request, for the phone?** It would
    give a phone a rendered plan with comments. Recommendation: no. The GitHub blob
    link renders the markdown already, a draft complicates `/ship`'s open-or-update
    step and `dux-result`'s "exactly one open pull request", and the page is the
    reading surface.
-3. **Should `needs-decision` and `blocked` on `ship` and `scout` tasks adopt the same
-   resume path?** For `plan` tasks they do, from milestone 7. Recommendation: for the
-   other shapes, later and separately, once resume has run for a few plan tasks.
+3. **Should plan only be the default for a `plan` task, with plan and build opted
+   into?** Recommendation: no. The operator's ask is that the same worker builds the
+   plan; plan only is the exception the rule names, and the dispatch skill asks when
+   the intent reads like a document.
 4. **Links on the page: none, or only to the repository?** Recommendation: none.
    A plan that must link somewhere shows the target as text; the operator types it.
 5. **Render with an external markdown tool if present?** `cmark` and `pandoc` are
    better renderers. Recommendation: no. A new dependency for one page, and a
    renderer that passes raw HTML through by default in one of them; the awk subset
    is enough and is tested here.
+6. **Should Dux ever keep a worker process alive across a pause?** A bidirectional
+   worker would save the resume's full-context prompt when the operator answers
+   within the cache window. Recommendation: no, and not later. The operator's second
+   decision is stop and resume; the saving exists only for answers within the hour,
+   and the watcher's clear line between waiting and hung is worth more.
 
-## 13. Decisions this supersedes in the orchestrator spec
+## 15. Decisions this supersedes in the orchestrator spec
 
-- Section 17, "No worker inbox in v1": a `plan` task now takes its answers through a
-  resumed run. `ship` and `scout` tasks still resolve by retry.
-- Section 5.1, the `plan` row: output and definition of done are now section 7 here.
-- Section 5.3, "a headless worker run cannot be resumed under either harness": Claude
-  Code can, by session id. Codex is still not dispatchable, for the reason already
-  given.
+- Section 17, "No worker inbox in v1": every shape now takes its answers through a
+  resumed run. Nothing resolves by retry into a new task.
+- Section 5.1, the `plan` row: output and definition of done are now section 9 here,
+  or today's docs-only pull request when dispatched plan only.
+- Section 5.3, "an answer arrives as a retry with the answer appended to the brief":
+  an answer arrives as a round to the same session, for every shape. "A headless
+  worker run cannot be resumed under either harness": Claude Code can, by session id.
+  Codex is still not dispatchable, for the reason already given.
 - Section 5.4, exit lines: `plan-ready` joins them, in a `plan` round only.
 - Section 5.5, "env files are copied only for `ship` tasks" and the `git` mechanism
-  for non-ship worktrees: a `plan` task's worktree is made like a `ship` task's.
+  for non-ship worktrees: a `plan` task's worktree is made like a `ship` task's unless
+  the task is plan only.
+- Section 6.1, the watcher: unchanged in behaviour, but now the stated reason a
+  parked worker is never `stale` or `dead` is that its state came from a line the
+  worker wrote, not from time.

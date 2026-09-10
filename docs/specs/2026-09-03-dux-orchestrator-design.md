@@ -171,7 +171,7 @@ only `ship` tasks use the recorded mechanism, since only they run the project.
 
 | Shape | Worker model | Output | Definition of done |
 |---|---|---|---|
-| plan | Fable, high effort | spec + plan in `docs/specs/` and `docs/plans/` of the project, then, once the operator approves in the Dux session, the implementation on the same branch (`2026-09-10-one-session-planning.md`) | `plan-ready:` proved, then `done: PR <url>` after `/ship` |
+| plan | Fable, high effort | spec + plan in `docs/specs/` and `docs/plans/` of the project, then, once the operator approves in the Dux session, the implementation on the same branch (`2026-09-10-one-session-planning.md`); dispatched plan only, the docs-only pull request alone | `plan-ready:` proved, then `done: PR <url>` after `/ship`; plan only: `done: PR <url>` |
 | ship | Opus, effort per the operator's rule | one milestone implemented, `/ship` run | `done: PR <url>` after CI green |
 | scout | Sonnet | `tasks/<id>/report.md` | `done: report` |
 
@@ -224,11 +224,11 @@ Under 100 lines. Sections, all required:
 4. Rules: work alone, never address the operator, stay inside the worktree,
    never push to base, never merge, same obstacle twice means `blocked` and stop,
    report through the status protocol only, and exit after writing `blocked`
-   or `needs-decision`. An answer to those arrives as a retry with the answer
-   appended to the brief. A `plan` task's pause is different: Claude Code can
+   or `needs-decision`. An answer to those comes back to the same worker as a
+   new run of the same task, in the same session and worktree: Claude Code can
    resume a headless run by session id, and `2026-09-10-one-session-planning.md`
-   section 6 says how approval, a change request and a retry come back to the
-   same worker as a new run of the same task.
+   section 7 says how an answer, a retry, an approval and a change request
+   arrive as rounds, for every shape.
 5. Definition of done, per shape.
 
 The brief never includes Dux conversation history or other tasks.
@@ -260,7 +260,7 @@ failed: <one line>
 ```
 
 The exit lines are `done`, `failed`, `blocked`, and `needs-decision`, and in a
-plan round `plan-ready` (`2026-09-10-one-session-planning.md` sections 3 and 4).
+plan round `plan-ready` (`2026-09-10-one-session-planning.md` sections 4 and 5).
 `dux-worker-wrap` appends `failed: worker exited <code>` when the harness exits
 non-zero and the last line is not an exit line, and `ended: exit 0 without
 terminal status` when it exits zero without one. On `failed` the wrapper
@@ -394,8 +394,8 @@ own configuration, or the forge API all get past them, which is why they are
 denied by rule where a rule can name them and by the brief everywhere, and why
 the worker's credentials are the operator's to bound.
 Env files are copied only for `ship` tasks and, since a `plan` task's worker goes on
-to implement (`2026-09-10-one-session-planning.md`, section 2), for `plan` tasks,
-never for `scout`, and only
+to implement (`2026-09-10-one-session-planning.md`, section 3), for `plan` tasks
+that are not plan only, never for `scout`, and only
 the project's committed `.env*.example` and `.env*.sample` files, renamed to the
 name the project expects (`.env.example` to `.env`, `.env.local.example` to
 `.env.local`). A real ignored `.env` is never copied, under any condition; the
@@ -1107,9 +1107,10 @@ and is sized against the cap before its plan is written (constitution principle
   lifecycle does not depend on the terminal backend.
 - No worker inbox in v1. Blocked and needs-decision always resolve by retry with
   the answer in the brief. A bidirectional worker (`--input-format stream-json`)
-  is a later milestone if retries prove costly. Superseded for `plan` tasks on
-  2026-09-10: approval, a change request and one retry resume the same session
-  (`2026-09-10-one-session-planning.md`, section 6).
+  is a later milestone if retries prove costly. Superseded for every shape on
+  2026-09-10: an answer, a retry, an approval and a change request resume the
+  same session as a new run of the same task, and nothing makes a second task
+  from a first one (`2026-09-10-one-session-planning.md`, sections 2 and 7).
 - The ship skill is bundled in this repo and installed by symlink.
 - Dux is open source under the MIT license. The operator's personal rules stay in
   their global CLAUDE.md; the repo encodes them only as configurable defaults.

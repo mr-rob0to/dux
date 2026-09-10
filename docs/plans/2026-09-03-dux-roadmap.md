@@ -8,8 +8,8 @@
 - Milestone 5 (`/ship` guard) is merged as PR #14: plan `2026-09-07-dux-m5-ship-guard.md`, 4 of 4 tasks. It was the first milestone under the size cap and the plan rules below.
 - Three smaller changes merged after it, outside the milestone numbering: the identifier-lint work (PRs #15 to #19), the pull request template consent rule (PR #20, plan `2026-09-08-pr-template-consent.md`), and the pipeline lint that constitution 2.0.5 carries (PR #21).
 - Milestone 6 (`/ship` stands alone) is merged 2026-09-09 as PR #23: plan `2026-09-08-dux-m6-ship-standalone.md`, 4 of 4 tasks. The reviewer fallback (PR #24) and the README rewrite (PR #25) followed it without plans.
-- Milestones 7 and 8 (one session from plan to pull request) are planned 2026-09-10 in `2026-09-10-dux-m7-plan-ready-and-resume.md` (8 tasks, ~1,900 lines) and `2026-09-10-dux-m8-plan-page-and-rule.md` (8 tasks, ~1,650 lines), from spec `docs/specs/2026-09-10-one-session-planning.md`; 7 first.
-- Milestones 6 to 8 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
+- Milestones 7 to 9 (one session from plan to pull request, and back) are planned 2026-09-10 in `2026-09-10-dux-m7-resume-any-worker.md` (8 tasks, ~1,500 lines), `2026-09-10-dux-m8-plan-ready-and-implement.md` (7 tasks, ~1,600 lines) and `2026-09-10-dux-m9-plan-page-and-rule.md` (7 tasks, ~1,500 lines), from spec `docs/specs/2026-09-10-one-session-planning.md`; in that order. The amendment that made three of two records the operator's rule: resume, never respawn.
+- Milestones 6 to 9 are scoped here at task granularity; each gets its own full plan file when its predecessor merges.
 - Re-scoped 2026-09-06 against the size cap below. The old milestone 5 was too big for one session and is now milestones 5 and 6; dogfood and the Codex harness moved to 7 and 8. Nothing was dropped. `ship-guard` is still milestone 5 task 1, so earlier references to it still resolve.
 - Spec: `docs/specs/2026-09-03-dux-orchestrator-design.md`.
 
