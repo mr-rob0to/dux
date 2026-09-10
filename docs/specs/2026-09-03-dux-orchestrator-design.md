@@ -391,7 +391,7 @@ project with no example gets no env file and one log line. Model via
 `--model` per shape; effort via the CLI flag if this version exposes one,
 otherwise a one-line system-prompt instruction in the brief.
 
-### 5.6 Teardown (`dux-teardown <id>`)
+### 5.6 Teardown (`dux-teardown [--abandon] <id>`)
 
 Refuses when the lock is not held by this session, the ledger does not say
 `done` or `failed` (a status line saying so is the worker talking about itself
@@ -411,6 +411,19 @@ interrupted teardown completes on rerun. The task folder is kept.
 For a `done` task with a PR from a `gh:` source, teardown posts one comment,
 "Dux delivered PR <url>.", when the URL is in the source's repository; a
 failed comment is a warning.
+
+`--abandon <id>` is the other verb: letting go of a task that never started,
+which the path above cannot do because it would walk the worktree, container and
+receipt path against a task that has none of them. It takes the lock like any
+teardown and accepts `queued` and `dropped` only; any other state is a finding
+naming it and pointing at plain `dux-teardown <id>`. Never having run is proved
+from the filesystem, not the ledger, because a spawn killed between the worktree
+and the state write leaves a live task still reading `queued`: `state/<id>.run`,
+`state/<id>.pid`, `state/<id>.pgid`, `state/<id>.portal` or a worktree on
+`dux/<id>` is a refusal naming the one it found, with all of them left in place,
+and a worktree it cannot ask about is a refusal too. On success it sets the
+ledger to `dropped`, removes `data/tasks/<id>`, and prints `abandoned <id>`. It
+touches no project repository, branch or pull request.
 
 ## 6. Supervision
 

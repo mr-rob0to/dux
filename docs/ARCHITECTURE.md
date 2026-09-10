@@ -48,7 +48,8 @@ bin/
                            process group, proposal rules, heartbeat, terminal state
   dux-result               record-ship files the five /ship phases in order; verify proves a
                            plan, ship, or scout result from the registry, Git, and GitHub
-  dux-teardown             remove the worktree, close the container, mark done or failed
+  dux-teardown             remove the worktree, close the container, mark done or failed;
+                           --abandon lets go of a task that never started
   dux-watch                classify task events, record them, and raise local toasts
   dux-status               recompute the fleet digest and missed wakes from files
   dux-notify               format one action-first phone notification line
@@ -210,6 +211,15 @@ backend started it and catches a worker in a server whose socket vanished.
    from an issue whose PR is in that issue's repository, it posts one comment,
    `Dux delivered PR <url>.`, on the first teardown that completes; a failed
    comment is a warning, not a refusal.
+8. `dux-teardown --abandon <id>` is the other verb: letting go of a task that
+   never started, which plain teardown cannot do because it would walk the
+   worktree, container and receipt path against a task that has none of them. It
+   takes `queued` and `dropped` only. Never having run is proved from the
+   filesystem rather than the ledger, because a spawn killed between the worktree
+   and the state write leaves a live task still reading `queued`: a run record, a
+   pid file, a pgid file, a portal or a worktree is a refusal naming the one it
+   found. On success the ledger reads `dropped` and `data/tasks/<id>` is gone; no
+   project repo, branch or pull request is touched.
 
 ## The task channel
 

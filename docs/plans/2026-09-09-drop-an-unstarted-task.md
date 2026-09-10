@@ -9,9 +9,9 @@
 **Where this stands**
 - Drafted 2026-09-09 by the orchestrator session, approved by the operator in
   conversation, no independent design review. Deviation recorded below, this change only.
-- Not started. No branch yet.
-- Another branch is in flight on `bin/dux-project` and the test fixtures. Expect to
-  rebase on `origin/main` before the gate.
+- Both tasks done on 2026-09-10, branch `dux/dux-ship-20260910-mre`. Six breaks run
+  and seen to fail, pasted into the task 1 commit.
+- Other branches are in flight. Rebase on `origin/main` before the gate.
 
 **Estimated diff:** ~90 changed lines across 2 tasks. Well under the cap.
 
@@ -65,23 +65,23 @@ separate proof.
 
 Files: `bin/dux-teardown`, `tests/dux-teardown.bats`.
 
-- [ ] Parse `--abandon` as a mode flag on `dux-teardown`, keeping the existing usage
+- [x] Parse `--abandon` as a mode flag on `dux-teardown`, keeping the existing usage
       finding for anything else. Read the whole argument parsing block afterwards and
       confirm the plain path is unchanged.
-- [ ] In abandon mode, require the ledger state to be `queued` or `dropped`; anything
+- [x] In abandon mode, require the ledger state to be `queued` or `dropped`; anything
       else is a finding naming the state, as today.
-- [ ] Prove the task never ran by testing for each of the run record, pid file, pgid file,
+- [x] Prove the task never ran by testing for each of the run record, pid file, pgid file,
       portal file, and worktree. Name the one that exists in the finding and say to use
       `bin/dux-teardown <id>` instead. Read `bin/dux-worker-wrap` around lines 15 and 79
       for the exact paths rather than guessing them.
-- [ ] On success set the ledger state to `dropped`, remove `data/tasks/<id>`, and print
+- [x] On success set the ledger state to `dropped`, remove `data/tasks/<id>`, and print
       `abandoned <id>`. Use the same task id validation the other scripts use, so a path
       is never built from an unchecked id.
-- [ ] Tests: a queued never-spawned task is abandoned and leaves the ledger reading
+- [x] Tests: a queued never-spawned task is abandoned and leaves the ledger reading
       `dropped` with no task folder; a `dropped` task is abandoned the same way; a
       `running` task is refused; a `done` task is refused with the pointer to plain
       teardown; a queued task with a worktree present is refused and the worktree survives.
-- [ ] Break-verify, one break at a time, each failure pasted into the commit message as
+- [x] Break-verify, one break at a time, each failure pasted into the commit message as
       the run printed it:
       1. accept any state; the running and done refusal tests fail, two distinct failures.
       2. drop the worktree check; the "queued task with a worktree" test fails.
@@ -93,9 +93,9 @@ Files: `bin/dux-teardown`, `tests/dux-teardown.bats`.
 Files: `skills/dux-dispatch/SKILL.md`, `docs/ARCHITECTURE.md`,
 `docs/specs/2026-09-03-dux-orchestrator-design.md`, `README.md` if it lists teardown.
 
-- [ ] Dispatch skill, teardown section: plain teardown is for a task that ran and
+- [x] Dispatch skill, teardown section: plain teardown is for a task that ran and
       finished; `--abandon` is for one that never started, and the operator's word is
       still required before either.
-- [ ] Architecture map and spec section 5.6: one line each for the new mode and the
+- [x] Architecture map and spec section 5.6: one line each for the new mode and the
       never-ran proof.
-- [ ] Full suite green, shellcheck clean, `bin/dux-doctor` passing.
+- [x] Full suite green, shellcheck clean, `bin/dux-doctor` passing.
