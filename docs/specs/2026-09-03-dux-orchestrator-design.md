@@ -363,19 +363,33 @@ mode including bypass; milestone 2 break-verifies that against a real `claude`
 before the milestone closes. The `pre-push` guard is a per-task hooks directory
 `tasks/<id>/hooks/`: a symlink to every hook the project already has plus a
 `pre-push` that refuses `refs/heads/<base>` and then runs the project's own
-`pre-push` with the same input. `dux-worker-wrap` points every git the worker
-runs at it through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_0=core.hooksPath` in the
-worker's environment. Nothing is written into the project's `.git/config` or
-`.git/hooks`. The Codex adapter ships and stays tested at the adapter level for a
-later milestone: its sandbox is `danger-full-access` (a linked worktree's git dir
-lives under the primary checkout, outside any workspace-write root) with
-`shell_environment_policy.ignore_default_excludes` set so `GIT_CONFIG_KEY_0`
-reaches git. The hook alone would be its only mechanical guard, which is why
-dispatch refuses it.
+`pre-push` with the same input. It applies to the task's worktree and to nothing
+else. `dux-worktree create` turns on git's per-worktree configuration in the
+worktree's repository (`extensions.worktreeConfig`, git 2.20 or newer) and writes
+`core.hooksPath` into the worktree's own configuration file, the one
+`git rev-parse --git-path config.worktree` names: git reads it only for commands
+run in that worktree, from any directory inside it and through `git -C`, and
+`git worktree remove` deletes it with the worktree. The wrapper hands the worker
+no git configuration at all. `GIT_CONFIG_*` is scrubbed from its environment and
+nothing is put back, because an environment setting is process-wide: it reached
+every repository the worker touched, the throwaway repositories the test suite
+pushes to their own `main` included, and refused them all. One line is written
+into the shared `.git/config` of the worktree's repository,
+`extensions.worktreeConfig = true`, once and left in place; nothing else is
+written there and nothing into `.git/hooks`. A shared config that sets
+`core.worktree`, or `core.bare = true`, is refused before that line is written:
+with the extension on, git applies those two keys to every worktree, and its
+documentation says to move them into the main worktree's `config.worktree`
+first. The Codex adapter ships and stays tested at the adapter level for a later
+milestone: its sandbox is `danger-full-access` (a linked worktree's git dir lives
+under the primary checkout, outside any workspace-write root). The hook alone
+would be its only mechanical guard, which is why dispatch refuses it.
 These guards stop a mistaken push, not a worker that sets out to bypass them:
-`--no-verify`, `git -c core.hooksPath=`, unsetting the environment, or the
-forge API all get past them, which is why they are denied by rule and by the
-brief, and why the worker's credentials are the operator's to bound.
+`--no-verify`, `git -c core.hooksPath=`, `GIT_CONFIG_*` in the environment
+(which outranks every configuration file), editing or removing the worktree's
+own configuration, or the forge API all get past them, which is why they are
+denied by rule where a rule can name them and by the brief everywhere, and why
+the worker's credentials are the operator's to bound.
 Env files are copied only for `ship` tasks, never for `plan` or `scout`, and only
 the project's committed `.env*.example` and `.env*.sample` files, renamed to the
 name the project expects (`.env.example` to `.env`, `.env.local.example` to
