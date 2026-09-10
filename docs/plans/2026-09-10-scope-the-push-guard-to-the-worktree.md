@@ -7,6 +7,9 @@
 > review and its security pass (constitution principle 9).
 
 **Where this stands**
+- All three tasks landed 2026-09-10. The hooks path is the worktree's own git
+  configuration, the two shared-config layouts are refused, and the wrapper hands the
+  worker no git configuration at all. `make check` is green; the branch is at the gate.
 - Drafted 2026-09-10 by a Dux plan worker. One independent design review by a fresh
   session; its findings and what was done with each are at the bottom.
 - Picks up the defect that makes every worker's `make check` red: 107 fixture pushes
@@ -152,7 +155,7 @@ push from the worktree with no environment help at all. Both refusals are reache
 
 **Steps**
 
-- [ ] Tests first. Delete the `hooks_env` helper and every `env $(hooks_env ...)` prefix
+- [x] Tests first. Delete the `hooks_env` helper and every `env $(hooks_env ...)` prefix
       in `tests/dux-worktree.bats`; the three hook tests ("refuses the base branch and
       allows the task branch", "chains the project's own pre-push", "the rendered hook
       never re-evaluates") push plainly from the worktree. Add to the scout create test:
@@ -163,12 +166,12 @@ push from the worktree with no environment help at all. Both refusals are reache
       the fixture origin (`git clone --bare`, so `create`'s fetch of `origin/<base>` has
       a remote to reach; `core.bare = true` sits in its shared config); each is refused
       with the finding above and no config written.
-- [ ] Run them and see the base-branch test push succeed (that is the defect) and the
+- [x] Run them and see the base-branch test push succeed (that is the defect) and the
       new assertions fail.
-- [ ] Implement in `install_hooks`, in the order the interface gives: read, refuse,
+- [x] Implement in `install_hooks`, in the order the interface gives: read, refuse,
       enable, write. Use `git -C <wt>` for both writes, never `git_repo`: for a clone
       mechanism the shared config is the clone's.
-- [ ] Break-verify, one at a time, each failure pasted into the commit body:
+- [x] Break-verify, one at a time, each failure pasted into the commit body:
       1. skip the `core.hooksPath` write: the base-branch push succeeds, the refusal
          test fails.
       2. skip the extension write: `--worktree` refuses, create fails with the
@@ -193,13 +196,13 @@ worktree's task branch pushes with the project's own `pre-push` seeing the same 
 
 **Steps**
 
-- [ ] Tests first, in `tests/dux-worker-wrap.bats`. "the worker inherits its task
+- [x] Tests first, in `tests/dux-worker-wrap.bats`. "the worker inherits its task
       interfaces and nothing else of Dux's": the `GIT_CONFIG_` count becomes 0. "the
       worker's status log is its own channel outbox": the three `GIT_CONFIG_` greps
       become one count-0 assertion. "the channel holds the worker's own copies": no
       `hooks` entry in the listing. In `tests/e2e-dispatch.bats`, "a worker gets its own
       channel and nothing of Dux's own session": the same flip.
-- [ ] New test, "a worker's git guard stops at its worktree". Install a marker
+- [x] New test, "a worker's git guard stops at its worktree". Install a marker
       `pre-push` in the project before `dux-worktree create`, as the dux-worktree
       chaining test does. The fake worker's script, through its `run` verb, does three
       things and leaves each exit code in a file: build a throwaway repository beside
@@ -208,12 +211,12 @@ worktree's task branch pushes with the project's own `pre-push` seeing the same 
       upstream. Assert: first exit 0 and the throwaway origin's `main` moved; second
       non-zero, the project origin's `main` unmoved, and the finding line in
       `state/<id>.out`; third exit 0 and the marker file holding the task branch ref.
-- [ ] Run and see the new test fail on its first assertion (the fixture push is
+- [x] Run and see the new test fail on its first assertion (the fixture push is
       refused) and the count assertions fail on 3.
-- [ ] Remove the `GIT_CONFIG_*` export from `scrub_worker_env`, and the `cp -R` of the
+- [x] Remove the `GIT_CONFIG_*` export from `scrub_worker_env`, and the `cp -R` of the
       hooks into the channel with its two `chmod` lines. Re-read `scrub_worker_env` and
       the channel block whole afterwards.
-- [ ] Break-verify, one at a time, each failure pasted into the commit body:
+- [x] Break-verify, one at a time, each failure pasted into the commit body:
       1. put the export back: the count-0 assertions fail and the fixture push is
          refused.
       2. export the same three names with the value `/dev/null`: the worktree push to
@@ -224,14 +227,14 @@ worktree's task branch pushes with the project's own `pre-push` seeing the same 
 
 **Files:** `docs/ARCHITECTURE.md`, `bin/workers/codex.sh`.
 
-- [ ] Architecture, dispatch flow step 4: the worktree's config carries the hooks path.
+- [x] Architecture, dispatch flow step 4: the worktree's config carries the hooks path.
       Task channel bullets: the channel holds the brief and the settings, not hooks;
       the environment gets `DUX_STATUS_LOG` and `DUX_REPORT` back and no `GIT_CONFIG_`
       name. File map: drop `hooks/` from `channels/<id>.<run>/`.
-- [ ] `bin/workers/codex.sh` header comment: the `ignore_default_excludes` flag was
+- [x] `bin/workers/codex.sh` header comment: the `ignore_default_excludes` flag was
       there so `GIT_CONFIG_KEY_0` reached git; say the variable is gone and the flag is
       kept only until the adapter is next touched. The flag itself is not changed here.
-- [ ] `make check-branch` green, `bin/dux-doctor` passing, the plan's boxes ticked and
+- [x] `make check-branch` green, `bin/dux-doctor` passing, the plan's boxes ticked and
       the header current.
 
 ## Milestone acceptance

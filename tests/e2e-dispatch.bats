@@ -164,9 +164,9 @@ container_gone() {  # $1 endpoint
   [ "$(grep -c "^PATH=.*$DUX_ROOT/bin:" "$envdump" || true)" -eq 0 ]
   grep -qxF "DUX_STATUS_LOG=$channel/status.outbox" "$envdump"
   grep -qxF "DUX_REPORT=$channel/report.outbox" "$envdump"
-  grep -qxF "GIT_CONFIG_COUNT=1" "$envdump"
-  grep -qxF "GIT_CONFIG_KEY_0=core.hooksPath" "$envdump"
-  grep -qxF "GIT_CONFIG_VALUE_0=$channel/hooks" "$envdump"
+  # Nothing about git: the guard is the worktree's own configuration now, so a
+  # name here would follow the worker into every other repository it touches.
+  [ "$(grep -c '^GIT_CONFIG_' "$envdump" || true)" -eq 0 ]
   # Nothing of this run reached the task next to it.
   [ "$(dux-ledger get "$sibling" state)" = queued ]
   [ ! -s "$DUX_HOME/data/tasks/$sibling/status.log" ]

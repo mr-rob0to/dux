@@ -133,9 +133,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$ch" != "$DUX_HOME/data/tasks/$id" ]
   case "$ch" in "$DUX_HOME/state/channels/$id."*) ;; *) false ;; esac
   grep -qx "DUX_REPORT=$ch/report.outbox" "$env_file"
-  grep -qx "GIT_CONFIG_COUNT=1" "$env_file"
-  grep -qx "GIT_CONFIG_KEY_0=core.hooksPath" "$env_file"
-  grep -qx "GIT_CONFIG_VALUE_0=$ch/hooks" "$env_file"
+  [ "$(grep -c '^GIT_CONFIG_' "$env_file" || true)" -eq 0 ]
   # The proposal reached a handoff by way of the wrapper, not the worker's hand,
   # and status.log holds nothing the worker asked for.
   [ "$(handoff_status)" = "done: report" ]
@@ -153,7 +151,9 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   grep -qE '^-rw-------.*report\.outbox$' "$ls"
   grep -qE '^-r--------.*brief\.md$' "$ls"
   grep -qE '^-r--------.*worker-settings\.json$' "$ls"
-  grep -qE '^drwx------.*/hooks$' "$ls"
+  # No hooks: the worktree's own git configuration names the task hooks
+  # directory, so the channel has nothing to stage.
+  [ "$(grep -cE '/hooks$' "$ls" || true)" -eq 0 ]
   ch="$(dirname "$(cat "$DUX_HOME/state/chan.path")")"
   [ ! -e "$ch" ]
   [ ! -e "$DUX_HOME/state/$id.portal" ]
@@ -494,14 +494,50 @@ SH
   [ "$(grep -c '^DUX_HOME=' "$e" || true)" -eq 0 ]
   [ "$(grep -c '^DUX_BACKEND=' "$e" || true)" -eq 0 ]
   [ "$(grep -c '^GIT_CONFIG_GLOBAL=' "$e" || true)" -eq 0 ]
-  # The only DUX_ and GIT_CONFIG_ names left are the four this task hands back.
+  # The only DUX_ names left are the two this task hands back, and no git name
+  # at all: the worker's git is configured by the worktree it stands in.
   [ "$(grep -c '^DUX_' "$e" || true)" -eq 2 ]
   [ "$(grep -c '^DUX_SHIP_RECORD=' "$e" || true)" -eq 0 ]
   grep -q "^DUX_STATUS_LOG=$DUX_HOME/state/channels/$id\." "$e"
-  [ "$(grep -c '^GIT_CONFIG_' "$e" || true)" -eq 3 ]
+  [ "$(grep -c '^GIT_CONFIG_' "$e" || true)" -eq 0 ]
   p="$(sed -n 's/^PATH=//p' "$e")"
   case ":$p:" in *":$DUX_ROOT/bin:"*) false ;; esac
   case ":$p:" in *":$DUX_ROOT/tests/fakes:"*) ;; *) false ;; esac
+}
+
+# The one that proves the fix cures workers: make_repo's exact operation, a
+# throwaway repository pushed to its own main, performed from inside the
+# environment this wrapper built. It passes only when no git configuration
+# reached the worker, and the worktree is still guarded all the same.
+@test "a worker's git guard stops at its worktree" {
+  make_repo "$DUX_HOME/proj" main
+  # The project's own pre-push, so the chain through the rendered hook is visible.
+  printf '#!/bin/sh\ncat > "$(git rev-parse --show-toplevel)/../upstream-saw-refs"\n' \
+    > "$DUX_HOME/proj/.git/hooks/pre-push"
+  chmod +x "$DUX_HOME/proj/.git/hooks/pre-push"
+  dux-project add "$DUX_HOME/proj" --base main >/dev/null
+  prepare scout
+  (cd "$wt" && git commit -q --allow-empty -m work)
+  before="$(git -C "$DUX_HOME/proj.origin" rev-parse main)"
+  t="$DUX_HOME/throwaway"; rc="$DUX_HOME/state/rc"
+  cat > "$FAKE_WORKER_SCRIPT" <<EOF
+report all clear
+run d=$t; git init -q -b main "\$d.o" && git -C "\$d.o" commit -q --allow-empty -m init && git clone -q --bare "\$d.o" "\$d.origin" && git clone -q "\$d.origin" "\$d" && git -C "\$d" commit -q --allow-empty -m fixture; git -C "\$d" push -q origin main; echo \$? > $rc.fixture
+run git push -q origin HEAD:refs/heads/main; echo \$? > $rc.base
+run git push -q -u origin dux/$id; echo \$? > $rc.task
+status done: report
+EOF
+  wrap
+  # A fixture repository is nobody's business but its own.
+  [ "$(cat "$rc.fixture")" = 0 ]
+  [ "$(git -C "$t.origin" rev-parse main)" = "$(git -C "$t" rev-parse HEAD)" ]
+  # The worktree is still refused on the base branch, and origin did not move.
+  [ "$(cat "$rc.base")" != 0 ]
+  [ "$(git -C "$DUX_HOME/proj.origin" rev-parse main)" = "$before" ]
+  grep -q "finding: refusing to push to main from a Dux worktree" "$DUX_HOME/state/$id.out"
+  # The task branch goes, and the project's own pre-push saw the same refs.
+  [ "$(cat "$rc.task")" = 0 ]
+  grep -q "refs/heads/dux/$id" "$DUX_HOME/proj/.worktrees/upstream-saw-refs"
 }
 
 @test "a ship worker gets a recorder bound to its own task and run; no other shape does" {
@@ -526,7 +562,7 @@ SH
   [ "$(handoff_event)" = ended ]
 }
 
-@test "a push to the base branch from inside the worker is refused by the channel's hook" {
+@test "a push to the base branch from inside the worker is refused by the worktree's hook" {
   prepare scout
   before="$(git -C "$DUX_HOME/proj.origin" rev-parse main)"
   printf 'report all clear\nrun git commit -q --allow-empty -m work\nrun git push origin HEAD:refs/heads/main\nrun git push -q -u origin dux/%s\nstatus done: report\n' "$id" > "$FAKE_WORKER_SCRIPT"

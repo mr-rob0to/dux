@@ -37,8 +37,8 @@ sq_body() {  # $1 value, escaped for the inside of a single-quoted shell string
   printf '%s' "${1//$q/$e}"
 }
 
-install_hooks() {  # builds $task/hooks: links to the project's hooks plus our pre-push
-  local hooks="$task/hooks" src f body
+install_hooks() {  # $1 worktree; builds $task/hooks and points that worktree's git at it
+  local wt="$1" hooks="$task/hooks" src f body shared
   src="$(git_repo config --get core.hooksPath || true)"
   if [ -n "$src" ]; then case "$src" in /*) ;; *) src="$repo/$src" ;; esac
   else src="$(cd "$repo" && cd "$(git rev-parse --git-common-dir)" && pwd -P)/hooks"; fi
@@ -55,6 +55,29 @@ install_hooks() {  # builds $task/hooks: links to the project's hooks plus our p
   f='__UPSTREAM__'; body="${body//$f/$(sq_body "$src/pre-push")}"
   printf '%s\n' "$body" > "$hooks/pre-push" || finding "cannot write $hooks/pre-push"
   chmod +x "$hooks/pre-push" || finding "cannot make $hooks/pre-push executable"
+  # The hooks path belongs to this worktree alone, so it is written in the
+  # worktree's own configuration file rather than handed to the worker in its
+  # environment, where it would have reached every repository the worker touched.
+  # A relative --git-common-dir is what a primary checkout or a clone prints.
+  shared="$(git -C "$wt" rev-parse --git-common-dir 2>/dev/null)" \
+    || finding "cannot scope the hooks path for $wt"
+  case "$shared" in /*) ;; *) shared="$wt/$shared" ;; esac
+  shared="$(cd "$shared" 2>/dev/null && pwd -P)" || finding "cannot scope the hooks path for $wt"
+  # Both keys mean something different in every worktree, and the extension makes
+  # the shared file's copy apply to all of them, which breaks the linked worktree
+  # this run just built. Refused before anything is written. --includes because
+  # git reads include.path only when asked once a file is named, so without it a
+  # key that arrives through an include reads as absent and the guard fails open.
+  [ -z "$(git config --includes --file "$shared/config" --get core.worktree 2>/dev/null)" ] \
+    || finding "$repo shares core.worktree with its worktrees; move it to the main worktree's config.worktree (git help worktree, CONFIGURATION FILE) before Dux can scope its hooks"
+  [ "$(git config --includes --file "$shared/config" --bool --get core.bare 2>/dev/null)" != true ] \
+    || finding "$repo shares core.bare with its worktrees; move it to the main worktree's config.worktree (git help worktree, CONFIGURATION FILE) before Dux can scope its hooks"
+  # Through the worktree, never the registered path: under a clone mechanism the
+  # shared configuration is the clone's, not the project's.
+  git -C "$wt" config extensions.worktreeConfig true \
+    || finding "cannot scope the hooks path for $wt"
+  git -C "$wt" config --worktree core.hooksPath "$hooks" \
+    || finding "cannot scope the hooks path for $wt"
 }
 
 copy_env() {  # $1 worktree; ship under the git mechanism only
@@ -135,7 +158,7 @@ create() {
     [ "$(git -C "$wt" rev-parse HEAD)" = "$(git_repo rev-parse "origin/$base")" ] \
       || finding "a worktree on $branch already exists and is not at origin/$base: $wt"
     log "reusing clean worktree $wt"
-    install_hooks
+    install_hooks "$wt"
     if [ "$shape" = ship ] && [ "$use" = git ]; then copy_env "$wt"; fi
     echo "$wt"; return 0
   fi
@@ -164,7 +187,7 @@ create() {
   [ "$(cd "$wt" && pwd -P)" != "$(cd "$repo" && pwd -P)" ] || finding "worktree path equals the primary checkout $repo"
   tip="$(git -C "$wt" rev-parse HEAD)"; want="$(git_repo rev-parse "origin/$base")"
   [ "$tip" = "$want" ] || finding "worktree $wt is at $tip, not origin/$base ($want)"
-  install_hooks
+  install_hooks "$wt"
   if [ "$shape" = ship ] && [ "$use" = git ]; then copy_env "$wt"; fi
   echo "$wt"
 }

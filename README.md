@@ -113,7 +113,7 @@ lock, starts the watcher, and shows you the fleet digest. Then just talk to it.
 | Tool | Why |
 |---|---|
 | [Claude Code](https://claude.com/claude-code) | Runs Dux and runs the workers |
-| `git` 2.5+ | Worktrees |
+| `git` 2.20+ | Worktrees, and the per-worktree configuration the push guard lives in |
 | [`gh`](https://cli.github.com) | PRs, issues, CI status. Must be signed in |
 | `jq` | Reads GitHub's JSON |
 | `tmux` or [Herdr](https://herdr.dev) | Gives each worker its own pane or tab |
