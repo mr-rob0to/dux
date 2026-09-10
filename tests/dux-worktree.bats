@@ -71,6 +71,19 @@ custom_target='worktree:
   [ -z "$(git -C "$bare" config --get extensions.worktreeConfig)" ]
 }
 
+@test "a shared key that arrives through an include is refused too" {
+  register proj
+  # git reads include.path only when asked, and a value that arrives that way
+  # counts exactly as much as one written in the file itself.
+  printf '[core]\n\tworktree = %s\n' "$DUX_HOME/proj" > "$DUX_HOME/extra.cfg"
+  printf '\n[include]\n\tpath = %s\n' "$DUX_HOME/extra.cfg" >> "$DUX_HOME/proj/.git/config"
+  id="$(dux-task-new proj scout)"
+  run dux-worktree create "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $DUX_HOME/proj shares core.worktree with its worktrees"* ]]
+  [ -z "$(git -C "$DUX_HOME/proj" config --get extensions.worktreeConfig)" ]
+}
+
 ignore_env() {  # $1 project name; the project ignores the real env files, not the examples
   printf '.worktrees/\n.env\n.env.local\n' > "$DUX_HOME/$1/.gitignore"
   (cd "$DUX_HOME/$1" && git add .gitignore && git commit -q -m "ignore env" && git push -q origin main)

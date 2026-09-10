@@ -65,10 +65,12 @@ install_hooks() {  # $1 worktree; builds $task/hooks and points that worktree's 
   shared="$(cd "$shared" 2>/dev/null && pwd -P)" || finding "cannot scope the hooks path for $wt"
   # Both keys mean something different in every worktree, and the extension makes
   # the shared file's copy apply to all of them, which breaks the linked worktree
-  # this run just built. Refused before anything is written.
-  [ -z "$(git config --file "$shared/config" --get core.worktree 2>/dev/null)" ] \
+  # this run just built. Refused before anything is written. --includes because
+  # git reads include.path only when asked once a file is named, so without it a
+  # key that arrives through an include reads as absent and the guard fails open.
+  [ -z "$(git config --includes --file "$shared/config" --get core.worktree 2>/dev/null)" ] \
     || finding "$repo shares core.worktree with its worktrees; move it to the main worktree's config.worktree (git help worktree, CONFIGURATION FILE) before Dux can scope its hooks"
-  [ "$(git config --file "$shared/config" --bool --get core.bare 2>/dev/null)" != true ] \
+  [ "$(git config --includes --file "$shared/config" --bool --get core.bare 2>/dev/null)" != true ] \
     || finding "$repo shares core.bare with its worktrees; move it to the main worktree's config.worktree (git help worktree, CONFIGURATION FILE) before Dux can scope its hooks"
   # Through the worktree, never the registered path: under a clone mechanism the
   # shared configuration is the clone's, not the project's.
