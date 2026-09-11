@@ -8,8 +8,9 @@
 > outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted 2026-09-10, design-reviewed (the records are at the end of the milestone 7
-  plan; findings 10, 11 and 16 shaped this one), awaiting the operator. This was
+- Drafted 2026-09-10, design-reviewed twice (the records are at the end of the milestone
+  7 plan; from the first, findings 10, 11 and 16 shaped this one; from the second, 25),
+  awaiting the operator. This was
   milestone 8 in pull request #26; `--fresh` moved out of it to milestone 7 and it
   moved behind the plan-ready milestone.
 - Follows milestone 8 (`2026-09-10-dux-m8-plan-ready-and-implement.md`), which lands
@@ -164,8 +165,8 @@ ship brief with a plan does not have it; the contract test passes.
 criteria met, /ship run, CI green; then append done: PR <url>` and the Project section
 has no plan lines. The wrapper writes empty `plan=` and `tasks=` for such a run.
 `dux-result verify` for `kind=ship` with both empty skips `check_plan_tasks` and keeps
-every other ship check; one empty and one set is a finding. A `retry` round copies
-the absence as it copies the presence.
+every other ship check; one empty and one set is a finding. The wrapper carries empty
+`plan=` and `tasks=` into a retry run's context as it carries set ones.
 
 **Acceptance:** the no-plan brief renders and proves with a receipt, a pull request and
 green checks from the fakes; the same fixture with a change only under `docs/` is
@@ -173,7 +174,7 @@ rejected as a ship result; a context with `plan=` set and `tasks=` empty is a fi
 
 **Steps**
 
-- [ ] Brief; wrapper context; the retry round's copy.
+- [ ] Brief; wrapper context, first run and retry.
 - [ ] Result proof; tests.
 - [ ] Break-verify: skip `check_plan_tasks` whenever `tasks=` is empty regardless of
       `plan=`, confirm the mixed-context test fails; restore. Paste the failure.
@@ -244,4 +245,5 @@ Both reviews are recorded at the end of `2026-09-10-dux-m7-resume-any-worker.md`
 the first: findings 10 (sizing) and 16 (scope) moved Task 7 here and trimmed Task 1;
 finding 11 (what the operator is approving) added the changed-documents list and the
 spec sections to Task 3. The operator's rule then moved `--fresh` to milestone 7, where
-the retired respawn path needs it.
+the retired respawn path needs it. From the second review, finding 25 reworded Task 5's
+retry sentence: the wrapper, not the round file, carries the plan lines.

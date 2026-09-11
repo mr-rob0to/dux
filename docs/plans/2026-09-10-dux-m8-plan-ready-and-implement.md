@@ -8,8 +8,9 @@
 > outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted 2026-09-10, design-reviewed (the records are at the end of the milestone 7
-  plan; findings 1, 3, 4, 7, 11, 14 shaped this one), awaiting the operator. This is the
+- Drafted 2026-09-10, design-reviewed twice (the records are at the end of the milestone
+  7 plan; from the first, findings 1, 3, 4, 7, 11, 14 shaped this one; from the second,
+  findings 2, 5, 6, 8, 10, 18 and 22), awaiting the operator. This is the
   plan-ready half of the milestone 7 plan in pull request #26, moved behind the resume
   mechanism that milestone 7 now delivers on its own.
 - Follows milestone 7 (`2026-09-10-dux-m7-resume-any-worker.md`), which lands the
@@ -31,19 +32,27 @@ it in the same branch and pull request.
 Every design decision this milestone needs is settled there and in the orchestrator
 spec's pointers (sections 5.1, 5.3, 5.4, 5.5, 17).
 
+**Deviations:** constitution principle 6 says `.env` files are copied into worktrees only
+for `ship` tasks. This milestone copies the project's committed examples for a `plan`
+task that is not plan only too, because its worker goes on to implement (spec section
+3). Task 7 amends the principle in the same pull request, as a PATCH: what may be copied
+does not change, only which tasks get it.
+
 ## Design
 
 Only what the spec leaves to the implementer.
 
-- **Run kind** gains `plan` and `implement`. On a first run the wrapper writes `plan`
-  for a `plan` shape without the `- Plan only: yes` line and `plan-only` with it. On a
-  resume, the round file's first line decides: `## Round n: approved` gives
-  `implement`, `changes requested` gives `plan`, `answer` and `retry` keep the archived
-  kind, as milestone 7 built.
+- **Run kind** gains `plan` and `implement`. `dux-spawn` passes `plan` for a `plan`
+  shape whose brief has no `- Plan only: yes` line and `plan-only` when it has one, on a
+  first spawn; on a resume, from the round file's first line, where `dux-brief` writes
+  `implement` for approve and `plan` for change, as milestone 7 built for answer and
+  retry. The wrapper only copies it.
 - **Handoff line for a plan round:** `plan-ready: <path> tasks 1-K at <sha>`; the watcher
-  parses it with the same `case` shape it uses for `done: PR `.
+  checks it where it checks a `done: PR ` line's grammar, and rejects it whole otherwise.
 - **`state/<id>.plan`** is five `key=value` lines (spec section 5), written by the watcher
-  with a temp file and one rename. `tasks/<id>/approved` is one line, `<iso> <sha>`.
+  with a temp file and one rename. The approve round file is the record of the
+  approval; the wrapper copies the state file's `sha` into an implement run's context
+  as `approved=`.
 - **Frozen text** (spec section 9) is checked with `git show <sha>:<path>` against
   `HEAD:<path>` after `sed 's/\[ \]/[x]/g'` over the span from the first `## Task`
   heading; the spec files are compared by blob id.
@@ -55,12 +64,13 @@ Only what the spec leaves to the implementer.
 **Files:** `bin/dux-ledger`, `bin/dux-watch`, `tests/dux-ledger.bats`, `tests/dux-watch.bats`.
 
 **Interface:** `valid_state` accepts `plan-ready`; `list --unacked` includes it.
-`consume_handoff` on a status line `plan-ready: <path> tasks <a-b> at <sha>` writes
-`state/<id>.plan` (version, id, path, tasks, sha) before it sets the ledger, with one
-rename, and refuses to consume (returns 1, logs) when the path fails
-`docs/plans/[A-Za-z0-9._-]+\.md` or the sha is not 40 hex. `read_handoff` accepts the
-`plan-ready` status word and takes its receipt cross-check from the context's `kind`
-(`ship` or `implement`) instead of its shape. `status_state` treats `plan-ready` as a
+`read_handoff` accepts the `plan-ready` status word, and rejects the handoff whole
+(`reject:`, which writes nothing, as a malformed `done: PR` line is rejected today) when
+the path fails `docs/plans/[A-Za-z0-9._-]+\.md` or the sha is not 40 hex; it takes its
+receipt cross-check from the context's `kind` (`ship` or `implement`) instead of its
+shape. `consume_handoff` on an accepted `plan-ready: <path> tasks <a-b> at <sha>` line
+writes `state/<id>.plan` (version, id, path, tasks, sha) with one rename, after the
+event and before the ledger, marked as the other steps are so a crash replays it. `status_state` treats `plan-ready` as a
 known word. `watched_ids` never lists a `plan-ready` task except to finish an
 unconsumed handoff, exactly as it never lists `needs-decision` or `blocked` today.
 `target_for` on a `plan-ready` ledger state with no handoff prints
@@ -69,14 +79,15 @@ unconsumed handoff, exactly as it never lists `needs-decision` or `blocked` toda
 **Acceptance:** a fake handoff with a `plan-ready` event moves the ledger to `plan-ready`,
 raises exactly one event line, lists under `--unacked`, and leaves `state/<id>.plan` with
 the five keys; a task in `plan-ready` with no pidfile is never marked `dead` over three
-watcher passes; a malformed path leaves the handoff unconsumed and the ledger untouched;
+watcher passes; a malformed path is rejected with nothing written to the status log, the
+events log or the ledger, and the watcher's next pass logs it once and writes nothing;
 a `done` handoff with `kind=implement` and no complete receipt is rejected.
 
 **Steps**
 
 - [ ] Ledger: the state; `--unacked`; a `set` and `list --state plan-ready` round-trip.
-- [ ] Watcher: parse the line, write the state file atomically, guard the path and sha;
-      the receipt cross-check by kind.
+- [ ] Watcher: reject a bad path or sha in `read_handoff`; parse a good line, write the
+      state file atomically; the receipt cross-check by kind.
 - [ ] Watcher: exclude `plan-ready` from liveness; keep the crash-replay path for its handoffs.
 - [ ] Break-verify: remove the path guard, run, confirm the malformed-path test fails;
       restore. Break the `dead` exclusion, confirm the three-pass test fails; restore.
@@ -92,16 +103,18 @@ prints `plan-ready: <path> tasks 1-K at <sha>`; each failure exits 1 with the re
 wording the spec gives, with no worker path repeated back when the path itself is what
 failed. The pushed check compares `refs/remotes/origin/<branch>` with the tip through
 `dgit`. `read_changes` learns the raw status letter so "added" is distinguishable from
-"modified". `check_plan_tasks` gains a mode that requires at least one box, ticked or
+"modified", and check 4 holds every changed path to `[A-Za-z0-9._-]+` per segment and
+200 characters, since those paths are printed to Dux as links. `check_plan_tasks` gains a mode that requires at least one box, ticked or
 not, per task, used by the plan proof; the ship proof keeps its all-ticked mode.
-`verify` for `kind=implement` is the ship proof with `plan=` and `tasks=` read from the
-context, plus the frozen-text check of spec section 9 over the plan and every
-`docs/specs/*.md` the plan round changed (the set is Git's name-only diff between the
-merge base and the approved sha, read at proof time). `record-ship` accepts
+`verify` for `kind=implement` is the ship proof with `plan=`, `tasks=` and `approved=`
+read from the context, plus the frozen-text check of spec section 9 over the plan and
+every `docs/specs/*.md` the plan round changed (the set is Git's name-only diff between
+the merge base and `approved=`, read at proof time), with reasons that name no path. `record-ship` accepts
 `kind=implement` as it accepts `ship`. `kind=plan-only` keeps today's plan proof.
 
 **Acceptance:** fixtures for: not pushed; a change outside `docs/`; no spec file; two
-added plan files; a plan file in a subdirectory; a plan with tasks 1, 2, 4; a plan with
+added plan files; a plan file in a subdirectory; a changed spec whose name holds a
+space, rejected without the name in the reason; a plan with tasks 1, 2, 4; a plan with
 13 tasks; a task with no box; and the good case, which prints the exact line. For
 `implement`: a receipt from another run is rejected; a task body reworded after approval
 is rejected with the spec's reason; a spec file changed after approval is rejected; box
@@ -110,12 +123,13 @@ ticks and a header edit alone pass. For `plan-only`: today's fixtures pass uncha
 **Steps**
 
 - [ ] `verify` dispatch for the two new kinds; `record-ship` accepts `implement`.
-- [ ] The pushed check; added-plan detection and the path character class; the task-count reader.
+- [ ] The pushed check; added-plan detection and the path character class over every changed path; the task-count reader.
 - [ ] The `implement` path with context-supplied plan and tasks; the frozen-text check.
 - [ ] Break-verify: ticked-box mode swapped in for the plan proof, confirm the no-box
       fixture passes wrongly and the test fails; restore. Drop the remote-ref compare,
       confirm the not-pushed fixture's test fails; restore. Skip the frozen-text check,
-      confirm the reworded-task test fails; restore. Paste all three.
+      confirm the reworded-task test fails; restore. Skip the character class on
+      changed paths, confirm the space-in-name test fails; restore. Paste all four.
 
 ## Task 3: The wrapper's plan round
 
@@ -127,13 +141,14 @@ the violation `the worker for <id> proposed done in a plan round`; in any other 
 round`. A `plan-ready` terminal goes through `prove_done`'s path with `dux-result
 verify`, and the proof's line (or `ended:`) is what is published, with the event taken
 from its first word. `DUX_SHIP_RECORD` and the ship-only environment are set for
-`kind=implement` as for `ship`, and for `implement` the context carries `plan=` and
-`tasks=` copied from `state/<id>.plan`.
+`kind=implement` as for `ship`, and for `implement` the context carries `plan=`,
+`tasks=` and `approved=` copied from `state/<id>.plan`. The kind itself arrives as the
+argument milestone 7 added; the wrapper reads no round file.
 
 **Acceptance:** a fake worker writing `plan-ready: x` in a plan run publishes the proof's
 line with event `plan-ready`; the same line in a ship run publishes a `failed:` handoff
 with the violation; `done:` in a plan run does the same; an implement run sees
-`DUX_SHIP_RECORD` and the copied `plan=`.
+`DUX_SHIP_RECORD` and the copied `plan=` and `approved=`.
 
 **Steps**
 
@@ -148,7 +163,7 @@ with the violation; `done:` in a plan run does the same; an implement run sees
 **Files:** `bin/dux-brief`, `templates/round.md`, `templates/brief.md`, `tests/dux-brief.bats`.
 
 **Interface:** `--round approve|change` join milestone 7's `answer|retry`, with titles
-`approved` and `changes requested`. The approve round carries path, tasks and sha from
+`approved` and `changes requested` and kinds `implement` and `plan` in the first line. The approve round carries path, tasks and sha from
 `state/<id>.plan`, the frozen-text sentence, the delegate-to-Opus instruction and the
 `/ship` then `done:` ending. The change round carries the operator's file verbatim and
 the instruction to revise the same plan file, push, and append `plan-ready:` again.
@@ -180,20 +195,24 @@ wordings of the plan shape and the 100-line cap still holds for both.
 for a `plan` task without the plan-only line, as it does for `ship` (`scout` and plan-only
 keep plain `git`). `dux-spawn <id> --resume approve|change` follows spec section 7's
 eight steps: step 3 also requires a clean worktree for these two kinds; step 4 writes
-`tasks/<id>/approved` on approve and nothing else. The result context kind is
-`implement` for approve and `plan` for change.
+nothing, and a second approve is refused by `dux-brief` from the round files. The kind
+passed to the wrapper comes from the round file's first line, `implement` for approve
+and `plan` for change; a crash between
+the archive and the wrapper start leaves the round unrun, and the same `--resume` is
+run again, as milestone 7's step 1 allows.
 
 **Acceptance:** with the fake backend and fake claude: approve from `plan-ready` archives
-the old run, writes `tasks/<id>/approved`, opens a new container, starts the wrapper
-with `--resume <session>` and the round file, and sets `running`; change does the same
-without `approved`; a dirty worktree refuses before anything is moved; a `plan` task's
+the old run, opens a new container, starts the wrapper with `--resume <session>`, the
+round file and kind `implement`, and sets `running`; change does the same with kind
+`plan`; the same approve run again after a simulated crash before the wrapper start
+starts the round once, not twice; a dirty worktree refuses before anything is moved; a `plan` task's
 worktree on a `make` fixture project is created through `make worktree`, and a plan-only
 one is not.
 
 **Steps**
 
 - [ ] Worktree mechanism and env for `plan` without plan only.
-- [ ] The two round kinds in `--resume`; the clean check; `approved`.
+- [ ] The two round kinds in `--resume`; the clean check.
 - [ ] Break-verify: skip the dirty-worktree check, confirm its test fails and shows the
       archive happened; restore. Paste the failure.
 
@@ -208,7 +227,8 @@ one indented line `plan <id>: https://github.com/<repo>/blob/dux/<id>/<path>` bu
 the registry and `state/<id>.plan`; a project with no GitHub repository prints the path
 alone. `dux-recover <id>` inspect on `plan-ready` prints that link, one link per other
 document changed between the merge base and the proven sha (Git's name-only diff through
-the hook-free call), the round count, and `next: dux-brief <id> --round approve|change
+the hook-free call; every path already held to the proof's character class, and
+re-checked here before it is printed), the round count, and `next: dux-brief <id> --round approve|change
 --answer-file <f>, then dux-spawn <id> --resume <kind>; or dux-recover <id> --classify
 failed`; it prints no worker text. `--classify failed` accepts `plan-ready`. `ended`
 recovery publishes the handoff with the event taken from the first word of the proof's
@@ -229,9 +249,12 @@ the worktree; an `ended` plan round re-proved by recovery lands as `plan-ready`.
 ## Task 7: The skills, AGENTS.md and the architecture file
 
 **Files:** `skills/dux-dispatch/SKILL.md`, `skills/dux-recover/SKILL.md`, `AGENTS.md`,
-`docs/ARCHITECTURE.md`, `tests/contract.bats`.
+`docs/ARCHITECTURE.md`, `docs/constitution.md`, `tests/contract.bats`.
 
-**Interface:** Task lifecycle in `AGENTS.md` gains `plan-ready` in the state line, in the
+**Interface:** `docs/constitution.md` principle 6's sentence on env files becomes: copied
+into worktrees only for `ship` tasks and for `plan` tasks that are not plan only, and
+only the project's committed examples; version 2.0.7, a PATCH, with the reason in the
+governance list (the header's deviation line). Task lifecycle in `AGENTS.md` gains `plan-ready` in the state line, in the
 wake list, and one bullet: on `plan-ready`, push the notify line, give the operator the
 links `dux-recover` prints, say approve, change or drop, and never read the plan. The
 "Talking to the operator" push list gains `plan-ready`. `skills/dux-recover` gains the
@@ -244,12 +267,13 @@ as a ship spawn. `AGENTS.md` stays at most 150 lines; `tests/contract.bats` asse
 new wake word is present. `ARCHITECTURE.md` gains the state, the state files, the two
 round kinds and the approve path in the wake flow.
 
-**Acceptance:** the contract test passes; `wc -l AGENTS.md` is at most 150; the
-architecture file names every new file and flag this milestone added.
+**Acceptance:** the contract test passes, including its principle 6 assertions against
+the amended text; `wc -l AGENTS.md` is at most 150; the architecture file names every
+new file and flag this milestone added.
 
 **Steps**
 
-- [ ] AGENTS.md and the contract test.
+- [ ] The constitution amendment; AGENTS.md and the contract test.
 - [ ] The two skills; ARCHITECTURE.md.
 - [ ] Break-verify: remove the `plan-ready` wake bullet, confirm the contract test fails;
       restore. Paste the failure.
@@ -268,10 +292,9 @@ ends at a docs-only pull request exactly as before.
 - The first real plan task through this loop is the dry run for approve and change;
   milestone 7's first answered question will already have exercised `--resume` itself.
 - A plan spawn on a `make` project now runs the project's setup and takes minutes.
-- `tasks/<id>/approved` is written before the container is reopened; a crash between
-  the two leaves an approval with no run. The next `--resume approve` refuses as a
-  second approve; the operator's fix is `--resume retry` after `--classify failed`, and
-  the inspect output says so.
+- A crash between the archive and the wrapper start leaves the approve round unrun.
+  The same `--resume approve` is run again; nothing is refused and nothing is counted
+  twice, because "has run" is a run record naming the round.
 
 ## Open questions for the operator
 
@@ -281,5 +304,8 @@ None. The spec's section 14 carries the recommendations already taken.
 
 Both reviews are recorded at the end of `2026-09-10-dux-m7-resume-any-worker.md`. From
 the first: finding 1 (frozen text) is Task 2; findings 4 and 14 are Tasks 6 and 1;
-finding 3 is Task 5; findings 7 and 11 are Tasks 1 and 6. The second review's findings
-on this plan are in that record too.
+finding 3 is Task 5; findings 7 and 11 are Tasks 1 and 6. From the second: finding 2
+and 22 removed the `approved` file (Task 5, Design); 5 bounds every changed path (Task
+2); 6 is the constitution amendment (Task 7 and the deviation line); 8 moved the kind
+decision to `dux-spawn` (Design, Task 3); 10 moved the path check into `read_handoff`
+(Task 1); 18 took the path out of the frozen-spec reason (Task 2).
