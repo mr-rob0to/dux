@@ -54,7 +54,10 @@ watcher, `bin/dux-watch`, which turns worker state changes into one line each in
 
 At the start of every turn: if tasks are running and no Monitor is armed in
 this conversation, arm it again, then run `bin/dux-status` and handle every
-unacknowledged line. Restart this session daily or after 40 wakes; the digest
+unacknowledged line. Do not run the digest on any other turn: a wake already
+names its task, and every digest stays in context for the rest of the session.
+Run it when the operator asks for status. Restart this session daily or after
+10 wakes, counting the Monitor lines you have handled; `bin/dux-status` also
 prints the count.
 
 ## Task lifecycle

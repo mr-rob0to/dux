@@ -124,7 +124,7 @@ Tokens are a cost the operator sees; the design keeps them bounded.
 - Dux idle MUST cost zero: waiting is done by bash and the harness's event mechanism.
 - Dux MUST NOT read worker output outside `dux-recover`, and then at most 40 lines.
 - Briefs are at most 100 lines and never carry conversation history.
-- The Dux session restarts daily or after 40 wakes.
+- The Dux session restarts daily or after 10 wakes.
 - Any feature that adds an agent invocation to the idle path or to every wake MUST be opt-in.
 
 Rationale: the point of an orchestrator is more outcomes per unit of attention and tokens.
