@@ -172,8 +172,13 @@ only `ship` tasks use the recorded mechanism, since only they run the project.
 | Shape | Worker model | Output | Definition of done |
 |---|---|---|---|
 | plan | Fable, high effort | spec + plan in `docs/specs/` and `docs/plans/` of the project, then, once the operator approves in the Dux session, the implementation on the same branch (`2026-09-10-one-session-planning.md`); dispatched plan only, the docs-only pull request alone | `plan-ready:` proved, then `done: PR <url>` after `/ship`; plan only: `done: PR <url>` |
-| ship | Opus, effort per the operator's rule | one milestone implemented, `/ship` run | `done: PR <url>` after CI green |
+| ship | Opus, high effort by default (`templates/config/models`) | one milestone implemented, `/ship` run | `done: PR <url>` after CI green |
 | scout | Sonnet | `tasks/<id>/report.md` | `done: report` |
+
+`dux-install` seeds `config/models` from `templates/config/models` when none exists. The
+template tracks the operator's live `config/models`: when the operator settles a new model
+or effort for a shape, `templates/config/models` is changed to match, as its own docs
+change or in the next pull request, so a fresh install starts where the operator already is.
 
 Dux brainstorms goals with the operator in conversation, then writes a brief.
 The plan worker writes the spec and plan; the operator approves the docs PR.
