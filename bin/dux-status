@@ -50,7 +50,7 @@ if [ -f "$DUX_STATE/dux.lock" ] && [ -f "$DUX_STATE/wakes.base" ]; then
   case "$base" in ''|*[!0-9]*) base=0 ;; esac
   total=0
   [ ! -f "$DUX_STATE/events.log" ] || total="$(wc -l < "$DUX_STATE/events.log" | tr -d ' ')"
-  echo "wakes this session: $((total - base)) (restart after 40)"
+  echo "wakes this session: $((total - base)) (restart after 10)"
 fi
 
 pr_state() {  # $1 URL

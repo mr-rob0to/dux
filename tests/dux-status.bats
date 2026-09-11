@@ -88,7 +88,7 @@ unacknowledged
   printf 'x\nx\nx\nx\nx\n' > "$DUX_HOME/state/events.log"
   run dux-status
   [ "${lines[0]}" = "watcher: running (pid $w)" ]
-  [ "${lines[1]}" = "wakes this session: 3 (restart after 40)" ]
+  [ "${lines[1]}" = "wakes this session: 3 (restart after 10)" ]
 }
 
 @test "--prs annotates ready PRs and warns when gh fails" {
