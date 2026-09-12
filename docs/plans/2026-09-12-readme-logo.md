@@ -11,6 +11,8 @@
 - Picks up the README's commented-out logo placeholder, which has waited for an image
   since the README rewrite (pull request #25). The operator now has one.
 - Merges as one ship PR of one task: the image file and three README lines.
+- Task 1 landed 2026-09-12: the image is tracked at the pinned sha256 and size, the
+  README carries the `<img>` tag, `make check` is green and the branch went to `/ship`.
 
 **Estimated diff:** 1 line added and 4 removed in `README.md`, plus one new binary file of
 3,297,426 bytes, across 1 task. Well under the cap.
@@ -65,22 +67,22 @@ green with the image tracked, `bin/dux-doctor` passes, and the task went through
 
 **Steps**
 
-- [ ] If the brief names no source file, write `blocked:` saying so and stop; do not search
+- [x] If the brief names no source file, write `blocked:` saying so and stop; do not search
       for one. Otherwise `mkdir -p docs/assets`, copy the source to
       `docs/assets/dux-logo.png`, and confirm with `shasum -a 256`, `wc -c` and
       `git ls-files -s` (after `git add`) that the copy matches the pin and is `100644`.
       A mismatch is `blocked:`, not a retry with another file.
-- [ ] `README.md`: delete the four LOGO comment lines and put the `<img>` line from
+- [x] `README.md`: delete the four LOGO comment lines and put the `<img>` line from
       Acceptance where the comment was, keeping the blank lines around it. Confirm with
       `git diff --stat` that the README change is 1 insertion and 4 deletions.
-- [ ] `make check` green: the identifier lint now reads the image as a tracked file, and it
+- [x] `make check` green: the identifier lint now reads the image as a tracked file, and it
       passes because neither denylist matches its bytes (checked 2026-09-12 against the
       live lists). `bin/dux-doctor` passing. Then `/ship`, **the whole gate**. The skill
       says a docs-only branch skips the gate; under Dux that rule does not apply, and the
       signal is `DUX_SHIP_RECORD` set in this worker's environment. Dux counts a ship task
       done only on a receipt with all five phases (spec sections 5.4 and 11); a skipped
       gate leaves no receipt and the task ends with the PR unproved.
-- [ ] Rendered check, inside `/ship` step 8, after the push and before the body is written,
+- [x] Rendered check, inside `/ship` step 8, after the push and before the body is written,
       pasted as the Evidence line of the body's Verification section as the commands
       printed it: `gh api "repos/<owner>/<repo>/readme?ref=<branch>"
       -H "Accept: application/vnd.github.html" | grep -o '<img[^>]*dux-logo[^>]*>'` prints
@@ -89,7 +91,7 @@ green with the image tracked, `bin/dux-doctor` passes, and the task went through
       prints `200` and `content-type: image/png`. A miss is a fix pass under the gate.
       Nothing goes into a commit body after the gate has started: the receipt is tied to
       the head, and an amend would break it.
-- [ ] No assertion was added, so there is nothing to break-verify. Say so in one line in
+- [x] No assertion was added, so there is nothing to break-verify. Say so in one line in
       the same Verification section.
 
 ## Left as written
