@@ -1,9 +1,6 @@
 <div align="center">
 
-<!-- LOGO: drop the file at docs/assets/dux-logo.png and uncomment.
-     Keep it square, transparent, and readable at 120px.
-<img src="docs/assets/dux-logo.png" alt="Dux" width="120" />
--->
+<img src="docs/assets/dux-logo.png" alt="Dux" width="480" />
 
 # Dux
 
