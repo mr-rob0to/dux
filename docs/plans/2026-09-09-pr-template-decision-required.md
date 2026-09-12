@@ -10,9 +10,10 @@
 - Drafted 2026-09-09 by the orchestrator session and approved by the operator from the
   published page, with no independent design review. That is a deliberate deviation,
   recorded under "Deviations" below, and it is scoped to this change only.
-- Task 1 landed on branch `dux/dux-ship-20260909-pai`: the script stops without a
-  choice, and each outcome prints once. Five breaks run, five distinct failures.
-  Task 2 next.
+- Both tasks landed on branch `dux/dux-ship-20260909-pai`. The script stops
+  without a choice, each outcome prints once, and the callers, skill, README,
+  architecture and spec section 12 all say so. Six breaks run, six distinct
+  failures. Full suite green, shellcheck clean, doctor passing.
 - When this merges, `bin/dux-project add` refuses to register a repo that has no pull
   request template until the operator has said install or skip, and every template
   outcome prints exactly one line.
@@ -139,7 +140,7 @@ Files: every `tests/*.bats` and `tests/helpers/setup.bash` that registers a fixt
 `skills/dux-project/SKILL.md`, `README.md`, `docs/ARCHITECTURE.md`,
 `docs/specs/2026-09-03-dux-orchestrator-design.md`.
 
-- [ ] Every existing `dux-project add` call on a fixture repo with no template now hits
+- [x] Every existing `dux-project add` call on a fixture repo with no template now hits
       the new finding. Add `--pr-template skip` to each. About forty call sites across
       eleven files; `tests/helpers/setup.bash:191`, `tests/dux-worktree.bats:11` and
       `:18`, and `tests/dux-task-new.bats:5` are shared helpers and cover many callers
@@ -149,21 +150,21 @@ Files: every `tests/*.bats` and `tests/helpers/setup.bash` that registers a fixt
       sites that assert a finding before registration is reached (bad name, not a git
       repo, whitespace path, duplicate, unknown `--worktree`); adding it there hides what
       those tests check.
-- [ ] `skills/dux-project/SKILL.md` step 3a: when `bin/dux-project pr-template <path>`
+- [x] `skills/dux-project/SKILL.md` step 3a: when `bin/dux-project pr-template <path>`
       prints paths, pass no `--pr-template` flag at all and tell the operator where the
       existing template is. When it prints `none`, ask once and pass the answer. Say
       plainly that `add` refuses to register until the answer is passed, so the step
       cannot be skipped. Update the step 4 usage line to match.
-- [ ] `README.md` around line 239: say the flag is required when the repo has no
+- [x] `README.md` around line 239: say the flag is required when the repo has no
       template, and not needed when it has one.
-- [ ] `docs/ARCHITECTURE.md` lines 39 to 40: `--pr-template install|skip`, required when
+- [x] `docs/ARCHITECTURE.md` lines 39 to 40: `--pr-template install|skip`, required when
       the repo has no template.
-- [ ] `docs/specs/2026-09-03-dux-orchestrator-design.md` section 12: one paragraph
+- [x] `docs/specs/2026-09-03-dux-orchestrator-design.md` section 12: one paragraph
       recording that registration stops rather than defaulting, per constitution
       principle 8. No version bump to the constitution; principle 6 already says the
       write is reported and left for the operator to commit, and that stays true.
-- [ ] Full suite green, `shellcheck` clean, `bin/dux-doctor` passing.
-- [ ] Break-verify the mechanical edit itself: remove `--pr-template skip` from one
+- [x] Full suite green, `shellcheck` clean, `bin/dux-doctor` passing.
+- [x] Break-verify the mechanical edit itself: remove `--pr-template skip` from one
       shared helper and confirm the tests that use it fail with the new finding rather
       than passing for some other reason. Paste that failure into the commit message.
 

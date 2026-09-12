@@ -3,8 +3,8 @@ load helpers/setup
 
 setup_fleet() {
   make_repo "$DUX_HOME/api" main; make_repo "$DUX_HOME/ios" main
-  dux-project add "$DUX_HOME/api" --base main >/dev/null
-  dux-project add "$DUX_HOME/ios" --base main >/dev/null
+  dux-project add "$DUX_HOME/api" --base main --pr-template skip >/dev/null
+  dux-project add "$DUX_HOME/ios" --base main --pr-template skip >/dev/null
 }
 
 task() {  # $1 id, $2 project, $3 state, [$4 pr], [$5 endpoint]
@@ -111,9 +111,9 @@ unacknowledged
 
 @test "--intake runs intake for labelled projects, skips the rest, and one failure is one line" {
   export DUX_SESSION_PID=$$; dux-lock acquire >/dev/null
-  make_github_repo api; dux-project add "$DUX_HOME/api" --base main --issues label:dux >/dev/null
-  make_repo "$DUX_HOME/ios" main; dux-project add "$DUX_HOME/ios" --base main >/dev/null
-  make_repo "$DUX_HOME/bare" main; dux-project add "$DUX_HOME/bare" --base main --issues label:dux >/dev/null
+  make_github_repo api; dux-project add "$DUX_HOME/api" --base main --issues label:dux --pr-template skip >/dev/null
+  make_repo "$DUX_HOME/ios" main; dux-project add "$DUX_HOME/ios" --base main --pr-template skip >/dev/null
+  make_repo "$DUX_HOME/bare" main; dux-project add "$DUX_HOME/bare" --base main --issues label:dux --pr-template skip >/dev/null
   FAKE_GH_ISSUE_LIST='[{"number": 3, "title": "t", "body": "b"}]' run --separate-stderr dux-status --intake
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = intake ]
@@ -126,7 +126,7 @@ unacknowledged
 }
 
 @test "--intake without the lock skips every labelled project and still prints the digest" {
-  make_github_repo api; dux-project add "$DUX_HOME/api" --base main --issues label:dux >/dev/null
+  make_github_repo api; dux-project add "$DUX_HOME/api" --base main --issues label:dux --pr-template skip >/dev/null
   run dux-status --intake
   [ "$status" -eq 0 ]
   [[ "$output" == *"  api: skipped: finding: the Dux lock is not held by this session"* ]]
@@ -134,7 +134,7 @@ unacknowledged
 }
 
 @test "--intake with no labelled project says so" {
-  make_repo "$DUX_HOME/ios" main; dux-project add "$DUX_HOME/ios" --base main >/dev/null
+  make_repo "$DUX_HOME/ios" main; dux-project add "$DUX_HOME/ios" --base main --pr-template skip >/dev/null
   run dux-status --intake
   [ "${lines[0]}" = intake ]; [ "${lines[1]}" = "  no project has issues enabled" ]
 }
@@ -150,7 +150,7 @@ unacknowledged
   # anything matched. A failure that prints nothing Dux recognises must still
   # produce a reason rather than an empty one.
   export DUX_SESSION_PID=$$; dux-lock acquire >/dev/null
-  make_github_repo api; dux-project add "$DUX_HOME/api" --base main --issues label:dux >/dev/null
+  make_github_repo api; dux-project add "$DUX_HOME/api" --base main --issues label:dux --pr-template skip >/dev/null
   fr="$DUX_HOME/fr"; mkdir -p "$fr"; cp -R "$DUX_ROOT/bin" "$fr/bin"
   printf '#!/usr/bin/env bash\nprintf "something the digest does not parse\\n" >&2\nexit 2\n' > "$fr/bin/dux-intake"
   chmod +x "$fr/bin/dux-intake"

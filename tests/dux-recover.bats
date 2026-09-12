@@ -20,7 +20,7 @@ task_in() {  # $1 state, [$2 shape], [$3 source key]; sets id
   local task shape="${2:-scout}" src="${3:-local}"
   if ! dux-project list | grep -qx proj; then
     make_repo "$DUX_HOME/proj" main
-    dux-project add "$DUX_HOME/proj" --base main >/dev/null
+    dux-project add "$DUX_HOME/proj" --base main --pr-template skip >/dev/null
   fi
   id="$(dux-task-new proj "$shape" --source "$src")"; task="$DUX_HOME/data/tasks/$id"
   printf 'Do the thing the operator asked for.\n' > "$task/intent.md"

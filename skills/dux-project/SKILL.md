@@ -18,16 +18,21 @@ description: Register a repository with Dux so tasks can be dispatched to it. Us
    and pass `--issues label:<name>`; otherwise `--issues off`.
 3a. Run `bin/dux-project pr-template <path>`. It lists every pull request template
    the repo already has, in every place GitHub reads one from, or prints `none`.
-   - If it printed paths, tell the operator the repo already has a template and
-     where, that Dux leaves it alone and adds no second one, and pass
-     `--pr-template skip`. Do not ask; there is nothing to decide.
+   - If it printed paths, pass no `--pr-template` flag at all, and tell the
+     operator the repo already has a template and where, and that Dux leaves it
+     alone and adds no second one. Do not ask; there is nothing to decide.
    - If it printed `none`, ask the operator once whether Dux should install its
      own template at `.github/PULL_REQUEST_TEMPLATE.md`, as one uncommitted file
      for them to commit. Pass `--pr-template install` on a yes and
      `--pr-template skip` on a no. Declining is a normal outcome and the project
      still registers.
-4. Run `bin/dux-project add <path> [--name <name>] [--base X] [--issues Y] [--worktree Z]`.
-   The name defaults to the folder name; pass `--name` only when that is taken or unusable.
+   - This step cannot be skipped. On a repo with no template, `add` with no
+     `--pr-template` stops with a finding naming both choices and registers
+     nothing, so a forgotten ask is a stop rather than a silent default.
+4. Run `bin/dux-project add <path> [--name <name>] [--base X] [--issues Y] [--worktree Z]
+   [--pr-template install|skip]`. The name defaults to the folder name; pass
+   `--name` only when that is taken or unusable. Pass `--pr-template` only when
+   step 3a printed `none`.
 5. Report the registry line in plain words: base branch, worktree mechanism,
    issue intake, and which of the three the template step did: installed at
    `.github/PULL_REQUEST_TEMPLATE.md` and needing a commit, left alone at the

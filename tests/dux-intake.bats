@@ -21,7 +21,7 @@ setup() {
 
 labelled_project() {  # registers proj with a GitHub origin and the dux label
   make_github_repo proj
-  dux-project add "$DUX_HOME/proj" --base main --issues label:dux >/dev/null
+  dux-project add "$DUX_HOME/proj" --base main --issues label:dux --pr-template skip >/dev/null
 }
 FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
 
@@ -35,11 +35,11 @@ FIX="$DUX_ROOT/tests/fixtures/gh-issues.json"
 
 @test "an unregistered project, issues=off, and a project without a GitHub origin are findings" {
   run dux-intake nope; [ "$status" -eq 2 ]; [[ "$output" == "finding: project nope not registered"* ]]
-  make_repo "$DUX_HOME/plain" main; dux-project add "$DUX_HOME/plain" --base main >/dev/null
+  make_repo "$DUX_HOME/plain" main; dux-project add "$DUX_HOME/plain" --base main --pr-template skip >/dev/null
   run dux-intake plain; [ "$status" -eq 2 ]; [[ "$output" == "finding: project plain has issues=off; nothing to pull"* ]]
-  make_repo "$DUX_HOME/local" main; dux-project add "$DUX_HOME/local" --base main --issues label:dux >/dev/null
+  make_repo "$DUX_HOME/local" main; dux-project add "$DUX_HOME/local" --base main --issues label:dux --pr-template skip >/dev/null
   run dux-intake local; [ "$status" -eq 2 ]; [[ "$output" == "finding: project local has no GitHub origin; intake needs one"* ]]
-  make_github_repo gone; dux-project add "$DUX_HOME/gone" --base main --issues label:dux >/dev/null; rm -rf "$DUX_HOME/gone"
+  make_github_repo gone; dux-project add "$DUX_HOME/gone" --base main --issues label:dux --pr-template skip >/dev/null; rm -rf "$DUX_HOME/gone"
   run dux-intake gone; [ "$status" -eq 2 ]; [[ "$output" == "finding: project gone path is gone: $DUX_HOME/gone"* ]]
   [ ! -s "$DUX_HOME/data/backlog.md" ]
 }

@@ -27,7 +27,7 @@ spawned() {  # $1 shape; sets $id and $wt
 # A spawned gh-sourced task; the log is cleared after the spawn so the start
 # comment dux-spawn posts is not counted against teardown.
 spawned_issue() {  # $1 shape, $2 source key; sets $id and $wt
-  dux-project list | grep -qx proj || { make_github_repo proj; dux-project add "$DUX_HOME/proj" --base main >/dev/null; }
+  dux-project list | grep -qx proj || { make_github_repo proj; dux-project add "$DUX_HOME/proj" --base main --pr-template skip >/dev/null; }
   id="$(dux-task-new proj "$1" --source "$2")"
   local task="$DUX_HOME/data/tasks/$id"
   printf 'Do the thing the operator asked for.\n' > "$task/intent.md"

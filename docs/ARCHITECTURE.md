@@ -37,7 +37,8 @@ bin/
                            take_line
   dux-lock                 single live session; starts and stops its watcher
   dux-project              registry add/list/get/resolve-base/pr-template, --worktree,
-                           --pr-template install|skip
+                           --pr-template install|skip, required when the repo has
+                           no pull request template
   dux-ledger               add/set/set-if/get/list/ack/unack over data/backlog.md; the only writer
   dux-task-new             allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, folder, queued line
   dux-intake               queue labelled GitHub issues as tasks; --show fences one issue's text

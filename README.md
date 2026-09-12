@@ -237,7 +237,10 @@ default and is never probed.
 | `backend` | `tmux` or `herdr`. Empty means detect |
 
 `bin/dux-project add` also takes `--name`, `--base`, `--issues label:<name>`,
-`--worktree make|script|git`, and `--pr-template install|skip`.
+`--worktree make|script|git`, and `--pr-template install|skip`. `--pr-template` is
+required when the repo has no pull request template: registration stops with a
+finding until you say install or skip, so nobody is silently not asked. It is not
+needed when the repo already has one, because there is nothing to decide.
 
 </details>
 

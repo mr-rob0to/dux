@@ -515,7 +515,7 @@ SH
   printf '#!/bin/sh\ncat > "$(git rev-parse --show-toplevel)/../upstream-saw-refs"\n' \
     > "$DUX_HOME/proj/.git/hooks/pre-push"
   chmod +x "$DUX_HOME/proj/.git/hooks/pre-push"
-  dux-project add "$DUX_HOME/proj" --base main >/dev/null
+  dux-project add "$DUX_HOME/proj" --base main --pr-template skip >/dev/null
   prepare scout
   (cd "$wt" && git commit -q --allow-empty -m work)
   before="$(git -C "$DUX_HOME/proj.origin" rev-parse main)"

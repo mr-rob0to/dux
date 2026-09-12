@@ -27,14 +27,14 @@ load helpers/setup
 
 @test "add derives the name from the folder" {
   make_repo "$DUX_HOME/repoT" main
-  run dux-project add "$DUX_HOME/repoT"
+  run dux-project add "$DUX_HOME/repoT" --pr-template skip
   [ "$status" -eq 0 ]
   [ "$(dux-project get repoT path)" = "$DUX_HOME/repoT" ]
 }
 
 @test "add --name overrides the folder name" {
   make_repo "$DUX_HOME/repoU" main
-  dux-project add "$DUX_HOME/repoU" --name api
+  dux-project add "$DUX_HOME/repoU" --name api --pr-template skip
   run dux-project list
   [ "$output" = api ]
   [ "$(dux-project get api path)" = "$DUX_HOME/repoU" ]
@@ -55,11 +55,11 @@ load helpers/setup
 @test "add refuses a derived name that is already registered and names the flag" {
   mkdir -p "$DUX_HOME/one" "$DUX_HOME/two"
   make_repo "$DUX_HOME/one/api" main; make_repo "$DUX_HOME/two/api" main
-  dux-project add "$DUX_HOME/one/api"
+  dux-project add "$DUX_HOME/one/api" --pr-template skip
   run dux-project add "$DUX_HOME/two/api"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: project api already registered; pass --name to register it under another name"* ]]
-  dux-project add "$DUX_HOME/two/api" --name api2
+  dux-project add "$DUX_HOME/two/api" --name api2 --pr-template skip
   [ "$(dux-project get api2 path)" = "$DUX_HOME/two/api" ]
 }
 
@@ -73,7 +73,7 @@ load helpers/setup
 
 @test "add writes a registry line with detected git worktree mechanism" {
   make_repo "$DUX_HOME/repoA" main
-  run dux-project add "$DUX_HOME/repoA"
+  run dux-project add "$DUX_HOME/repoA" --pr-template skip
   [ "$status" -eq 0 ]
   line="$(grep '^- repoA ' "$DUX_HOME/data/projects.md")"
   [[ "$line" == "- repoA path=$DUX_HOME/repoA base=main worktree=git issues=off (added "* ]]
@@ -82,13 +82,13 @@ load helpers/setup
 @test "add detects make worktree target" {
   make_repo "$DUX_HOME/repoB" main
   printf 'worktree:\n\t@echo wt\n' > "$DUX_HOME/repoB/Makefile"
-  dux-project add "$DUX_HOME/repoB"
+  dux-project add "$DUX_HOME/repoB" --pr-template skip
   [ "$(dux-project get repoB worktree)" = "make" ]
 }
 
 @test "add honors --base and --issues" {
   make_repo "$DUX_HOME/repoC" main
-  dux-project add "$DUX_HOME/repoC" --base staging --issues label:dux
+  dux-project add "$DUX_HOME/repoC" --base staging --issues label:dux --pr-template skip
   [ "$(dux-project get repoC base)" = "staging" ]
   [ "$(dux-project get repoC issues)" = "label:dux" ]
 }
@@ -111,7 +111,7 @@ load helpers/setup
 
 @test "add refuses a duplicate name with a finding" {
   make_repo "$DUX_HOME/repoD" main
-  dux-project add "$DUX_HOME/repoD"
+  dux-project add "$DUX_HOME/repoD" --pr-template skip
   run dux-project add "$DUX_HOME/repoD"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: project repoD already registered"* ]]
@@ -162,7 +162,7 @@ load helpers/setup
 
 @test "list prints names in order" {
   make_repo "$DUX_HOME/r1" main; make_repo "$DUX_HOME/r2" main
-  dux-project add "$DUX_HOME/r1"; dux-project add "$DUX_HOME/r2"
+  dux-project add "$DUX_HOME/r1" --pr-template skip; dux-project add "$DUX_HOME/r2" --pr-template skip
   run dux-project list
   [ "$output" = $'r1\nr2' ]
 }
@@ -213,7 +213,7 @@ load helpers/setup
 
 @test "add refuses the same path under a second name" {
   make_repo "$DUX_HOME/repoL" main
-  dux-project add "$DUX_HOME/repoL"
+  dux-project add "$DUX_HOME/repoL" --pr-template skip
   run dux-project add "$DUX_HOME/repoL" --name repoL2
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: path $DUX_HOME/repoL already registered as repoL"* ]]
@@ -258,7 +258,7 @@ load helpers/setup
 @test "add honors --worktree and validates it against the repo" {
   make_repo "$DUX_HOME/repoQ" main
   printf 'worktree:\n\t@echo wt\n' > "$DUX_HOME/repoQ/Makefile"
-  dux-project add "$DUX_HOME/repoQ" --worktree git
+  dux-project add "$DUX_HOME/repoQ" --worktree git --pr-template skip
   [ "$(dux-project get repoQ worktree)" = git ]
   make_repo "$DUX_HOME/repoR" main
   run dux-project add "$DUX_HOME/repoR" --worktree make
@@ -276,7 +276,7 @@ load helpers/setup
   # --separate-stderr, because the warning has to be on stderr: plain run merges the
   # two, so the same assertions would pass if it moved to stdout.
   make_repo "$DUX_HOME/repoW" main
-  run --separate-stderr dux-project add "$DUX_HOME/repoW" --name abc
+  run --separate-stderr dux-project add "$DUX_HOME/repoW" --name abc --pr-template skip
   [ "$status" -eq 0 ]
   [[ "$stderr" == *"shorter than four characters"* ]]
   [[ "$stderr" == *"dux-project add --name"* ]]
@@ -284,7 +284,7 @@ load helpers/setup
   # Status and the registry line first: a run that ended in a finding also lacks the
   # warning, and would pass the absence check having proved nothing.
   make_repo "$DUX_HOME/repoX" main
-  run --separate-stderr dux-project add "$DUX_HOME/repoX" --name abcd
+  run --separate-stderr dux-project add "$DUX_HOME/repoX" --name abcd --pr-template skip
   [ "$status" -eq 0 ]
   grep -q '^- abcd ' "$DUX_HOME/data/projects.md"
   [[ "$stderr" != *"shorter than four characters"* ]]

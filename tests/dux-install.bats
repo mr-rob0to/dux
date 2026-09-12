@@ -167,7 +167,7 @@ registry_line() {  # $1 name, $2 path
 
 @test "the registry fixture matches what dux-project actually writes" {
   repo="$DUX_HOME/realproj"; make_repo "$repo" main
-  run dux-project add "$repo" --base main --name realproj
+  run dux-project add "$repo" --base main --name realproj --pr-template skip
   [ "$status" -eq 0 ]
   written="$(grep '^- realproj ' "$DUX_HOME/data/projects.md")"
   fixture="$(registry_line realproj "$repo")"
