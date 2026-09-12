@@ -12,6 +12,8 @@
 - Picks up a drift the operator noticed: the live `config/models` runs ship workers at
   high effort, the tracked template still seeds max.
 - Merges as one ship PR of one task.
+- Task 1 implemented 2026-09-12 on `dux/dux-ship-20260912-v31`: template token changed,
+  seeding proof added, break-verified. Awaiting `/ship`.
 
 **Estimated diff:** ~4 changed lines across 1 task. Well under the cap.
 
@@ -72,22 +74,22 @@ byte for byte the template. The full suite is green.
 
 **Steps**
 
-- [ ] `templates/config/models`: `ship=claude-opus-5:max` becomes `ship=claude-opus-5:high`.
+- [x] `templates/config/models`: `ship=claude-opus-5:max` becomes `ship=claude-opus-5:high`.
       Confirm with `git diff --word-diff` that the diff is that one word.
-- [ ] `tests/dux-install.bats`, the test that already runs `cmp -s` on `reviewer`: add
+- [x] `tests/dux-install.bats`, the test that already runs `cmp -s` on `reviewer`: add
       one line, `cmp -s "$DUX_ROOT/templates/config/models" "$DUX_HOME/config/models"`,
       next to it. `cmp` rather than a grep for the value, so the test proves seeding
       without pinning a preference; see "The decision".
-- [ ] Manual check, recorded in the commit body as the commands printed it: run
+- [x] Manual check, recorded in the commit body as the commands printed it: run
       `dux-install --yes` against an empty `DUX_HOME` the way the install test's setup
       does, then `grep -o 'ship=[^ ]*' "$DUX_HOME/config/models"`. Expected output:
       `ship=claude-opus-5:high`.
-- [ ] Break-verify, one break, the failure pasted into the commit body as the run printed
+- [x] Break-verify, one break, the failure pasted into the commit body as the run printed
       it: in `bin/dux-install`'s seeding loop, make the `models` copy write something else
       (for instance `printf 'ship=x\n' > "$DUX_CONFIG/$n"` when `$n` is `models`). The
       new `cmp` line fails and the reviewer `cmp` still passes, which shows the new line
       watches `models` and not the loop as a whole. Restore.
-- [ ] `make check` green, `bin/dux-doctor` passing, then `/ship`.
+- [x] `make check` green, `bin/dux-doctor` passing, then `/ship`.
 
 ## Left as written
 

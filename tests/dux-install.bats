@@ -32,6 +32,9 @@ setup() {
   # the gate resolves at run time, so a grep for any particular command would
   # either fail or, worse, pass on a note line that merely mentions one.
   cmp -s "$DUX_ROOT/templates/config/reviewer" "$DUX_HOME/config/reviewer"
+  # Same reason, and it also proves a fresh install runs the effort the
+  # template names rather than pinning that preference in a second file.
+  cmp -s "$DUX_ROOT/templates/config/models" "$DUX_HOME/config/models"
 }
 
 @test "install writes the denylist under DUX_ROOT, never the source tree" {
