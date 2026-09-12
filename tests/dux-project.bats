@@ -291,26 +291,89 @@ load helpers/setup
 }
 
 # Writing into a project repo is the one exception to "never write to a project
-# repo", so it needs the operator's word. Without the flag nothing is written and
-# the project is still registered: declining is a normal outcome, not a finding.
-@test "add without consent writes no template and still registers" {
+# repo", so it needs the operator's word. A repo with no template and no answer
+# is not a default, it is an unanswered question: registration stops so the ask
+# cannot be skipped by a caller that forgets it.
+@test "add stops when the repo has no template and no choice was made" {
   make_repo "$DUX_HOME/repoAA" main
   run --separate-stderr dux-project add "$DUX_HOME/repoAA"
-  [ "$status" -eq 0 ]
-  [ "$(grep -c '^- repoAA ' "$DUX_HOME/data/projects.md" || true)" -eq 1 ]
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == "finding: no PR template found in $DUX_HOME/repoAA;"* ]]
+  # Both choices by name, so the message is enough to act on without the docs.
+  [[ "$stderr" == *"--pr-template install"* ]]
+  [[ "$stderr" == *"--pr-template skip"* ]]
   refute [ -e "$DUX_HOME/repoAA/.github/PULL_REQUEST_TEMPLATE.md" ]
-  [[ "$output" == *"no PR template found; none installed"* ]]
+  [ "$(grep -c '^- repoAA ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
+}
 
+# An empty flag value is the same statement as not passing the flag: no choice
+# was made. It reaches the same stop rather than a message of its own.
+@test "add treats an empty --pr-template as no choice at all" {
+  make_repo "$DUX_HOME/repoAK" main
+  run --separate-stderr dux-project add "$DUX_HOME/repoAK" --pr-template ""
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == "finding: no PR template found in $DUX_HOME/repoAK;"* ]]
+  [ "$(grep -c '^- repoAK ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
+}
+
+@test "add with --pr-template skip registers and writes nothing" {
   make_repo "$DUX_HOME/repoAB" main
-  run dux-project add "$DUX_HOME/repoAB" --pr-template skip
+  run --separate-stderr dux-project add "$DUX_HOME/repoAB" --pr-template skip
   [ "$status" -eq 0 ]
+  [ "$(grep -c '^- repoAB ' "$DUX_HOME/data/projects.md" || true)" -eq 1 ]
   refute [ -e "$DUX_HOME/repoAB/.github/PULL_REQUEST_TEMPLATE.md" ]
+  [[ "$output" == *"no PR template found; none installed"* ]]
+}
 
+# A repo that already has a template has nothing to decide, so the normal call
+# for it carries no flag at all.
+@test "a repo that already has a template registers with no choice at all" {
+  make_repo "$DUX_HOME/repoAL" main
+  mkdir -p "$DUX_HOME/repoAL/.github"
+  echo custom > "$DUX_HOME/repoAL/.github/PULL_REQUEST_TEMPLATE.md"
+  run --separate-stderr dux-project add "$DUX_HOME/repoAL"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^- repoAL ' "$DUX_HOME/data/projects.md" || true)" -eq 1 ]
+  [[ "$output" == *"existing PR template left alone: .github/PULL_REQUEST_TEMPLATE.md"* ]]
+  [ "$(cat "$DUX_HOME/repoAL/.github/PULL_REQUEST_TEMPLATE.md")" = "custom" ]
+}
+
+@test "add stops on an unknown --pr-template value" {
   make_repo "$DUX_HOME/repoAE" main
   run dux-project add "$DUX_HOME/repoAE" --pr-template yes
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: --pr-template must be install or skip: yes"* ]]
   [ "$(grep -c '^- repoAE ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
+}
+
+# Each template outcome is one line, on stdout, which is the line the caller
+# relays. install_template used to write the same words to stderr through log as
+# well, and on a terminal the two merged into what read as a stutter. Nothing
+# ever read the stderr copy. --separate-stderr, because a merged run cannot tell
+# one line from two.
+@test "no template outcome is printed twice" {
+  make_repo "$DUX_HOME/repoAM" main
+  mkdir -p "$DUX_HOME/repoAM/.github"
+  echo custom > "$DUX_HOME/repoAM/.github/PULL_REQUEST_TEMPLATE.md"
+  run --separate-stderr dux-project add "$DUX_HOME/repoAM"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"existing PR template left alone: "* ]]
+  [[ "$stderr" != *"existing PR template left alone"* ]]
+  [[ "$stderr" != *"no PR template found"* ]]
+
+  make_repo "$DUX_HOME/repoAN" main
+  run --separate-stderr dux-project add "$DUX_HOME/repoAN" --pr-template skip
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no PR template found; none installed"* ]]
+  [[ "$stderr" != *"no PR template found"* ]]
+  [[ "$stderr" != *"existing PR template left alone"* ]]
+
+  make_repo "$DUX_HOME/repoAO" main
+  run --separate-stderr dux-project add "$DUX_HOME/repoAO" --pr-template install
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"installed PR template; commit it in"* ]]
+  [[ "$stderr" != *"no PR template found"* ]]
+  [[ "$stderr" != *"existing PR template left alone"* ]]
 }
 
 # GitHub does not say which template wins when a repo has more than one, so Dux

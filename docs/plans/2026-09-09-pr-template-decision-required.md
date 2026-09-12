@@ -10,7 +10,9 @@
 - Drafted 2026-09-09 by the orchestrator session and approved by the operator from the
   published page, with no independent design review. That is a deliberate deviation,
   recorded under "Deviations" below, and it is scoped to this change only.
-- Not started. No branch yet.
+- Task 1 landed on branch `dux/dux-ship-20260909-pai`: the script stops without a
+  choice, and each outcome prints once. Five breaks run, five distinct failures.
+  Task 2 next.
 - When this merges, `bin/dux-project add` refuses to register a repo that has no pull
   request template until the operator has said install or skip, and every template
   outcome prints exactly one line.
@@ -89,40 +91,40 @@ statement as not deciding, and it reaches the same finding. Not worth a separate
 
 Files: `bin/dux-project`, `tests/dux-project.bats`.
 
-- [ ] In `install_template`, delete the `log "$msg"` call in the "existing template"
+- [x] In `install_template`, delete the `log "$msg"` call in the "existing template"
       branch and the `log "no PR template found and none installed"` call in the
       "nothing found" branch. Every outcome now prints exactly one line, on stdout,
       which is the line the caller relays. Nothing reads the stderr copies: confirm with
       a repository-wide search for both sentences before deleting them.
-- [ ] Replace the one-line `[ "$2" = install ] || { ...; return; }` guard with a `case`
+- [x] Replace the one-line `[ "$2" = install ] || { ...; return; }` guard with a `case`
       over the three states: `install` falls through to the write, `skip` prints
       `no PR template found; none installed` and returns, and anything else is
       `finding "no PR template found in $1; ask the operator, then pass --pr-template
       install or --pr-template skip"`.
-- [ ] Change the `add` default from `pr_template="skip"` to `pr_template=""`, and widen
+- [x] Change the `add` default from `pr_template="skip"` to `pr_template=""`, and widen
       the validation `case` to accept `''` alongside `install` and `skip`. An unknown
       value keeps its existing finding.
-- [ ] Confirm by reading `add` from `case "$cmd" in` to the end of the `add)` branch that
+- [x] Confirm by reading `add` from `case "$cmd" in` to the end of the `add)` branch that
       `install_template` is still called before the `printf ... >> "$registry"` line, so
       a finding leaves nothing registered. The `finding` runs inside a command
       substitution; `|| exit $?` on that line is what carries the exit code out.
 
 Tests, in `tests/dux-project.bats`:
 
-- [ ] Split the existing `add without consent writes no template and still registers`
+- [x] Split the existing `add without consent writes no template and still registers`
       test. The `repoAA` half becomes `add stops when the repo has no template and no
       choice was made`: status 2, output starts `finding: no PR template found in`,
       `.github/PULL_REQUEST_TEMPLATE.md` absent, and zero matching lines in
       `data/projects.md`. The `repoAB` half becomes its own test asserting that
       `--pr-template skip` registers, writes nothing, and prints the one line on stdout.
       Keep the `repoAE` half asserting the unknown-value finding.
-- [ ] Add `a repo that already has a template registers with no choice at all`: a fixture
+- [x] Add `a repo that already has a template registers with no choice at all`: a fixture
       with `.github/PULL_REQUEST_TEMPLATE.md`, `dux-project add` with no `--pr-template`,
       status 0, registered, stdout names the existing path.
-- [ ] Add `no template outcome is printed twice`: run each of the three outcomes with
+- [x] Add `no template outcome is printed twice`: run each of the three outcomes with
       `--separate-stderr` and assert `$stderr` contains neither `no PR template found`
       nor `existing PR template left alone`, while `$output` contains the right one.
-- [ ] Break-verify, one break at a time, four distinct failures, each pasted into the
+- [x] Break-verify, one break at a time, four distinct failures, each pasted into the
       commit message as the run printed it:
       1. delete the new `finding` line; the "stops when no choice was made" test fails.
       2. move the `install_template` call below the registry `printf`; the "nothing
