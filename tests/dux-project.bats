@@ -27,14 +27,14 @@ load helpers/setup
 
 @test "add derives the name from the folder" {
   make_repo "$DUX_HOME/repoT" main
-  run dux-project add "$DUX_HOME/repoT"
+  run dux-project add "$DUX_HOME/repoT" --pr-template skip
   [ "$status" -eq 0 ]
   [ "$(dux-project get repoT path)" = "$DUX_HOME/repoT" ]
 }
 
 @test "add --name overrides the folder name" {
   make_repo "$DUX_HOME/repoU" main
-  dux-project add "$DUX_HOME/repoU" --name api
+  dux-project add "$DUX_HOME/repoU" --name api --pr-template skip
   run dux-project list
   [ "$output" = api ]
   [ "$(dux-project get api path)" = "$DUX_HOME/repoU" ]
@@ -55,11 +55,11 @@ load helpers/setup
 @test "add refuses a derived name that is already registered and names the flag" {
   mkdir -p "$DUX_HOME/one" "$DUX_HOME/two"
   make_repo "$DUX_HOME/one/api" main; make_repo "$DUX_HOME/two/api" main
-  dux-project add "$DUX_HOME/one/api"
+  dux-project add "$DUX_HOME/one/api" --pr-template skip
   run dux-project add "$DUX_HOME/two/api"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: project api already registered; pass --name to register it under another name"* ]]
-  dux-project add "$DUX_HOME/two/api" --name api2
+  dux-project add "$DUX_HOME/two/api" --name api2 --pr-template skip
   [ "$(dux-project get api2 path)" = "$DUX_HOME/two/api" ]
 }
 
@@ -73,7 +73,7 @@ load helpers/setup
 
 @test "add writes a registry line with detected git worktree mechanism" {
   make_repo "$DUX_HOME/repoA" main
-  run dux-project add "$DUX_HOME/repoA"
+  run dux-project add "$DUX_HOME/repoA" --pr-template skip
   [ "$status" -eq 0 ]
   line="$(grep '^- repoA ' "$DUX_HOME/data/projects.md")"
   [[ "$line" == "- repoA path=$DUX_HOME/repoA base=main worktree=git issues=off (added "* ]]
@@ -82,13 +82,13 @@ load helpers/setup
 @test "add detects make worktree target" {
   make_repo "$DUX_HOME/repoB" main
   printf 'worktree:\n\t@echo wt\n' > "$DUX_HOME/repoB/Makefile"
-  dux-project add "$DUX_HOME/repoB"
+  dux-project add "$DUX_HOME/repoB" --pr-template skip
   [ "$(dux-project get repoB worktree)" = "make" ]
 }
 
 @test "add honors --base and --issues" {
   make_repo "$DUX_HOME/repoC" main
-  dux-project add "$DUX_HOME/repoC" --base staging --issues label:dux
+  dux-project add "$DUX_HOME/repoC" --base staging --issues label:dux --pr-template skip
   [ "$(dux-project get repoC base)" = "staging" ]
   [ "$(dux-project get repoC issues)" = "label:dux" ]
 }
@@ -111,7 +111,7 @@ load helpers/setup
 
 @test "add refuses a duplicate name with a finding" {
   make_repo "$DUX_HOME/repoD" main
-  dux-project add "$DUX_HOME/repoD"
+  dux-project add "$DUX_HOME/repoD" --pr-template skip
   run dux-project add "$DUX_HOME/repoD"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: project repoD already registered"* ]]
@@ -162,7 +162,7 @@ load helpers/setup
 
 @test "list prints names in order" {
   make_repo "$DUX_HOME/r1" main; make_repo "$DUX_HOME/r2" main
-  dux-project add "$DUX_HOME/r1"; dux-project add "$DUX_HOME/r2"
+  dux-project add "$DUX_HOME/r1" --pr-template skip; dux-project add "$DUX_HOME/r2" --pr-template skip
   run dux-project list
   [ "$output" = $'r1\nr2' ]
 }
@@ -213,7 +213,7 @@ load helpers/setup
 
 @test "add refuses the same path under a second name" {
   make_repo "$DUX_HOME/repoL" main
-  dux-project add "$DUX_HOME/repoL"
+  dux-project add "$DUX_HOME/repoL" --pr-template skip
   run dux-project add "$DUX_HOME/repoL" --name repoL2
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: path $DUX_HOME/repoL already registered as repoL"* ]]
@@ -258,7 +258,7 @@ load helpers/setup
 @test "add honors --worktree and validates it against the repo" {
   make_repo "$DUX_HOME/repoQ" main
   printf 'worktree:\n\t@echo wt\n' > "$DUX_HOME/repoQ/Makefile"
-  dux-project add "$DUX_HOME/repoQ" --worktree git
+  dux-project add "$DUX_HOME/repoQ" --worktree git --pr-template skip
   [ "$(dux-project get repoQ worktree)" = git ]
   make_repo "$DUX_HOME/repoR" main
   run dux-project add "$DUX_HOME/repoR" --worktree make
@@ -276,7 +276,7 @@ load helpers/setup
   # --separate-stderr, because the warning has to be on stderr: plain run merges the
   # two, so the same assertions would pass if it moved to stdout.
   make_repo "$DUX_HOME/repoW" main
-  run --separate-stderr dux-project add "$DUX_HOME/repoW" --name abc
+  run --separate-stderr dux-project add "$DUX_HOME/repoW" --name abc --pr-template skip
   [ "$status" -eq 0 ]
   [[ "$stderr" == *"shorter than four characters"* ]]
   [[ "$stderr" == *"dux-project add --name"* ]]
@@ -284,33 +284,101 @@ load helpers/setup
   # Status and the registry line first: a run that ended in a finding also lacks the
   # warning, and would pass the absence check having proved nothing.
   make_repo "$DUX_HOME/repoX" main
-  run --separate-stderr dux-project add "$DUX_HOME/repoX" --name abcd
+  run --separate-stderr dux-project add "$DUX_HOME/repoX" --name abcd --pr-template skip
   [ "$status" -eq 0 ]
   grep -q '^- abcd ' "$DUX_HOME/data/projects.md"
   [[ "$stderr" != *"shorter than four characters"* ]]
 }
 
 # Writing into a project repo is the one exception to "never write to a project
-# repo", so it needs the operator's word. Without the flag nothing is written and
-# the project is still registered: declining is a normal outcome, not a finding.
-@test "add without consent writes no template and still registers" {
+# repo", so it needs the operator's word. A repo with no template and no answer
+# is not a default, it is an unanswered question: registration stops so the ask
+# cannot be skipped by a caller that forgets it.
+@test "add stops when the repo has no template and no choice was made" {
   make_repo "$DUX_HOME/repoAA" main
   run --separate-stderr dux-project add "$DUX_HOME/repoAA"
-  [ "$status" -eq 0 ]
-  [ "$(grep -c '^- repoAA ' "$DUX_HOME/data/projects.md" || true)" -eq 1 ]
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == "finding: no PR template found in $DUX_HOME/repoAA;"* ]]
+  # Both choices by name, so the message is enough to act on without the docs.
+  [[ "$stderr" == *"--pr-template install"* ]]
+  [[ "$stderr" == *"--pr-template skip"* ]]
   refute [ -e "$DUX_HOME/repoAA/.github/PULL_REQUEST_TEMPLATE.md" ]
-  [[ "$output" == *"no PR template found; none installed"* ]]
+  [ "$(grep -c '^- repoAA ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
+}
 
+# An empty flag value is the same statement as not passing the flag: no choice
+# was made. It reaches the same stop rather than a message of its own.
+@test "add treats an empty --pr-template as no choice at all" {
+  make_repo "$DUX_HOME/repoAK" main
+  run --separate-stderr dux-project add "$DUX_HOME/repoAK" --pr-template ""
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == "finding: no PR template found in $DUX_HOME/repoAK;"* ]]
+  [ "$(grep -c '^- repoAK ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
+}
+
+@test "add with --pr-template skip registers and writes nothing" {
   make_repo "$DUX_HOME/repoAB" main
-  run dux-project add "$DUX_HOME/repoAB" --pr-template skip
+  run --separate-stderr dux-project add "$DUX_HOME/repoAB" --pr-template skip
   [ "$status" -eq 0 ]
+  [ "$(grep -c '^- repoAB ' "$DUX_HOME/data/projects.md" || true)" -eq 1 ]
   refute [ -e "$DUX_HOME/repoAB/.github/PULL_REQUEST_TEMPLATE.md" ]
+  [[ "$output" == *"no PR template found; none installed"* ]]
+}
 
+# A repo that already has a template has nothing to decide, so the normal call
+# for it carries no flag at all.
+@test "a repo that already has a template registers with no choice at all" {
+  make_repo "$DUX_HOME/repoAL" main
+  mkdir -p "$DUX_HOME/repoAL/.github"
+  echo custom > "$DUX_HOME/repoAL/.github/PULL_REQUEST_TEMPLATE.md"
+  run --separate-stderr dux-project add "$DUX_HOME/repoAL"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^- repoAL ' "$DUX_HOME/data/projects.md" || true)" -eq 1 ]
+  [[ "$output" == *"existing PR template left alone: .github/PULL_REQUEST_TEMPLATE.md"* ]]
+  [ "$(cat "$DUX_HOME/repoAL/.github/PULL_REQUEST_TEMPLATE.md")" = "custom" ]
+}
+
+@test "add stops on an unknown --pr-template value" {
   make_repo "$DUX_HOME/repoAE" main
   run dux-project add "$DUX_HOME/repoAE" --pr-template yes
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: --pr-template must be install or skip: yes"* ]]
   [ "$(grep -c '^- repoAE ' "$DUX_HOME/data/projects.md" || true)" -eq 0 ]
+}
+
+# Each template outcome is one line, on stdout, which is the line the caller
+# relays. install_template used to write the same words to stderr through log as
+# well, and on a terminal the two merged into what read as a stutter. Nothing
+# ever read the stderr copy. --separate-stderr, because a merged run cannot tell
+# one line from two.
+@test "no template outcome is printed twice" {
+  make_repo "$DUX_HOME/repoAM" main
+  mkdir -p "$DUX_HOME/repoAM/.github"
+  echo custom > "$DUX_HOME/repoAM/.github/PULL_REQUEST_TEMPLATE.md"
+  run --separate-stderr dux-project add "$DUX_HOME/repoAM"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"existing PR template left alone: "* ]]
+  [[ "$stderr" != *"existing PR template left alone"* ]]
+  [[ "$stderr" != *"no PR template found"* ]]
+
+  make_repo "$DUX_HOME/repoAN" main
+  run --separate-stderr dux-project add "$DUX_HOME/repoAN" --pr-template skip
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no PR template found; none installed"* ]]
+  [[ "$stderr" != *"no PR template found"* ]]
+  [[ "$stderr" != *"existing PR template left alone"* ]]
+
+  make_repo "$DUX_HOME/repoAO" main
+  run --separate-stderr dux-project add "$DUX_HOME/repoAO" --pr-template install
+  [ "$status" -eq 0 ]
+  [ "$(grep -c '^- repoAO ' "$DUX_HOME/data/projects.md" || true)" -eq 1 ]
+  [ -f "$DUX_HOME/repoAO/.github/PULL_REQUEST_TEMPLATE.md" ]
+  [[ "$output" == *"installed PR template; commit it in"* ]]
+  # The install branch never had a stderr copy, so this is the guard that keeps
+  # it that way rather than a record of one being removed.
+  [[ "$stderr" != *"installed PR template"* ]]
+  [[ "$stderr" != *"no PR template found"* ]]
+  [[ "$stderr" != *"existing PR template left alone"* ]]
 }
 
 # GitHub does not say which template wins when a repo has more than one, so Dux

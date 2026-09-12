@@ -81,8 +81,13 @@ gh auth login
 **3. Register a repo.**
 
 ```bash
-bin/dux-project add ~/code/my-project
+bin/dux-project add ~/code/my-project --pr-template skip
 ```
+
+`--pr-template` says what to do about a pull request template, and a repo that
+has none will not register until you answer: `skip` leaves the repo untouched,
+`install` writes `.github/PULL_REQUEST_TEMPLATE.md` for you to commit. Drop the
+flag entirely if the repo already has a template.
 
 **4. Check the install.**
 
@@ -237,7 +242,10 @@ default and is never probed.
 | `backend` | `tmux` or `herdr`. Empty means detect |
 
 `bin/dux-project add` also takes `--name`, `--base`, `--issues label:<name>`,
-`--worktree make|script|git`, and `--pr-template install|skip`.
+`--worktree make|script|git`, and `--pr-template install|skip`. `--pr-template` is
+required when the repo has no pull request template: registration stops with a
+finding until you say install or skip, so nobody is silently not asked. It is not
+needed when the repo already has one, because there is nothing to decide.
 
 </details>
 

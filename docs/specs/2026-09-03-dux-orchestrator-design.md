@@ -1002,6 +1002,18 @@ guess about which one a person opening a pull request in the browser would see.
 The operator who wants this template in a repo that already has one copies it
 across by hand.
 
+Registration stops rather than defaulting, a decision taken 2026-09-09 and
+recorded in `docs/plans/2026-09-09-pr-template-decision-required.md`.
+`--pr-template` has three states, and not passing it is one of them: it says no
+choice was made. On a repo with no template that is a finding naming both
+`--pr-template install` and `--pr-template skip`, and nothing is registered and
+nothing is written. The ask is the only thing standing between the operator and
+a write into their repo, so a caller that forgets it has to stop rather than
+take a default (constitution principle 8). On a repo that already has a template
+there is nothing to decide, so no flag is needed and `dux-project add <path>` is
+the normal call. Every template outcome prints exactly one line, on stdout, which
+is the line the caller relays; nothing writes a second copy to stderr.
+
 The installed file is untracked in the primary checkout and invisible to
 worktrees cut from `origin/<base>`, so `dux-project` says so and the operator
 commits it, or Dux dispatches a docs-only task to land it. `/ship` falls back to

@@ -90,11 +90,15 @@ find_templates() {  # $1 path
   done
 }
 
-# $1 path, $2 install|skip. Prints one line for the caller to relay.
+# $1 path, $2 install|skip|''. Prints one line for the caller to relay, on
+# stdout only: the stderr copy said the same words twice on a terminal, and
+# nothing ever read it.
 #
 # Writing here is the one exception to "never write to a project repo", so it
-# takes the operator's word: $2 comes from the skill, which asks. The default is
-# skip, so a caller that forgets to ask writes nothing.
+# takes the operator's word: $2 comes from the skill, which asks. There is no
+# default. A caller that reaches a repo with no template and no answer gets a
+# finding, because a forgotten ask must be loud rather than a line in a
+# scroll-back that nobody reads.
 #
 # A repo that already has a template anywhere GitHub reads one keeps it and gets
 # no second one, whatever $2 says. GitHub does not document which of root, docs/
@@ -111,11 +115,14 @@ install_template() {
     # the operator reads and what the skill relays.
     local msg
     msg="$(cap_line "existing PR template left alone: $found")"
-    log "$msg"
     echo "$msg"
     return
   fi
-  [ "$2" = install ] || { log "no PR template found and none installed"; echo "no PR template found; none installed"; return; }
+  case "$2" in
+    install) ;;
+    skip) echo "no PR template found; none installed"; return ;;
+    *) finding "no PR template found in $1; ask the operator, then pass --pr-template install or --pr-template skip" ;;
+  esac
   if [ -L "$gh" ] || [ -L "$t" ]; then finding "refusing to write through a symlink at $gh"; fi
   mkdir -p "$gh" 2>/dev/null || finding "cannot create $gh"
   cp "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md" "$t" 2>/dev/null || finding "cannot write $t"
@@ -125,7 +132,7 @@ install_template() {
 cmd="${1:-}"; shift || true
 case "$cmd" in
   add)
-    path=""; name=""; base=""; issues="off"; wt_flag=""; pr_template="skip"
+    path=""; name=""; base=""; issues="off"; wt_flag=""; pr_template=""
     while [ $# -gt 0 ]; do
       case "$1" in
         --name) [ $# -ge 2 ] || usage "$usage_add"; name="$2"; shift 2 ;;
@@ -153,8 +160,11 @@ case "$cmd" in
     grep -q "^- $name " "$registry" && finding "project $name already registered; pass --name to register it under another name"
     other="$(grep -F -- " path=$path " "$registry" | sed -n 's/^- \([^ ]*\) .*/\1/p')"
     [ -z "$other" ] || finding "path $path already registered as $other"
+    # Empty is the third state, not a default: it says no choice was made, and
+    # install_template turns it into a finding when the repo has no template.
+    # A repo that has one has nothing to decide, so empty is correct there.
     case "$pr_template" in
-      install|skip) ;;
+      ''|install|skip) ;;
       *) finding "--pr-template must be install or skip: $pr_template" ;;
     esac
     # One project is one line, and the line is read by splitting on spaces. A

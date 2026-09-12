@@ -188,7 +188,7 @@ fixture_task() {  # $1 project name, $2 shape, [$3 github]; prints the task id. 
   # A second task in the same project reuses it; registering it twice is a finding.
   if ! dux-project list | grep -x "$1" >/dev/null; then
     if [ "${3:-}" = github ]; then make_github_repo "$1"; else make_repo "$DUX_HOME/$1" main; fi
-    dux-project add "$DUX_HOME/$1" --base main >/dev/null
+    dux-project add "$DUX_HOME/$1" --base main --pr-template skip >/dev/null
   fi
   local id; id="$(dux-task-new "$1" "$2")"
   # Where the dispatch skill puts them, so that a retry finds them there too.

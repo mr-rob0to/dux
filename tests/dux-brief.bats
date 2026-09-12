@@ -2,7 +2,7 @@ load helpers/setup
 
 setup_task() {  # $1 shape; prints id
   make_repo "$DUX_HOME/proj" main
-  dux-project add "$DUX_HOME/proj" --base main >/dev/null
+  dux-project add "$DUX_HOME/proj" --base main --pr-template skip >/dev/null
   printf 'Ship the login screen.\nNo analytics changes.\n' > "$DUX_HOME/intent"
   printf '1. Login works.\n2. Tests pass.\n' > "$DUX_HOME/criteria"
   dux-task-new proj "$1"
@@ -143,7 +143,7 @@ setup_task() {  # $1 shape; prints id
 
 @test "worker settings are rendered with the base branch and are valid JSON" {
   make_repo "$DUX_HOME/proj" main
-  dux-project add "$DUX_HOME/proj" --base staging >/dev/null
+  dux-project add "$DUX_HOME/proj" --base staging --pr-template skip >/dev/null
   printf 'x\n' > "$DUX_HOME/intent"; printf '1. y\n' > "$DUX_HOME/criteria"
   id="$(dux-task-new proj scout)"
   dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" >/dev/null
@@ -170,7 +170,7 @@ denied() {  # $1 rendered settings, $2 command line; true when a deny rule globs
 
 @test "the deny rules match every spelling of a forge ref delete" {
   make_repo "$DUX_HOME/proj" main
-  dux-project add "$DUX_HOME/proj" --base main >/dev/null
+  dux-project add "$DUX_HOME/proj" --base main --pr-template skip >/dev/null
   printf 'x\n' > "$DUX_HOME/intent"; printf '1. y\n' > "$DUX_HOME/criteria"
   id="$(dux-task-new proj scout)"
   dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" >/dev/null
@@ -183,7 +183,7 @@ denied() {  # $1 rendered settings, $2 command line; true when a deny rule globs
 }
 
 @test "a gh-sourced task renders the issue line from the ledger and needs --issue-file" {
-  make_repo "$DUX_HOME/proj" main; dux-project add "$DUX_HOME/proj" --base main >/dev/null
+  make_repo "$DUX_HOME/proj" main; dux-project add "$DUX_HOME/proj" --base main --pr-template skip >/dev/null
   printf 'Fix it.\n' > "$DUX_HOME/intent"; printf '1. Fixed.\n' > "$DUX_HOME/criteria"
   id="$(dux-task-new proj ship --source 'gh:acme/proj#12')"
   run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --plan docs/p.md --tasks 1

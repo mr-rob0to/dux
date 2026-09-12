@@ -4,14 +4,14 @@ load helpers/setup
 register() {  # $1 name [--worktree m]; registers $DUX_HOME/<name> on main
   local n="$1"; shift
   make_repo "$DUX_HOME/$n" main
-  dux-project add "$DUX_HOME/$n" --base main "$@" >/dev/null
+  dux-project add "$DUX_HOME/$n" --base main --pr-template skip "$@" >/dev/null
 }
 
 with_makefile() {  # $1 name, $2 Makefile body: a repo registered with worktree=make
   make_repo "$DUX_HOME/$1" main
   printf '%s' "$2" > "$DUX_HOME/$1/Makefile"
   (cd "$DUX_HOME/$1" && git add Makefile && git commit -q -m makefile && git push -q origin main)
-  dux-project add "$DUX_HOME/$1" --base main >/dev/null
+  dux-project add "$DUX_HOME/$1" --base main --pr-template skip >/dev/null
   [ "$(dux-project get "$1" worktree)" = make ]
 }
 # A worktree target that picks its own path and leaves a marker.
@@ -63,7 +63,7 @@ custom_target='worktree:
   git clone -q --bare "$DUX_HOME/proj.origin" "$bare"
   git -C "$bare" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
   git -C "$bare" worktree add --quiet "$DUX_HOME/bareproj" main
-  dux-project add "$DUX_HOME/bareproj" --base main >/dev/null
+  dux-project add "$DUX_HOME/bareproj" --base main --pr-template skip >/dev/null
   id="$(dux-task-new bareproj scout)"
   run dux-worktree create "$id"
   [ "$status" -eq 2 ]
@@ -251,7 +251,7 @@ commit_in() {  # $1 project name, $2... paths to add and push
   printf '#!/bin/sh\ngit worktree add ".worktrees/s-$(echo "$1" | tr / -)" -b "$1" "origin/$2" && echo "$1 $2" > .worktrees/script-args\n' > "$DUX_HOME/proj/scripts/worktree.sh"
   chmod +x "$DUX_HOME/proj/scripts/worktree.sh"
   (cd "$DUX_HOME/proj" && git add scripts && git commit -q -m script && git push -q origin main)
-  dux-project add "$DUX_HOME/proj" --base main >/dev/null
+  dux-project add "$DUX_HOME/proj" --base main --pr-template skip >/dev/null
   [ "$(dux-project get proj worktree)" = script ]
   id="$(dux-task-new proj ship)"
   run --separate-stderr dux-worktree create "$id"
@@ -407,7 +407,7 @@ run_hook() {  # $1 hook, $2 remote ref name; feeds one pre-push line on stdin
 @test "the rendered hook never re-evaluates the base branch or the upstream path" {
   base='evil$(touch$IFS'"$DUX_HOME"'/pwned-base)'
   make_repo "$DUX_HOME/proj" "$base"
-  dux-project add "$DUX_HOME/proj" --base "$base" >/dev/null
+  dux-project add "$DUX_HOME/proj" --base "$base" --pr-template skip >/dev/null
   git -C "$DUX_HOME/proj" config core.hooksPath 'hooks$(touch$IFS'"$DUX_HOME"'/pwned-upstream)'
   id="$(dux-task-new proj scout)"
   dux-worktree create "$id" >/dev/null
@@ -421,7 +421,7 @@ run_hook() {  # $1 hook, $2 remote ref name; feeds one pre-push line on stdin
 @test "the rendered hook exits 2 on a refused push and survives a quote in the base branch" {
   base="o'brien"
   make_repo "$DUX_HOME/proj" "$base"
-  dux-project add "$DUX_HOME/proj" --base "$base" >/dev/null
+  dux-project add "$DUX_HOME/proj" --base "$base" --pr-template skip >/dev/null
   id="$(dux-task-new proj scout)"
   dux-worktree create "$id" >/dev/null
   hook="$DUX_HOME/data/tasks/$id/hooks/pre-push"
