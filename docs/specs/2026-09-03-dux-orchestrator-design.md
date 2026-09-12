@@ -1081,6 +1081,9 @@ receiving anything beyond the brief file and their project's own instructions.
   answering CLOSED, then OPEN.
 - `/ship` additions: each new guard broken once with the failure pasted into the
   commit.
+- A command that reads an answer from a terminal is tested through a pseudo-terminal.
+  No command on `main` does yet; the helper's shape and its proof are settled in
+  `docs/specs/2026-09-11-terminal-prompt-tests.md`.
 
 ## 16. Milestones
 
