@@ -588,6 +588,16 @@ If the lock is held by a live pid, Dux announces it is read-only and skips spawn
 teardown, and recover. A `SessionEnd` hook releases the lock and kills the
 watcher; workers keep running under the backend and are reconciled next start.
 
+The same `.claude/settings.json` sets `model` to `claude-sonnet-5`, so a session
+opened in the Dux checkout starts on Sonnet with no `/model`, flag, or variable.
+Dux dispatches and relays; it never implements, so the highest-capability model
+buys it nothing. Workers are not affected: every worker gets `--model` from
+`config/models` on its command line, and Claude Code applies a `--model` flag
+over the `model` key of the user, shared project, and local settings files. An
+operator who wants another model for their own session sets it in
+`.claude/settings.local.json`, which applies over the committed file and which
+`.gitignore` keeps out of git.
+
 Dux is a long-lived session, which the operator's global "one session, one task"
 rule does not allow by default. The written opt-out: Dux's task is supervision,
 its state is entirely on disk, and it is restarted at least daily or after 40
