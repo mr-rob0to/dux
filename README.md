@@ -81,8 +81,13 @@ gh auth login
 **3. Register a repo.**
 
 ```bash
-bin/dux-project add ~/code/my-project
+bin/dux-project add ~/code/my-project --pr-template skip
 ```
+
+`--pr-template` says what to do about a pull request template, and a repo that
+has none will not register until you answer: `skip` leaves the repo untouched,
+`install` writes `.github/PULL_REQUEST_TEMPLATE.md` for you to commit. Drop the
+flag entirely if the repo already has a template.
 
 **4. Check the install.**
 

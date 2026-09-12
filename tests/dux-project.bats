@@ -371,7 +371,12 @@ load helpers/setup
   make_repo "$DUX_HOME/repoAO" main
   run --separate-stderr dux-project add "$DUX_HOME/repoAO" --pr-template install
   [ "$status" -eq 0 ]
+  [ "$(grep -c '^- repoAO ' "$DUX_HOME/data/projects.md" || true)" -eq 1 ]
+  [ -f "$DUX_HOME/repoAO/.github/PULL_REQUEST_TEMPLATE.md" ]
   [[ "$output" == *"installed PR template; commit it in"* ]]
+  # The install branch never had a stderr copy, so this is the guard that keeps
+  # it that way rather than a record of one being removed.
+  [[ "$stderr" != *"installed PR template"* ]]
   [[ "$stderr" != *"no PR template found"* ]]
   [[ "$stderr" != *"existing PR template left alone"* ]]
 }
