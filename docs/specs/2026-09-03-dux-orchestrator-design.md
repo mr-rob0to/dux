@@ -1144,6 +1144,13 @@ product; there is no build or package.
 - **Bundled**: every skill under `skills/` (`ship`, `dux-project`,
   `dux-dispatch`, `dux-status`, `dux-recover`), every script under `bin/`, and
   every default under `templates/`.
+- **Logo**: `docs/assets/dux-logo.png` is the operator's banner export: a wide
+  image, not a square one, with a transparent background, the mascot and worker
+  robots on the left and the wordmark on the right. The README shows it once, at
+  the top of its centered block, 480 pixels wide, above the heading; nothing else
+  reads it. It is replaced whole, never edited, cropped or resized in the
+  repository. A different rendering, such as a dark-theme variant or a square
+  icon for an avatar, is a new file and its own change.
 - **Personal, gitignored**: `data/`, `state/`, `config/`. `templates/config/`
   holds the defaults `dux-install` copies into `config/` on first run:
   `reviewer` and `security-reviewer` (both default to `auto`, which `ship-env`
