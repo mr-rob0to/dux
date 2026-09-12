@@ -12,8 +12,9 @@
 - Picks up a drift the operator noticed: the live `config/models` runs ship workers at
   high effort, the tracked template still seeds max.
 - Merges as one ship PR of one task.
-- Task 1 implemented 2026-09-12 on `dux/dux-ship-20260912-v31`: template token changed,
-  seeding proof added, break-verified. Awaiting `/ship`.
+- Task 1 done 2026-09-12 on `dux/dux-ship-20260912-v31`: template token changed, seeding
+  proof added, break-verified, `make check` green, `bin/dux-doctor` passing. In the ship
+  gate; the gate's own result is the pull request, not this file.
 
 **Estimated diff:** ~4 changed lines across 1 task. Well under the cap.
 
