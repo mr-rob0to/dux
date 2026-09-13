@@ -10,7 +10,8 @@ removes, or renames a script, adapter, state file, or step in a flow.
 ```
 AGENTS.md                  operating contract, always loaded (<=150 lines, tested)
 CLAUDE.md                  two-line import of AGENTS.md
-.claude/settings.json      SessionStart: dux-lock acquire; SessionEnd: dux-lock release
+.claude/settings.json      SessionStart: dux-lock acquire; SessionEnd: dux-lock release;
+                           model claude-sonnet-5 for the orchestrator session
 skills/
   dux-dispatch/SKILL.md    turn a goal into a running task, and tear it down after merge
   dux-project/SKILL.md     register a repo; ask before installing the PR template

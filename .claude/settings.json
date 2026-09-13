@@ -1,4 +1,5 @@
 {
+  "model": "claude-sonnet-5",
   "hooks": {
     "SessionStart": [
       { "hooks": [ { "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/bin/dux-lock acquire || true" } ] }

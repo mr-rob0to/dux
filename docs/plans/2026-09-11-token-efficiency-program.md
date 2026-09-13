@@ -3,7 +3,7 @@
 **Where this stands**
 - Approved by the operator and being implemented as one five-task milestone.
 - The earlier independent review and the later scope review are recorded below; no second review is planned.
-- Tasks 1 and 2 landed 2026-09-13. Tasks 3 to 5 follow in order, `make check` green after each.
+- Tasks 1 to 3 landed 2026-09-13. Tasks 4 and 5 follow in order, `make check` green after each.
 
 **Divergences from the approved plan**
 - No `CHANGELOG.md` is written. The repository has never had one, and starting a changelog
@@ -137,12 +137,12 @@ the installed two-task exercise leaves no duplicate worker or abandoned worktree
 `.claude/settings.local.json` remains the operator's ignored override. Explicit worker
 `--model` flags continue to win, so Tasks 1 and 4 are unaffected.
 
-- [ ] Implement the already reviewed plan at
+- [x] Implement the already reviewed plan at
       `docs/plans/2026-09-11-orchestrator-session-defaults-to-sonnet.md`; its exact contract
       assertion, local override, architecture note and manual CLI checks are inherited.
-- [ ] Break the new model assertion by changing the committed value to Opus, capture the
+- [x] Break the new model assertion by changing the committed value to Opus, capture the
       failure while the existing hook assertion stays green, then restore it.
-- [ ] Start one installed operator session without `--model` and one worker with an explicit
+- [x] Start one installed operator session without `--model` and one worker with an explicit
       model. Confirm the operator reports Sonnet and the worker reports its routed model.
 
 **Done when:** `bats tests/contract.bats` exits 0, both manual model checks print the expected

@@ -39,6 +39,15 @@ load helpers/setup
   [[ "$output" == *"dux-lock release"* ]]
 }
 
+# The orchestrator session only dispatches and relays, so it starts on Sonnet.
+# The committed file is the mechanism: anyone who opens this checkout gets it
+# without a flag. Its own test, so a change to the model shows up here and not
+# as a second failure in the hooks test.
+@test "the committed project settings start the session on Sonnet" {
+  run jq -r .model "$DUX_ROOT/.claude/settings.json"
+  [ "$output" = claude-sonnet-5 ]
+}
+
 @test "AGENTS.md arms one persistent Monitor on the events log and re-arms it per turn" {
   grep -qF 'Monitor(command: "tail -n0 -F state/events.log", persistent: true)' "$DUX_ROOT/AGENTS.md"
   grep -q 'no Monitor is armed' "$DUX_ROOT/AGENTS.md"
