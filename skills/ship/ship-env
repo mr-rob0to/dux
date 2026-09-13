@@ -51,21 +51,6 @@ first_value() {  # $1 file
 # reviewer that actually ran.
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# The operator's own agent directory, and only that one. Claude Code also reads
-# agent definitions out of the project it runs in, and the project here is the
-# repository whose diff is being audited: a branch that commits
-# .claude/agents/security-reviewer.md would be choosing, and writing, the auditor
-# that reads it. Workers are untrusted by construction, so that file is exactly
-# what a worker would add to have its own change waved through.
-#
-# A plugin can supply an agent as well, and no shell can see that, so this
-# answers no on a host where the answer is yes. So can a project that has a real
-# reason for its own reviewer. The cure for both is one line in
-# config/security-reviewer, which belongs to the operator and is never probed.
-agent_defined() {  # $1 name
-  [ -f "${CLAUDE_CONFIG_DIR:-${HOME:-}/.claude}/agents/$1.md" ]
-}
-
 # Both reviewer commands run with their working directory inside the repository
 # they are reviewing, and both would otherwise take instructions from it. That is
 # the change under review writing part of its own reviewer's brief, and one line
@@ -138,10 +123,23 @@ probe() {  # $1 key; prints the command this host can actually run
       elif have claude; then printf '%s\n' "$claude_reviewer"
       else finding "no code reviewer on this host: neither codex nor claude is on PATH; put a command line in $root/config/reviewer"
       fi ;;
+    # The security pass is qualified work and what was qualified is Codex Sol,
+    # against the two fixtures in tests/fixtures/security-review: it found both
+    # planted Critical defects with the attacker, the input and the gain, and
+    # invented nothing against the clean counterpart. Nothing else here has been
+    # put to that test, so nothing else is chosen automatically.
+    #
+    # In particular there is no automatic Claude reviewer any more, and no agent
+    # is probed for. An agent is dispatched by bare name into the repository
+    # under review, which can define an agent of that name; that was a hole this
+    # file could only narrow, and it closes by not choosing an agent at all.
+    #
+    # A host without codex stops. The alternative is running an unqualified
+    # reviewer and reporting a security pass, which is worse than no pass: the
+    # finding names the file where the operator states what to run instead.
     security-reviewer)
-      if agent_defined security-reviewer; then printf 'agent:security-reviewer\n'
-      elif have claude; then printf '%s\n' "$claude_reviewer"
-      else finding "no security reviewer on this host: no security-reviewer agent definition and no claude on PATH; put a command line in $root/config/security-reviewer"
+      if have codex; then printf '%s\n' "$codex_reviewer"
+      else finding "no security reviewer on this host: codex is not on PATH; put a command line in $root/config/security-reviewer"
       fi ;;
     *) finding "nothing to probe for $1" ;;
   esac

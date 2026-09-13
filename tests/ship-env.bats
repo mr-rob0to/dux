@@ -214,12 +214,22 @@ auto_checkout() {  # prints the checkout path
   [ "$stderr" = "finding: no code reviewer on this host: neither codex nor claude is on PATH; put a command line in $c/config/reviewer" ]
 }
 
-@test "auto picks the agent for the security pass when the user has defined one" {
+# The security pass is qualified work, and what was qualified is Codex Sol
+# against the fixtures under tests/fixtures/security-review. An agent the
+# operator happens to have defined has not been qualified for this, so it is no
+# longer probed: automatic means Sol, and a preference is stated in
+# config/security-reviewer or not at all.
+@test "auto picks Codex Sol for the security pass even where an agent is defined" {
   c="$(auto_checkout)"
-  host claude user-agent
+  host codex claude user-agent
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
-  [ "$output" = "agent:security-reviewer" ]
+  [ "$output" = "$codex_line" ]
+  [ "$output" != "agent:security-reviewer" ]
+  [ "$output" != "$claude_line" ]
+  # The definition really is where the probe used to read it, so this is not
+  # passing because nothing was written.
+  [ -f "$PROBE_HOME/.claude/agents/security-reviewer.md" ]
 }
 
 # The project the gate runs in is the repository whose diff is being audited, and
@@ -229,10 +239,10 @@ auto_checkout() {  # prints the checkout path
 # the change under review.
 @test "a security-reviewer definition committed to the project is not the agent" {
   c="$(auto_checkout)"
-  host claude project-agent
+  host codex claude project-agent
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
-  [ "$output" = "$claude_line" ]
+  [ "$output" = "$codex_line" ]
   [ "$output" != "agent:security-reviewer" ]
   # The file really is where the gate would run, so the test is asking the
   # question it means to ask and not passing because nothing was written.
@@ -254,23 +264,26 @@ auto_checkout() {  # prints the checkout path
   [[ "$stderr" == *"$c/config/security-reviewer"* ]]
 }
 
-# The probed answer reaches the same dispatch, so it is refused on the same
-# terms. Without this the operator's own machine, which defines the agent, is
-# exactly the host the branch can hijack.
-@test "a probed agent value is refused when the project defines that agent" {
+# The hijack the probe used to be open to cannot happen at all now: the probe
+# never returns an agent, so the worst a repository defining one can do to an
+# automatic run is nothing. Both definitions present, and the answer is Sol.
+@test "the probe cannot be made to return an agent by defining one" {
   c="$(auto_checkout)"
-  host claude user-agent project-agent
+  host codex claude user-agent project-agent
   run --separate-stderr on_host "$c" security-reviewer
-  [ "$status" -eq 2 ]
-  [ -z "$output" ]
-  [[ "$stderr" == *"remove .claude/agents/security-reviewer.md from the worktree"* ]]
+  [ "$status" -eq 0 ]
+  [ "$output" = "$codex_line" ]
+  [ -f "$PROBE_HOME/.claude/agents/security-reviewer.md" ]
+  [ -f "$PROJECT/.claude/agents/security-reviewer.md" ]
 }
 
 # The refusal is about a name collision, not about the project having a .claude
 # directory. A project agent by some other name is nobody's business here.
 @test "a project agent of another name does not refuse the gate" {
   c="$(auto_checkout)"
-  host claude user-agent
+  mkdir -p "$c/config"
+  printf 'agent:security-reviewer\n' > "$c/config/security-reviewer"
+  host codex claude user-agent
   : > "$PROJECT/.claude/agents/some-other-agent.md"
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
@@ -282,7 +295,9 @@ auto_checkout() {  # prints the checkout path
 # put one and the whole case this check exists for.
 @test "the refusal finds a root definition when the gate is called from a subdirectory" {
   c="$(auto_checkout)"
-  host claude user-agent project-agent
+  mkdir -p "$c/config"
+  printf 'agent:security-reviewer\n' > "$c/config/security-reviewer"
+  host codex claude user-agent project-agent
   PROJECT_CWD="$PROJECT/sub"
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 2 ]
@@ -336,23 +351,27 @@ auto_checkout() {  # prints the checkout path
   esac
 }
 
-@test "auto picks claude for the security pass when no agent is defined" {
+@test "auto picks Codex Sol for the security pass, never the claude line" {
   c="$(auto_checkout)"
   host codex claude
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 0 ]
-  # codex is on this host and is not the answer: the security pass is its own
-  # reviewer and never inherits the code reviewer's command.
-  [ "$output" = "$claude_line" ]
+  [ "$output" = "$codex_line" ]
+  # claude is on this host and is not the answer. There is no automatic Claude
+  # security reviewer any more: what was qualified is Sol.
+  [ "$output" != "$claude_line" ]
 }
 
-@test "auto with no security reviewer on the host stops the gate and names the file" {
+# A host without codex has nothing qualified to run, so it stops rather than
+# quietly running something else. claude is deliberately present: falling back
+# to it is exactly what must not happen.
+@test "auto with no codex on the host stops the security pass and names the file" {
   c="$(auto_checkout)"
-  host codex
+  host claude user-agent
   run --separate-stderr on_host "$c" security-reviewer
   [ "$status" -eq 2 ]
   [ -z "$output" ]
-  [ "$stderr" = "finding: no security reviewer on this host: no security-reviewer agent definition and no claude on PATH; put a command line in $c/config/security-reviewer" ]
+  [ "$stderr" = "finding: no security reviewer on this host: codex is not on PATH; put a command line in $c/config/security-reviewer" ]
 }
 
 # The probe exists to answer where nobody has said what they want. A stated

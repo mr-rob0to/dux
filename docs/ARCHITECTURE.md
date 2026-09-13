@@ -29,8 +29,11 @@ skills/
                            both reviewers default to auto, which picks the command from what
                            the host has, on every run and never written down, and stops the
                            gate when the host has nothing to run; a stated value is never
-                           probed. pr-template delegates to bin/dux-project so the lookup has
-                           one owner (milestone 6). Sources nothing either, and stops when it
+                           probed. auto for the security pass is Codex Sol, read-only, the
+                           only reviewer qualified against tests/fixtures/security-review;
+                           no agent is chosen automatically and a host without codex stops.
+                           pr-template delegates to bin/dux-project so the lookup has one
+                           owner (milestone 6). Sources nothing either, and stops when it
                            is not inside a checkout
 bin/
   dux-env                  sourced by every script: paths, log, die, finding, now,
@@ -80,6 +83,10 @@ templates/
   brief.md                 the brief skeleton dux-brief renders
   worker-settings.json     Claude deny rules, __BASE__ rendered per task
   worker-mcp.json          the empty MCP config every Claude worker is held to
+tests/fixtures/
+  security-review/         vulnerable.sh, clean.sh and expected.md: the planted defects a
+                           security reviewer must find, and must not invent, before auto
+                           will choose it. Never executed; implementation evidence only
   hooks/pre-push           base-branch push guard, __BASE__ and __UPSTREAM__ rendered per task
   config/                  defaults dux-install copies into config/ (models, models-codex,
                            worker-harness, backend, reviewer, security-reviewer)

@@ -3,7 +3,8 @@
 **Where this stands**
 - Approved by the operator and being implemented as one five-task milestone.
 - The earlier independent review and the later scope review are recorded below; no second review is planned.
-- Tasks 1 to 4 landed 2026-09-13; Task 5 follows, `make check` green after each.
+- All five tasks landed 2026-09-13, `make check` green after each. What is left is the
+  milestone's own acceptance: the installed exercises, `make check-branch`, then `/ship`.
 - Task 4's last box, the two installed workers through `/ship`, runs with the milestone's
   own installed exercises after Task 5. Task 4 takes the Agent tool away, and the security
   phase needs it until Task 5 routes that pass to Codex through Bash; run before Task 5
@@ -193,18 +194,18 @@ returns HTTP 400, `/ship` retries once with `gpt-5.6-terra` and tells the operat
 reviewer ran. No Codex command produces a finding; there is no automatic Claude fallback.
 The fixture qualification is implementation evidence, not a runtime command or state file.
 
-- [ ] Add a small non-executed fixture with reachable shell injection and path traversal,
+- [x] Add a small non-executed fixture with reachable shell injection and path traversal,
       a clean counterpart, and an expected report naming file, line, attacker, input and gain.
-- [ ] Run one fresh Sol review against both fixtures. Accept only all planted Important or
+- [x] Run one fresh Sol review against both fixtures. Accept only all planted Important or
       Critical findings and no invented Important or Critical clean finding. On Sol HTTP 400,
       run the same qualification once with Terra and record that fallback. Any other miss
       stops this task for operator direction.
-- [ ] Write failing tests proving explicit config wins, automatic security chooses Sol,
+- [x] Write failing tests proving explicit config wins, automatic security chooses Sol,
       a host without Codex stops, and the project under review cannot select its own reviewer.
-- [ ] Change only reviewer selection and the security-step fallback instructions. Do not
+- [x] Change only reviewer selection and the security-step fallback instructions. Do not
       extract prompts, automate qualification, add expiry, collect usage, or change any other
       `/ship` step.
-- [ ] Break explicit preference, Sol selection and no-Codex refusal separately; capture each
+- [x] Break explicit preference, Sol selection and no-Codex refusal separately; capture each
       failure. Dry-run the changed ship skill against a throwaway repository.
 
 **Done when:** the fixture report matches `expected.md`, `bats tests/ship-env.bats` exits 0,

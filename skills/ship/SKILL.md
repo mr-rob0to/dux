@@ -293,12 +293,26 @@ The security reviewer comes from the same place as the correctness one:
 SECURITY_REVIEWER="$("$SHIP_ENV" security-reviewer)"
 ```
 
-It has two shapes, and the gate handles both:
+Where nobody has stated a preference, `ship-env` returns the one security
+reviewer that has been qualified against the fixtures in
+`tests/fixtures/security-review`, and a host that cannot run it stops here and
+names `config/security-reviewer`. The model is in that file, not in this one.
+Running some other reviewer instead is the silent degradation this whole step
+exists to remove.
 
-- **`agent:<name>`** — dispatch that agent on this host, fresh, having seen
+**If the reviewer's model is refused with an HTTP 400**, take the one fallback
+`config/security-reviewer` states, run the same audit once more, and say in the
+pull request which reviewer actually ran. Any other failure stops the step. A
+review that silently downgraded is worse than one that did not happen, and a
+reviewer that has not been qualified for this pass is not a substitute for one
+that has.
+
+The value has two shapes, and the gate handles both:
+
+- **`agent:<name>`** — only ever from a stated `config/security-reviewer`, never
+  chosen automatically. Dispatch that agent on this host, fresh, having seen
   nothing of the change. **A host that cannot dispatch agents stops here** and
-  names `config/security-reviewer` as the file to change. Running some other
-  reviewer instead is the silent degradation this whole step exists to remove.
+  names `config/security-reviewer` as the file to change.
 - **Anything else** is a command line, and the audit prompt below is appended to
   it as one argument, exactly as step 6 does.
 
@@ -612,8 +626,15 @@ All of these mean: go back and do the step properly.
 - **Step 6** runs its reviewer as a command on every host. From inside the same tool the value
   names, that is a nested read-only run; that is intended, because the reviewer must be a fresh
   session that has seen nothing of the change.
-- **Step 7 on Claude Code**, when the value is `agent:<name>`: dispatch that agent. If the host
-  has no agent of that name, stop and say so rather than running a different reviewer.
-- **Step 7 on a host with no agents:** put a command line in `config/security-reviewer`. The
-  audit prompt above and the coverage list go to it as a separate run from step 6.
+- **Step 7's `auto` is the one qualified security reviewer and nothing else.** No agent is
+  probed for: an agent is dispatched by bare name into the repository under review, which can
+  define an agent of that name. A host that cannot run the qualified reviewer stops the gate
+  rather than falling back to an unqualified one. Which reviewer that is, and what qualified
+  it, are in `config/security-reviewer`.
+- **Step 7 when the value is `agent:<name>`**, which only a stated config file produces:
+  dispatch that agent. If the host has no agent of that name, stop and say so rather than
+  running a different reviewer.
+- **Step 7's one fallback** is an HTTP 400 from the reviewer's model, retried once with the
+  model `config/security-reviewer` names for it, and named in the pull request. Anything else
+  stops the step.
 - Each config file carries a note saying what it is for; read it before changing it.

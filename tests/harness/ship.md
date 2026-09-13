@@ -163,11 +163,21 @@ Same lookup, same absent `config/`, so this came from
 `templates/config/security-reviewer`. The `agent:` form means dispatch the named
 agent rather than run a command, which is what happened.
 
-That default is `auto` now too: the agent when a `security-reviewer` definition
-is in the operator's own agents directory, otherwise Claude Code in plan mode, and a
-finding naming the config file when there is neither. This machine defines the
-agent, so the line above is still what it resolves. An explicit `agent:` value
-on a host that cannot dispatch agents still stops the gate.
+That default was `auto`, which on the day of this run meant the agent when a
+`security-reviewer` definition was in the operator's own agents directory,
+otherwise Claude Code in plan mode. This machine defined the agent, which is why
+the line above says so.
+
+**What `auto` resolves to for the security pass changed on 2026-09-13** and this
+recording was not made again: nothing else here has been rewritten, because a
+recording of a run says what that run did. `auto` now means the qualified Codex
+reviewer, the same command step 6 shows above, and a host without `codex` stops
+the gate. No agent is chosen automatically any more, because an agent is
+dispatched by bare name into the repository under review and that repository can
+define an agent of that name. A stated `agent:` value still works and is still
+refused on a host that cannot dispatch agents. The reasoning is in
+`templates/config/security-reviewer`, and the evidence is the fixture
+qualification under `tests/fixtures/security-review`.
 
 ```
 $ dispatch agent security-reviewer with the step 7 prompt

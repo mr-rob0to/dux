@@ -2,31 +2,26 @@
 # dispatches that agent on this host, and anything else is a command line the
 # audit prompt is appended to.
 #
-# `auto` means the shape is chosen when the gate runs: the security-reviewer
-# agent when you have defined one in your own Claude agents directory, otherwise
-# Claude Code with Fable in plan mode. With neither one there the gate stops and
-# names this file rather than running nothing.
+# `auto` means Codex with gpt-5.6-sol, read-only, in a fresh session, told not to
+# read the reviewed repository's own instructions. That is the one reviewer that
+# has been put to the test: it was run against tests/fixtures/security-review,
+# found both planted Critical defects with the attacker, the input and the gain,
+# and invented nothing against the clean counterpart. Nothing else here has been
+# qualified, so nothing else is chosen for you. A host without codex stops the
+# gate and names this file, rather than running an unqualified reviewer and
+# calling the result a security pass.
 #
-# Only your own directory is read, never the project being reviewed. A branch
-# that could put an agent definition in the probe's path would be appointing the
-# reviewer that audits it.
+# If Sol is refused with an HTTP 400, /ship retries once with gpt-5.6-terra and
+# says in the pull request which reviewer actually ran. A review that silently
+# downgraded is worse than one that did not happen.
 #
-# For the same reason the gate refuses an agent: value, stated or chosen, when
-# the repository being reviewed holds .claude/agents/<name>.md. The gate cannot
-# tell which of the two definitions it would dispatch, so it stops and says so.
-# Remove that file from the worktree, or name a command line here.
-#
-# That refusal reads one path, and an agent is named by a line inside the file
-# rather than by the file's name, so it catches the obvious case and not every
-# case. The gate still dispatches its reviewer inside the repository being
-# reviewed. If you need a boundary rather than a speed bump, put a command line
-# here: nothing in the reviewed repository can reach it.
-#
-# So an agent that arrives through a plugin is invisible to the probe, and so is
-# one a project defines for itself. On such a host write agent:security-reviewer
-# here; an explicit value is never probed. An explicit agent: value on a host
-# that cannot dispatch agents still stops the gate rather than running something
-# else.
+# No agent is chosen automatically. An agent is dispatched by bare name into the
+# repository being reviewed, which can hold a definition of that name, and the
+# gate cannot tell which of the two it would run. You may still state
+# agent:<name> here; the gate then refuses if the repository being reviewed holds
+# .claude/agents/<name>.md, so remove that file from the worktree or name a
+# command line instead. An explicit agent: value on a host that cannot dispatch
+# agents stops the gate rather than running something else.
 #
 # Copy this file to config/security-reviewer to change it: /ship reads config/
 # first and falls back here.
