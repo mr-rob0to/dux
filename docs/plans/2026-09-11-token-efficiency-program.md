@@ -5,6 +5,8 @@
 - The earlier independent review and the later scope review are recorded below; no second review is planned.
 - All five tasks landed 2026-09-13, `make check` green after each. `make check-branch` green,
   both passes. 1,576 added lines against `origin/main`, under the 2,500 cap.
+- Two boxes stay open on purpose: the two that claim a worker's own task finished `/ship`
+  with green CI. It did not, and the next section says exactly where it stopped.
 
 **What the installed exercises did and did not reach**
 
@@ -125,9 +127,12 @@ routing stay unchanged. A legacy missing risk reads as `complex`.
 - [x] Break each new assertion separately. The plan-free receipt assertion must fail when
       receipt proof is disabled, and the bounded route assertion must fail when risk is
       ignored. Restore each break before continuing.
-- [x] Exercise a PR 37-style asset-and-README change: no plan worker, no design review,
-      bounded Sonnet implementation, rendered-output check, `/ship` and CI. Run installed on
-      2026-09-13; the `/ship` half is partial and the header says exactly how far it got.
+- [ ] Exercise a PR 37-style asset-and-README change: no plan worker, no design review,
+      bounded Sonnet implementation, rendered-output check, `/ship` and CI. **Not complete.**
+      Everything up to the gate ran installed on 2026-09-13 and is recorded in the header.
+      The gate half did not: no ship receipt was written and no pull request or CI run
+      exists, because a worker cannot create a repository on the operator's forge. Left open
+      rather than ticked, because a ticked box here would read as a proven green CI run.
 
 **Done when:** `bats tests/dux-brief.bats tests/dux-worker-wrap.bats tests/dux-result.bats
 tests/dux-recover.bats tests/dux-install.bats` exits 0; each new assertion has recorded
@@ -198,9 +203,11 @@ isolation.
       cannot drift.
 - [x] Break the tool list, MCP flag and no-Chrome flag one at a time; capture three distinct
       failures, then restore them.
-- [x] Run one planned and one plan-free installed worker through `/ship` and confirm both
-      retain their required instructions and tools. The plan-free one ran installed on
-      2026-09-13; the planned one is this milestone's own ship task. Header has the detail.
+- [ ] Run one planned and one plan-free installed worker through `/ship` and confirm both
+      retain their required instructions and tools. **Half done.** The planned half is this
+      milestone's own ship task and is evidenced by this branch's own gate. The plan-free
+      half ran installed on 2026-09-13 and kept its instructions and its six tools, but it
+      did not finish `/ship`; the header says how far it got. Left open for that half.
 
 **Done when:** qualification evidence is recorded, `bats tests/worker-adapter.bats` exits 0,
 all new assertions are break-verified, and both installed paths complete `/ship`.
@@ -239,8 +246,10 @@ automatic ship completes separate correctness and security passes with Codex.
 
 ## Milestone acceptance
 
-All five task boxes are complete; `make check` stays green after every task; the final installed
-run exercises one PR 37-style direct task, one complex planned task and the second-worker refusal;
+All five task boxes are complete bar the two the header leaves open, both of which claim a
+worker's own task reached green CI and neither of which is evidenced; `make check` stays green
+after every task; the final installed run exercises one PR 37-style direct task up to the gate,
+one complex planned task, and the second-worker refusal end to end;
 the enclosing functions are reread after every control-flow edit; `make check-branch` is green;
 the diff is below 2,500 added lines; then the implementer announces and invokes `/ship` once.
 
