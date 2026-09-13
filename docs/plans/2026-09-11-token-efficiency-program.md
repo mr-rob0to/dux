@@ -4,7 +4,7 @@
 - Approved by the operator and being implemented as one five-task milestone.
 - The earlier independent review and the later scope review are recorded below; no second review is planned.
 - All five tasks landed 2026-09-13, `make check` green after each. `make check-branch` green,
-  both passes. 1,576 added lines against `origin/main`, under the 2,500 cap.
+  both passes. 1,752 added lines against `origin/main`, under the 2,500 cap.
 - Two boxes stay open on purpose: the two that claim a worker's own task finished `/ship`
   with green CI. It did not, and the next section says exactly where it stopped.
 
@@ -136,8 +136,10 @@ routing stay unchanged. A legacy missing risk reads as `complex`.
 
 **Done when:** `bats tests/dux-brief.bats tests/dux-worker-wrap.bats tests/dux-result.bats
 tests/dux-recover.bats tests/dux-install.bats` exits 0; each new assertion has recorded
-failure output; a bounded plan-free task proves all five ship phases and green CI; a planned
-task still proves its boxes; and a legacy task routes to Opus rather than Sonnet.
+failure output; a planned task still proves its boxes; and a legacy task routes to Opus rather
+than Sonnet. The remaining clause, a bounded plan-free task proving all five ship phases and
+green CI, is **not met**: the header says how far the installed run got and why the forge half
+could not run at all.
 
 ## Task 2: Refuse a second live Dux-managed worker
 
@@ -210,7 +212,9 @@ isolation.
       did not finish `/ship`; the header says how far it got. Left open for that half.
 
 **Done when:** qualification evidence is recorded, `bats tests/worker-adapter.bats` exits 0,
-all new assertions are break-verified, and both installed paths complete `/ship`.
+all new assertions are break-verified, and both installed paths complete `/ship`. The last
+clause is **half met**: the planned path is this branch's own gate, the plan-free one stopped
+inside `/ship`, and the header says where.
 
 ## Task 5: Qualify Codex Sol and use it for the security pass
 

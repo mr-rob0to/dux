@@ -325,6 +325,25 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$six" == *'Never tell it'*'what the change is for'* ]]
 }
 
+@test "every mention of the bundled reviewer note is anchored to the ship-env root" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  # The gate runs with its working directory inside the repository under review,
+  # and this one is a Dux checkout, so a bare templates/config/security-reviewer
+  # is a file the branch being reviewed can write. Every mention has to resolve
+  # through ship-env --root, which is the install the gate came from.
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      *'"$SHIP_ENV" --root'*) ;;
+      *) echo "unanchored mention of the bundled note: $line"; return 1 ;;
+    esac
+  done <<EOF
+$(grep -n 'templates/config/security-reviewer' "$ship" || true)
+EOF
+  # And the mentions are really there, so an empty grep cannot pass this.
+  [ "$(grep -c 'templates/config/security-reviewer' "$ship")" -ge 2 ]
+}
+
 @test "the ship skill names no model and reads both reviewers from ship-env" {
   ship="$DUX_ROOT/skills/ship/SKILL.md"
   # A model name in the gate's own text is the thing that stopped a stranger

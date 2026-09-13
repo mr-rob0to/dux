@@ -301,11 +301,15 @@ Running some other reviewer instead is the silent degradation this whole step
 exists to remove.
 
 **If the reviewer's model is refused with an HTTP 400**, take the one fallback
-the bundled `templates/config/security-reviewer` states, run the same audit once
-more, and say in the pull request which reviewer actually ran. The bundled note
-and not `config/security-reviewer`: an install made before this was written
-still holds its own copy of the old note, which names no fallback, and the
-bundled file travels with the gate. Any other failure stops the step. A
+stated in the bundled note, run the same audit once more, and say in the pull
+request which reviewer actually ran. Read the note at
+`"$("$SHIP_ENV" --root)"/templates/config/security-reviewer` and at no other
+path: the gate runs with its working directory inside the repository under
+review, so a bare relative path to that note names that repository's own copy,
+which the branch being reviewed can write. The bundled note and not
+`config/security-reviewer`: an install made before this was written still holds
+its own copy of the old note, which names no fallback, and the bundled file
+travels with the gate. Any other failure stops the step. A
 review that silently downgraded is worse than one that did not happen, and a
 reviewer that has not been qualified for this pass is not a substitute for one
 that has.
@@ -638,7 +642,8 @@ All of these mean: go back and do the step properly.
   dispatch that agent. If the host has no agent of that name, stop and say so rather than
   running a different reviewer.
 - **Step 7's one fallback** is an HTTP 400 from the reviewer's model, retried once with the
-  model the bundled `templates/config/security-reviewer` names for it, and named in the pull
-  request. Anything else stops the step. The bundled file, because an install made before
-  this landed still has its own older copy in `config/`.
+  model named by the bundled note at `"$("$SHIP_ENV" --root)"/templates/config/security-reviewer`,
+  and named in the pull request. Anything else stops the step. The bundled file, because an
+  install made before this landed still has its own older copy in `config/`; resolved through
+  `--root`, because a bare path would be the reviewed repository's own file.
 - Each config file carries a note saying what it is for; read it before changing it.

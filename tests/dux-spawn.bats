@@ -431,6 +431,18 @@ exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
   [ ! -d "$DUX_HOME/proj/.worktrees" ]
 }
 
+@test "a ledger that cannot list the tasks blocks the start" {
+  b="$(fixture_task proj ship)"
+  r="$(root_with_stub dux-ledger "#!/usr/bin/env bash
+if [ \"\$1\" = list ]; then echo 'finding: cannot read the ledger' >&2; exit 2; fi
+exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
+  run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: cannot tell whether another Dux worker is alive: the ledger could not list the tasks; $b remains queued" ]
+  [ "$(dux-ledger get "$b" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+}
+
 @test "a backend that cannot answer about a running task blocks the start" {
   a="$(fixture_task proj scout)"
   run dux-spawn "$a"
