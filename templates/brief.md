@@ -12,6 +12,7 @@
 - Branch: {{BRANCH}}
 - Worktree: <set by dux-spawn>
 {{PLAN_LINES}}
+{{RISK_LINE}}
 {{ISSUE_LINE}}
 
 ## Rules

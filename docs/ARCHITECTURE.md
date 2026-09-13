@@ -42,13 +42,17 @@ bin/
   dux-ledger               add/set/set-if/get/list/ack/unack over data/backlog.md; the only writer
   dux-task-new             allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, folder, queued line
   dux-intake               queue labelled GitHub issues as tasks; --show fences one issue's text
-  dux-brief                render tasks/<id>/brief.md and tasks/<id>/worker-settings.json
+  dux-brief                render tasks/<id>/brief.md and tasks/<id>/worker-settings.json,
+                           and for a ship task write tasks/<id>/risk (mode 600) from
+                           --risk bounded|complex, defaulting to complex
   dux-worktree             create/remove/discard a worktree per the project's mechanism
   dux-spawn                worktree plus backend container for a queued task; five refusals
   dux-worker-wrap          runs inside the container: task channel, scrubbed environment,
                            process group, proposal rules, heartbeat, terminal state
   dux-result               record-ship files the five /ship phases in order; verify proves a
-                           plan, ship, or scout result from the registry, Git, and GitHub
+                           plan, ship, or scout result from the registry, Git, and GitHub.
+                           A ship brief naming no plan and no task range skips the checkbox
+                           proof and nothing else
   dux-teardown             remove the worktree, close the container, mark done or failed;
                            --abandon lets go of a task that never started
   dux-watch                classify task events, record them, and raise local toasts
@@ -62,7 +66,8 @@ bin/
   workers/claude.sh        worker harness adapter: worker_cmd, worker_run, worker_effort_ok
   workers/codex.sh         same adapter for Codex; tested, not dispatchable in milestone 2
   dux-doctor               preflight: CLIs, gh auth, backend CLI, registry, lock
-  dux-install              symlink bundled skills, seed config, write identifier denylist (task 8)
+  dux-install              symlink bundled skills, seed config, add model keys an existing
+                           config/models* is missing, write identifier denylist (task 8)
   dux-uninstall            remove only symlinks that point into this repo (task 8)
 templates/
   PULL_REQUEST_TEMPLATE.md the template dux-project installs, with consent, into a
@@ -74,7 +79,7 @@ templates/
                            worker-harness, backend, reviewer, security-reviewer)
 data/         (gitignored) projects.md registry; backlog.md ledger with acked state;
                            tasks/<id>/{intent.md,criteria.md,brief.md,issue.md,status.log,
-                           report.md,worker-settings.json,harness,hooks/,worktree.log,
+                           report.md,worker-settings.json,risk,harness,hooks/,worktree.log,
                            retry,retried-from}
 state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            <id>.endpoint; <id>.pid; <id>.pgid; <id>.out; events.log;
@@ -159,7 +164,11 @@ backend started it and catches a worker in a server whose socket vanished.
    fenced issue block) and `tasks/<id>/worker-settings.json`. A task with a
    `gh:` source needs `--issue-file`, and its brief carries one
    `- Issue: <owner>/<repo>#<n>` line taken from the ledger, never from the
-   issue text; that line is what `/ship` turns into `Closes #<n>`.
+   issue text; that line is what `/ship` turns into `Closes #<n>`. A `ship` task
+   also gets `tasks/<id>/risk`, `bounded` or `complex`, which is what
+   `dux-worker-wrap` looks up in `config/models` instead of the shape. `--plan`
+   and `--tasks` are one pair; the empty pair is plan-free shipping and needs
+   `--risk bounded`.
 3. `dux-spawn <id>` refuses with a finding unless: the lock is this session's
    (`dux-lock mine`), the task is `queued`, the project is registered, the
    brief has a `- Worktree: ` line to fill, the chosen worker harness is

@@ -64,8 +64,18 @@ prints the count.
 
 queued -> running -> (stale)* -> needs-decision | blocked | done | failed | dead | ended
 
-- Shapes: `plan` (Fable, high effort, docs-only PR), `ship` (Opus, one milestone,
-  runs `/ship`), `scout` (Sonnet, report only).
+- Shapes: `plan` (Fable, docs-only PR), `ship` (implements and runs `/ship`),
+  `scout` (report only).
+- Does the work need a plan? An explicit request for one always wins. Otherwise a
+  plan is required when the work changes a public interface, needs a data
+  migration or backfill, moves a security boundary, changes concurrency or
+  cross-system ordering, leaves a design choice open, or takes more than three
+  commit-sized steps. When none of those applies, dispatch one `ship` task with
+  `--risk bounded` and no plan and no design review.
+- Risk routes the implementation model: `--risk bounded` runs Sonnet,
+  `--risk complex` runs Opus, and omitting it means complex. `--plan` and
+  `--tasks` are one pair: both, or neither with `--risk bounded`. `/ship`, its
+  reviews and CI run either way.
 - Worker status protocol, proposed into the task channel:
   `working: ...`, `needs-decision: ...`, `blocked: ...`, `done: PR <url> | report`,
   `failed: ...`. Only `working:` lines reach `data/tasks/<id>/status.log` from

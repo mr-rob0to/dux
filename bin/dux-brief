@@ -6,28 +6,30 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 # bash 5.2+ expands & in ${var//pat/rep}; paths and branch names are literal here.
 shopt -u patsub_replacement 2>/dev/null || true
-usage="usage: dux-brief <id> --intent-file f --criteria-file f [--plan p --tasks r] [--issue-file f]"
+usage="usage: dux-brief <id> --intent-file f --criteria-file f [--plan p --tasks r] [--risk bounded|complex] [--issue-file f]"
 id="${1:-}"; [ -n "$id" ] || die "$usage"
 shift
-intent=""; criteria=""; plan=""; tasks=""; issue=""
+intent=""; criteria=""; plan=""; tasks=""; issue=""; risk=""
 while [ $# -gt 0 ]; do
   # Every one of these takes a value. Without the count check, set -u turns a
   # flag at the end of the line into an unbound-variable crash instead of the
   # usage line, and the caller sees a stack trace rather than what to fix.
   case "$1" in
-    --intent-file|--criteria-file|--plan|--tasks|--issue-file) [ $# -ge 2 ] || die "$usage" ;;
+    --intent-file|--criteria-file|--plan|--tasks|--risk|--issue-file) [ $# -ge 2 ] || die "$usage" ;;
   esac
   case "$1" in
     --intent-file)   intent="$2"; shift 2 ;;
     --criteria-file) criteria="$2"; shift 2 ;;
     --plan)          plan="$2"; shift 2 ;;
     --tasks)         tasks="$2"; shift 2 ;;
+    --risk)          risk="$2"; shift 2 ;;
     --issue-file)    issue="$2"; shift 2 ;;
     *) die "$usage" ;;
   esac
 done
 
 task="$DUX_TASKS/$id"; out="$task/brief.md"; settings="$task/worker-settings.json"
+risk_file="$task/risk"
 [ -d "$task" ] || finding "no task folder for $id; run dux-task-new first"
 [ -e "$out" ] && finding "brief already exists for $id; retries use a new task id"
 project="$("$DUX_ROOT/bin/dux-ledger" get "$id" project)" || exit $?
@@ -45,9 +47,30 @@ text_file() {  # $1 flag, $2 path
 }
 text_file --intent-file "$intent"
 text_file --criteria-file "$criteria"
+# Risk is what routes a ship task's implementation model, and it is stored
+# rather than read out of the intent: no script here parses prose. The plan and
+# the task range are one pair, because half of one names a plan whose boxes
+# nothing can prove. The empty pair is plan-free shipping, and Dux only ever
+# dispatches that for work it has judged bounded, so the two are checked
+# together and the default is the careful one.
 case "$shape" in
-  ship) { [ -n "$plan" ] && [ -n "$tasks" ]; } || finding "ship briefs need --plan and --tasks" ;;
-  *)    { [ -z "$plan" ] && [ -z "$tasks" ]; } || finding "--plan and --tasks are for ship briefs only" ;;
+  ship)
+    case "$risk" in
+      ''|bounded|complex) ;;
+      *) finding "--risk must be bounded or complex, not '$risk'" ;;
+    esac
+    if [ -n "$plan" ] && [ -n "$tasks" ]; then
+      :
+    elif [ -z "$plan" ] && [ -z "$tasks" ]; then
+      [ "$risk" = bounded ] \
+        || finding "a ship brief with no plan needs --risk bounded; complex work needs a plan"
+    else
+      finding "a ship brief needs both --plan and --tasks, or neither"
+    fi
+    [ -n "$risk" ] || risk=complex ;;
+  *)
+    { [ -z "$plan" ] && [ -z "$tasks" ]; } || finding "--plan and --tasks are for ship briefs only"
+    [ -z "$risk" ] || finding "--risk is for ship briefs only" ;;
 esac
 [ -z "$issue" ] || [ -s "$issue" ] || finding "--issue-file $issue is missing or empty"
 # The brief is what /ship reads for Closes #<n>, so a task that came from an
@@ -66,7 +89,12 @@ shape_rules() {
 done_line() {
   case "$shape" in
     plan)  echo "Spec and plan under docs/specs/ and docs/plans/ in the worktree, docs-only PR opened against $base; then append \`done: PR <url>\`." ;;
-    ship)  echo "Tasks $tasks of $plan implemented, /ship run, CI green; then append \`done: PR <url>\`." ;;
+    ship)
+      if [ -n "$plan" ]; then
+        echo "Tasks $tasks of $plan implemented, /ship run, CI green; then append \`done: PR <url>\`."
+      else
+        echo "The change described above implemented, /ship run, CI green; then append \`done: PR <url>\`."
+      fi ;;
     scout) echo "Findings written to the file named by \`\$DUX_REPORT\`; then append \`done: report\`." ;;
   esac
 }
@@ -92,7 +120,8 @@ while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
     '{{INTENT}}')      cat "$intent" ;;
     '{{CRITERIA}}')    cat "$criteria" ;;
-    '{{PLAN_LINES}}')  if [ "$shape" = ship ]; then printf -- '- Plan: %s\n- Tasks: %s\n' "$plan" "$tasks"; fi ;;
+    '{{PLAN_LINES}}')  if [ -n "$plan" ]; then printf -- '- Plan: %s\n- Tasks: %s\n' "$plan" "$tasks"; fi ;;
+    '{{RISK_LINE}}')   if [ "$shape" = ship ]; then printf -- '- Risk: %s\n' "$risk"; fi ;;
     '{{ISSUE_LINE}}')  case "$source_key" in gh:*) printf -- '- Issue: %s\n' "${source_key#gh:}" ;; esac ;;
     '{{SHAPE_RULES}}') shape_rules ;;
     '{{DONE}}')        done_line ;;
@@ -109,5 +138,15 @@ printf '%s\n' "$s" > "$settings.tmp"
 if ! jq -e '.permissions.deny | length > 0' "$settings.tmp" >/dev/null 2>&1; then
   rm -f "$tmp" "$settings.tmp"; finding "rendered worker settings for $id are not valid JSON"
 fi
+# Written before the brief is put in place, and with the same rename, so the
+# file dux-worker-wrap routes on either exists beside a finished brief or does
+# not exist at all. Mode 600 on the temporary file, so the mode is never wider
+# than 600 even for the moment between creating it and moving it.
+if [ "$shape" = ship ]; then
+  { : > "$risk_file.tmp" && chmod 600 "$risk_file.tmp" && printf '%s\n' "$risk" > "$risk_file.tmp"; } || {
+    rm -f "$tmp" "$settings.tmp" "$risk_file.tmp"; finding "cannot write $risk_file"
+  }
+fi
 if ! mv "$settings.tmp" "$settings" || ! mv "$tmp" "$out"; then finding "cannot write $out"; fi
+if [ "$shape" = ship ] && ! mv "$risk_file.tmp" "$risk_file"; then finding "cannot write $risk_file"; fi
 echo "$out"

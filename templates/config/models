@@ -1,1 +1,1 @@
-plan=claude-fable-5-1:high ship=claude-opus-5:high scout=claude-sonnet-5:medium
+plan=claude-fable-5-1:high bounded=claude-sonnet-5:medium complex=claude-opus-5:max scout=claude-sonnet-5:medium

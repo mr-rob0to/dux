@@ -172,10 +172,23 @@ only `ship` tasks use the recorded mechanism, since only they run the project.
 | Shape | Worker model | Output | Definition of done |
 |---|---|---|---|
 | plan | Fable, high effort | spec + plan in `docs/specs/` and `docs/plans/` of the project, then, once the operator approves in the Dux session, the implementation on the same branch (`2026-09-10-one-session-planning.md`); dispatched plan only, the docs-only pull request alone | `plan-ready:` proved, then `done: PR <url>` after `/ship`; plan only: `done: PR <url>` |
-| ship | Opus, high effort by default (`templates/config/models`) | one milestone implemented, `/ship` run | `done: PR <url>` after CI green |
+| ship | by stored risk, not by shape: `bounded` runs `claude-sonnet-5:medium`, `complex` runs `claude-opus-5:max` (`templates/config/models`) | one milestone of a plan implemented, or a bounded change with no plan at all, `/ship` run | `done: PR <url>` after CI green |
 | scout | Sonnet | `tasks/<id>/report.md` | `done: report` |
 
-`dux-install` seeds `config/models` from `templates/config/models` when none exists. The
+A `ship` task carries a risk, written once by `dux-brief` into mode-600
+`data/tasks/<id>/risk` and read by `dux-worker-wrap` to pick the model key. `--risk bounded`
+or `--risk complex`; omitting it means complex, and so does a task from before the file
+existed. No script reads intent prose to decide it: Dux applies the checklist in `AGENTS.md`
+and passes the answer. `--plan` and `--tasks` are one pair, because half of one names a plan
+whose boxes nothing can prove; the empty pair is plan-free shipping and is accepted only as
+`bounded`. `dux-result` then skips the plan and checkbox proof for that task and nothing
+else: the implementation file, the five-phase `/ship` receipt against the branch tip, the
+pull request and green CI are proved exactly as before.
+
+`dux-install` seeds `config/models` from `templates/config/models` when none exists, and
+appends to an existing one any key the template names that the file does not have, so an
+install that predates a routing key is not left refusing every task that needs it. It never
+changes a value already there. The
 template tracks the operator's live `config/models`: when the operator settles a new model
 or effort for a shape, `templates/config/models` is changed to match, as its own docs
 change or in the next pull request, so a fresh install starts where the operator already is.

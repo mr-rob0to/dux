@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:">
+  <title>Dux focused token-efficiency plan</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b0f14; --panel:#121922; --soft:#182230; --line:#2a394a; --text:#edf3f8; --muted:#9fb0bf; --cyan:#5eead4; --amber:#fbbf24; --blue:#7dd3fc; }
+    * { box-sizing:border-box; }
+    body { margin:0; background:linear-gradient(145deg,#081017 0%,var(--bg) 45%,#101521 100%); color:var(--text); font:16px/1.55 ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    main { width:min(1120px,calc(100% - 32px)); margin:0 auto; padding:48px 0 80px; }
+    h1,h2,h3 { line-height:1.15; letter-spacing:-.02em; }
+    h1 { max-width:800px; margin:0; font-size:clamp(2.35rem,7vw,5.3rem); }
+    h2 { margin:48px 0 18px; font-size:1.65rem; }
+    h3 { margin:0 0 12px; font-size:1.2rem; }
+    p { margin:0 0 14px; }
+    code { color:var(--cyan); font:0.92em ui-monospace,SFMono-Regular,Menlo,monospace; }
+    .eyebrow { color:var(--cyan); font-weight:700; letter-spacing:.13em; text-transform:uppercase; }
+    .lead { max-width:800px; margin-top:18px; color:#c7d3dd; font-size:1.16rem; }
+    .status { margin-top:28px; padding:20px 22px; border:1px solid #2f806f; border-left:5px solid var(--cyan); background:rgba(18,25,34,.88); border-radius:10px; }
+    .status p { margin:4px 0; }
+    .stats { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:28px 0; }
+    .stat,.card,details { border:1px solid var(--line); background:rgba(18,25,34,.92); border-radius:12px; }
+    .stat { padding:18px; }
+    .stat strong { display:block; color:var(--cyan); font-size:1.65rem; }
+    .stat span { color:var(--muted); }
+    .grid { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+    .card { padding:22px; }
+    .card ul,.task ul { padding-left:21px; margin:10px 0 0; }
+    li { margin:7px 0; }
+    .warn { border-color:#705e2d; }
+    .warn h3 { color:var(--amber); }
+    .good h3 { color:var(--cyan); }
+    table { width:100%; border-collapse:collapse; background:rgba(18,25,34,.92); border:1px solid var(--line); border-radius:12px; overflow:hidden; display:block; }
+    tbody,thead { display:table; width:100%; table-layout:fixed; }
+    th,td { padding:13px 15px; text-align:left; vertical-align:top; border-bottom:1px solid var(--line); }
+    th { color:var(--blue); background:var(--soft); }
+    tr:last-child td { border-bottom:0; }
+    details { margin:14px 0; overflow:hidden; }
+    summary { cursor:pointer; padding:18px 20px; font-weight:750; font-size:1.08rem; background:var(--soft); }
+    .task { padding:20px; }
+    .label { color:var(--blue); font-weight:700; }
+    .proof { margin-top:16px; padding:13px 15px; border-left:3px solid var(--cyan); background:#0d141d; }
+    .deferred { color:var(--muted); }
+    .review { border-left:5px solid var(--blue); }
+    @media (max-width:780px) { .stats,.grid { grid-template-columns:1fr; } main { padding-top:28px; } th:first-child,td:first-child { width:32%; } }
+  </style>
+</head>
+<body>
+<main>
+  <div class="eyebrow">Approval artifact · 12 September 2026</div>
+  <h1>Dux focused token-efficiency plan</h1>
+  <p class="lead">One milestone that removes the measured waste without building a token-accounting platform or replacing the proven ship gate.</p>
+
+  <section class="status" aria-label="Where this stands">
+    <strong>Where this stands</strong>
+    <p>Rewritten from nine milestones to one five-task milestone.</p>
+    <p>The earlier independent review and operator-requested scope review are recorded below.</p>
+    <p>Implementation has not begun. Operator approval is next.</p>
+  </section>
+
+  <div class="stats">
+    <div class="stat"><strong>1</strong><span>milestone</span></div>
+    <div class="stat"><strong>5</strong><span>implementation tasks</span></div>
+    <div class="stat"><strong>≈1,200</strong><span>estimated added lines</span></div>
+    <div class="stat"><strong>0</strong><span>new tracking systems</span></div>
+  </div>
+
+  <section class="grid">
+    <div class="card good">
+      <h3>Goal</h3>
+      <p>Skip planning for obvious work, use Sonnet for bounded implementation, run one Dux-managed Claude worker, trim unused worker surfaces, and move security review to qualified Codex.</p>
+    </div>
+    <div class="card warn">
+      <h3>Rejected scope</h3>
+      <p>No usage database, allowance scheduler, pause/resume state machine, operator accounting, plan-page generator, benchmark system, or mechanical <code>/ship</code> rewrite.</p>
+    </div>
+  </section>
+
+  <h2>Approach</h2>
+  <div class="card">
+    <p>Keep the existing <code>plan</code>, <code>ship</code>, and <code>scout</code> shapes. Dux uses a short planning checklist. Scripts enforce a stored <code>bounded|complex</code> risk and paired plan fields.</p>
+    <p>A plan-free task still completes the unchanged build, test, correctness review, security review, pull request, and CI gate. A second worker is refused before worktree creation. The security selector changes only after one fixture qualification passes.</p>
+  </div>
+
+  <h2>Defaults and hard constraints</h2>
+  <section class="grid">
+    <div class="card">
+      <h3>Assumptions</h3>
+      <ul>
+        <li>All dispatched workers currently use Claude.</li>
+        <li>Missing risk on a legacy task means complex.</li>
+        <li>External Claude sessions and devices stay outside Dux's view.</li>
+        <li>An explicit request for a plan always wins.</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h3>Constraints</h3>
+      <ul>
+        <li>Bash 3.2 and existing dependencies only.</li>
+        <li>No new task shape, scheduler, or classifier call.</li>
+        <li>Every new assertion is broken and seen to fail.</li>
+        <li><code>/ship</code>, both reviews, CI, and operator-only merge remain.</li>
+        <li>No AI attribution in GitHub or commit text.</li>
+      </ul>
+    </div>
+  </section>
+
+  <h2>Risks</h2>
+  <div class="card warn">
+    <ul>
+      <li><strong>Wrong bounded choice:</strong> named plan triggers fail closed, and the full ship gate remains.</li>
+      <li><strong>Stuck worker:</strong> later starts wait for existing recovery and an operator retry.</li>
+      <li><strong>CLI flag mismatch:</strong> qualify the installed Claude CLI before adapter changes.</li>
+      <li><strong>Thin security evidence:</strong> the one-run limit is explicit; automated requalification is deferred.</li>
+    </ul>
+  </div>
+
+  <h2>File map</h2>
+  <table>
+    <thead><tr><th>Area</th><th>Primary files</th></tr></thead>
+    <tbody>
+      <tr><td>Direct ship and routing</td><td><code>AGENTS.md</code>, <code>dux-dispatch</code>, <code>dux-brief</code>, <code>dux-worker-wrap</code>, <code>dux-result</code>, <code>dux-recover</code>, model template and bats tests</td></tr>
+      <tr><td>One worker</td><td><code>bin/dux-spawn</code>, <code>tests/dux-spawn.bats</code></td></tr>
+      <tr><td>Sonnet operator</td><td><code>.claude/settings.json</code>, <code>.gitignore</code>, contract test, architecture</td></tr>
+      <tr><td>Worker inputs</td><td><code>bin/workers/claude.sh</code>, empty MCP template, adapter tests</td></tr>
+      <tr><td>Security review</td><td><code>ship-env</code>, ship skill, ship-env tests, vulnerable and clean fixtures</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Tasks</h2>
+
+  <details open>
+    <summary>Task 1 · Ship obvious work directly and route by risk</summary>
+    <div class="task">
+      <p><span class="label">Files:</span> <code>AGENTS.md</code>; dispatch skill; brief, wrapper, result, recover and install scripts; brief/model templates; five bats files; design authority, architecture and changelog.</p>
+      <p><span class="label">Interface:</span> <code>dux-brief --risk bounded|complex</code>; paired optional plan fields; mode-600 risk file; bounded uses Sonnet medium; complex uses Opus max; legacy missing risk is complex.</p>
+      <ul>
+        <li>Write failing tests for the plan pair, risk file, both model routes, retry lifecycle, plan proof, and unchanged receipt/CI proof.</li>
+        <li>Add the six-trigger planning checklist to the operator rules and dispatch skill. Scripts never parse intent text.</li>
+        <li>Skip only plan checkbox proof for an empty plan pair.</li>
+        <li>Add missing model entries without overwriting operator values, and remove the old shape-only routing rule.</li>
+        <li>Break every new assertion separately and run a PR 37-style asset and README task.</li>
+      </ul>
+      <div class="proof"><strong>Proof:</strong> the five named bats files pass; planned work still proves boxes; plan-free work proves all ship phases and CI; bounded runs on Sonnet and legacy runs on Opus.</div>
+    </div>
+  </details>
+
+  <details open>
+    <summary>Task 2 · Refuse a second live Dux-managed worker</summary>
+    <div class="task">
+      <p><span class="label">Files:</span> <code>bin/dux-spawn</code>, its bats tests, architecture, changelog.</p>
+      <p><span class="label">Interface:</span> pid and backend liveness are checked before worktree creation. A live or inconclusive worker leaves the new task queued and exits with a finding. Old run records alone are not proof of life.</p>
+      <ul>
+        <li>Test no-active start, pid refusal, backend refusal, inconclusive evidence, unchanged state, and later retry.</li>
+        <li>Add one preflight check. Add no queue, reservation, mutex, timer, or foreign-process scan.</li>
+        <li>Break pid, backend, and ordering guards separately.</li>
+      </ul>
+      <div class="proof"><strong>Proof:</strong> <code>bats tests/dux-spawn.bats</code> passes, and a two-task installed exercise starts only one worker.</div>
+    </div>
+  </details>
+
+  <details open>
+    <summary>Task 3 · Start the Dux operator on Sonnet</summary>
+    <div class="task">
+      <p><span class="label">Files:</span> <code>.claude/settings.json</code>, <code>.gitignore</code>, <code>tests/contract.bats</code>, <code>docs/ARCHITECTURE.md</code>.</p>
+      <p><span class="label">Interface:</span> committed model is <code>claude-sonnet-5</code>; the ignored local file and command-line flag remain overrides.</p>
+      <ul>
+        <li>Implement the already reviewed one-task Sonnet operator plan.</li>
+        <li>Break the model assertion while keeping the hook assertion green.</li>
+        <li>Verify one operator session and one explicitly routed worker.</li>
+      </ul>
+      <div class="proof"><strong>Proof:</strong> the contract suite passes and both CLI sessions print the expected model IDs.</div>
+    </div>
+  </details>
+
+  <details open>
+    <summary>Task 4 · Remove unused worker tools and connections</summary>
+    <div class="task">
+      <p><span class="label">Files:</span> Claude adapter, worker MCP template, adapter tests, architecture, changelog.</p>
+      <p><span class="label">Interface:</span> exactly six core tools, strict empty MCP configuration, and no Chrome. Existing settings, project instructions, skills, hooks, permissions, and <code>/ship</code> remain.</p>
+      <ul>
+        <li>Qualify the exact flags with the installed Claude CLI before editing.</li>
+        <li>Test the full command and absence of safe mode or settings-source isolation.</li>
+        <li>Break the tool, MCP, and Chrome assertions separately.</li>
+        <li>Run planned and plan-free installed workers through <code>/ship</code>.</li>
+      </ul>
+      <div class="proof"><strong>Proof:</strong> qualification is recorded, adapter tests pass, and both worker routes ship successfully.</div>
+    </div>
+  </details>
+
+  <details open>
+    <summary>Task 5 · Qualify Codex Sol for the security pass</summary>
+    <div class="task">
+      <p><span class="label">Files:</span> <code>ship-env</code>, ship skill, ship-env tests, architecture, changelog, vulnerable/clean/expected fixtures.</p>
+      <p><span class="label">Interface:</span> explicit config wins. Automatic security uses fresh read-only Sol. Sol HTTP 400 retries once with Terra. No Codex means a finding. Claude is not an automatic fallback.</p>
+      <ul>
+        <li>Add non-executed shell-injection and path-traversal cases plus a clean fixture.</li>
+        <li>Run Sol once and require all planted findings with no false Important or Critical clean finding.</li>
+        <li>Test explicit preference, Sol selection, no-Codex refusal, and project-agent refusal.</li>
+        <li>Change only reviewer selection and fallback instructions; dry-run the ship skill.</li>
+      </ul>
+      <div class="proof"><strong>Proof:</strong> the report matches the expected fixture, ship-env tests pass, and one automatic ship completes separate Codex correctness and security passes.</div>
+    </div>
+  </details>
+
+  <h2>Deferred scope and stop rule</h2>
+  <div class="card deferred">
+    <p>No implementation for token or cost tracking, allowance admission, automatic queueing, pause/resume, operator accounting, checkpoints, plan pages, full safe-mode profiles, mechanical ship helpers, benchmarks, or automated reviewer requalification.</p>
+    <p>After five to ten representative tasks, inspect existing Claude stream JSON manually. Plan another change only if the evidence names a remaining dominant cost.</p>
+  </div>
+
+  <h2>Review record</h2>
+  <div class="card review">
+    <p>The original Astra program received one fresh Codex Sol review. Its safety findings remain historical for the systems they covered.</p>
+    <p>The operator-requested scope review found that the telemetry, scheduling, lifecycle, browser, reviewer-pipeline, and benchmark systems were larger than the measured problem. This Fable rewrite accepts that finding and keeps only the five tasks above.</p>
+    <p>No reviewer finding was disputed. No second independent design review is authorized.</p>
+  </div>
+</main>
+</body>
+</html>

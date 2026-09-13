@@ -270,3 +270,50 @@ registry_line() {  # $1 name, $2 path
   [[ "$output" != *"left this repo's own project"* ]]
   [[ "$output" != *"shorter than four characters"* ]]
 }
+
+# ---- model keys an existing install has never seen -------------------------
+# The routing keys arrived after installs existed. Seeding copies the template
+# only when there is no file at all, so without this an upgraded install has no
+# entry for its ship tasks and every one of them refuses.
+
+@test "install adds missing model keys to an existing models file" {
+  printf 'plan=my-planner:high ship=my-shipper:high scout=my-scout:low\n' > "$DUX_HOME/config/models"
+  run dux-install
+  [ "$status" -eq 0 ]
+  # The operator's own entries, byte for byte, on the line they were written on.
+  [ "$(head -n 1 "$DUX_HOME/config/models")" = 'plan=my-planner:high ship=my-shipper:high scout=my-scout:low' ]
+  for k in bounded complex; do
+    v="$(tr ' ' '\n' < "$DUX_HOME/config/models" | sed -n "s/^$k=//p")"
+    t="$(tr ' ' '\n' < "$DUX_ROOT/templates/config/models" | sed -n "s/^$k=//p")"
+    [ -n "$v" ]
+    [ "$v" = "$t" ]
+  done
+  [[ "$output" == *"config models: added bounded, complex"* ]]
+}
+
+@test "install never changes a model entry the operator already has" {
+  printf 'plan=p:high bounded=mine:low complex=mine:max scout=s:low\n' > "$DUX_HOME/config/models"
+  before="$(cat "$DUX_HOME/config/models")"
+  run dux-install
+  [ "$status" -eq 0 ]
+  [ "$(cat "$DUX_HOME/config/models")" = "$before" ]
+  [ "$(grep -c 'config models: added' <<<"$output" || true)" -eq 0 ]
+}
+
+@test "install adds the missing keys to the codex model file too, and only to model files" {
+  printf 'plan=g:high\n' > "$DUX_HOME/config/models-codex"
+  printf 'mine\n' > "$DUX_HOME/config/reviewer"
+  run dux-install
+  [ "$status" -eq 0 ]
+  tr ' ' '\n' < "$DUX_HOME/config/models-codex" | grep -qx 'bounded=gpt-5.6-sol:medium'
+  # A reviewer file is a command line, not a key list, and is left exactly as is.
+  [ "$(cat "$DUX_HOME/config/reviewer")" = mine ]
+}
+
+@test "install leaves a models file it cannot read alone rather than failing the install" {
+  ln -s "$DUX_HOME/nowhere" "$DUX_HOME/config/models"
+  run dux-install
+  [ "$status" -eq 0 ]
+  [ -L "$DUX_HOME/config/models" ]
+  [ ! -e "$DUX_HOME/config/models" ]
+}

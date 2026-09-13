@@ -832,3 +832,83 @@ template_plan() {  # the shipped template, with its boxes ticked
   [ "$status" -eq 0 ]
   [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
 }
+
+# ---- plan-free shipping ----------------------------------------------------
+# Bounded work is dispatched with no plan at all, so there is no plan path and
+# no task range for the box reader to read. That is the only proof the empty
+# pair buys: the receipt, the implementation file and green CI are unchanged.
+
+plan_free() { ctx_plan=""; ctx_tasks=""; write_run ship; }
+
+@test "a plan-free ship completes on its receipt, its files and green checks" {
+  prepare ship
+  plan_free
+  commit_file docs/assets/logo.png "not really a png"
+  commit_file README.md "# Readme"
+  pr_at_head; green_checks
+  for phase in checks review security pr ci; do dux-result record-ship "$id" "$runid" "$phase"; done
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 0 ]
+  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
+  # No plan was read, and none exists to read.
+  [ ! -e "$wt/docs/plan.md" ]
+}
+
+@test "a plan-free ship still needs the five /ship phases against this commit" {
+  prepare ship
+  plan_free
+  commit_file docs/assets/logo.png "not really a png"
+  pr_at_head; green_checks
+  receipt_of checks review security pr
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"is not the five phases in order"* ]]
+  # And a receipt recorded against another commit is refused the same way.
+  receipt_of checks review security pr ci
+  commit_file src/later.sh "echo later"
+  pr_at_head
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"recorded against another commit"* ]]
+}
+
+@test "a plan-free ship still needs green checks" {
+  prepare ship
+  plan_free
+  commit_file docs/assets/logo.png "not really a png"
+  pr_at_head
+  export FAKE_GH_PR_CHECKS='[{"name":"build","state":"FAILURE"}]'
+  receipt_of checks review security pr ci
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"checks that are not green"* ]]
+}
+
+# Documents alone are not a ship result, plan or no plan.
+@test "a plan-free ship still needs an implementation file" {
+  prepare ship
+  plan_free
+  commit_file docs/specs/design.md "# Design"
+  pr_at_head; green_checks
+  receipt_of checks review security pr ci
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"needs an implementation file"* ]]
+}
+
+@test "half a pair is still a finding: a plan with no range, or a range with no plan" {
+  prepare ship
+  ctx_plan="docs/plan.md"; ctx_tasks=""; write_run ship
+  ship_plan x
+  commit_file src/main.sh "echo hi"
+  pr_at_head; green_checks
+  receipt_of checks review security pr ci
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"names no plan or no task range"* ]]
+
+  ctx_plan=""; ctx_tasks="1-2"; write_run ship
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"names no plan or no task range"* ]]
+}

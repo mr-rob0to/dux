@@ -679,3 +679,60 @@ EOF
   wait "$wp" || true
   [ "$(handoff_status)" = "failed: worker exited 143" ]
 }
+
+# ---- risk routes a ship task's model ---------------------------------------
+
+@test "a bounded ship task runs on the bounded model and a complex one on the complex model" {
+  prepare ship
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  # fixture_task briefs a planned ship task, so dux-brief stored complex.
+  [ "$(cat "$DUX_HOME/data/tasks/$id/risk")" = complex ]
+  wrap
+  grep -q -- "--model claude-opus-5 --effort max" "$FAKE_WORKER_LOG"
+  [ "$(grep -c -- '--model claude-sonnet-5' "$FAKE_WORKER_LOG" || true)" -eq 0 ]
+
+  : > "$FAKE_WORKER_LOG"
+  clear_refs
+  rm -f "$DUX_HOME/state/$id.pid"
+  echo bounded > "$DUX_HOME/data/tasks/$id/risk"
+  wrap
+  grep -q -- "--model claude-sonnet-5 --effort medium" "$FAKE_WORKER_LOG"
+  [ "$(grep -c -- '--model claude-opus-5' "$FAKE_WORKER_LOG" || true)" -eq 0 ]
+}
+
+@test "a ship task from before risk existed routes to the complex model" {
+  prepare ship
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  rm -f "$DUX_HOME/data/tasks/$id/risk"
+  wrap
+  grep -q -- "--model claude-opus-5 --effort max" "$FAKE_WORKER_LOG"
+  [ "$(grep -c -- '--model claude-sonnet-5' "$FAKE_WORKER_LOG" || true)" -eq 0 ]
+}
+
+@test "a risk file that is not bounded or complex is a refusal, not a guess" {
+  prepare ship
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'cheap\n' > "$DUX_HOME/data/tasks/$id/risk"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: risk for $id must be bounded or complex, not 'cheap'"* ]]
+  [ ! -s "$FAKE_WORKER_LOG" ]
+}
+
+@test "a models file with no entry for the task's risk is a refusal" {
+  prepare ship
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  echo 'plan=m:high scout=m:medium' > "$DUX_HOME/config/models"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: model entry for complex in $DUX_HOME/config/models must be <model>:<effort>, got 'nothing'"* ]]
+  [ ! -s "$FAKE_WORKER_LOG" ]
+}
+
+@test "plan and scout tasks still route by shape" {
+  prepare plan
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  wrap
+  grep -q -- "--model claude-fable-5-1 --effort high" "$FAKE_WORKER_LOG"
+  [ ! -e "$DUX_HOME/data/tasks/$id/risk" ]
+}
