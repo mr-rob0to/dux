@@ -241,6 +241,26 @@ denied() {  # $1 rendered settings, $2 command line; true when a deny rule globs
   grep -qxF -- '- Risk: bounded' "$DUX_HOME/data/tasks/$id/brief.md"
 }
 
+@test "a brief that fails to land still leaves its risk file behind" {
+  id="$(setup_task ship)"
+  # The window the ordering closes: the risk file and the brief go into place
+  # with two renames, and a kill between them leaves a brief dux-brief will
+  # never render again. A stub mv that fails on the settings file stands in for
+  # that kill, because the settings and the brief share one rename step.
+  stub="$DUX_HOME/stub-mv"; mkdir -p "$stub"
+  cat > "$stub/mv" <<'SH'
+#!/usr/bin/env bash
+case "${*}" in *worker-settings.json) echo "mv: stopped here" >&2; exit 1 ;; esac
+exec /bin/mv "$@"
+SH
+  chmod +x "$stub/mv"
+  PATH="$stub:$PATH" run dux-brief "$id" --intent-file "$DUX_HOME/intent" \
+    --criteria-file "$DUX_HOME/criteria" --plan docs/p.md --tasks 1-2 --risk bounded
+  [ "$status" -eq 2 ]
+  [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/risk")" = bounded ]
+}
+
 @test "omitting --risk on a planned ship brief means complex" {
   id="$(setup_task ship)"
   dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \

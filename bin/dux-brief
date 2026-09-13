@@ -138,15 +138,17 @@ printf '%s\n' "$s" > "$settings.tmp"
 if ! jq -e '.permissions.deny | length > 0' "$settings.tmp" >/dev/null 2>&1; then
   rm -f "$tmp" "$settings.tmp"; finding "rendered worker settings for $id are not valid JSON"
 fi
-# Written before the brief is put in place, and with the same rename, so the
-# file dux-worker-wrap routes on either exists beside a finished brief or does
-# not exist at all. Mode 600 on the temporary file, so the mode is never wider
-# than 600 even for the moment between creating it and moving it.
+# Mode 600 on the temporary file, so the mode is never wider than 600 even for
+# the moment between creating it and moving it.
 if [ "$shape" = ship ]; then
   { : > "$risk_file.tmp" && chmod 600 "$risk_file.tmp" && printf '%s\n' "$risk" > "$risk_file.tmp"; } || {
     rm -f "$tmp" "$settings.tmp" "$risk_file.tmp"; finding "cannot write $risk_file"
   }
 fi
-if ! mv "$settings.tmp" "$settings" || ! mv "$tmp" "$out"; then finding "cannot write $out"; fi
+# Risk goes into place before the brief, so the file dux-worker-wrap routes on
+# is there whenever a finished brief is. The other order left a window: killed
+# between the two renames, the task has a brief dux-brief will not render again
+# and no risk file, and the wrapper then routes it complex without saying so.
 if [ "$shape" = ship ] && ! mv "$risk_file.tmp" "$risk_file"; then finding "cannot write $risk_file"; fi
+if ! mv "$settings.tmp" "$settings" || ! mv "$tmp" "$out"; then finding "cannot write $out"; fi
 echo "$out"
