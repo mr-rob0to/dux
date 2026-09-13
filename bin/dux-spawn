@@ -89,25 +89,41 @@ another_worker() {  # prints the id of a task whose worker may be alive
     [ "$other" = "$id" ] && continue
     opid="$DUX_STATE/$other.pid"
     if [ -e "$opid" ] || [ -L "$opid" ]; then
-      wpid="$(cat "$opid" 2>/dev/null)" || { printf '%s' "$other"; return 0; }
+      wpid="$(cat "$opid" 2>/dev/null)" || { printf 'pidfile %s' "$other"; return 0; }
       case "$wpid" in
-        ''|*[!0-9]*) printf '%s' "$other"; return 0 ;;
-        *) if pid_runs "$wpid" "dux-worker-wrap $other"; then printf '%s' "$other"; return 0; fi ;;
+        ''|*[!0-9]*) printf 'pidfile %s' "$other"; return 0 ;;
+        *) if pid_runs "$wpid" "dux-worker-wrap $other"; then printf 'live %s' "$other"; return 0; fi ;;
       esac
     fi
-    state="$("$ledger" get "$other" state 2>/dev/null)" || continue
+    # Fail closed, the same way the pidfile does. A ledger or a backend that
+    # will not answer about another task is "could not tell", not "free", and
+    # answering "free" on no evidence is what puts two agents on one account.
+    # The refusal names which of the two went quiet, because they are fixed
+    # differently: one is the backlog, the other is the container runner.
+    if ! state="$("$ledger" get "$other" state 2>/dev/null)"; then
+      printf 'ledger %s' "$other"; return 0
+    fi
     case "$state" in
       running|stale)
-        at="$("$backend" find "$other" 2>/dev/null)" || continue
-        [ -z "$at" ] || { printf '%s' "$other"; return 0; } ;;
+        if ! at="$("$backend" find "$other" 2>/dev/null)"; then
+          printf 'backend %s' "$other"; return 0
+        fi
+        [ -z "$at" ] || { printf 'live %s' "$other"; return 0; } ;;
     esac
   done <<EOF
 $("$ledger" list)
 EOF
   return 1
 }
-busy="$(another_worker)" \
-  && finding "another Dux worker is active: $busy; $id remains queued"
+if busy="$(another_worker)"; then
+  other="${busy#* }"
+  case "${busy%% *}" in
+    live)    finding "another Dux worker is active: $other; $id remains queued" ;;
+    pidfile) finding "cannot tell whether a worker for $other is alive: $DUX_STATE/$other.pid does not say; $id remains queued" ;;
+    ledger)  finding "cannot tell whether a worker for $other is alive: the ledger did not answer; $id remains queued" ;;
+    backend) finding "cannot tell whether a worker for $other is alive: the backend did not answer; $id remains queued" ;;
+  esac
+fi
 
 if [ -n "$harness" ]; then echo "$harness" > "$task/harness" || finding "cannot write $task/harness"; fi
 

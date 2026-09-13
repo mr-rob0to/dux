@@ -332,6 +332,20 @@ live_wrapper_for() {  # $1 id; prints the pid
   echo "$p"
 }
 
+# A Dux root of real file copies, never symlinks, with one script replaced. The
+# copies matter: dux-spawn calls its siblings by absolute path under $DUX_ROOT,
+# and writing into a directory of links to the checkout edits the checkout.
+root_with_stub() {  # $1 script name, $2 body; prints the root
+  local r="$DUX_HOME/root-$1"
+  mkdir -p "$r"
+  cp -R "$DUX_ROOT/bin" "$r/bin"
+  ln -s "$DUX_ROOT/templates" "$r/templates"
+  rm -f "$r/bin/$1"
+  printf '%s\n' "$2" > "$r/bin/$1"
+  chmod +x "$r/bin/$1"
+  echo "$r"
+}
+
 @test "a live worker on another task refuses the start and creates nothing" {
   a="$(fixture_task proj scout)"
   b="$(fixture_task proj ship)"
@@ -372,7 +386,9 @@ live_wrapper_for() {  # $1 id; prints the pid
   printf 'not-a-pid\n' > "$DUX_HOME/state/$a.pid"
   run dux-spawn "$b"
   [ "$status" -eq 2 ]
-  [ "$output" = "finding: another Dux worker is active: $a; $b remains queued" ]
+  # Named for what went quiet, not reported as a live worker: the two are fixed
+  # differently, and saying "active" about a file nobody can read is a guess.
+  [ "$output" = "finding: cannot tell whether a worker for $a is alive: $DUX_HOME/state/$a.pid does not say; $b remains queued" ]
   [ "$(dux-ledger get "$b" state)" = queued ]
   [ ! -d "$DUX_HOME/proj/.worktrees" ]
 }
@@ -393,6 +409,43 @@ live_wrapper_for() {  # $1 id; prints the pid
   run dux-spawn "$b"
   [ "$status" -eq 2 ]
   [ "$output" = "finding: another Dux worker is active: $a; $b remains queued" ]
+  [ "$(dux-ledger get "$b" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees/dux-$b" ]
+}
+
+# A pidfile that cannot be read blocks because Dux cannot prove the slot is
+# free. The other two readings are the same question: a ledger that will not
+# answer about another task, and a backend that will not answer about one Dux
+# believes is running, are both "could not tell". Skipping them answers "free"
+# on no evidence, which is the one answer that puts two agents on one account.
+@test "a ledger that cannot answer about another task blocks the start" {
+  a="$(fixture_task proj scout)"
+  b="$(fixture_task proj ship)"
+  r="$(root_with_stub dux-ledger "#!/usr/bin/env bash
+if [ \"\$1\" = get ] && [ \"\$2\" = $a ]; then echo 'finding: cannot read the ledger' >&2; exit 2; fi
+exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
+  run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: cannot tell whether a worker for $a is alive: the ledger did not answer; $b remains queued" ]
+  [ "$(dux-ledger get "$b" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+}
+
+@test "a backend that cannot answer about a running task blocks the start" {
+  a="$(fixture_task proj scout)"
+  run dux-spawn "$a"
+  [ "$status" -eq 0 ]
+  wait_result "$a"
+  wait_for_workers 30
+  rm -f "$DUX_HOME/state/$a.pid"
+  [ "$(dux-ledger get "$a" state)" = running ]
+  b="$(fixture_task proj ship)"
+  r="$(root_with_stub dux-backend "#!/usr/bin/env bash
+if [ \"\$1\" = find ] && [ \"\$2\" = $a ]; then echo 'finding: the backend is unavailable' >&2; exit 2; fi
+exec $DUX_ROOT/bin/dux-backend \"\$@\"")"
+  run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: cannot tell whether a worker for $a is alive: the backend did not answer; $b remains queued" ]
   [ "$(dux-ledger get "$b" state)" = queued ]
   [ ! -d "$DUX_HOME/proj/.worktrees/dux-$b" ]
 }
