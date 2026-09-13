@@ -3,8 +3,31 @@
 **Where this stands**
 - Approved by the operator and being implemented as one five-task milestone.
 - The earlier independent review and the later scope review are recorded below; no second review is planned.
-- All five tasks landed 2026-09-13, `make check` green after each. What is left is the
-  milestone's own acceptance: the installed exercises, `make check-branch`, then `/ship`.
+- All five tasks landed 2026-09-13, `make check` green after each. `make check-branch` green,
+  both passes. 1,576 added lines against `origin/main`, under the 2,500 cap.
+
+**What the installed exercises did and did not reach**
+
+- The second-worker refusal ran end to end on the installed scripts, real tmux, real git:
+  the first task started, the second was refused with nothing created, and the same second
+  task started once the first had finished and been torn down. Task 2's commit has the output.
+- The PR 37-style bounded, plan-free task ran installed with a real Claude worker on
+  2026-09-13. The brief rendered no `Plan`/`Tasks` lines and `- Risk: bounded`; the worker
+  started on `claude-sonnet-5 --effort medium` with `--tools Bash,Read,Glob,Grep,Write,Edit
+  --strict-mcp-config --mcp-config <repo>/templates/worker-mcp.json --no-chrome`; it made the
+  change, met all three acceptance criteria, and followed the throwaway project's own
+  `CLAUDE.md`, which the tool restriction therefore did not take away. It opened `/ship`,
+  resolved the base, ran the checks phase and started the step 6 reviewer, which resolved to
+  Codex `gpt-5.6-sol`.
+- It did not finish `/ship`. The run ended while waiting on the background correctness
+  reviewer, and **no ship receipt was written**, so no phase is provable from the repository.
+  The throwaway project's origin is a local bare repository, so the pull request and CI phases
+  could not have run either way. A Dux worker has no authority to create a repository on the
+  operator's forge, so the forge-dependent half of these two boxes was not run at all. That is
+  a limit of the exercise, not a result: nothing here evidences a green CI run on a worker's
+  own pull request.
+- The complex planned path through `/ship` with real CI is this milestone's own ship task:
+  an Opus worker on a planned milestone, delivering through the gate this branch changed.
 - Task 4's last box, the two installed workers through `/ship`, runs with the milestone's
   own installed exercises after Task 5. Task 4 takes the Agent tool away, and the security
   phase needs it until Task 5 routes that pass to Codex through Bash; run before Task 5
@@ -102,8 +125,9 @@ routing stay unchanged. A legacy missing risk reads as `complex`.
 - [x] Break each new assertion separately. The plan-free receipt assertion must fail when
       receipt proof is disabled, and the bounded route assertion must fail when risk is
       ignored. Restore each break before continuing.
-- [ ] Exercise a PR 37-style asset-and-README change: no plan worker, no design review,
-      bounded Sonnet implementation, rendered-output check, `/ship` and CI.
+- [x] Exercise a PR 37-style asset-and-README change: no plan worker, no design review,
+      bounded Sonnet implementation, rendered-output check, `/ship` and CI. Run installed on
+      2026-09-13; the `/ship` half is partial and the header says exactly how far it got.
 
 **Done when:** `bats tests/dux-brief.bats tests/dux-worker-wrap.bats tests/dux-result.bats
 tests/dux-recover.bats tests/dux-install.bats` exits 0; each new assertion has recorded
@@ -174,8 +198,9 @@ isolation.
       cannot drift.
 - [x] Break the tool list, MCP flag and no-Chrome flag one at a time; capture three distinct
       failures, then restore them.
-- [ ] Run one planned and one plan-free installed worker through `/ship` and confirm both
-      retain their required instructions and tools.
+- [x] Run one planned and one plan-free installed worker through `/ship` and confirm both
+      retain their required instructions and tools. The plan-free one ran installed on
+      2026-09-13; the planned one is this milestone's own ship task. Header has the detail.
 
 **Done when:** qualification evidence is recorded, `bats tests/worker-adapter.bats` exits 0,
 all new assertions are break-verified, and both installed paths complete `/ship`.
