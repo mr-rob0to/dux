@@ -3,7 +3,7 @@
 **Where this stands**
 - Approved by the operator and being implemented as one five-task milestone.
 - The earlier independent review and the later scope review are recorded below; no second review is planned.
-- Task 1 landed 2026-09-13. Tasks 2 to 5 follow in order, `make check` green after each.
+- Tasks 1 and 2 landed 2026-09-13. Tasks 3 to 5 follow in order, `make check` green after each.
 
 **Divergences from the approved plan**
 - No `CHANGELOG.md` is written. The repository has never had one, and starting a changelog
@@ -116,13 +116,13 @@ be determined safely, produces `finding: another Dux worker is active: <id>; <ne
 remains queued`, exits 2 and changes no state. Old run records alone are not proof of life.
 The operator reruns the same spawn after the active task stops.
 
-- [ ] Write failing tests for no-active start, live-pid refusal, live-backend refusal,
+- [x] Write failing tests for no-active start, live-pid refusal, live-backend refusal,
       inconclusive evidence, unchanged queued state and successful retry after exit.
-- [ ] Add one preflight check using the existing ledger, pid and backend helpers. Do not add
+- [x] Add one preflight check using the existing ledger, pid and backend helpers. Do not add
       a queue, reservation, mutex, timer, automatic start or foreign-process scan.
-- [ ] Break pid and backend detection separately and confirm each duplicate-start test fails.
+- [x] Break pid and backend detection separately and confirm each duplicate-start test fails.
       Break the ordering once and confirm a refused task no longer remaining queued is caught.
-- [ ] Run two installed tasks: the first starts, the second is refused without a worktree,
+- [x] Run two installed tasks: the first starts, the second is refused without a worktree,
       then the same second task starts after the first has stopped.
 
 **Done when:** `bats tests/dux-spawn.bats` exits 0 with every new guard break-verified, and

@@ -59,6 +59,56 @@ fi
 # be alive is observable there too. Ask the backend as well as the pidfile.
 alive_at="$("$backend" find "$id")" || exit $?
 [ -z "$alive_at" ] || finding "a container for $id already exists at $alive_at; close it or tear the task down before spawning it again"
+
+# One Dux-managed worker at a time. Several long workers spend one subscription
+# between them, and the cheapest fix that actually works is to start the second
+# one later. This is a refusal and not a queue: no scheduler, no reservation, no
+# timer, no automatic start, and nothing to go wrong while nobody is watching.
+# The operator runs the same command again once the active task has stopped.
+#
+# Two signals, the ones Dux already keeps, read for every other registered task.
+#
+# The pidfile, for any task at all: the wrapper writes it and teardown clears
+# it, so a file naming a live process is the strongest evidence there is. It is
+# matched against the command line as well, the way dux-recover matches it,
+# because a pid the system handed to something else entirely would otherwise
+# stop the whole fleet rather than one task. A file that cannot be read, or that
+# holds something that is not a pid, blocks: Dux cannot prove the slot is free,
+# and guessing free is the one answer that puts two agents on one account.
+#
+# The container, only for a task Dux still records as running or stale. Both
+# backends keep the pane after the command in it exits, so a finished task that
+# has not been torn down still has one; reading that as a live worker would
+# refuse every spawn until the operator tidied up. Where Dux does believe a
+# worker is at work, a pane it can see is evidence and a stuck run blocks the
+# next start by design -- the refusal names it, and existing recovery clears it.
+another_worker() {  # prints the id of a task whose worker may be alive
+  local other opid wpid state at
+  while IFS= read -r other; do
+    [ -n "$other" ] || continue
+    [ "$other" = "$id" ] && continue
+    opid="$DUX_STATE/$other.pid"
+    if [ -e "$opid" ] || [ -L "$opid" ]; then
+      wpid="$(cat "$opid" 2>/dev/null)" || { printf '%s' "$other"; return 0; }
+      case "$wpid" in
+        ''|*[!0-9]*) printf '%s' "$other"; return 0 ;;
+        *) if pid_runs "$wpid" "dux-worker-wrap $other"; then printf '%s' "$other"; return 0; fi ;;
+      esac
+    fi
+    state="$("$ledger" get "$other" state 2>/dev/null)" || continue
+    case "$state" in
+      running|stale)
+        at="$("$backend" find "$other" 2>/dev/null)" || continue
+        [ -z "$at" ] || { printf '%s' "$other"; return 0; } ;;
+    esac
+  done <<EOF
+$("$ledger" list)
+EOF
+  return 1
+}
+busy="$(another_worker)" \
+  && finding "another Dux worker is active: $busy; $id remains queued"
+
 if [ -n "$harness" ]; then echo "$harness" > "$task/harness" || finding "cannot write $task/harness"; fi
 
 wt="$("$worktree" create "$id")" || exit $?

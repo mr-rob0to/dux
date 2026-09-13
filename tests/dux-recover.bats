@@ -588,7 +588,7 @@ retire_line="failed: stopped for security-boundary upgrade; worktree kept"
 }
 
 @test "a plan-free bounded retry stays plan-free and bounded" {
-  task_in failed ship
+  task_in failed ship; kill_worker
   # The brief a bounded, plan-free dispatch renders, in a fresh task the retry
   # can copy: dux-brief writes a brief once, so it cannot be re-rendered in place.
   id2="$(dux-task-new proj ship)"

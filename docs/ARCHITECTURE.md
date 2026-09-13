@@ -46,7 +46,8 @@ bin/
                            and for a ship task write tasks/<id>/risk (mode 600) from
                            --risk bounded|complex, defaulting to complex
   dux-worktree             create/remove/discard a worktree per the project's mechanism
-  dux-spawn                worktree plus backend container for a queued task; five refusals
+  dux-spawn                worktree plus backend container for a queued task; six refusals,
+                           one of them a live worker on any other task
   dux-worker-wrap          runs inside the container: task channel, scrubbed environment,
                            process group, proposal rules, heartbeat, terminal state
   dux-result               record-ship files the five /ship phases in order; verify proves a
@@ -178,6 +179,16 @@ backend started it and catches a worker in a server whose socket vanished.
    independent signals and either one that cannot say "gone" refuses: `find`
    answers only for the current backend and an unrenamed container, while the
    pidfile is written by the wrapper inside the container on every backend.
+   One more refusal covers the whole fleet: no other registered task may have a
+   worker that might be alive. Its `state/<other>.pid` must be absent or name a
+   pid no longer running `dux-worker-wrap <other>`, and where the ledger still
+   records that task as `running` or `stale`, `dux-backend find <other>` must
+   report no container. The pane outlives the worker on both backends, so a task
+   the ledger has settled is not read as busy. Evidence that cannot be read
+   refuses. This is a refusal and not a queue: nothing is reserved, nothing is
+   started later, and the operator runs the same command again once the active
+   task has stopped. It comes before the worktree and the container, so a
+   refused task is unchanged and still `queued`.
    Milestone 2 dispatches `claude` workers only. `codex` is refused by
    `harness_refusal` in `dux-env`, which `dux-spawn` and `dux-worker-wrap` both
    call, so the `--harness` flag, `config/worker-harness` and
