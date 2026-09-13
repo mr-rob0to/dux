@@ -65,7 +65,10 @@ bin/
   dux-backend              selects a backend once and dispatches to its adapter
   backends/tmux.sh         window per task, remain-on-exit; endpoint tmux:<session>:<window_id>
   backends/herdr.sh        tab per task in the Dux workspace; endpoint herdr:<pane_id>
-  workers/claude.sh        worker harness adapter: worker_cmd, worker_run, worker_effort_ok
+  workers/claude.sh        worker harness adapter: worker_cmd, worker_run, worker_effort_ok;
+                           both entry points share one flag list: --tools limited to
+                           Bash,Read,Glob,Grep,Write,Edit, --strict-mcp-config with the
+                           empty templates/worker-mcp.json, and --no-chrome
   workers/codex.sh         same adapter for Codex; tested, not dispatchable in milestone 2
   dux-doctor               preflight: CLIs, gh auth, backend CLI, registry, lock
   dux-install              symlink bundled skills, seed config, add model keys an existing
@@ -76,6 +79,7 @@ templates/
                            project that has none
   brief.md                 the brief skeleton dux-brief renders
   worker-settings.json     Claude deny rules, __BASE__ rendered per task
+  worker-mcp.json          the empty MCP config every Claude worker is held to
   hooks/pre-push           base-branch push guard, __BASE__ and __UPSTREAM__ rendered per task
   config/                  defaults dux-install copies into config/ (models, models-codex,
                            worker-harness, backend, reviewer, security-reviewer)

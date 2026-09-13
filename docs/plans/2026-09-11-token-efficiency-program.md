@@ -3,7 +3,11 @@
 **Where this stands**
 - Approved by the operator and being implemented as one five-task milestone.
 - The earlier independent review and the later scope review are recorded below; no second review is planned.
-- Tasks 1 to 3 landed 2026-09-13. Tasks 4 and 5 follow in order, `make check` green after each.
+- Tasks 1 to 4 landed 2026-09-13; Task 5 follows, `make check` green after each.
+- Task 4's last box, the two installed workers through `/ship`, runs with the milestone's
+  own installed exercises after Task 5. Task 4 takes the Agent tool away, and the security
+  phase needs it until Task 5 routes that pass to Codex through Bash; run before Task 5
+  the exercise would be measuring a gate the pair is halfway through replacing.
 
 **Divergences from the approved plan**
 - No `CHANGELOG.md` is written. The repository has never had one, and starting a changelog
@@ -159,15 +163,15 @@ IDs, and the failure from the changed committed value is recorded.
 skills, hooks, permissions and `/ship`. They do not use safe mode or settings-source
 isolation.
 
-- [ ] Before editing, qualify the exact flags on the installed Claude CLI in a throwaway
+- [x] Before editing, qualify the exact flags on the installed Claude CLI in a throwaway
       project. Prove subscription authentication, project instructions, task hooks and
       `/ship` still work. If any fails, mark this task blocked with the exact flag and stop
       the milestone rather than silently weakening the worker.
-- [ ] Write failing adapter tests that assert the exact six tools, strict empty MCP input,
+- [x] Write failing adapter tests that assert the exact six tools, strict empty MCP input,
       no Chrome, unchanged settings and absence of safe-mode/settings-source flags.
-- [ ] Add the flags once to the shared adapter command shape so printed and executed commands
+- [x] Add the flags once to the shared adapter command shape so printed and executed commands
       cannot drift.
-- [ ] Break the tool list, MCP flag and no-Chrome flag one at a time; capture three distinct
+- [x] Break the tool list, MCP flag and no-Chrome flag one at a time; capture three distinct
       failures, then restore them.
 - [ ] Run one planned and one plan-free installed worker through `/ship` and confirm both
       retain their required instructions and tools.
