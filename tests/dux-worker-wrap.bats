@@ -1,13 +1,88 @@
 load helpers/setup
 
-# A task with a brief, rendered settings, and a worktree; runs the wrapper from inside the worktree.
+# The wrapper no longer forks the harness: it starts it in a pane and finds it
+# through the multiplexer. So every test here needs a real tmux window, on this
+# file's own socket, and the tab has to exist before the wrapper runs, because
+# that is what dux-spawn does.
+setup_file() {
+  use_tmux_tmpdir
+  # Pinned, not defaulted: this file's tab is a real tmux window, so an ambient
+  # DUX_BACKEND would point the wrapper at a pane that is not there. The one
+  # test about Herdr names that backend itself.
+  export DUX_BACKEND=tmux DUX_TMUX_SOCKET=dux-wrap DUX_TMUX_SESSION=duxwrap
+  tmux -L dux-wrap kill-server 2>/dev/null || true
+  tmux -L dux-wrap new-session -d -s duxwrap -x 80 -y 24
+}
+teardown_file() {
+  tmux -L dux-wrap kill-server 2>/dev/null || true
+  drop_tmux_tmpdir
+}
+
+# The harness the pane starts has to carry the name the adapter looks for, and
+# a shell script's process carries its interpreter's name on macOS and its own
+# on Linux. Both read "claude" when the script is called claude and its
+# interpreter is a link called claude, so the suite's fake is copied to that
+# shape rather than the wrapper being told to look for something else. Measured
+# 2026-09-14: ps -o comm= reads <dir>/i/claude on macOS and claude on Linux.
+# A real session sits at its prompt for minutes, so the wrapper always has a
+# process to find. The fake finishes in milliseconds and would be gone before
+# the first poll, which is a fixture artefact and not the behaviour under test,
+# so the copy waits for state/<id>.pgid: the file the wrapper writes the moment
+# it has found this process. It is the shortest hold that is also exact.
+harness_shim() {
+  mkdir -p "$DUX_HOME/hbin/i"
+  ln -sf "$(command -v bash)" "$DUX_HOME/hbin/i/claude"
+  {
+    printf '#!%s\n' "$DUX_HOME/hbin/i/claude"
+    printf 'dux_i=0\n'
+    printf 'while [ ! -s "%s" ] && [ "$dux_i" -lt 150 ]; do dux_i=$((dux_i+1)); sleep 0.2; done\n' \
+      "$DUX_HOME/state/$id.pgid"
+    tail -n +2 "$DUX_ROOT/tests/fakes/claude"
+  } > "$DUX_HOME/hbin/claude"
+  chmod 755 "$DUX_HOME/hbin/claude"
+}
+
+# What the pane's shell has to carry for the fake to work. The launcher strips
+# every DUX_, CLAUDE_, HERDR_, TMUX and GIT_CONFIG_ name, so only these reach
+# the harness. tmux gives a respawned pane the session's environment; the herdr
+# fake starts the command itself and inherits the wrapper's.
+pane_env() {
+  local v
+  for v in "PATH=$DUX_HOME/hbin:$PATH" "FAKE_WORKER_SCRIPT=$FAKE_WORKER_SCRIPT" \
+           "FAKE_WORKER_LOG=$FAKE_WORKER_LOG" \
+           "GIT_AUTHOR_NAME=$GIT_AUTHOR_NAME" "GIT_AUTHOR_EMAIL=$GIT_AUTHOR_EMAIL" \
+           "GIT_COMMITTER_NAME=$GIT_COMMITTER_NAME" "GIT_COMMITTER_EMAIL=$GIT_COMMITTER_EMAIL"; do
+    tmux -L dux-wrap set-environment -t duxwrap "${v%%=*}" "${v#*=}"
+  done
+  PATH="$DUX_HOME/hbin:$PATH"; export PATH
+}
+
+# The tab dux-spawn would have opened, and where it recorded it. The Herdr fake
+# answers for one workspace, the way the real CLI reads the pane Dux runs in.
+open_tab() {  # [$1 backend]
+  # FAKE_HERDR_RUN makes the fake actually start what `pane run` is given, in a
+  # session of its own, so the wrapper has a real process to discover.
+  [ "${1:-tmux}" != herdr ] || export HERDR_WORKSPACE_ID=w1 FAKE_HERDR_RUN=1
+  DUX_BACKEND="${1:-tmux}" dux-backend open "$id" "$wt" > "$DUX_HOME/state/$id.endpoint"
+}
+
+# A task with a brief, rendered settings, a worktree, and the tab its worker runs in.
 prepare() {  # $1 shape; sets $id and $wt
   id="$(fixture_task proj "$1")"
   wt="$(dux-worktree create "$id")"
   export FAKE_WORKER_SCRIPT="$DUX_HOME/state/script"
   export DUX_WRAP_POLL_SECS=1 DUX_HEARTBEAT_SECS=1
+  harness_shim
+  pane_env
+  open_tab
 }
-wrap() { (cd "$wt" && DUX_BACKEND="${DUX_BACKEND:-tmux}" dux-worker-wrap "$id"); }
+# A second task in one test needs its own tab, so this is what follows a new id.
+reprepare() {  # sets $wt for the current $id
+  wt="$(dux-worktree create "$id")"
+  harness_shim
+  open_tab
+}
+wrap() { (cd "$wt" && dux-worker-wrap "$id"); }
 status_log() { cat "$DUX_HOME/data/tasks/$id/status.log"; }
 # A terminal state no longer reaches status.log from the wrapper. It is a
 # handoff the watcher consumes, so tests read the handoff instead.
@@ -37,7 +112,9 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(handoff_run)" = "$(sed -n 's/^run=//p' "$DUX_HOME/state/$id.run")" ]
   [ "$(grep -rl 'example.invalid' "$DUX_HOME/state/$id.handoffs" | wc -l | tr -d ' ')" -eq 0 ]
   [[ "$(cat "$DUX_HOME/state/$id.pid")" =~ ^[0-9]+$ ]]
-  grep -q '"type":"assistant"' "$DUX_HOME/state/$id.out"
+  # The worker's output is its tab's scrollback. Dux captures none of it.
+  [ ! -e "$DUX_HOME/state/$id.out" ]
+  # The group the wrapper wrote is the harness's own, found through the pane.
   grep -q -- "--model claude-sonnet-5 --effort medium" "$FAKE_WORKER_LOG"
   grep -qE -- "--settings $DUX_HOME/state/channels/$id\.[A-Za-z0-9]+/worker-settings.json" "$FAKE_WORKER_LOG"
   [ "$(cat "$DUX_HOME/data/tasks/$id/report.md")" = "all clear" ]
@@ -76,51 +153,66 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   [ "$(ls "$d/1" | sort | tr '\n' ' ')" = "event run status " ]
 }
 
-@test "non-zero exit without an exit line appends failed and writes a failure tail" {
+# A session that goes with no terminal line is ended however it went: the
+# operator typed /exit, the harness crashed, the machine took it. The wrapper
+# did not fork it, so there is no exit status to tell those apart, and ended is
+# where all three belong -- recovery proves what the run actually left behind.
+@test "a harness that goes with no terminal line ends the run, whatever its exit code" {
   prepare scout
   printf 'status working: starting\nexit 7\n' > "$FAKE_WORKER_SCRIPT"
   run wrap
   [ "$status" -eq 0 ]
-  [ "$(handoff_status)" = "failed: worker exited 7" ]
-  [ "$(handoff_event)" = failed ]
-  grep -q '^## Failure tail' "$DUX_HOME/data/tasks/$id/report.md"
-  grep -q 'starting' "$DUX_HOME/data/tasks/$id/report.md"
+  [ "$(handoff_status)" = "ended: the session ended without a terminal status" ]
+  [ "$(handoff_event)" = ended ]
+  # ended is not failed, so nothing writes a failure tail; a scout that proposed
+  # no report leaves no report.md at all.
+  refute test -e "$DUX_HOME/data/tasks/$id/report.md"
 }
 
 @test "zero exit without an exit line appends ended; blocked is left alone" {
   prepare scout
   printf 'status working: starting\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
   wrap
-  [ "$(handoff_status)" = "ended: exit 0 without terminal status" ]
+  [ "$(handoff_status)" = "ended: the session ended without a terminal status" ]
   id2="$(dux-task-new proj scout)"
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
   dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
-  id="$id2"; wt="$(dux-worktree create "$id")"
+  id="$id2"; reprepare
   printf 'status blocked: cannot reach the API, tried twice\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
   wrap
   [ "$(handoff_status)" = "blocked: cannot reach the API, tried twice" ]
 }
 
-@test "heartbeat appears only while the out file grows" {
+# The heartbeat is the beat file's mtime moving. Claude Code's PostToolUse and
+# Stop hooks touch it; the fake touches it directly, which is the same file and
+# the same question. It is a liveness hint, never proof and never read for
+# content: the wrapper only ever asks whether the number changed.
+@test "heartbeat appears only while the beat file's mtime moves" {
   prepare scout
-  printf 'report all clear\nstatus working: a\nsleep 2\nstatus working: b\nsleep 3\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nstatus working: a\ntouch beat\nsleep 2\ntouch beat\nsleep 2\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   wrap
   [ "$(status_log | grep -c '^working: heartbeat$')" -ge 1 ]
-  [ "$(status_log | grep -c '^working: heartbeat$')" -le 3 ]
+  # The channel goes with the run, so the beat file is not left behind.
+  [ ! -e "$DUX_HOME/state/$id.beat" ]
+
+  # A worker that never touches it is silent, however long it runs.
   id2="$(dux-task-new proj scout)"
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
   dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
-  id="$id2"; wt="$(dux-worktree create "$id")"
-  printf 'report all clear\nsleep 3\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  id="$id2"; reprepare
+  printf 'report all clear\nsleep 4\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   wrap
   [ "$(status_log | grep -c heartbeat || true)" -eq 0 ]
+
+  # And one that beats without proposing anything is heard, which is the whole
+  # point: an interactive session writes nothing to Dux between status lines.
   id3="$(dux-task-new proj scout)"
   dux-brief "$id3" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
-  id="$id3"; wt="$(dux-worktree create "$id")"
-  printf 'report all clear\nsay thinking\nsleep 2\nsay still thinking\nsleep 2\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  id="$id3"; reprepare
+  printf 'report all clear\ntouch beat\nsleep 2\ntouch beat\nsleep 2\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   wrap
   [ "$(status_log | grep -c '^working: heartbeat$')" -ge 1 ]
-  [ "$(status_log | head -n 1)" = "working: heartbeat" ]
+  [ "$(status_log | take_line)" = "working: heartbeat" ]
 }
 
 @test "the worker's status log is its own channel outbox, never the task's status log" {
@@ -167,7 +259,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   # intake builds a source key with. No GitHub origin records "-".
   grep -qx "repo=-" "$DUX_HOME/state/$id.result-context"
   id="$(fixture_task proj2 scout github)"
-  wt="$(dux-worktree create "$id")"
+  reprepare
   wrap
   grep -qx "repo=acme/proj2" "$DUX_HOME/state/$id.result-context"
 }
@@ -196,9 +288,11 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   pgid="$(cat "$DUX_HOME/state/$id.pgid")"
   wait_until 20 test -s "$DUX_HOME/state/stubborn.pid"
   sp="$(cat "$DUX_HOME/state/stubborn.pid")"
-  # The harness is the group leader; once the wrapper has reaped it we are
-  # inside the stop, with its child still running.
-  wait_until 20 not_running "$pgid"
+  # The pane no longer holds a live harness, so the wrapper is about to stop the
+  # group. Not "the pid is gone": nothing waits on a process it did not fork, so
+  # the harness sits as a zombie kill -0 answers for until the group is reaped.
+  ep="$(cat "$DUX_HOME/state/$id.endpoint")"
+  wait_until 20 refute dux-backend pid "$ep" claude
   # Hold the invariant across the window, not at one instant: the wrapper writes
   # terminal state within a poll of the harness exiting when the guard is gone.
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
@@ -245,7 +339,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   id2="$(dux-task-new proj scout)"
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
   dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
-  id="$id2"; wt="$(dux-worktree create "$id")"
+  id="$id2"; reprepare
   printf 'status working: one\nsleep 3\nrun : > "$DUX_STATUS_LOG"\nsleep 3\nstatus done: report\n' \
     > "$FAKE_WORKER_SCRIPT"
   run wrap
@@ -334,7 +428,7 @@ SH
   id2="$(dux-task-new proj scout)"
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
   dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
-  id="$id2"; wt="$(dux-worktree create "$id")"
+  id="$id2"; reprepare
   printf 'status done: report\nstatus working: one more thing\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
   run wrap
   [ "$status" -eq 2 ]
@@ -354,7 +448,7 @@ SH
   id2="$(dux-task-new proj scout)"
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
   dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
-  id="$id2"; wt="$(dux-worktree create "$id")"
+  id="$id2"; reprepare
   printf 'status working: %s\nstatus done: report\nexit 0\n' "$over" > "$FAKE_WORKER_SCRIPT"
   run wrap
   [ "$status" -eq 2 ]
@@ -523,7 +617,7 @@ SH
   cat > "$FAKE_WORKER_SCRIPT" <<EOF
 report all clear
 run d=$t; git init -q -b main "\$d.o" && git -C "\$d.o" commit -q --allow-empty -m init && git clone -q --bare "\$d.o" "\$d.origin" && git clone -q "\$d.origin" "\$d" && git -C "\$d" commit -q --allow-empty -m fixture; git -C "\$d" push -q origin main; echo \$? > $rc.fixture
-run git push -q origin HEAD:refs/heads/main; echo \$? > $rc.base
+run git push -q origin HEAD:refs/heads/main 2> $DUX_HOME/state/push.err; echo \$? > $rc.base
 run git push -q -u origin dux/$id; echo \$? > $rc.task
 status done: report
 EOF
@@ -534,7 +628,7 @@ EOF
   # The worktree is still refused on the base branch, and origin did not move.
   [ "$(cat "$rc.base")" != 0 ]
   [ "$(git -C "$DUX_HOME/proj.origin" rev-parse main)" = "$before" ]
-  grep -q "finding: refusing to push to main from a Dux worktree" "$DUX_HOME/state/$id.out"
+  grep -q "finding: refusing to push to main from a Dux worktree" "$DUX_HOME/state/push.err"
   # The task branch goes, and the project's own pre-push saw the same refs.
   [ "$(cat "$rc.task")" = 0 ]
   grep -q "refs/heads/dux/$id" "$DUX_HOME/proj/.worktrees/upstream-saw-refs"
@@ -565,10 +659,11 @@ EOF
 @test "a push to the base branch from inside the worker is refused by the worktree's hook" {
   prepare scout
   before="$(git -C "$DUX_HOME/proj.origin" rev-parse main)"
-  printf 'report all clear\nrun git commit -q --allow-empty -m work\nrun git push origin HEAD:refs/heads/main\nrun git push -q -u origin dux/%s\nstatus done: report\n' "$id" > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nrun git commit -q --allow-empty -m work\nrun git push origin HEAD:refs/heads/main 2> %s\nrun git push -q -u origin dux/%s\nstatus done: report\n' \
+    "$DUX_HOME/state/push.err" "$id" > "$FAKE_WORKER_SCRIPT"
   wrap
   [ "$(git -C "$DUX_HOME/proj.origin" rev-parse main)" = "$before" ]
-  grep -q 'refusing to push to main from a Dux worktree' "$DUX_HOME/state/$id.out"
+  grep -q 'refusing to push to main from a Dux worktree' "$DUX_HOME/state/push.err"
   git -C "$DUX_HOME/proj.origin" show-ref --verify --quiet "refs/heads/dux/$id"
 }
 
@@ -586,39 +681,42 @@ EOF
   [ "$(grep -c '^codex ' "$FAKE_WORKER_LOG" || true)" -eq 0 ]
 }
 
-@test "on herdr every status line is mirrored and the title is set; on tmux nothing is" {
+# The title is set by endpoint, because the wrapper has no pane of its own any
+# more. Nothing else is reported to the multiplexer: a real session in the pane
+# is something Herdr detects by itself, and a Dux mirror would be a second
+# source for one pane saying something the session did not.
+@test "the title is set by endpoint and nothing else is reported to the backend" {
   prepare scout
   printf 'report all clear\nstatus working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
-  (cd "$wt" && DUX_BACKEND=herdr HERDR_PANE_ID=w1:p9 dux-worker-wrap "$id")
-  grep -qF "pane report-metadata w1:p9 --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
-  grep -qF "pane report-agent w1:p9 --source dux --agent dux-$id --state working --message dux $id: working" "$FAKE_HERDR_LOG"
-  grep -qF "pane report-agent w1:p9 --source dux --agent dux-$id --state idle --message dux $id: done" "$FAKE_HERDR_LOG"
+  id2="$id"; wt2="$wt"
+  open_tab herdr
+  ep="$(cat "$DUX_HOME/state/$id.endpoint")"
+  pane="${ep#herdr:}"
+  (cd "$wt" && DUX_BACKEND=herdr dux-worker-wrap "$id")
+  [ "$(handoff_status)" = "done: report" ]
+  grep -qF "pane report-metadata $pane --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
+  # No agent state, and not one word the worker wrote.
+  [ "$(grep -c 'report-agent' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
   [ "$(grep -c 'starting' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
   : > "$FAKE_HERDR_LOG"
+  # tmux has no title of its own: backend_find matches the window name.
+  id="$id2"; wt="$wt2"
   id2="$(dux-task-new proj scout)"
   printf 'x\n' > "$DUX_HOME/i2"; printf '1. y\n' > "$DUX_HOME/c2"
   dux-brief "$id2" --intent-file "$DUX_HOME/i2" --criteria-file "$DUX_HOME/c2" >/dev/null
-  id="$id2"; wt="$(dux-worktree create "$id")"
-  (cd "$wt" && DUX_BACKEND=tmux dux-worker-wrap "$id")
+  id="$id2"; reprepare
+  wrap
   [ ! -s "$FAKE_HERDR_LOG" ]
-}
-
-@test "on herdr without HERDR_PANE_ID the wrapper logs once and finishes" {
-  prepare scout
-  printf 'report all clear\nstatus working: a\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
-  run env -u HERDR_PANE_ID bash -c 'cd "$1" && DUX_BACKEND=herdr dux-worker-wrap "$2"' _ "$wt" "$id"
-  [ "$status" -eq 0 ]
-  [ "$(handoff_status)" = "done: report" ]
-  [ "$(grep -c 'status mirroring unavailable' <<< "$output")" -eq 1 ]
 }
 
 @test "a signal before the harness starts is caught, not fatal to the wrapper" {
   prepare scout
   printf 'status done: report\n' > "$FAKE_WORKER_SCRIPT"
-  # The title call is the last step before the harness is forked, so a slow one
-  # holds the wrapper in the window where the trap must already be installed.
+  open_tab herdr
+  # The title call is the last step before the launcher is started, so a slow
+  # one holds the wrapper in the window where the trap must already be there.
   export FAKE_HERDR_SLOW_METADATA=5
-  bash -c 'cd "$1" && DUX_BACKEND=herdr HERDR_PANE_ID=w1:p9 exec dux-worker-wrap "$2"' _ "$wt" "$id" & wp=$!
+  bash -c 'cd "$1" && DUX_BACKEND=herdr exec dux-worker-wrap "$2"' _ "$wt" "$id" & wp=$!
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     grep -q '^pane report-metadata' "$FAKE_HERDR_LOG" && break
     sleep 0.5
@@ -630,11 +728,11 @@ EOF
   [ ! -s "$FAKE_WORKER_LOG" ]
 }
 
-@test "a signal after the last check and before the fork still stops the harness" {
+# The window the trap cannot cover: signalled is set while there is no group to
+# send anything to, so only the re-check after discovery can stop the harness.
+@test "a signal after the last check and before the harness starts still stops it" {
   prepare scout
   printf 'status working: started\nsleep 30\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
-  # The window the trap cannot cover: signalled is set with no wpid to kill, so
-  # only the re-check after the fork can stop the harness.
   export DUX_WRAP_FORK_PAUSE_SECS=5
   bash -c 'cd "$1" && DUX_BACKEND=tmux exec dux-worker-wrap "$2"' _ "$wt" "$id" & wp=$!
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
@@ -652,7 +750,7 @@ EOF
   done
   wait "$wp" || true
   [ "$gone" -eq 1 ]
-  [ "$(handoff_status)" = "failed: worker exited 143" ]
+  [ "$(handoff_status)" = "ended: the session ended without a terminal status" ]
   [ "$(status_log | grep -c '^done: report' || true)" -eq 0 ]
 }
 
@@ -671,13 +769,21 @@ EOF
   [ "$(ls -A "$DUX_HOME/data" | sort)" = "$before" ]
 }
 
-@test "TERM to the wrapper reaches the harness and is recorded as failed" {
+# A signal to the wrapper still reaches the harness through its group, even
+# though the wrapper never forked it. The run ends rather than failing: there is
+# no exit status to read, and a stopped session is recovery's to look at.
+@test "TERM to the wrapper reaches the harness and ends the run" {
   prepare scout
   printf 'sleep 30\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   bash -c 'cd "$1" && DUX_BACKEND=tmux exec dux-worker-wrap "$2"' _ "$wt" "$id" & wp=$!
-  sleep 2; kill -TERM "$wp"
+  wait_until 20 test -s "$DUX_HOME/state/$id.pgid"
+  hg="$(cat "$DUX_HOME/state/$id.pgid")"
+  kill -TERM "$wp"
   wait "$wp" || true
-  [ "$(handoff_status)" = "failed: worker exited 143" ]
+  [ "$(handoff_status)" = "ended: the session ended without a terminal status" ]
+  # The harness's whole group went with it, from outside its parent chain.
+  run kill -0 -- "-$hg"
+  [ "$status" -ne 0 ]
 }
 
 # ---- risk routes a ship task's model ---------------------------------------
@@ -735,4 +841,64 @@ EOF
   wrap
   grep -q -- "--model claude-fable-5-1 --effort high" "$FAKE_WORKER_LOG"
   [ ! -e "$DUX_HOME/data/tasks/$id/risk" ]
+}
+
+# ---- the run ends when the line does, not when the session does -------------
+
+# An interactive harness finishes its turn and waits at the prompt. The protocol
+# has one terminal line per run, so the wrapper ends the run on that line rather
+# than waiting for a session that will never exit by itself. A session left
+# alive behind the line would be a second run Dux has no record of.
+@test "a terminal line ends the run within a poll, even though the session would go on" {
+  prepare scout
+  printf 'report all clear\nstatus done: report\nsleep 600\n' > "$FAKE_WORKER_SCRIPT"
+  bash -c 'cd "$1" && DUX_BACKEND=tmux exec dux-worker-wrap "$2"' _ "$wt" "$id" & wp=$!
+  wait_until 30 test -s "$DUX_HOME/state/$id.pgid"
+  hg="$(cat "$DUX_HOME/state/$id.pgid")"
+  # Two polls for the line plus the stop. The deadline is enforced here rather
+  # than by waiting, so a wrapper that never notices fails in seconds instead of
+  # holding the suite for the ten minutes the harness asked to sleep.
+  gone=0
+  for _ in $(seq 1 $(( 2 * DUX_WRAP_POLL_SECS + 4 ))); do
+    kill -0 "$wp" 2>/dev/null || { gone=1; break; }
+    sleep 1
+  done
+  if [ "$gone" -ne 1 ]; then
+    kill -TERM "$wp" 2>/dev/null || true
+    kill -KILL -- "-$hg" 2>/dev/null || true
+    wait "$wp" || true
+    echo "the wrapper was still supervising a finished run after the terminal line"
+    return 1
+  fi
+  wait "$wp" || true
+  [ "$(handoff_status)" = "done: report" ]
+  [ "$(handoff_event)" = done ]
+  # The session and everything it started went with the line.
+  run kill -0 -- "-$hg"
+  [ "$status" -ne 0 ]
+}
+
+# Discovery asks two questions of the pane's foreground process: is it the
+# harness, and is it in this task's worktree. A pane holding anything else is a
+# refusal at the end of the window, never a wrapper supervising the wrong thing.
+@test "a pane that never holds the harness is a refusal, not a silent supervision" {
+  prepare scout
+  printf 'report all clear\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  # Something on PATH under the harness's name that is not the harness: the
+  # pane gets a live foreground process the whole time, and it is never claude.
+  printf '#!/bin/sh\nexec sleep 60\n' > "$DUX_HOME/hbin/claude"
+  chmod 755 "$DUX_HOME/hbin/claude"
+  export DUX_WRAP_START_SECS=2
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"the harness for $id did not appear in its pane within 2s"* ]]
+  [ "$(handoff_status)" = "failed: wrapper: the harness for $id did not appear in its pane within 2s" ]
+  [ "$(handoff_event)" = failed ]
+  # Nothing was supervised, so no group was ever recorded.
+  [ ! -e "$DUX_HOME/state/$id.pgid" ]
+  # The impostor is still in the pane; the wrapper never signalled anything.
+  ep="$(cat "$DUX_HOME/state/$id.endpoint")"
+  run dux-backend pid "$ep" sleep
+  [ "$status" -eq 0 ]
+  kill -TERM -- "-$(printf '%s' "$output" | cut -d' ' -f2)" 2>/dev/null || true
 }

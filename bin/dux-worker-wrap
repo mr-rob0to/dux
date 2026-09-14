@@ -12,8 +12,10 @@ id="$1"
 valid_task_id "$id"
 task="$DUX_TASKS/$id"; brief="$task/brief.md"; status_log="$task/status.log"
 settings="$task/worker-settings.json"; hooks="$task/hooks"
-out="$DUX_STATE/$id.out"; pidfile="$DUX_STATE/$id.pid"; pgidfile="$DUX_STATE/$id.pgid"
+pidfile="$DUX_STATE/$id.pid"; pgidfile="$DUX_STATE/$id.pgid"
+epfile="$DUX_STATE/$id.endpoint"
 poll="${DUX_WRAP_POLL_SECS:-5}"; beat="${DUX_HEARTBEAT_SECS:-300}"
+start_secs="${DUX_WRAP_START_SECS:-30}"
 branch="dux/$id"
 
 [ -d "$task" ] || finding "no task folder for $id"
@@ -80,12 +82,13 @@ if [ "$harness" = claude ] && [ ! -s "$settings" ]; then refuse "no worker setti
 
 echo $$ > "$pidfile" || refuse "cannot write $pidfile"
 : >> "$status_log" || refuse "cannot write $status_log"
-# Installed before anything can start the harness: a signal in a gap between the
-# fork and the trap would kill the wrapper and leave the harness unsupervised.
-# bash starts background children with INT ignored, so INT here becomes TERM to it.
-wpid=""; pgid=""; signalled=0
-trap 'signalled=1; if [ -n "$pgid" ]; then kill -TERM -- "-$pgid" 2>/dev/null || true;
-      elif [ -n "$wpid" ]; then kill -TERM "$wpid" 2>/dev/null || true; fi' INT TERM
+# Installed before anything can start the harness: a signal in the gap between
+# starting it and discovering its group would leave the harness unsupervised.
+# The wrapper does not fork the harness any more, so a group is the only handle
+# there is; signalled is what the code after discovery reads to deliver a signal
+# that arrived while there was nothing to send it to.
+pgid=""; signalled=0
+trap 'signalled=1; [ -z "$pgid" ] || kill -TERM -- "-$pgid" 2>/dev/null || true' INT TERM
 
 # ---- the task channel ----------------------------------------------------
 # The worker never writes canonical state. It proposes into a channel of its
@@ -147,8 +150,15 @@ outbox_intact() {  # $1 outbox, $2 its pin
 
 c_brief="$channel/brief.md"; c_settings="$channel/worker-settings.json"
 { cp "$brief" "$c_brief" && chmod 400 "$c_brief"; } || refuse "cannot stage the brief in the task channel"
+# The heartbeat is two hooks in the task's settings, each touching a file in
+# this run's channel. dux-brief could not know the channel, so it left a token;
+# this is where the path is known. Single-quoted in the template, so a channel
+# holding a quote would end the literal early, as it would in the recorder.
+beatfile="$channel/beat"
 if [ -s "$settings" ]; then
-  { cp "$settings" "$c_settings" && chmod 400 "$c_settings"; } \
+  case "$channel" in *\'*) refuse "cannot stage the worker settings for $id: the task channel holds a quote" ;; esac
+  rendered="$(cat "$settings")"; token='__CHANNEL__'; rendered="${rendered//$token/$channel}"
+  { printf '%s\n' "$rendered" > "$c_settings" && chmod 400 "$c_settings"; } \
     || refuse "cannot stage the worker settings in the task channel"
 fi
 # A ship worker records each /ship phase through a recorder made for this task
@@ -228,36 +238,6 @@ stop_group() {  # TERM, then KILL; returns 1 if anything is still there
   return 1
 }
 
-# Nothing of Dux's session reaches the worker: not the orchestrator's own
-# harness variables, not the backend it runs under, not a git config the
-# operator set for themselves, and not the directory the dux commands live in.
-# It gets its task channel back and nothing else. No git configuration is handed
-# over: an environment setting reaches every repository the worker touches, and
-# the push guard belongs to the task worktree alone, which is where dux-worktree
-# wrote it. Matched with case, not a regex: BSD sed has no \| alternation, so a
-# GNU pattern here would unset nothing.
-scrub_worker_env() {
-  local v
-  for v in $(env | cut -d= -f1); do
-    case "$v" in
-      DUX_*|CLAUDECODE|CLAUDE_*|HERDR_*|TMUX|TMUX_*|GIT_CONFIG_*) unset "$v" ;;
-    esac
-  done
-  export PATH="$worker_path"
-  export DUX_STATUS_LOG="$status_outbox" DUX_REPORT="$report_outbox"
-  [ -z "$ship_record" ] || export DUX_SHIP_RECORD="$ship_record"
-}
-
-mirroring=1
-mirror() {  # $1 dux state. The pane says which state, never what the worker wrote.
-  [ "$mirroring" = 1 ] || return 0
-  local s
-  case "$1" in working) s=working ;; needs-decision|blocked) s=blocked ;; *) s=idle ;; esac
-  if ! "$DUX_ROOT/bin/dux-backend" report "$id" "$s" "dux $id: $1" 2>/dev/null; then
-    mirroring=0; log "status mirroring unavailable on this backend; status.log remains the truth"
-  fi
-}
-
 # ---- reading the worker's proposals --------------------------------------
 LINE_CAP=200      # bytes of one cleaned status line
 STATUS_CAP=65536  # bytes of status.outbox over a whole run
@@ -335,7 +315,7 @@ import_proposals() {  # $1 "final" when nothing more is coming
     fi
     case "$clean" in
       working:\ ?*)
-        printf '%s\n' "$clean" >> "$status_log"; mirror working ;;
+        printf '%s\n' "$clean" >> "$status_log" ;;
       needs-decision:\ ?*|blocked:\ ?*|done:\ ?*|failed:\ ?*)
         terminal="$clean" ;;
       # Not relayed, not logged: an operator reads fixed text chosen by state,
@@ -350,54 +330,95 @@ import_proposals() {  # $1 "final" when nothing more is coming
   fi
 }
 
+# ---- starting the harness in the pane the task already has ----------------
+# The wrapper does not fork the harness. dux-spawn opened a tab at a shell
+# prompt and recorded where; the pane's shell runs the launcher, and the harness
+# is that shell's child, not this process's. So everything below asks the
+# multiplexer what is in the pane rather than asking bash about a child.
+endpoint="$(cat "$epfile" 2>/dev/null)" \
+  || refuse "cannot read state/$id.endpoint; dux-spawn records where the tab is"
+[ -n "$endpoint" ] || refuse "no endpoint recorded for $id in state/$id.endpoint"
+backend="$DUX_ROOT/bin/dux-backend"
+
 intent_line="$(awk '/^## Intent$/ { f = 1; next } f && NF { print substr($0, 1, 60); exit }' "$brief")"
-"$DUX_ROOT/bin/dux-backend" title "$project: $intent_line" 2>/dev/null || log "title not set on this backend"
+"$backend" title "$endpoint" "$project: $intent_line" 2>/dev/null || log "title not set on this backend"
+
+# The launcher carries the scrub, the PATH and the outboxes, because the pane's
+# shell is the harness's parent and no Dux environment reaches it.
+launcher="$channel/launch"
+worker_launcher "$launcher" "$c_brief" "$model" "$effort" "$c_settings" "$DUX_ROOT/bin" "$ship_record" \
+  || refuse "cannot stage the launcher for $id in the task channel"
 
 [ "$signalled" = 0 ] || refuse "signalled before the harness started"
 # Tests only: widens the gap the trap cannot cover, so the re-check below is reachable.
 [ -z "${DUX_WRAP_FORK_PAUSE_SECS:-}" ] || sleep "$DUX_WRAP_FORK_PAUSE_SECS"
-# Job control puts the worker in a process group of its own. Nothing but
-# /dev/null on input, the run's output file on 1 and 2, and no inherited
-# descriptor above them: a child holding one open outlives what opened it.
-set -m
-( scrub_worker_env; worker_run "$c_brief" "$model" "$effort" "$c_settings" ) \
-  < /dev/null > "$out" 2>&1 3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&- &
-wpid=$!
-set +m
-pgid="$(ps -o pgid= -p "$wpid" 2>/dev/null | tr -d ' ')"
-case "$pgid" in ''|*[!0-9]*) pgid="$wpid" ;; esac
-# Signalling our own group would kill the wrapper along with the worker.
-if [ "$pgid" = "$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')" ]; then
-  kill -TERM "$wpid" 2>/dev/null || true
-  refuse "the worker for $id did not get a process group of its own"
-fi
+"$backend" run "$endpoint" "$worktree_path" "$launcher" \
+  || refuse "cannot start the worker for $id in its tab at $endpoint"
+
+# ---- finding the process the pane started ---------------------------------
+# One question, asked once a second: what is the pane's foreground process, and
+# is it the harness in this task's worktree? Herdr types the launcher into a
+# shell, so there is a gap before the harness is there at all; tmux replaces the
+# pane's shell with it, and the exec chain takes a moment to settle. Anything
+# else at the end of the window is a refusal rather than a guess, because a
+# wrapper supervising the wrong process would report on the wrong thing.
+hname="$(worker_process_name)"
+hpid=""; waited=0
+while [ "$waited" -lt "$start_secs" ]; do
+  found="$("$backend" pid "$endpoint" "$hname" 2>/dev/null)"; prc=$?
+  if [ "$prc" = 0 ]; then
+    hpid="${found%% *}"; rest="${found#* }"
+    pgid="${rest%% *}"; hcwd="${rest#* }"
+    if [ "$hcwd" = "$worktree_path" ]; then break; fi
+    hpid=""; pgid=""
+  elif [ "$prc" != 1 ]; then
+    # 1 is "not there yet". Anything else is the multiplexer itself failing, and
+    # waiting out the window would report that as a harness that never started.
+    refuse "the multiplexer could not say what is running in the tab for $id at $endpoint"
+  fi
+  waited=$((waited + 1)); sleep 1
+done
+[ -n "$hpid" ] \
+  || refuse "the harness for $id did not appear in its pane within ${start_secs}s"
 echo "$pgid" > "$pgidfile" \
   || { kill -TERM -- "-$pgid" 2>/dev/null || true; refuse "cannot write $pgidfile"; }
-# A signal between the check above and this assignment found an empty wpid and did
-# nothing, and the harness would then run unsupervised. Deliver it now.
+# A signal that arrived before there was a group to send it to did nothing, and
+# the harness would then run unsupervised. Deliver it now.
 [ "$signalled" = 0 ] || kill -TERM -- "-$pgid" 2>/dev/null || true
 
-last_size=0; last_beat="$(date +%s)"
-while kill -0 "$wpid" 2>/dev/null; do
+# ---- supervising it -------------------------------------------------------
+# Liveness is pid_runs, which is kill -0 and a command-line match. The match is
+# what makes a process we did not fork safe to poll: nothing waits on it, so its
+# pid can be recycled the moment it dies, and a recycled pid running something
+# else reads as gone. Measured on Linux 2026-09-14: after a group stop the pid
+# is a zombie kill -0 still answers for, and ps reads "[sleep] <defunct>", so
+# the match is the part that says gone.
+last_beat="$(date +%s)"; last_beat_mtime="$(mtime_epoch "$beatfile" 2>/dev/null || true)"
+while pid_runs "$hpid" "$hname"; do
   sleep "$poll"
   import_proposals
-  # A broken proposal ends the run: stop reading what the worker is writing and
-  # refuse once its group is gone.
-  if [ -n "$violation" ]; then break; fi
-  kill -0 "$wpid" 2>/dev/null || break   # never heartbeat past the harness's exit
+  # A broken proposal ends the run, and so does the terminal line: the protocol
+  # has one per run, and an interactive session left alive behind it would be a
+  # second run Dux has no record of.
+  if [ -n "$violation" ] || [ -n "$terminal" ]; then break; fi
+  pid_runs "$hpid" "$hname" || break   # never heartbeat past the harness's exit
   now_s="$(date +%s)"
   if [ $((now_s - last_beat)) -ge "$beat" ]; then
-    size="$(wc -c < "$out" | tr -d ' ')"
-    if [ "$size" -gt "$last_size" ] && [ -z "$terminal" ]; then
+    # The beat file is touched by the harness's own PostToolUse and Stop hooks.
+    # Its mtime moving is a liveness hint of exactly the class the output file's
+    # byte count was: never proof, never read for content.
+    beat_mtime="$(mtime_epoch "$beatfile" 2>/dev/null || true)"
+    if [ -n "$beat_mtime" ] && [ "$beat_mtime" != "$last_beat_mtime" ]; then
       echo "working: heartbeat" >> "$status_log"
     fi
-    last_size=$size; last_beat=$now_s
+    last_beat_mtime="$beat_mtime"; last_beat=$now_s
   fi
 done
-# A run the wrapper ended itself has to be stopped before the wait below, or a
-# harness that does not exit on its own holds the wrapper here forever.
-if [ -n "$violation" ]; then stop_group || log "worker group $pgid for $id is still running"; fi
-wait "$wpid"; rc=$?
+# A run the wrapper ended itself has to be stopped, or an interactive session
+# sits at its prompt after the line that ended the run.
+if [ -n "$violation" ] || [ -n "$terminal" ]; then
+  stop_group || log "worker group $pgid for $id is still running"
+fi
 trap - INT TERM
 # The harness has gone; whatever it left running has not. Nothing this run
 # reports counts until the whole group is proven gone.
@@ -457,22 +478,26 @@ prove_done() {
   esac
 }
 
+# A harness the wrapper did not fork has no exit status to collect, so there is
+# no "exited <rc>" to report. Gone with no terminal line covers the operator
+# ending the session and the harness crashing alike, and ended is where both
+# belong: recovery proves what the run actually left behind.
 if [ -n "$terminal" ]; then
   case "${terminal%%:*}" in
     done) prove_done ;;
     *) result_line="$terminal"; result_event="${terminal%%:*}" ;;
   esac
-elif [ "$rc" -ne 0 ]; then
-  result_line="failed: worker exited $rc"; result_event=failed
 else
-  result_line="ended: exit 0 without terminal status"; result_event=ended
+  result_line="ended: the session ended without a terminal status"; result_event=ended
 fi
 if [ "$result_event" = failed ]; then
-  { echo "## Failure tail"; tail -n 20 "$out"; } >> "$task/report.md"
+  # The worker's output is its tab's scrollback, which Dux never reads. The
+  # fixed line is what the report says instead, so a reader is not left looking
+  # for a tail that was never captured.
+  { echo "## Failure tail"; echo "no output captured: the worker ran in its own tab"; } >> "$task/report.md"
 fi
 publish_handoff "$id" "$run" "$result_line" "$result_event" >/dev/null \
   || finding "cannot publish the result for $id; state/$id.handoffs holds nothing"
-mirror "$result_event"
 cleanup_channel
-log "worker for $id exited $rc; result: $result_line"
+log "worker for $id ended; result: $result_line"
 exit 0
