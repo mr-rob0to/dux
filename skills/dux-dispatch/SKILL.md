@@ -16,8 +16,20 @@ when something is off; relay the finding verbatim and stop.
 ## Dispatch
 
 1. Choose the shape with the operator: `plan` (spec and plan, docs-only PR),
-   `ship` (one milestone of an approved plan; needs the plan path and task
-   range), `scout` (read-only report).
+   `ship` (implement and deliver), `scout` (read-only report).
+   Before choosing `plan`, ask whether the work needs one at all. An explicit
+   request for a plan always wins. Otherwise require a plan when any of these is
+   true, and say which one:
+   - a public interface or contract changes;
+   - stored data needs a schema change, a migration or a backfill;
+   - a security or trust boundary moves;
+   - concurrency or cross-system ordering changes;
+   - a design choice is still open; or
+   - the work is more than three commit-sized steps.
+   When none applies, skip the plan task and the design review: dispatch one
+   `ship` task with `--risk bounded` and no `--plan`. Replacing an image and the
+   line of README that names it is the shape of work this is for. It is still
+   code-bearing, so `/ship`, its reviews and CI run exactly as they always do.
 2. `bin/dux-task-new <project> <shape> [--source gh:<owner>/<repo>#<n>]` prints
    the id. Use the printed id literally in every later command; a shell
    variable does not survive between tool calls.
@@ -32,10 +44,15 @@ when something is off; relay the finding verbatim and stop.
    never conversation history, never other tasks. A retry after `blocked` or
    `needs-decision` copies this file and appends the answer.
 4. Write numbered, testable acceptance criteria to `data/tasks/<id>/criteria.md`.
-5. `bin/dux-brief <id> --intent-file data/tasks/<id>/intent.md --criteria-file data/tasks/<id>/criteria.md [--plan <path> --tasks <a-b>] [--issue-file <f>]`.
+5. `bin/dux-brief <id> --intent-file data/tasks/<id>/intent.md --criteria-file data/tasks/<id>/criteria.md [--plan <path> --tasks <a-b>] [--risk bounded|complex] [--issue-file <f>]`.
    A brief over 100 lines is a finding: shorten the intent, never split the
    goal into two tasks without saying so. For a `gh:` task,
    `--issue-file data/tasks/<id>/issue.md` is required.
+   For `ship`, `--risk` is what picks the implementation model: `bounded` runs
+   Sonnet, `complex` runs Opus, and leaving it out means complex. `--plan` and
+   `--tasks` go together or not at all, and leaving both out needs
+   `--risk bounded`. Pass the risk the checklist in step 1 gave you; never
+   re-derive it from the intent text.
 6. Read the brief's Intent and criteria back in two lines. Spawn unless the
    operator objects.
 7. `bin/dux-spawn <id>`, with the Bash tool timeout raised to 600000 ms: a `ship` spawn runs the project's own worktree setup (venv builds, generated projects) and can take minutes. If it is cut off anyway, run the same command again; a clean, untouched worktree is reused. Workers are Claude only this milestone; `--harness codex` is refused with a finding. That says nothing about Codex as the ship gate's reviewer.

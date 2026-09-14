@@ -572,3 +572,39 @@ retire_line="failed: stopped for security-boundary upgrade; worktree kept"
   run dux-recover "$id" --classify maybe; [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-recover"* ]]
   run dux-recover; [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-recover"* ]]
 }
+
+# ---- a retry keeps the routing the first attempt was given ------------------
+
+@test "a retry carries the task's risk over to the new task" {
+  task_in failed ship; kill_worker; status_is "failed: worker exited 3"
+  # Bounded, but with a plan: so a retry that re-derived the risk from the plan
+  # pair, or simply took the default, would come back complex and be caught.
+  echo bounded > "$DUX_HOME/data/tasks/$id/risk"
+  run dux-recover "$id" --retry
+  [ "$status" -eq 0 ]; new="$(cat "$DUX_HOME/data/tasks/$id/retry")"
+  [ "$(cat "$DUX_HOME/data/tasks/$new/risk")" = bounded ]
+  grep -qxF -- '- Risk: bounded' "$DUX_HOME/data/tasks/$new/brief.md"
+  grep -qxF -- '- Plan: docs/plan.md' "$DUX_HOME/data/tasks/$new/brief.md"
+}
+
+@test "a plan-free bounded retry stays plan-free and bounded" {
+  task_in failed ship; kill_worker
+  # The brief a bounded, plan-free dispatch renders, in a fresh task the retry
+  # can copy: dux-brief writes a brief once, so it cannot be re-rendered in place.
+  id2="$(dux-task-new proj ship)"
+  t2="$DUX_HOME/data/tasks/$id2"
+  cp "$DUX_HOME/data/tasks/$id/intent.md" "$t2/intent.md"
+  cp "$DUX_HOME/data/tasks/$id/criteria.md" "$t2/criteria.md"
+  dux-brief "$id2" --intent-file "$t2/intent.md" --criteria-file "$t2/criteria.md" --risk bounded >/dev/null
+  [ "$(cat "$t2/risk")" = bounded ]
+  dux-ledger set "$id2" state failed
+  fake_run "$id2" r01 ship acme/proj "$DUX_HOME/proj"
+  id="$id2" run dux-recover "$id2" --retry
+  [ "$status" -eq 0 ]
+  new="$(cat "$t2/retry")"
+  [ "$(cat "$DUX_HOME/data/tasks/$new/risk")" = bounded ]
+  b="$DUX_HOME/data/tasks/$new/brief.md"
+  grep -qxF -- '- Risk: bounded' "$b"
+  [ "$(grep -c '^- Plan: ' "$b" || true)" -eq 0 ]
+  [ "$(grep -c '^- Tasks: ' "$b" || true)" -eq 0 ]
+}

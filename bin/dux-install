@@ -25,10 +25,39 @@ for d in "$DUX_ROOT"/skills/*/; do
   log "linked $n"
 done
 
+# A model file is a list of <key>=<model>:<effort> words, and new keys arrive
+# with new routing. An install that already has the file never gets them from
+# the copy below, and a ship task whose key is missing refuses rather than
+# guessing, so the keys the template names and the file does not are appended.
+# Appended, never edited: every value already there is the operator's, including
+# one they deliberately changed, and a newline separates entries as well as a
+# space does. Anything that is not a plain readable file is left alone; a
+# dangling link is somebody's arrangement, and a half-done install is worse
+# than a missing key that names itself the first time a worker starts.
+add_missing_keys() {  # $1 template, $2 existing file
+  local want key added=""
+  [ -f "$2" ] && [ -r "$2" ] || return 0
+  while read -r want; do
+    case "$want" in ''|'#'*) continue ;; esac
+    key="${want%%=*}"
+    [ "$key" != "$want" ] || continue
+    tr '[:blank:]' '\n' < "$2" | sed -n 's/=.*//p' | grep -xF "$key" >/dev/null && continue
+    added="$added $want"
+  done <<EOF
+$(tr '[:blank:]' '\n' < "$1")
+EOF
+  [ -n "$added" ] || return 0
+  printf '%s\n' "${added# }" >> "$2" || finding "cannot add model keys to $2"
+  log "config $(basename "$2"): added $(printf '%s' "${added# }" | tr ' ' '\n' | sed 's/=.*//' | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
+}
+
 for f in "$DUX_ROOT"/templates/config/*; do
   [ -e "$f" ] || continue
   n="$(basename "$f")"
-  if [ -e "$DUX_CONFIG/$n" ] || [ -L "$DUX_CONFIG/$n" ]; then continue; fi
+  if [ -e "$DUX_CONFIG/$n" ] || [ -L "$DUX_CONFIG/$n" ]; then
+    case "$n" in models|models-*) add_missing_keys "$f" "$DUX_CONFIG/$n" ;; esac
+    continue
+  fi
   cp "$f" "$DUX_CONFIG/$n" 2>/dev/null || finding "cannot write $DUX_CONFIG/$n"
   log "config $n seeded"
 done

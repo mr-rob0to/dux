@@ -296,7 +296,7 @@ classify_as() {
 }
 
 retry() {
-  local new intent criteria plan tasks new_intent source_key rc
+  local new intent criteria plan tasks risk new_intent source_key rc
   need_state --retry "failed, blocked, or needs-decision" failed blocked needs-decision
   [ ! -e "$task/retry" ] || finding "$id was already retried as $(cat "$task/retry"); a further attempt is the operator's call through dux-dispatch"
   if [ "$state" = failed ] && [ -e "$task/retried-from" ]; then
@@ -321,7 +321,14 @@ retry() {
   cp "$criteria" "$DUX_TASKS/$new/criteria.md" || finding "cannot copy $criteria"
   plan="$(sed -n 's/^- Plan: //p' "$brief" | take_line)"
   tasks="$(sed -n 's/^- Tasks: //p' "$brief" | take_line)"
+  # The risk the first attempt was dispatched with, not one derived again here:
+  # a plan-free task has no plan pair to derive it from, and re-deriving a
+  # planned one would quietly route the retry to a different model than the
+  # operator chose. A task from before the file existed passes nothing, and
+  # dux-brief's own default answers for it.
+  risk=""; [ ! -f "$task/risk" ] || risk="$(tr -d '"'"'[:space:]'"'"' < "$task/risk")"
   set -- --intent-file "$new_intent" --criteria-file "$DUX_TASKS/$new/criteria.md"
+  [ -z "$risk" ] || set -- "$@" --risk "$risk"
   # A gh-sourced retry keeps the issue text beside it; dux-brief refuses without it.
   if [ -f "$task/issue.md" ]; then
     cp "$task/issue.md" "$DUX_TASKS/$new/issue.md" || finding "cannot copy $task/issue.md"

@@ -7,6 +7,9 @@
 > (constitution principle 9).
 
 **Where this stands**
+- Implemented 2026-09-13 as Task 3 of `docs/plans/2026-09-11-token-efficiency-program.md`,
+  and ships in that milestone's pull request rather than one of its own. The last box
+  below is that milestone's `/ship`, run once after all five of its tasks.
 - Drafted 2026-09-11 by a Dux plan worker. One independent design review by a fresh
   session; its findings are at the bottom.
 - Picks up the operator's decision that the orchestrator session, which only dispatches
@@ -91,26 +94,26 @@ worktree, with no flag, reports `claude-sonnet-5` in its `init` line.
 
 **Steps**
 
-- [ ] `tests/contract.bats`, a new test directly after "session hooks acquire and
+- [x] `tests/contract.bats`, a new test directly after "session hooks acquire and
       release the lock", named "the committed project settings start the session on
       Sonnet": `run jq -r .model "$DUX_ROOT/.claude/settings.json"` then
       `[ "$output" = claude-sonnet-5 ]`. Its own test, so the break below shows the
       hooks test green beside it. Run it and see it fail before the next step.
-- [ ] `.claude/settings.json`: add `"model": "claude-sonnet-5"` as a top-level key. Do
+- [x] `.claude/settings.json`: add `"model": "claude-sonnet-5"` as a top-level key. Do
       not touch the `hooks` block. Confirm with `git diff` that the diff is one added
       line plus the comma that joins it.
-- [ ] `docs/ARCHITECTURE.md`, the `.claude/settings.json` line in Components: add
+- [x] `docs/ARCHITECTURE.md`, the `.claude/settings.json` line in Components: add
       `model claude-sonnet-5 for the orchestrator session` after the two hooks, wrapped
       onto a continuation line at the same column as the neighbouring entries.
-- [ ] `.gitignore`: add the line `.claude/settings.local.json`.
-- [ ] Manual check, recorded in the commit body as the commands printed it: from the
+- [x] `.gitignore`: add the line `.claude/settings.local.json`.
+- [x] Manual check, recorded in the commit body as the commands printed it: from the
       worktree, `claude -p 'Reply with the single word ok.' --output-format stream-json
       --verbose --max-turns 1 | jq -r 'select(.subtype=="init") | .model'`. Expected:
       `claude-sonnet-5`. Then the same with `--model claude-opus-5`. Expected:
       `claude-opus-5`. Record `claude --version` beside them. The lock hooks fire for
       these runs: with no Dux session open they take and release the lock; with one open
       the output says `held by pid`, which is expected and changes nothing.
-- [ ] Break-verify, one break, the failure pasted into the commit body as the run printed
+- [x] Break-verify, one break, the failure pasted into the commit body as the run printed
       it: change the value in `.claude/settings.json` to `claude-opus-5`, run the contract
       suite, see the new assertion fail and the hooks assertion still pass, restore.
 - [ ] `make check` green, `bin/dux-doctor` passing, then `/ship`.

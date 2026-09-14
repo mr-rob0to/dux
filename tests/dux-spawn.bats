@@ -281,6 +281,11 @@ codex_refused() {  # asserts the last `run` refused and started nothing for $id
   [ "$status" -eq 0 ]
   grep -qxF "issue comment 12 --repo acme/widgets --body Dux started on branch \`dux/$id\`." "$FAKE_GH_LOG"
   [ "$(grep -c '^issue comment' "$FAKE_GH_LOG")" -eq 1 ]
+  # One Dux worker at a time, so the second task only starts once the first has
+  # finished and been settled. That is the ordinary sequence, not a test trick.
+  wait_result "$id"
+  wait_for_workers 30
+  dux-ledger set "$id" state done
   id2="$(dux-task-new proj scout --source 'gh:acme/widgets#13')"
   printf 'acme/widgets#13: A title\n\nBody\n' > "$DUX_HOME/data/tasks/$id2/issue.md"
   dux-brief "$id2" --intent-file "$DUX_HOME/i" --criteria-file "$DUX_HOME/c" --issue-file "$DUX_HOME/data/tasks/$id2/issue.md" >/dev/null
@@ -311,4 +316,164 @@ codex_refused() {  # asserts the last `run` refused and started nothing for $id
   # The endpoint is recorded either way: the container is open and the worker
   # in it is this spawn's, whatever the ledger now says about the task.
   [ "$(dux-ledger get "$id" endpoint)" = herdr:w1:p9 ]
+}
+
+# ---- one Dux-managed worker at a time --------------------------------------
+# Several long workers on one subscription is the waste this refuses. It is a
+# refusal and not a queue: the operator reruns the same spawn once the active
+# task has stopped, and there is no scheduler to go wrong.
+
+# A process whose command line names another task's wrapper, which is the
+# evidence dux-spawn reads. $$ would not do: the check asks what the pid is
+# running, not merely that something is.
+live_wrapper_for() {  # $1 id; prints the pid
+  local p; p="$(stand_in "dux-worker-wrap $1")"
+  echo "$p" > "$DUX_HOME/state/$1.pid"
+  echo "$p"
+}
+
+# A Dux root of real file copies, never symlinks, with one script replaced. The
+# copies matter: dux-spawn calls its siblings by absolute path under $DUX_ROOT,
+# and writing into a directory of links to the checkout edits the checkout.
+root_with_stub() {  # $1 script name, $2 body; prints the root
+  local r="$DUX_HOME/root-$1"
+  mkdir -p "$r"
+  cp -R "$DUX_ROOT/bin" "$r/bin"
+  ln -s "$DUX_ROOT/templates" "$r/templates"
+  rm -f "$r/bin/$1"
+  printf '%s\n' "$2" > "$r/bin/$1"
+  chmod +x "$r/bin/$1"
+  echo "$r"
+}
+
+@test "a live worker on another task refuses the start and creates nothing" {
+  a="$(fixture_task proj scout)"
+  b="$(fixture_task proj ship)"
+  live_wrapper_for "$a" >/dev/null
+  run dux-spawn "$b"
+  rm -f "$DUX_HOME/state/$a.pid"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: another Dux worker is active: $a; $b remains queued" ]
+  [ "$(dux-ledger get "$b" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+  run git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$b"; [ "$status" -ne 0 ]
+  grep -qxF -- '- Worktree: <set by dux-spawn>' "$DUX_HOME/data/tasks/$b/brief.md"
+  [ ! -e "$DUX_HOME/state/$b.endpoint" ]
+  # The backend is asked whether a container exists, which is a read; what must
+  # not have happened is a container being made or a worker being started.
+  run grep -c '^tab create' "$FAKE_HERDR_LOG"; [ "$output" = 0 ]
+  [ ! -s "$FAKE_WORKER_LOG" ]
+}
+
+@test "the same spawn goes through once the other worker has stopped" {
+  a="$(fixture_task proj scout)"
+  b="$(fixture_task proj ship)"
+  pid="$(live_wrapper_for "$a")"
+  run dux-spawn "$b"
+  [ "$status" -eq 2 ]
+  reap "$pid"
+  # The pidfile stays, naming a pid that is gone: that is what an ordinary
+  # finished run leaves behind, and it must not keep refusing for ever.
+  [ -f "$DUX_HOME/state/$a.pid" ]
+  run dux-spawn "$b"
+  [ "$status" -eq 0 ]
+  wait_result "$b"
+}
+
+@test "evidence about another task that cannot be read blocks the start" {
+  a="$(fixture_task proj scout)"
+  b="$(fixture_task proj ship)"
+  printf 'not-a-pid\n' > "$DUX_HOME/state/$a.pid"
+  run dux-spawn "$b"
+  [ "$status" -eq 2 ]
+  # Named for what went quiet, not reported as a live worker: the two are fixed
+  # differently, and saying "active" about a file nobody can read is a guess.
+  [ "$output" = "finding: cannot tell whether a worker for $a is alive: $DUX_HOME/state/$a.pid does not say; $b remains queued" ]
+  [ "$(dux-ledger get "$b" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+}
+
+@test "a container for a task Dux believes is running blocks the start" {
+  a="$(fixture_task proj scout)"
+  run dux-spawn "$a"
+  [ "$status" -eq 0 ]
+  wait_result "$a"
+  wait_for_workers 30
+  # The pane outlives the worker on both backends, so with the pidfile settled
+  # the container is the only signal left. Dux still records $a as running, so
+  # it cannot tell that pane from one with a worker in it.
+  rm -f "$DUX_HOME/state/$a.pid"
+  [ -n "$(dux-backend find "$a")" ]
+  [ "$(dux-ledger get "$a" state)" = running ]
+  b="$(fixture_task proj ship)"
+  run dux-spawn "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: another Dux worker is active: $a; $b remains queued" ]
+  [ "$(dux-ledger get "$b" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees/dux-$b" ]
+}
+
+# A pidfile that cannot be read blocks because Dux cannot prove the slot is
+# free. The other two readings are the same question: a ledger that will not
+# answer about another task, and a backend that will not answer about one Dux
+# believes is running, are both "could not tell". Skipping them answers "free"
+# on no evidence, which is the one answer that puts two agents on one account.
+@test "a ledger that cannot answer about another task blocks the start" {
+  a="$(fixture_task proj scout)"
+  b="$(fixture_task proj ship)"
+  r="$(root_with_stub dux-ledger "#!/usr/bin/env bash
+if [ \"\$1\" = get ] && [ \"\$2\" = $a ]; then echo 'finding: cannot read the ledger' >&2; exit 2; fi
+exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
+  run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: cannot tell whether a worker for $a is alive: the ledger did not answer; $b remains queued" ]
+  [ "$(dux-ledger get "$b" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+}
+
+@test "a ledger that cannot list the tasks blocks the start" {
+  b="$(fixture_task proj ship)"
+  r="$(root_with_stub dux-ledger "#!/usr/bin/env bash
+if [ \"\$1\" = list ]; then echo 'finding: cannot read the ledger' >&2; exit 2; fi
+exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
+  run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: cannot tell whether another Dux worker is alive: the ledger could not list the tasks; $b remains queued" ]
+  [ "$(dux-ledger get "$b" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+}
+
+@test "a backend that cannot answer about a running task blocks the start" {
+  a="$(fixture_task proj scout)"
+  run dux-spawn "$a"
+  [ "$status" -eq 0 ]
+  wait_result "$a"
+  wait_for_workers 30
+  rm -f "$DUX_HOME/state/$a.pid"
+  [ "$(dux-ledger get "$a" state)" = running ]
+  b="$(fixture_task proj ship)"
+  r="$(root_with_stub dux-backend "#!/usr/bin/env bash
+if [ \"\$1\" = find ] && [ \"\$2\" = $a ]; then echo 'finding: the backend is unavailable' >&2; exit 2; fi
+exec $DUX_ROOT/bin/dux-backend \"\$@\"")"
+  run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: cannot tell whether a worker for $a is alive: the backend did not answer; $b remains queued" ]
+  [ "$(dux-ledger get "$b" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees/dux-$b" ]
+}
+
+@test "a settled task's leftover container does not block a new start" {
+  a="$(fixture_task proj scout)"
+  run dux-spawn "$a"
+  [ "$status" -eq 0 ]
+  wait_result "$a"
+  wait_for_workers 30
+  # Done, not torn down: the pane is still there and the pidfile names a pid
+  # that is gone. Nothing is running, so nothing may be refused.
+  dux-ledger set "$a" state done
+  [ -n "$(dux-backend find "$a")" ]
+  b="$(fixture_task proj ship)"
+  run dux-spawn "$b"
+  [ "$status" -eq 0 ]
+  wait_result "$b"
 }

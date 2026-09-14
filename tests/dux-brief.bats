@@ -41,7 +41,7 @@ setup_task() {  # $1 shape; prints id
   id="$(setup_task ship)"
   run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria"
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: ship briefs need --plan and --tasks"* ]]
+  [[ "$output" == "finding: a ship brief with no plan needs --risk bounded"* ]]
   [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
   dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --plan 'docs/plans/a&b.md' --tasks 3-5 >/dev/null
   b="$DUX_HOME/data/tasks/$id/brief.md"
@@ -222,4 +222,113 @@ denied() {  # $1 rendered settings, $2 command line; true when a deny rule globs
     [ "$status" -eq 1 ]
     [[ "$output" == "dux: usage: dux-brief"* ]]
   done
+}
+
+# ---- risk: how a ship task is routed, and whether it needs a plan at all ----
+
+@test "a ship brief stores the risk it was given, mode 600, and renders it" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1-2 --risk bounded
+  [ "$status" -eq 0 ]
+  r="$DUX_HOME/data/tasks/$id/risk"
+  [ "$(cat "$r")" = bounded ]
+  # Mode, read the same way on GNU and BSD stat.
+  m="$(stat -c %a "$r" 2>/dev/null || stat -f %Lp "$r" 2>/dev/null)"
+  [ "$m" = 600 ]
+  # Nothing half-written is left beside it.
+  [ ! -e "$r.tmp" ]
+  grep -qxF -- '- Risk: bounded' "$DUX_HOME/data/tasks/$id/brief.md"
+}
+
+@test "a brief that fails to land still leaves its risk file behind" {
+  id="$(setup_task ship)"
+  # The window the ordering closes: the risk file and the brief go into place
+  # with two renames, and a kill between them leaves a brief dux-brief will
+  # never render again. A stub mv that fails on the settings file stands in for
+  # that kill, because the settings and the brief share one rename step.
+  stub="$DUX_HOME/stub-mv"; mkdir -p "$stub"
+  cat > "$stub/mv" <<'SH'
+#!/usr/bin/env bash
+case "${*}" in *worker-settings.json) echo "mv: stopped here" >&2; exit 1 ;; esac
+exec /bin/mv "$@"
+SH
+  chmod +x "$stub/mv"
+  PATH="$stub:$PATH" run dux-brief "$id" --intent-file "$DUX_HOME/intent" \
+    --criteria-file "$DUX_HOME/criteria" --plan docs/p.md --tasks 1-2 --risk bounded
+  [ "$status" -eq 2 ]
+  [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/risk")" = bounded ]
+}
+
+@test "omitting --risk on a planned ship brief means complex" {
+  id="$(setup_task ship)"
+  dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1-2 >/dev/null
+  [ "$(cat "$DUX_HOME/data/tasks/$id/risk")" = complex ]
+  grep -qxF -- '- Risk: complex' "$DUX_HOME/data/tasks/$id/brief.md"
+}
+
+@test "plan and tasks are a pair: either one alone is a finding" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --plan docs/p.md
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a ship brief needs both --plan and --tasks, or neither"* ]]
+  [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+  [ ! -e "$DUX_HOME/data/tasks/$id/risk" ]
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --tasks 1-2
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a ship brief needs both --plan and --tasks, or neither"* ]]
+  [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+}
+
+@test "a plan-free ship brief is accepted only as bounded work" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a ship brief with no plan needs --risk bounded; complex work needs a plan"* ]]
+  [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+  [ ! -e "$DUX_HOME/data/tasks/$id/risk" ]
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --risk complex
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a ship brief with no plan needs --risk bounded; complex work needs a plan"* ]]
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --risk bounded
+  [ "$status" -eq 0 ]
+  b="$DUX_HOME/data/tasks/$id/brief.md"
+  [ "$(cat "$DUX_HOME/data/tasks/$id/risk")" = bounded ]
+  # No plan, so no plan lines and a definition of done that names none.
+  [ "$(grep -c '^- Plan: ' "$b" || true)" -eq 0 ]
+  [ "$(grep -c '^- Tasks: ' "$b" || true)" -eq 0 ]
+  grep -qF 'The change described above implemented' "$b"
+  grep -qF 'done: PR <url>' "$b"
+  grep -qxF -- '- Risk: bounded' "$b"
+}
+
+@test "an unknown risk word is a finding and nothing is written" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1-2 --risk medium
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --risk must be bounded or complex, not 'medium'"* ]]
+  [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+  [ ! -e "$DUX_HOME/data/tasks/$id/risk" ]
+}
+
+@test "--risk is for ship briefs only and no other shape stores one" {
+  for shape in plan scout; do
+    id="$(dux-task-new proj "$shape" 2>/dev/null || setup_task "$shape")"
+    run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --risk bounded
+    [ "$status" -eq 2 ]
+    [[ "$output" == "finding: --risk is for ship briefs only"* ]]
+    dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" >/dev/null
+    [ ! -e "$DUX_HOME/data/tasks/$id/risk" ]
+    [ "$(grep -c '^- Risk: ' "$DUX_HOME/data/tasks/$id/brief.md" || true)" -eq 0 ]
+  done
+}
+
+@test "--risk with nothing after it prints the usage line, not a crash" {
+  id="$(fixture_task proj ship)"
+  run dux-brief "$id" --risk
+  [ "$status" -eq 1 ]
+  [[ "$output" == "dux: usage: dux-brief"* ]]
 }

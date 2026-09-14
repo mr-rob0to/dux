@@ -39,6 +39,15 @@ load helpers/setup
   [[ "$output" == *"dux-lock release"* ]]
 }
 
+# The orchestrator session only dispatches and relays, so it starts on Sonnet.
+# The committed file is the mechanism: anyone who opens this checkout gets it
+# without a flag. Its own test, so a change to the model shows up here and not
+# as a second failure in the hooks test.
+@test "the committed project settings start the session on Sonnet" {
+  run jq -r .model "$DUX_ROOT/.claude/settings.json"
+  [ "$output" = claude-sonnet-5 ]
+}
+
 @test "AGENTS.md arms one persistent Monitor on the events log and re-arms it per turn" {
   grep -qF 'Monitor(command: "tail -n0 -F state/events.log", persistent: true)' "$DUX_ROOT/AGENTS.md"
   grep -q 'no Monitor is armed' "$DUX_ROOT/AGENTS.md"
@@ -314,6 +323,25 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$six" == *'in letter but not in substance'* ]]
   # The withholding rule the criteria travel alongside, unchanged.
   [[ "$six" == *'Never tell it'*'what the change is for'* ]]
+}
+
+@test "every mention of the bundled reviewer note is anchored to the ship-env root" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  # The gate runs with its working directory inside the repository under review,
+  # and this one is a Dux checkout, so a bare templates/config/security-reviewer
+  # is a file the branch being reviewed can write. Every mention has to resolve
+  # through ship-env --root, which is the install the gate came from.
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case "$line" in
+      *'"$SHIP_ENV" --root'*) ;;
+      *) echo "unanchored mention of the bundled note: $line"; return 1 ;;
+    esac
+  done <<EOF
+$(grep -n 'templates/config/security-reviewer' "$ship" || true)
+EOF
+  # And the mentions are really there, so an empty grep cannot pass this.
+  [ "$(grep -c 'templates/config/security-reviewer' "$ship")" -ge 2 ]
 }
 
 @test "the ship skill names no model and reads both reviewers from ship-env" {

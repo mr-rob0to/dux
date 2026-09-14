@@ -321,7 +321,12 @@ check_receipt() {
 check_ship_shape() {
   [ "$outside" -gt 0 ] \
     || reject "a ship result needs an implementation file, and $branch changes no file outside the plan documents"
-  check_plan_tasks
+  # Bounded work is dispatched with no plan, so the brief names neither a plan
+  # path nor a task range and there are no boxes to read. That is the only proof
+  # the empty pair skips. Half a pair is still a finding, in check_plan_tasks:
+  # it names a plan whose boxes nothing can find, or a range with no plan to
+  # find them in, and neither is a state dux-brief can produce.
+  if [ -n "$plan_path" ] || [ -n "$task_range" ]; then check_plan_tasks; fi
   check_receipt
   require_green_checks
 }

@@ -10,7 +10,8 @@ removes, or renames a script, adapter, state file, or step in a flow.
 ```
 AGENTS.md                  operating contract, always loaded (<=150 lines, tested)
 CLAUDE.md                  two-line import of AGENTS.md
-.claude/settings.json      SessionStart: dux-lock acquire; SessionEnd: dux-lock release
+.claude/settings.json      SessionStart: dux-lock acquire; SessionEnd: dux-lock release;
+                           model claude-sonnet-5 for the orchestrator session
 skills/
   dux-dispatch/SKILL.md    turn a goal into a running task, and tear it down after merge
   dux-project/SKILL.md     register a repo; ask before installing the PR template
@@ -28,8 +29,11 @@ skills/
                            both reviewers default to auto, which picks the command from what
                            the host has, on every run and never written down, and stops the
                            gate when the host has nothing to run; a stated value is never
-                           probed. pr-template delegates to bin/dux-project so the lookup has
-                           one owner (milestone 6). Sources nothing either, and stops when it
+                           probed. auto for the security pass is Codex Sol, read-only, the
+                           only reviewer qualified against tests/fixtures/security-review;
+                           no agent is chosen automatically and a host without codex stops.
+                           pr-template delegates to bin/dux-project so the lookup has one
+                           owner (milestone 6). Sources nothing either, and stops when it
                            is not inside a checkout
 bin/
   dux-env                  sourced by every script: paths, log, die, finding, now,
@@ -42,13 +46,18 @@ bin/
   dux-ledger               add/set/set-if/get/list/ack/unack over data/backlog.md; the only writer
   dux-task-new             allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, folder, queued line
   dux-intake               queue labelled GitHub issues as tasks; --show fences one issue's text
-  dux-brief                render tasks/<id>/brief.md and tasks/<id>/worker-settings.json
+  dux-brief                render tasks/<id>/brief.md and tasks/<id>/worker-settings.json,
+                           and for a ship task write tasks/<id>/risk (mode 600) from
+                           --risk bounded|complex, defaulting to complex
   dux-worktree             create/remove/discard a worktree per the project's mechanism
-  dux-spawn                worktree plus backend container for a queued task; five refusals
+  dux-spawn                worktree plus backend container for a queued task; six refusals,
+                           one of them a live worker on any other task
   dux-worker-wrap          runs inside the container: task channel, scrubbed environment,
                            process group, proposal rules, heartbeat, terminal state
   dux-result               record-ship files the five /ship phases in order; verify proves a
-                           plan, ship, or scout result from the registry, Git, and GitHub
+                           plan, ship, or scout result from the registry, Git, and GitHub.
+                           A ship brief naming no plan and no task range skips the checkbox
+                           proof and nothing else
   dux-teardown             remove the worktree, close the container, mark done or failed;
                            --abandon lets go of a task that never started
   dux-watch                classify task events, record them, and raise local toasts
@@ -59,22 +68,31 @@ bin/
   dux-backend              selects a backend once and dispatches to its adapter
   backends/tmux.sh         window per task, remain-on-exit; endpoint tmux:<session>:<window_id>
   backends/herdr.sh        tab per task in the Dux workspace; endpoint herdr:<pane_id>
-  workers/claude.sh        worker harness adapter: worker_cmd, worker_run, worker_effort_ok
+  workers/claude.sh        worker harness adapter: worker_cmd, worker_run, worker_effort_ok;
+                           both entry points share one flag list: --tools limited to
+                           Bash,Read,Glob,Grep,Write,Edit, --strict-mcp-config with the
+                           empty templates/worker-mcp.json, and --no-chrome
   workers/codex.sh         same adapter for Codex; tested, not dispatchable in milestone 2
   dux-doctor               preflight: CLIs, gh auth, backend CLI, registry, lock
-  dux-install              symlink bundled skills, seed config, write identifier denylist (task 8)
+  dux-install              symlink bundled skills, seed config, add model keys an existing
+                           config/models* is missing, write identifier denylist (task 8)
   dux-uninstall            remove only symlinks that point into this repo (task 8)
 templates/
   PULL_REQUEST_TEMPLATE.md the template dux-project installs, with consent, into a
                            project that has none
   brief.md                 the brief skeleton dux-brief renders
   worker-settings.json     Claude deny rules, __BASE__ rendered per task
+  worker-mcp.json          the empty MCP config every Claude worker is held to
+tests/fixtures/
+  security-review/         vulnerable.sh, clean.sh and expected.md: the planted defects a
+                           security reviewer must find, and must not invent, before auto
+                           will choose it. Never executed; implementation evidence only
   hooks/pre-push           base-branch push guard, __BASE__ and __UPSTREAM__ rendered per task
   config/                  defaults dux-install copies into config/ (models, models-codex,
                            worker-harness, backend, reviewer, security-reviewer)
 data/         (gitignored) projects.md registry; backlog.md ledger with acked state;
                            tasks/<id>/{intent.md,criteria.md,brief.md,issue.md,status.log,
-                           report.md,worker-settings.json,harness,hooks/,worktree.log,
+                           report.md,worker-settings.json,risk,harness,hooks/,worktree.log,
                            retry,retried-from}
 state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            <id>.endpoint; <id>.pid; <id>.pgid; <id>.out; events.log;
@@ -159,7 +177,11 @@ backend started it and catches a worker in a server whose socket vanished.
    fenced issue block) and `tasks/<id>/worker-settings.json`. A task with a
    `gh:` source needs `--issue-file`, and its brief carries one
    `- Issue: <owner>/<repo>#<n>` line taken from the ledger, never from the
-   issue text; that line is what `/ship` turns into `Closes #<n>`.
+   issue text; that line is what `/ship` turns into `Closes #<n>`. A `ship` task
+   also gets `tasks/<id>/risk`, `bounded` or `complex`, which is what
+   `dux-worker-wrap` looks up in `config/models` instead of the shape. `--plan`
+   and `--tasks` are one pair; the empty pair is plan-free shipping and needs
+   `--risk bounded`.
 3. `dux-spawn <id>` refuses with a finding unless: the lock is this session's
    (`dux-lock mine`), the task is `queued`, the project is registered, the
    brief has a `- Worktree: ` line to fill, the chosen worker harness is
@@ -169,6 +191,16 @@ backend started it and catches a worker in a server whose socket vanished.
    independent signals and either one that cannot say "gone" refuses: `find`
    answers only for the current backend and an unrenamed container, while the
    pidfile is written by the wrapper inside the container on every backend.
+   One more refusal covers the whole fleet: no other registered task may have a
+   worker that might be alive. Its `state/<other>.pid` must be absent or name a
+   pid no longer running `dux-worker-wrap <other>`, and where the ledger still
+   records that task as `running` or `stale`, `dux-backend find <other>` must
+   report no container. The pane outlives the worker on both backends, so a task
+   the ledger has settled is not read as busy. Evidence that cannot be read
+   refuses. This is a refusal and not a queue: nothing is reserved, nothing is
+   started later, and the operator runs the same command again once the active
+   task has stopped. It comes before the worktree and the container, so a
+   refused task is unchanged and still `queued`.
    Milestone 2 dispatches `claude` workers only. `codex` is refused by
    `harness_refusal` in `dux-env`, which `dux-spawn` and `dux-worker-wrap` both
    call, so the `--harness` flag, `config/worker-harness` and

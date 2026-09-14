@@ -55,10 +55,26 @@ source "$DUX_ROOT/bin/workers/$harness.sh"
 # One model file per harness: config/models for claude, config/models-<name> for the rest.
 models="$DUX_CONFIG/models"; [ "$harness" = claude ] || models="$DUX_CONFIG/models-$harness"
 [ -s "$models" ] || refuse "missing $models; run dux-install"
-spec="$(tr ' ' '\n' < "$models" | sed -n "s/^$shape=//p" | take_line)"
-case "$spec" in *:*) ;; *) refuse "model entry for $shape in $models must be <model>:<effort>, got '${spec:-nothing}'" ;; esac
+# A ship task is routed by the risk dux-brief stored, not by its shape: bounded
+# work goes to the smaller model and complex work to the larger one. A task from
+# before the file existed has no risk to read, and the careful reading is the
+# one that costs nothing but tokens, so it is complex. Anything else in the file
+# is a refusal: a model chosen by guessing is the silent downgrade this routing
+# exists to avoid. plan and scout still route by shape.
+key="$shape"
+if [ "$shape" = ship ]; then
+  risk=complex
+  if [ -f "$task/risk" ]; then risk="$(tr -d '[:space:]' < "$task/risk")"; fi
+  case "$risk" in
+    bounded|complex) ;;
+    *) refuse "risk for $id must be bounded or complex, not '$(cap_line "$risk")'" ;;
+  esac
+  key="$risk"
+fi
+spec="$(tr ' ' '\n' < "$models" | sed -n "s/^$key=//p" | take_line)"
+case "$spec" in *:*) ;; *) refuse "model entry for $key in $models must be <model>:<effort>, got '${spec:-nothing}'" ;; esac
 model="${spec%%:*}"; effort="${spec#*:}"
-[ -n "$model" ] || refuse "empty model for $shape in $models"
+[ -n "$model" ] || refuse "empty model for $key in $models"
 worker_effort_ok "$effort" || refuse "effort $effort is not valid for $harness"
 if [ "$harness" = claude ] && [ ! -s "$settings" ]; then refuse "no worker settings for $id; dux-brief renders them"; fi
 
