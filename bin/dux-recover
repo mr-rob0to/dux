@@ -167,17 +167,24 @@ signal_wrapper() {  # $1 pid
 }
 
 stop() {
-  local pid n
+  local pid before
   [ "$state" = stale ] || finding "$id is $state, not stale; --stop applies to stale tasks"
   already_settled && return 0
   pid="$(wrapper_pid)" || exit $?
   [ -n "$pid" ] || finding "no live wrapper for $id; the watcher will report it dead"
+  # What sequence the wrapper's own ending would take, read before it is
+  # stopped. The question afterwards is whether it published, and the watcher
+  # polls every second, so it can have applied and marked that handoff consumed
+  # before this line is reached. next_handoff skips a consumed sequence, so
+  # asking it would read a published result as none and overwrite a proved
+  # ending with recovery's own word.
+  before="$(handoff_next_seq "$id")"
   signal_wrapper "$pid"
   # A wrapper that reached its own ending published it on the way out. That is
   # the run's result and it stands; only a wrapper that published nothing is
   # recovery's to call.
-  if n="$(next_handoff "$id")"; then
-    report_settled "stopped $id; the wrapper published its result and the watcher will apply it" "$n"
+  if [ "$(handoff_next_seq "$id")" != "$before" ]; then
+    report_settled "stopped $id; the wrapper published its result and the watcher will apply it" "$before"
   else
     mark_failed "failed: stopped by dux-recover after stale"
     failure_tail_to_report

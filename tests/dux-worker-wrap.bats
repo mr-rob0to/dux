@@ -18,43 +18,18 @@ teardown_file() {
   drop_tmux_tmpdir
 }
 
-# The harness the pane starts has to carry the name the adapter looks for, and
-# a shell script's process carries its interpreter's name on macOS and its own
-# on Linux. Both read "claude" when the script is called claude and its
-# interpreter is a link called claude, so the suite's fake is copied to that
-# shape rather than the wrapper being told to look for something else. Measured
-# 2026-09-14: ps -o comm= reads <dir>/i/claude on macOS and claude on Linux.
-# A real session sits at its prompt for minutes, so the wrapper always has a
-# process to find. The fake finishes in milliseconds and would be gone before
-# the first poll, which is a fixture artefact and not the behaviour under test,
-# so the copy waits for state/<id>.pgid: the file the wrapper writes the moment
-# it has found this process. It is the shortest hold that is also exact.
-harness_shim() {
-  mkdir -p "$DUX_HOME/hbin/i"
-  ln -sf "$(command -v bash)" "$DUX_HOME/hbin/i/claude"
-  {
-    printf '#!%s\n' "$DUX_HOME/hbin/i/claude"
-    printf 'dux_i=0\n'
-    printf 'while [ ! -s "%s" ] && [ "$dux_i" -lt 150 ]; do dux_i=$((dux_i+1)); sleep 0.2; done\n' \
-      "$DUX_HOME/state/$id.pgid"
-    tail -n +2 "$DUX_ROOT/tests/fakes/claude"
-  } > "$DUX_HOME/hbin/claude"
-  chmod 755 "$DUX_HOME/hbin/claude"
-}
-
 # What the pane's shell has to carry for the fake to work. The launcher strips
 # every DUX_, CLAUDE_, HERDR_, TMUX and GIT_CONFIG_ name, so only these reach
 # the harness. tmux gives a respawned pane the session's environment; the herdr
 # fake starts the command itself and inherits the wrapper's.
 pane_env() {
   local v
-  for v in "PATH=$DUX_HOME/hbin:$PATH" "FAKE_WORKER_SCRIPT=$FAKE_WORKER_SCRIPT" \
+  for v in "PATH=$PATH" "FAKE_WORKER_SCRIPT=$FAKE_WORKER_SCRIPT" \
            "FAKE_WORKER_LOG=$FAKE_WORKER_LOG" \
            "GIT_AUTHOR_NAME=$GIT_AUTHOR_NAME" "GIT_AUTHOR_EMAIL=$GIT_AUTHOR_EMAIL" \
            "GIT_COMMITTER_NAME=$GIT_COMMITTER_NAME" "GIT_COMMITTER_EMAIL=$GIT_COMMITTER_EMAIL"; do
     tmux -L dux-wrap set-environment -t duxwrap "${v%%=*}" "${v#*=}"
   done
-  PATH="$DUX_HOME/hbin:$PATH"; export PATH
 }
 
 # The tab dux-spawn would have opened, and where it recorded it. The Herdr fake

@@ -27,6 +27,10 @@ ready() { [ -n "${DUX_BACKEND:-}" ] && [ -n "${DUX_WORKER_HARNESS:-}" ]; }
 # the fake herdr runs the command in-process, the tmux session takes an environment that new panes inherit.
 worker_env() {
   export HERDR_WORKSPACE_ID=w1 FAKE_HERDR_RUN=1
+  # Spawn will not open a tab in a directory Claude Code has not been told to
+  # trust, and the harness has to carry the name the adapter looks for.
+  trust_suite_root
+  harness_shim
   export FAKE_WORKER_SCRIPT="$DUX_HOME/state/worker.script" DUX_WRAP_POLL_SECS=1 DUX_HEARTBEAT_SECS=1
   echo "$DUX_WORKER_HARNESS" > "$DUX_HOME/config/worker-harness"
   if [ "$DUX_BACKEND" = tmux ]; then
@@ -77,7 +81,10 @@ container_gone() {  # $1 endpoint
   refute grep -rq example.invalid "$hand"
   # Nothing terminal reached the status log from the wrapper.
   [ "$(cat "$log")" = "working: starting" ]
-  grep -q '"type":"assistant"' "$DUX_HOME/state/$id.out"
+  # No output file: the worker's bytes are its tab's scrollback now, and the
+  # wrapper's own log holds Dux's lines and nothing the worker said.
+  [ ! -e "$DUX_HOME/state/$id.out" ]
+  refute grep -q '"type":"assistant"' "$DUX_HOME/state/$id.wrap.log"
   grep -q "^$DUX_WORKER_HARNESS " "$FAKE_WORKER_LOG"
   [[ "$(cat "$DUX_HOME/state/$id.pid")" =~ ^[0-9]+$ ]]
   sleep 3
@@ -99,7 +106,11 @@ container_gone() {  # $1 endpoint
   container_gone "$ep"
 }
 
-@test "a worker that exits without an exit line is recorded as failed and can be torn down" {
+# The wrapper does not fork the harness, so there is no exit status to report.
+# A session gone with no terminal line is ended, whatever ended it: the operator
+# closing the tab, a crash, or the harness exiting on its own. Recovery is where
+# the difference is proved.
+@test "a worker that goes without a terminal line is recorded as ended and can be torn down" {
   ready || skip
   worker_env
   printf 'status working: starting\nexit 3\n' > "$FAKE_WORKER_SCRIPT"
@@ -107,14 +118,16 @@ container_gone() {  # $1 endpoint
   dux-spawn "$id" >/dev/null
   log="$DUX_HOME/data/tasks/$id/status.log"
   wait_file "$DUX_HOME/state/$id.handoffs/1/status" 30
-  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/status")" = "failed: worker exited 3" ]
-  grep -q '^## Failure tail' "$DUX_HOME/data/tasks/$id/report.md"
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/status")" = "ended: the session ended without a terminal status" ]
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/event")" = ended ]
   sleep 3
   dux-watch --once
-  [ "$(tail -n 1 "$log")" = "failed: worker exited 3" ]
+  [ "$(tail -n 1 "$log")" = "ended: the session ended without a terminal status" ]
+  # ended is not a proved result, so teardown refuses it and recovery is the
+  # route: what the session actually left behind has still to be proved.
   run dux-teardown "$id"
-  [ "$status" -eq 0 ]
-  [ "$(dux-ledger get "$id" state)" = failed ]
+  [ "$status" -eq 2 ]; [[ "$output" == *"is not terminal (ledger: ended)"* ]]
+  [ "$(dux-ledger get "$id" state)" = ended ]
 }
 
 @test "a codex worker is refused end to end and nothing is created" {
@@ -131,15 +144,20 @@ container_gone() {  # $1 endpoint
   [ ! -s "$FAKE_WORKER_LOG" ]
 }
 
-@test "on herdr the worker's status is mirrored to the pane" {
+# The pane holds a real session now, which Herdr detects for itself. A Dux
+# mirror would be a second source for one pane, saying something the session did
+# not, so the only thing Dux tells the multiplexer is the tab's title.
+@test "on herdr the tab gets a title and no agent state at all" {
   ready || skip
-  [ "$DUX_BACKEND" = herdr ] || skip "tmux has no agent state"
+  [ "$DUX_BACKEND" = herdr ] || skip "tmux has no title of its own"
   worker_env
   printf 'report all clear\nstatus working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   id="$(fixture_task proj scout)"
   dux-spawn "$id" >/dev/null
-  wait_for "$FAKE_HERDR_LOG" "report-agent w1:p9 --source dux --agent dux-$id --state idle --message dux $id: done" 30
+  wait_file "$DUX_HOME/state/$id.handoffs/1/status" 30
   grep -qF "pane report-metadata w1:p9 --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
+  [ "$(grep -c 'report-agent' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
+  [ "$(grep -c 'starting' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
 }
 
 # A worker runs with the operator's own authority, so what it must not have is
@@ -298,7 +316,9 @@ EOF
   [ "$(grep -c 'untrusted-status' <<< "$output" || true)" -eq 0 ]
   [ "$(grep -c 'xxxx' <<< "$output" || true)" -eq 0 ]
   [ "$(grep -c 'untrusted-status' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
-  # The worker's own bytes went to one place, and no operator file has them.
-  grep -q 'untrusted-status' "$DUX_HOME/state/$id.out"
+  # The worker's own bytes belong to its tab. No operator file has them, and
+  # neither does the wrapper's log.
+  [ ! -e "$DUX_HOME/state/$id.out" ]
+  refute grep -q 'untrusted-status' "$DUX_HOME/state/$id.wrap.log"
   [ "$(grep -rc 'untrusted-status' "$DUX_HOME/data/tasks/$id" | grep -vc ':0$' || true)" -eq 0 ]
 }

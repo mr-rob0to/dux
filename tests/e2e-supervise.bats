@@ -25,6 +25,8 @@ ready() { [ -n "${DUX_BACKEND:-}" ]; }
 
 supervised_env() {
   export HERDR_WORKSPACE_ID=w1 FAKE_HERDR_RUN=1
+  trust_suite_root
+  harness_shim
   export FAKE_WORKER_SCRIPT="$DUX_HOME/state/worker.script" DUX_WRAP_POLL_SECS=1 DUX_HEARTBEAT_SECS=1000
   export DUX_WATCHER=on DUX_WATCH_INTERVAL_SECS=1 DUX_STALE_SECS=3 DUX_WATCH_GRACE_SECS=30
   if [ "$DUX_BACKEND" = tmux ]; then
@@ -63,15 +65,17 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
   [ "$(wc -l < "$events" | tr -d ' ')" -eq 1 ]
   if [ "$DUX_BACKEND" = herdr ]; then grep -qF "notification show Dux --body stale: $id" "$FAKE_HERDR_LOG"; fi
   # Recovering stops the wrapper, which publishes its own ending on the way out.
-  # Recovery reports that and leaves it; the watcher is what applies it.
+  # Recovery reports that and leaves it; the watcher is what applies it. A
+  # session stopped before it said anything is ended, not failed: there is no
+  # exit status to read from a harness the wrapper did not fork, and what the
+  # run actually left behind is recovery's own proof to make.
   dux-recover "$id" --stop >/dev/null
-  wait_until 15 count_is failed "$id" 1
-  wait_until 10 ledger_is "$id" failed
-  [ "$(dux-ledger get "$id" state)" = failed ]
+  wait_until 15 count_is ended "$id" 1
+  wait_until 10 ledger_is "$id" ended
+  [ "$(dux-ledger get "$id" state)" = ended ]
   sleep 3
-  [ "$(count failed "$id")" -le 1 ]
+  [ "$(count ended "$id")" -le 1 ]
   [ "$(count stale "$id")" -eq 1 ]
-  dux-teardown "$id" >/dev/null
 }
 
 @test "a worker whose wrapper is killed is dead, and recover marks it failed" {
@@ -84,10 +88,15 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
   wait_until 15 grep -q '^working: starting' "$DUX_HOME/data/tasks/$id/status.log"
   wrapper_pid="$(cat "$DUX_HOME/state/$id.pid")"
   echo "$wrapper_pid" >> "$DUX_HOME/state/stand-ins"
-  harness_pid="$(pgrep -P "$wrapper_pid" | head -n 1)"
-  [ -n "$harness_pid" ]
-  echo "$harness_pid" >> "$DUX_HOME/state/stand-ins"
+  # The harness is not the wrapper's child any more: it is the pane's, and what
+  # the wrapper holds is its process group. That is the whole point of this
+  # test now, because killing the wrapper leaves the session running in its tab.
+  wait_until 15 test -s "$DUX_HOME/state/$id.pgid"
+  harness_pgid="$(cat "$DUX_HOME/state/$id.pgid")"
+  [ -n "$harness_pgid" ]
+  echo "$harness_pgid" >> "$DUX_HOME/state/stand-ins"
   kill -9 "$wrapper_pid"
+  kill -0 -- "-$harness_pgid"
   wait_until 15 count_is dead "$id" 1
   wait_until 10 ledger_is "$id" dead
   [ "$(dux-ledger get "$id" state)" = dead ]
@@ -96,8 +105,8 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
   grep -q '^## Failure tail' "$DUX_HOME/data/tasks/$id/report.md"
   sleep 3
   [ "$(count dead "$id")" -eq 1 ]
-  kill -TERM "$harness_pid" 2>/dev/null || true
-  wait_until 5 bash -c "! kill -0 $harness_pid 2>/dev/null"
+  kill -TERM -- "-$harness_pgid" 2>/dev/null || true
+  wait_until 5 bash -c "! kill -0 -- -$harness_pgid 2>/dev/null"
 }
 
 @test "a worker that finishes produces exactly one done event, even across a watcher restart" {

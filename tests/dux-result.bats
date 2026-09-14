@@ -586,7 +586,13 @@ receipt_of() {  # $1.. the phases to file, in the order given
   wt="$(dux-worktree create "$id")"
   export FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1 DUX_HEARTBEAT_SECS=1
   printf 'run printf "# Findings\\nall clear\\n" > "$DUX_REPORT"\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
-  (cd "$wt" && DUX_BACKEND=tmux dux-worker-wrap "$id")
+  # The wrapper starts the harness in a tab and finds it there, so it needs one
+  # and the endpoint dux-spawn records. The Herdr fake gives both without a
+  # multiplexer: it runs what `pane run` is given and reports that process.
+  harness_shim
+  export DUX_BACKEND=herdr HERDR_WORKSPACE_ID=w1 FAKE_HERDR_RUN=1
+  dux-backend open "$id" "$wt" > "$DUX_HOME/state/$id.endpoint"
+  (cd "$wt" && dux-worker-wrap "$id")
   runid="$(sed -n 's/^run=//p' "$DUX_HOME/state/$id.run")"
   [ -n "$runid" ]
   run dux-result verify "$id" "$runid" --report "$DUX_HOME/data/tasks/$id/report.md"

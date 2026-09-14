@@ -75,6 +75,54 @@ setup() {
   : > "$FAKE_GH_LOG"
 }
 
+# A Dux root of real file copies, never symlinks, with one script replaced. The
+# copies matter: the scripts call their siblings by absolute path under
+# $DUX_ROOT, and writing into a directory of links to the checkout edits the
+# checkout.
+root_with_stub() {  # $1 script name, $2 body; prints the root
+  # Built from nothing every time: a second call with the same name would
+  # otherwise copy bin inside the first copy and, worse, follow the templates
+  # link and make one inside the real templates directory.
+  local r="$DUX_HOME/root-$1"
+  rm -rf "$r"
+  mkdir -p "$r"
+  cp -R "$DUX_ROOT/bin" "$r/bin"
+  ln -s "$DUX_ROOT/templates" "$r/templates"
+  rm -f "$r/bin/$1"
+  printf '%s\n' "$2" > "$r/bin/$1"
+  chmod +x "$r/bin/$1"
+  echo "$r"
+}
+
+# Claude Code records the folders the operator has trusted, and dux-spawn will
+# not open a tab in one that is not there. The fixture trusts the suite's own
+# root under a CLAUDE_CONFIG_DIR of its own, so the operator's real file is
+# neither read nor written.
+trust_suite_root() {
+  CLAUDE_CONFIG_DIR="$DUX_HOME/claude-config"; export CLAUDE_CONFIG_DIR
+  mkdir -p "$CLAUDE_CONFIG_DIR"
+  jq -n --arg p "$DUX_HOME" '{ projects: { ($p): { hasTrustDialogAccepted: true } } }' \
+    > "$CLAUDE_CONFIG_DIR/.claude.json"
+}
+
+# A fake harness whose process really is called claude, for any test where the
+# wrapper has to find it through the multiplexer. `dux-backend pid` reads the
+# name from ps, and ps reports a shebang script's interpreter on macOS and the
+# script's own name on Linux. A script called claude whose interpreter is a link
+# called claude reads "claude" on both, so no production code has to learn about
+# the test environment. Measured 2026-09-14: ps -o comm= gives <dir>/i/claude on
+# macOS and claude on Linux. Puts the copy first on PATH.
+harness_shim() {
+  mkdir -p "$DUX_HOME/hbin/i"
+  ln -sf "$(command -v bash)" "$DUX_HOME/hbin/i/claude"
+  {
+    printf '#!%s\n' "$DUX_HOME/hbin/i/claude"
+    tail -n +2 "$DUX_ROOT/tests/fakes/claude"
+  } > "$DUX_HOME/hbin/claude"
+  chmod 755 "$DUX_HOME/hbin/claude"
+  case "$PATH" in "$DUX_HOME/hbin:"*) ;; *) PATH="$DUX_HOME/hbin:$PATH"; export PATH ;; esac
+}
+
 wait_for_workers() {  # $1 seconds; returns 1 if a worker is still alive after that
   local deadline="$1" i=0 pidfile pid live
   while :; do

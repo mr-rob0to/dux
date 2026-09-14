@@ -8,13 +8,28 @@
 
 **Where this stands**
 - Drafted 2026-09-14 by a Dux plan worker. One independent design review by a fresh
-  session the same day: fourteen findings, all taken, recorded at the bottom. Awaiting
-  the operator.
+  session the same day: fourteen findings, all taken, recorded at the bottom.
 - **Supersedes pull request #41**, which is not merged and should be closed, not
   reviewed. The operator's two changes: the live session is the default for every
   worker, and the harness is the tab's own process found by pid, not a child the wrapper
-  forks. Nothing is implemented.
+  forks.
+- Tasks 1 to 4 landed 2026-09-14. Task 5 is next, then the milestone acceptance run.
 - Merges as one ship PR of five tasks.
+
+**Divergences from the approved plan**
+- Task 4 also changes `bin/dux-recover`'s `stop()`, which the plan gave to Task 5. Once
+  a stopped wrapper publishes `ended` rather than `failed`, the existing `next_handoff`
+  read became wrong: it skips a sequence the watcher has already consumed, so a stop
+  raced by the watcher overwrote a proved ending with recovery's own `failed`. The stop
+  now compares `handoff_next_seq` before and after, which sees a published result
+  whether or not it has been applied. Two lines; it is the same behaviour the comment
+  above it already claimed.
+- Task 4's "refused before the harness started" case is proved with a stub wrapper, not
+  with the real one and its settings file removed as the plan's acceptance says. The
+  real wrapper writes its pidfile (`:84`) before it opens its run record (`:204`), so
+  every refusal it can make with the settings missing happens before there is a handoff
+  to leave; spawn reads that as "did not start". Both endings are tested, one with the
+  stub and one with the real wrapper.
 
 **Estimated diff:** ~1,400 added lines across 5 tasks. Under the cap of 2,500 lines or 12
 tasks (constitution principle 1). Task 3 is the large one, ~400, most of it the wrapper's
@@ -98,23 +113,23 @@ are unknown to `dux-backend`, and no file in `bin/` or `skills/` names `pane rea
 
 **Steps**
 
-- [ ] `bin/backends/tmux.sh`: split `open`; add `backend_run`, `backend_pid`; `title`
+- [x] `bin/backends/tmux.sh`: split `open`; add `backend_run`, `backend_pid`; `title`
       stays a no-op with the endpoint argument.
-- [ ] `bin/backends/herdr.sh`: split `open`; add `backend_run`, `backend_pid` reading the
+- [x] `bin/backends/herdr.sh`: split `open`; add `backend_run`, `backend_pid` reading the
       four fields through `jq`; `backend_title` by endpoint; remove `backend_report`,
       `_own_pane`.
-- [ ] `bin/dux-backend`: the verbs, their argument counts, the usage line.
-- [ ] `tests/fakes/herdr`: `pane run` starts the command in its own process group and
+- [x] `bin/dux-backend`: the verbs, their argument counts, the usage line.
+- [x] `tests/fakes/herdr`: `pane run` starts the command in its own process group and
       records the pid; `pane process-info` answers in the real shape, with `argv0` and
       `cwd` read from `ps` and `lsof` for the recorded pid, never from a constant.
-- [ ] `tests/contract.bats`: the pane-reader rule, and the `tail` tests removed from
+- [x] `tests/contract.bats`: the pane-reader rule, and the `tail` tests removed from
       `tests/backend-adapter.bats`.
-- [ ] `tests/backend-adapter.bats`: the acceptance cases for both adapters.
-- [ ] Break-verify: make `backend_pid` skip the name comparison. Expected: the `nothing`
+- [x] `tests/backend-adapter.bats`: the acceptance cases for both adapters.
+- [x] Break-verify: make `backend_pid` skip the name comparison. Expected: the `nothing`
       case fails on both adapters, a pid is printed. Restore. Paste both.
-- [ ] Break-verify: add a `capture-pane` call to a skill file. Expected: the contract
+- [x] Break-verify: add a `capture-pane` call to a skill file. Expected: the contract
       test fails naming the file. Restore. Paste.
-- [ ] `make check` green.
+- [x] `make check` green.
 
 ## Task 2: the launcher, the beat hooks, the brief line
 
@@ -138,20 +153,20 @@ watching your terminal" and not "nobody reads your terminal", under 100 lines.
 
 **Steps**
 
-- [ ] Measure once against a real `claude`, interactive, in a tmux pane: a session
+- [x] Measure once against a real `claude`, interactive, in a tmux pane: a session
       started with `--settings` holding the two hooks touches the beat file after one
       tool call and again at `Stop`. Record the result in the commit body. If it does
       not, stop and report; do not pick a fallback.
-- [ ] `bin/workers/claude.sh`: `worker_launcher`; `worker_cmd`; `worker_process_name`;
+- [x] `bin/workers/claude.sh`: `worker_launcher`; `worker_cmd`; `worker_process_name`;
       drop `worker_run`.
-- [ ] `templates/worker-settings.json`: the hooks. `templates/brief.md`: line 19.
-- [ ] `tests/fakes/claude`: `touch`.
-- [ ] `tests/worker-adapter.bats`: the launcher cases. `tests/dux-brief.bats`: the hooks
+- [x] `templates/worker-settings.json`: the hooks. `templates/brief.md`: line 19.
+- [x] `tests/fakes/claude`: `touch`.
+- [x] `tests/worker-adapter.bats`: the launcher cases. `tests/dux-brief.bats`: the hooks
       and the brief line.
-- [ ] Break-verify: drop the scrub loop from the launcher. Expected: the environment case
+- [x] Break-verify: drop the scrub loop from the launcher. Expected: the environment case
       fails, `DUX_HOME` is present. Restore. Paste.
-- [ ] Break-verify: drop the `PATH` strip. Expected: the `PATH` case fails. Restore. Paste.
-- [ ] `make check` green.
+- [x] Break-verify: drop the `PATH` strip. Expected: the `PATH` case fails. Restore. Paste.
+- [x] `make check` green.
 
 ## Task 3: the wrapper supervises a process it did not fork
 
@@ -178,20 +193,20 @@ refusal with `DUX_WRAP_START_SECS=2`.
 
 **Steps**
 
-- [ ] Re-measure on Linux first (`ubuntu:24.04`, `bats git tmux jq`): `pane_pid`,
+- [x] Re-measure on Linux first (`ubuntu:24.04`, `bats git tmux jq`): `pane_pid`,
       `set-environment` reaching a respawned pane, a group stop from outside. Record the
       result in the commit body. If any differs, stop and report; do not pick a fallback.
-- [ ] `bin/dux-worker-wrap`: the launch section (`:353-378`) and the loop (`:380-406`)
+- [x] `bin/dux-worker-wrap`: the launch section (`:353-378`) and the loop (`:380-406`)
       rewritten as the interface says; the settings substitution; the judgement wording.
-- [ ] `tests/dux-worker-wrap.bats`: `prepare` opens the window and writes the endpoint;
+- [x] `tests/dux-worker-wrap.bats`: `prepare` opens the window and writes the endpoint;
       the fake's variables through `set-environment`; the cases above.
-- [ ] Break-verify the end: remove the exit-on-terminal condition. Expected: the `sleep
+- [x] Break-verify the end: remove the exit-on-terminal condition. Expected: the `sleep
       600` case exceeds its bound. Restore. Paste.
-- [ ] Break-verify the beat: read the wrong mtime. Expected: the touch case fails, no
+- [x] Break-verify the beat: read the wrong mtime. Expected: the touch case fails, no
       heartbeat. Restore. Paste.
-- [ ] Break-verify the discovery: accept any foreground process. Expected: the `sh -c`
+- [x] Break-verify the discovery: accept any foreground process. Expected: the `sh -c`
       case fails, no refusal. Restore. Paste.
-- [ ] `make check` green.
+- [x] `make check` green.
 
 ## Task 4: spawn starts the wrapper outside the tab
 
@@ -223,21 +238,21 @@ refusal `pidfile <other>`.
 
 **Steps**
 
-- [ ] `bin/dux-spawn`: the trust check; the open; the start with its pid; the wait; the
+- [x] `bin/dux-spawn`: the trust check; the open; the start with its pid; the wait; the
       two endings; the pgid read in `another_worker`.
-- [ ] `tests/dux-spawn.bats`: the six cases. `tests/e2e-dispatch.bats`,
+- [x] `tests/dux-spawn.bats`: the six cases. `tests/e2e-dispatch.bats`,
       `tests/e2e-supervise.bats`: `.out` assertions replaced by the handoff; `HOME`
       trusting the suite root.
-- [ ] Break-verify: make the wait accept a pidfile naming a dead pid. Expected: the
+- [x] Break-verify: make the wait accept a pidfile naming a dead pid. Expected: the
       fake-wrapper case fails, the task is `running`. Restore. Paste.
-- [ ] Break-verify: make the wait undo whether or not a handoff exists. Expected: the
+- [x] Break-verify: make the wait undo whether or not a handoff exists. Expected: the
       real-wrapper case fails, the worktree is gone. Restore. Paste.
-- [ ] Break-verify: make the trust check return 0 on a missing key. Expected: the
+- [x] Break-verify: make the trust check return 0 on a missing key. Expected: the
       untrusted case fails, a tab opens. Restore. Paste.
-- [ ] Break-verify: skip the pgid read in `another_worker`. Expected: the `live <other>`
+- [x] Break-verify: skip the pgid read in `another_worker`. Expected: the `live <other>`
       case fails, spawn proceeds. Restore. Paste.
-- [ ] `skills/dux-dispatch/SKILL.md`: the tab, and the tab in the "never read" rule.
-- [ ] `make check` green.
+- [x] `skills/dux-dispatch/SKILL.md`: the tab, and the tab in the "never read" rule.
+- [x] `make check` green.
 
 ## Task 5: recovery, teardown, the constitution, the component map
 

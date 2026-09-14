@@ -13,6 +13,13 @@ setup() {
   : > "$FAKE_HERDR_LOG"; : > "$FAKE_HERDR_OUTPUT"; : > "$FAKE_WORKER_LOG"; : > "$FAKE_GH_LOG"
   export DUX_BACKEND=herdr HERDR_WORKSPACE_ID=w1 DUX_WATCHER=off DUX_RECOVER_WAIT_SECS=5
   export DUX_SESSION_PID=$$
+  # Every retry here ends in a real dux-spawn, which will not open a tab in an
+  # untrusted directory and starts a real wrapper. Two seconds is long enough
+  # for a wrapper whose pane does hold the harness and short enough that one
+  # whose pane never will gives up inside the test.
+  trust_suite_root
+  harness_shim
+  export DUX_WRAP_START_SECS=2
   dux-lock acquire >/dev/null
 }
 
@@ -122,8 +129,11 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   kill -0 "$(cat "$DUX_HOME/state/$id.pid")"; [ "$(dux-ledger get "$id" state)" = stale ]
 }
 
-@test "--stop interrupts a real wrapper and follows its failure" {
-  export FAKE_HERDR_RUN=1 FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1
+# The wrapper did not fork the harness, so there is no exit status behind the
+# stop: a session stopped before it said anything is ended, and what it actually
+# left behind is for recovery's own proof.
+@test "--stop interrupts a real wrapper and follows its ending" {
+  export FAKE_HERDR_RUN=1 FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1 DUX_WRAP_START_SECS=20
   printf 'status working: starting\nsleep 300\n' > "$FAKE_WORKER_SCRIPT"
   id="$(fixture_task proj scout)"; dux-spawn "$id" >/dev/null
   wait_until 15 grep -q '^working: starting' "$DUX_HOME/data/tasks/$id/status.log"
@@ -131,9 +141,10 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   dux-ledger set "$id" state stale
   run dux-recover "$id" --stop
   [ "$status" -eq 0 ]
-  [ "$output" = "stopped $id; the wrapper published its result and the watcher will apply it"$'\n<untrusted-status>\nfailed: worker exited 143\n</untrusted-status>' ]
+  [ "$output" = "stopped $id; the wrapper published its result and the watcher will apply it"$'\n<untrusted-status>\nended: the session ended without a terminal status\n</untrusted-status>' ]
+  # Recovery reports the ending; the watcher is what applies it.
   [ "$(dux-ledger get "$id" state)" = stale ]
-  grep -q '^## Failure tail' "$DUX_HOME/data/tasks/$id/report.md"
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/event")" = ended ]
   wait_until 5 bash -c "! kill -0 $(cat "$DUX_HOME/state/$id.pid") 2>/dev/null"
 }
 
