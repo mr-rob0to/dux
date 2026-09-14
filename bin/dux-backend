@@ -25,13 +25,13 @@ own_endpoint() {
 cmd="${1:-}"; shift || true
 case "$cmd" in
   name)   echo "$backend" ;;
-  open)   backend_open "${1:?id}" "${2:?cwd}" "${3:?cmd}" ;;
+  open)   backend_open "${1:?id}" "${2:?cwd}" ;;
+  run)    own_endpoint "${1:?endpoint}"; backend_run "$1" "${2:?cwd}" "${3:?cmd}" ;;
+  pid)    own_endpoint "${1:?endpoint}"; backend_pid "$1" "${2:?name}" ;;
   find)   backend_find "${1:?id}" ;;
   exists) own_endpoint "${1:?endpoint}"; backend_exists "$1" ;;
-  tail)   own_endpoint "${1:?endpoint}"; backend_tail "$1" "${2:-40}" ;;
   close)  own_endpoint "${1:?endpoint}"; backend_close "$1" ;;
   notify) backend_notify "${1:?title}" "${2:-}" ;;
-  report) backend_report "${1:?id}" "${2:?state}" "${3:?message}" ;;
-  title)  backend_title "${1:?title}" ;;
-  *) die "usage: dux-backend name|open|find|exists|tail|close|notify|report|title" ;;
+  title)  own_endpoint "${1:?endpoint}"; backend_title "$1" "${2:?text}" ;;
+  *) die "usage: dux-backend name|open|run|pid|find|exists|close|notify|title" ;;
 esac

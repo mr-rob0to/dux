@@ -5,6 +5,8 @@
 set -u
 printf '%s\n' "$*" >> "${FAKE_HERDR_LOG:-/dev/null}"
 tabs=""; [ -n "${FAKE_HERDR_LOG:-}" ] && tabs="$FAKE_HERDR_LOG.tabs"
+# Where `pane run` records the pid it started, for `pane process-info` to answer about.
+procpid="${FAKE_HERDR_LOG:-/dev/null}.procpid"
 
 remember() {  # $1 tab_id, $2 pane_id or -, $3 label
   [ -n "$tabs" ] || return 0
@@ -70,9 +72,6 @@ case "$1 ${2:-}" in
     [ -n "${FAKE_HERDR_BAD_JSON:-}" ] && { echo '{"result":{}}'; exit 0; }
     focused=false; [ -e "${FAKE_HERDR_FOCUSED:-/nonexistent}" ] && focused=true
     echo "{\"result\":{\"pane\":{\"pane_id\":\"$3\",\"focused\":$focused}}}" ;;
-  "pane read")
-    n=120; while [ $# -gt 0 ]; do [ "$1" = "--lines" ] && n="$2"; shift; done
-    tail -n "$n" "${FAKE_HERDR_OUTPUT:-/dev/null}" ;;
   "pane close")
     [ -n "${FAKE_HERDR_CLOSE_FAIL:-}" ] && { echo '{"error":{"code":"close_failed"}}' >&2; exit 1; }
     forget "$3"
@@ -94,18 +93,56 @@ case "$1 ${2:-}" in
     [ -n "${FAKE_HERDR_RUN_FAIL:-}" ] && { echo '{"error":{"code":"run_failed"}}' >&2; exit 1; }
     if [ -n "${FAKE_HERDR_RUN:-}" ]; then
       cwd="$(cat "${FAKE_HERDR_LOG:-/dev/null}.cwd")"
-      # Bash starts asynchronous children with INT ignored. The real pane runs
-      # its command in the foreground, so reset INT in a tiny external launcher
-      # before exec to keep this fake faithful to the real signal boundary.
-      # Perl receives the literal $SIG and @ARGV names below.
+      # The real pane runs the command as a foreground job of its shell, in a
+      # session of its own, and process-info reports that process. So the fake
+      # puts it in a session of its own too (POSIX::setsid) and records the pid
+      # for process-info to answer about. Bash starts asynchronous children with
+      # INT ignored, so INT is reset before the exec to keep the signal boundary
+      # faithful. Perl receives the literal $SIG, $$ and @ARGV names below.
+      # Nothing but /dev/null on input and no inherited descriptor above 2: a
+      # started process holding the suite's output pipe turns every failure in a
+      # test that leaves one running into a hang instead of a red line.
       # shellcheck disable=SC2016
-      ( cd "$cwd" || exit; HERDR_PANE_ID="$3" HERDR_ENV=1 nohup perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV' bash -c "$4" >> "${FAKE_HERDR_OUTPUT:-/dev/null}" 2>&1 ) &
+      ( cd "$cwd" || exit
+        HERDR_PANE_ID="$3" HERDR_ENV=1 nohup perl -e '
+          use POSIX; POSIX::setsid();
+          $SIG{INT} = "DEFAULT";
+          open(my $f, ">", $ARGV[0]) or die; print $f "$$\n"; close $f;
+          exec("/bin/sh", "-c", $ARGV[1]);
+        ' "$procpid" "$4" ) < /dev/null >> "${FAKE_HERDR_OUTPUT:-/dev/null}" 2>&1 \
+        3>&- 4>&- 5>&- 6>&- 7>&- 8>&- 9>&- &
     fi
     echo '{"result":{}}' ;;
+  "pane process-info")
+    # The real shape, measured 2026-09-14: the reply nests under
+    # .result.process_info, foreground_processes is innermost first, and each
+    # entry carries pid, argv0, cwd and the full cmdline. Every field about the
+    # process is read from the system for the pid `pane run` recorded, never
+    # written as a constant: a fixture argv0 would let the adapter's name check
+    # pass against the fixture instead of against a real process.
+    [ -n "${FAKE_HERDR_PROCINFO_FAIL:-}" ] && { echo '{"error":{"code":"server_unreachable"}}' >&2; exit 1; }
+    [ -n "${FAKE_HERDR_PROCINFO_JUNK:-}" ] && { echo '{"result":{}}'; exit 0; }
+    pid=""; [ -f "$procpid" ] && pid="$(cat "$procpid")"
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+      comm="$(ps -o comm= -p "$pid" 2>/dev/null | sed 's/^ *//; s/ *$//')"
+      argv0="${comm##*/}"
+      cmdline="$(ps -ww -o command= -p "$pid" 2>/dev/null)"
+      pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
+      pcwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | tail -n 1)"
+      [ -n "$pcwd" ] || pcwd="$(readlink "/proc/$pid/cwd" 2>/dev/null)"
+      jq -nc --arg a "$argv0" --arg c "${pcwd:-}" --arg l "${cmdline:-}" \
+        --argjson p "$pid" --argjson g "${pgid:-$pid}" \
+        '{result:{process_info:{foreground_process_group_id:$g,shell_pid:1,
+           foreground_processes:[{pid:$p,argv0:$a,name:$a,cwd:$c,cmdline:$l}],
+           pane_id:"w1:p9"},type:"pane_process_info"}}'
+    else
+      jq -nc '{result:{process_info:{foreground_process_group_id:0,shell_pid:1,
+                foreground_processes:[],pane_id:"w1:p9"},type:"pane_process_info"}}'
+    fi ;;
   "pane report-metadata")
     [ -n "${FAKE_HERDR_SLOW_METADATA:-}" ] && sleep "$FAKE_HERDR_SLOW_METADATA"
     echo '{"result":{}}' ;;
-  "pane report-agent"|"notification show")
+  "notification show")
     echo '{"result":{}}' ;;
   "status ")
     printf 'server:\n  status: running\n' ;;

@@ -5,8 +5,8 @@ set -u
 
 _pane() { echo "${1#herdr:}"; }
 
-backend_open() {  # id cwd cmd
-  local id="$1" cwd="$2" cmd="$3" ws="${HERDR_WORKSPACE_ID:-}" out pane tab
+backend_open() {  # id cwd; opens the tab as a shell at its prompt
+  local id="$1" cwd="$2" ws="${HERDR_WORKSPACE_ID:-}" out pane tab
   [ -n "$ws" ] || finding "HERDR_WORKSPACE_ID is unset; Dux is not running inside a Herdr pane"
   out="$(herdr tab create --workspace "$ws" --cwd "$cwd" --label "dux-$id" --no-focus)" \
     || finding "herdr tab create failed for $id"
@@ -19,18 +19,51 @@ backend_open() {  # id cwd cmd
       || finding "herdr tab create returned no pane id for $id and herdr tab close failed for $tab"
     finding "herdr tab create returned no pane id for $id; tab $tab closed"
   fi
-  # pane run types into a live shell; without a prompt the command would be lost.
-  # The class carries the chevrons starship and oh-my-zsh draw as well as the
-  # four plain shells use: a prompt this does not know times out every open.
+  # backend_run types into a live shell; without a prompt the command would be
+  # lost, so the wait belongs here, before the endpoint is handed out. The class
+  # carries the chevrons starship and oh-my-zsh draw as well as the four plain
+  # shells use: a prompt this does not know times out every open.
   if ! herdr pane wait-output "$pane" --regex '[$%>#❯➜] ?$' --timeout 10000 >/dev/null 2>&1; then
     backend_close "herdr:$pane"   # fail-closed: a focused pane or a failed close is its own finding
-    finding "no shell prompt in pane $pane for $id within 10s; pane closed, command not sent"
-  fi
-  if ! herdr pane run "$pane" "$cmd" >/dev/null; then
-    backend_close "herdr:$pane"   # fail-closed, like the prompt path above
-    finding "herdr pane run failed for $id on $pane; pane closed"
+    finding "no shell prompt in pane $pane for $id within 10s; pane closed"
   fi
   echo "herdr:$pane"
+}
+
+backend_run() {  # endpoint cwd(ignored: the tab was opened there) cmd
+  local pane; pane="$(_pane "$1")"
+  herdr pane run "$pane" "$3" >/dev/null || finding "herdr pane run failed on $pane"
+}
+
+# The pane's innermost foreground process, when its command name is <name>.
+# Measured 2026-09-14 against Herdr's own CLI: the reply nests under
+# .result.process_info, foreground_processes is ordered innermost first, and a
+# live Claude Code session reports argv0 "claude" with its version in .name, so
+# the name is read from argv0 and never from .name.
+#
+# Only the three fields are printed. The same reply carries .cmdline, which
+# holds the whole brief; nothing outside pid, group and cwd leaves this function.
+backend_pid() {  # endpoint name; prints "<pid> <pgid> <cwd>", 1 when it is not there
+  local pane name out line pid pgid argv0 cwd
+  pane="$(_pane "$1")"; name="$2"
+  out="$(herdr pane process-info --pane "$pane" 2>/dev/null)" \
+    || finding "herdr pane process-info failed for $pane"
+  printf '%s' "$out" | jq -e '.result.process_info | type == "object"' >/dev/null 2>&1 \
+    || finding "herdr pane process-info returned no process information for $pane"
+  line="$(printf '%s' "$out" | jq -r '.result.process_info
+      | (.foreground_processes // []) as $f
+      | if ($f | length) == 0 then empty
+        else [($f[0].pid | tostring), (.foreground_process_group_id | tostring),
+              ($f[0].argv0 // "-"), ($f[0].cwd // "-")] | join(" ") end')" \
+    || finding "herdr pane process-info is unreadable for $pane"
+  [ -n "$line" ] || return 1
+  pid="${line%% *}"; line="${line#* }"
+  pgid="${line%% *}"; line="${line#* }"
+  argv0="${line%% *}"; cwd="${line#* }"
+  [ "$argv0" = "$name" ] || return 1
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  case "$pgid" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s %s %s\n' "$pid" "$pgid" "$cwd"
 }
 
 backend_exists() {  # endpoint: 0 present, 1 gone, finding when herdr did not answer
@@ -64,10 +97,6 @@ backend_find() {  # id: prints the endpoint of the tab labelled dux-<id>, nothin
   printf 'herdr:%s\n' "$pane"
 }
 
-backend_tail() {  # endpoint n
-  herdr pane read "$(_pane "$1")" --source recent-unwrapped --lines "$2" 2>/dev/null
-}
-
 backend_close() {  # endpoint. Closes only on a positive "not focused" reading.
   local pane out focused; pane="$(_pane "$1")"
   out="$(herdr pane get "$pane" 2>/dev/null)" || finding "herdr pane get failed for $pane; refusing to close"
@@ -84,18 +113,8 @@ backend_notify() {  # title body
   herdr notification show "$1" --body "$2" --sound "done" >/dev/null 2>&1 || true
 }
 
-_own_pane() {  # the pane this process runs in; presentation only, so the id comes from the environment
-  [ -n "${HERDR_PANE_ID:-}" ] || finding "HERDR_PANE_ID is unset; not inside a Herdr pane"
-  echo "$HERDR_PANE_ID"
-}
-
-backend_report() {  # id state message
-  local pane; pane="$(_own_pane)" || exit $?
-  herdr pane report-agent "$pane" --source dux --agent "dux-$1" --state "$2" --message "$3" >/dev/null 2>&1 \
-    || finding "herdr pane report-agent failed for $pane"
-}
-
-backend_title() {  # title
-  local pane; pane="$(_own_pane)" || exit $?
-  herdr pane report-metadata "$pane" --title "$1" >/dev/null 2>&1 || finding "herdr pane report-metadata failed for $pane"
+backend_title() {  # endpoint text
+  local pane; pane="$(_pane "$1")"
+  herdr pane report-metadata "$pane" --title "$2" >/dev/null 2>&1 \
+    || finding "herdr pane report-metadata failed for $pane"
 }

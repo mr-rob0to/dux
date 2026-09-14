@@ -8,7 +8,9 @@ tmux_socket_path() { printf '%s/tmux-%s/%s\n' "${TMUX_TMPDIR:-/tmp}" "$(id -u)" 
 
 setup_file() {
   if [ "${DUX_BACKEND:-}" = herdr ]; then
-    export HERDR_WORKSPACE_ID=w1
+    # FAKE_HERDR_RUN makes the fake actually start what `pane run` is given, in a
+    # session of its own, so `pid` has a real process to report on.
+    export HERDR_WORKSPACE_ID=w1 FAKE_HERDR_RUN=1
   fi
   if [ "${DUX_BACKEND:-}" = tmux ]; then
     use_tmux_tmpdir
@@ -26,9 +28,9 @@ teardown_file() {
   drop_tmux_tmpdir
 }
 
-@test "open returns an endpoint for this backend and runs the command" {
+@test "open returns an endpoint for this backend and starts no command" {
   [ -n "${DUX_BACKEND:-}" ] || skip "DUX_BACKEND unset"
-  run dux-backend open t1 "$DUX_HOME" "echo hello-from-worker; sleep 5"
+  run dux-backend open t1 "$DUX_HOME"
   [ "$status" -eq 0 ]
   [[ "$output" == "$DUX_BACKEND:"* ]]
   echo "$output" > "$DUX_HOME/state/t1.endpoint"
@@ -36,28 +38,21 @@ teardown_file() {
 
 @test "exists is true while the container is present" {
   [ -n "${DUX_BACKEND:-}" ] || skip
-  ep="$(dux-backend open t2 "$DUX_HOME" "sleep 5")"
+  ep="$(dux-backend open t2 "$DUX_HOME")"
   run dux-backend exists "$ep"; [ "$status" -eq 0 ]
-}
-
-@test "tmux container survives command exit (remain-on-exit) so output can be read" {
-  [ "${DUX_BACKEND:-}" = tmux ] || skip "herdr panes always outlive their process"
-  ep="$(dux-backend open t3 "$DUX_HOME" "echo bye")"; sleep 1
-  run dux-backend exists "$ep"; [ "$status" -eq 0 ]
-  run dux-backend tail "$ep" 5; [[ "$output" == *bye* ]]
 }
 
 @test "exists is false after close or when the pane is gone" {
   [ -n "${DUX_BACKEND:-}" ] || skip
   if [ "$DUX_BACKEND" = herdr ]; then export FAKE_HERDR_DEAD="$DUX_HOME/state/dead"; touch "$FAKE_HERDR_DEAD"; ep="herdr:w1:p9"
-  else ep="$(dux-backend open t3b "$DUX_HOME" "sleep 5")"; dux-backend close "$ep"; fi
+  else ep="$(dux-backend open t3b "$DUX_HOME")"; dux-backend close "$ep"; fi
   run dux-backend exists "$ep"; [ "$status" -eq 1 ]
 }
 
 @test "exists is a finding when the backend cannot answer, never a gone" {
   [ -n "${DUX_BACKEND:-}" ] || skip
   if [ "$DUX_BACKEND" = tmux ]; then
-    ep="$(dux-backend open t30 "$DUX_HOME" "sleep 30")"
+    ep="$(dux-backend open t30 "$DUX_HOME")"
     FAKE_TMUX_FAIL=list-windows run dux-backend exists "$ep"
     [[ "$output" == *"finding: tmux could not list windows while checking $ep"* ]]
   else
@@ -113,7 +108,7 @@ teardown_file() {
   [ -n "${DUX_BACKEND:-}" ] || skip
   run dux-backend find t20
   [ "$status" -eq 0 ]; [ -z "$output" ]
-  ep="$(dux-backend open t20 "$DUX_HOME" "sleep 30")"
+  ep="$(dux-backend open t20 "$DUX_HOME")"
   run dux-backend find t20
   [ "$status" -eq 0 ]; [ "$output" = "$ep" ]
   # A different task's container is not this task's answer.
@@ -216,7 +211,7 @@ teardown_file() {
   [ "${DUX_BACKEND:-}" = herdr ] || skip
   # A create that returned no pane id and could not be closed: the tab is real and
   # may hold a worker, and no pane names it. That must not read as "nothing there".
-  FAKE_HERDR_NO_PANE_ID=1 FAKE_HERDR_TAB_CLOSE_FAIL=1 run dux-backend open t22 "$DUX_HOME" "sleep 5"
+  FAKE_HERDR_NO_PANE_ID=1 FAKE_HERDR_TAB_CLOSE_FAIL=1 run dux-backend open t22 "$DUX_HOME"
   [ "$status" -eq 2 ]
   run dux-backend find t22
   [ "$status" -eq 2 ]
@@ -230,18 +225,9 @@ teardown_file() {
   [[ "$output" == "finding: herdr tab list returned no tab array while looking for dux-t24"* ]]
 }
 
-@test "tail returns the last n lines" {
-  [ -n "${DUX_BACKEND:-}" ] || skip
-  if [ "$DUX_BACKEND" = herdr ]; then printf 'a\nb\nc\n' > "$FAKE_HERDR_OUTPUT"; ep="herdr:w1:p9"
-  else ep="$(dux-backend open t4 "$DUX_HOME" "printf 'a\nb\nc\n'; sleep 5")"; sleep 1; fi
-  run dux-backend tail "$ep" 2
-  n=${#lines[@]}
-  [ "${lines[$((n-2))]}" = b ] && [ "${lines[$((n-1))]}" = c ]
-}
-
 @test "close removes the container; alive then false" {
   [ -n "${DUX_BACKEND:-}" ] || skip
-  ep="$(dux-backend open t5 "$DUX_HOME" "sleep 30")"
+  ep="$(dux-backend open t5 "$DUX_HOME")"
   run dux-backend close "$ep"; [ "$status" -eq 0 ]
   if [ "$DUX_BACKEND" = herdr ]; then grep -q "^pane close w1:p9" "$FAKE_HERDR_LOG"
   else run dux-backend exists "$ep"; [ "$status" -eq 1 ]; fi
@@ -273,15 +259,15 @@ teardown_file() {
   [ "${DUX_BACKEND:-}" = herdr ] || skip
   # Starship and oh-my-zsh draw a chevron. A pattern that only knows $ % > #
   # times out on every open, and no worker can be dispatched on that machine.
-  FAKE_HERDR_PROMPT='~/code/demo   main ❯ ' run dux-backend open t5 "$DUX_HOME" "sleep 5"
+  FAKE_HERDR_PROMPT='~/code/demo   main ❯ ' run dux-backend open t5 "$DUX_HOME"
   [ "$status" -eq 0 ]; [ "$output" = herdr:w1:p9 ]
-  grep -q '^pane run w1:p9 sleep 5' "$FAKE_HERDR_LOG"
+  grep -q '^pane wait-output w1:p9' "$FAKE_HERDR_LOG"
 }
 
-@test "herdr open is a finding when no shell prompt appears, and the command is never sent" {
+@test "herdr open is a finding when no shell prompt appears, and no endpoint is handed out" {
   [ "${DUX_BACKEND:-}" = herdr ] || skip
   export FAKE_HERDR_NO_PROMPT=1
-  run dux-backend open t6 "$DUX_HOME" "sleep 5"
+  run dux-backend open t6 "$DUX_HOME"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: no shell prompt in pane w1:p9"* ]]
   [ "$(grep -c '^pane run ' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
@@ -291,7 +277,7 @@ teardown_file() {
 @test "herdr open closes the tab it created when the create returns no pane id" {
   [ "${DUX_BACKEND:-}" = herdr ] || skip
   export FAKE_HERDR_NO_PANE_ID=1
-  run dux-backend open t12 "$DUX_HOME" "sleep 5"
+  run dux-backend open t12 "$DUX_HOME"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: herdr tab create returned no pane id for t12"* ]]
   grep -qx 'tab close w1:t9' "$FAKE_HERDR_LOG"
@@ -299,13 +285,15 @@ teardown_file() {
   [ "$(grep -c '^pane run ' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
 }
 
-@test "herdr open closes the pane it created when pane run fails" {
+# run is the wrapper's call, not spawn's, so a failure here is a wrapper refusal
+# that publishes failed and leaves the tab where the operator can read it.
+@test "herdr run is a finding and leaves the pane open" {
   [ "${DUX_BACKEND:-}" = herdr ] || skip
-  export FAKE_HERDR_RUN_FAIL=1
-  run dux-backend open t13 "$DUX_HOME" "sleep 5"
+  ep="$(dux-backend open t13 "$DUX_HOME")"
+  FAKE_HERDR_RUN_FAIL=1 run dux-backend run "$ep" "$DUX_HOME" "sleep 5"
   [ "$status" -eq 2 ]
-  [[ "$output" == *"finding: herdr pane run failed for t13 on w1:p9"* ]]
-  grep -qx 'pane close w1:p9' "$FAKE_HERDR_LOG"
+  [[ "$output" == *"finding: herdr pane run failed on w1:p9"* ]]
+  [ "$(grep -c '^pane close ' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
 }
 
 @test "herdr close refuses when the focus state cannot be read" {
@@ -335,7 +323,7 @@ teardown_file() {
 @test "herdr open with no prompt still refuses to close a focused pane" {
   [ "${DUX_BACKEND:-}" = herdr ] || skip
   export FAKE_HERDR_NO_PROMPT=1 FAKE_HERDR_FOCUSED="$DUX_HOME/state/focused"; touch "$FAKE_HERDR_FOCUSED"
-  run dux-backend open t8 "$DUX_HOME" "sleep 5"
+  run dux-backend open t8 "$DUX_HOME"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: refusing to close focused pane w1:p9"* ]]
   [ "$(grep -c '^pane close ' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
@@ -344,14 +332,14 @@ teardown_file() {
 @test "herdr open with no prompt reports a failed cleanup close" {
   [ "${DUX_BACKEND:-}" = herdr ] || skip
   export FAKE_HERDR_NO_PROMPT=1 FAKE_HERDR_CLOSE_FAIL=1
-  run dux-backend open t9 "$DUX_HOME" "sleep 5"
+  run dux-backend open t9 "$DUX_HOME"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: herdr pane close failed for w1:p9"* ]]
 }
 
 @test "tmux close is a finding when window state cannot be read, and the window stays" {
   [ "${DUX_BACKEND:-}" = tmux ] || skip
-  ep="$(dux-backend open t10 "$DUX_HOME" "sleep 30")"
+  ep="$(dux-backend open t10 "$DUX_HOME")"
   FAKE_TMUX_FAIL=display-message run dux-backend close "$ep"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: cannot read tmux state for"* ]]
@@ -360,33 +348,91 @@ teardown_file() {
 
 @test "tmux close is a finding when kill-window fails" {
   [ "${DUX_BACKEND:-}" = tmux ] || skip
-  ep="$(dux-backend open t11 "$DUX_HOME" "sleep 30")"
+  ep="$(dux-backend open t11 "$DUX_HOME")"
   FAKE_TMUX_FAIL=kill-window run dux-backend close "$ep"
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: tmux kill-window failed for"* ]]
 }
 
-@test "report mirrors a status line to the herdr pane named by HERDR_PANE_ID, and is a no-op on tmux" {
+# The endpoint decides which pane is titled. The wrapper runs outside the tab
+# now and carries the orchestrator's own HERDR_PANE_ID, so a pane read from the
+# environment would title the orchestrator's pane instead of the worker's.
+@test "title names the pane in the endpoint, not one from the environment" {
   [ -n "${DUX_BACKEND:-}" ] || skip
-  HERDR_PANE_ID=w1:p9 run dux-backend report t7 idle "done: PR https://example.invalid/pr/1"
+  ep="$(dux-backend open t7 "$DUX_HOME")"
+  : > "$FAKE_HERDR_LOG"
+  HERDR_PANE_ID=w1:pORCH run dux-backend title "$ep" "proj: ship the login screen"
   [ "$status" -eq 0 ]
   if [ "$DUX_BACKEND" = herdr ]; then
-    grep -qF 'pane report-agent w1:p9 --source dux --agent dux-t7 --state idle --message done: PR https://example.invalid/pr/1' "$FAKE_HERDR_LOG"
+    grep -qF "pane report-metadata ${ep#herdr:} --title proj: ship the login screen" "$FAKE_HERDR_LOG"
+    [ "$(grep -c 'w1:pORCH' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
   else
     [ ! -s "$FAKE_HERDR_LOG" ]
   fi
 }
 
-@test "title sets the herdr sidebar title" {
-  [ "${DUX_BACKEND:-}" = herdr ] || skip
-  HERDR_PANE_ID=w1:p9 run dux-backend title "proj: ship the login screen"
-  [ "$status" -eq 0 ]
-  grep -qF 'pane report-metadata w1:p9 --title proj: ship the login screen' "$FAKE_HERDR_LOG"
+@test "title refuses an endpoint from the other backend" {
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  other=zellij:nope
+  run dux-backend title "$other" "a title"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: endpoint $other does not belong to backend $DUX_BACKEND"* ]]
 }
 
-@test "report without HERDR_PANE_ID is a finding on herdr" {
-  [ "${DUX_BACKEND:-}" = herdr ] || skip
-  run env -u HERDR_PANE_ID dux-backend report t7 working "working: x"
+# ---- pid: the pane's foreground process, by name ---------------------------
+# Four readings, the same on both adapters: the process is there and its group
+# and directory are reported; a name that is not running answers nothing; the
+# group stop from outside ends it; and once it is gone there is nothing to
+# report. On tmux the last one is the dead pane under remain-on-exit, which
+# keeps a stale pane_pid the system may hand to another process entirely.
+@test "pid reports the pane's foreground process and stops reporting once its group is stopped" {
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  ep="$(dux-backend open t40 "$DUX_HOME")"
+  run dux-backend pid "$ep" sleep
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  dux-backend run "$ep" "$DUX_HOME" "sh -c 'exec sleep 60'"
+  # The shell has to get as far as the exec before the process is there to find.
+  wait_until 15 dux-backend pid "$ep" sleep
+  run dux-backend pid "$ep" sleep
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+  pid="$(printf '%s' "$output" | cut -d' ' -f1)"
+  pgid="$(printf '%s' "$output" | cut -d' ' -f2)"
+  cwd="$(printf '%s' "$output" | cut -d' ' -f3-)"
+  [[ "$pid" =~ ^[0-9]+$ ]]
+  [ "$pgid" = "$pid" ]
+  [ "$cwd" = "$DUX_HOME" ]
+  kill -0 "$pid"
+  # A foreground process under another name is not this one.
+  run dux-backend pid "$ep" nothing
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  # The group stop Dux uses, sent from outside the pane.
+  kill -TERM -- "-$pgid"
+  wait_until 15 not_running "$pid"
+  run dux-backend pid "$ep" sleep
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  # The container outlives the process it ran, on both backends.
+  run dux-backend exists "$ep"
+  [ "$status" -eq 0 ]
+}
+
+@test "pid is a finding when the multiplexer did not answer, never a gone" {
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  ep="$(dux-backend open t41 "$DUX_HOME")"
+  if [ "$DUX_BACKEND" = herdr ]; then
+    FAKE_HERDR_PROCINFO_FAIL=1 run dux-backend pid "$ep" sleep
+    [[ "$output" == *"finding: herdr pane process-info failed for w1:p"* ]]
+  else
+    FAKE_TMUX_FAIL=list-panes run dux-backend pid "$ep" sleep
+    [[ "$output" == *"finding: tmux could not read the pane of"* ]]
+  fi
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: HERDR_PANE_ID is unset"* ]]
+}
+
+@test "herdr pid refuses a reply with no process information" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  ep="$(dux-backend open t42 "$DUX_HOME")"
+  FAKE_HERDR_PROCINFO_JUNK=1 run dux-backend pid "$ep" sleep
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: herdr pane process-info returned no process information"* ]]
 }
