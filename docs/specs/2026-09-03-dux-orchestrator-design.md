@@ -267,6 +267,10 @@ issue text; that line is what `/ship` reads for `Closes #<n>`.
 
 ### 5.4 Status protocol
 
+How the worker reaches this file when it runs as a live session in its own tab, and
+what the brief says about the operator typing to it, is in
+`2026-09-14-interactive-worker-sessions.md` sections 3 and 5.6.
+
 The worker appends to `tasks/<id>/status.log`:
 
 ```
@@ -310,6 +314,11 @@ killed part-way through replays the same handoff instead of losing it. A
 terminal-looking status line with no handoff behind it is ignored.
 
 ### 5.5 Spawn (`dux-spawn <id> [--harness claude]`)
+
+Spawn's shape changes when workers run as live sessions: the tab holds the harness, the
+wrapper is a detached supervisor, and spawn refuses a worktree Claude Code does not
+trust. `2026-09-14-interactive-worker-sessions.md` sections 5.1 and 5.2 are the
+authority for that; the rest of this section stands.
 
 `dux-task-new <project> <shape> [--source local|gh:<owner>/<repo>#<n>]`
 allocates the id, creates `tasks/<id>/` with an empty `status.log`, and appends
@@ -463,6 +472,10 @@ ledger to `dropped`, removes `data/tasks/<id>`, and prints `abandoned <id>`. It
 touches no project repository, branch or pull request.
 
 ## 6. Supervision
+
+Supervising a harness the wrapper did not fork, the beat that replaces the output file,
+and the one-worker guard's pgid read are in `2026-09-14-interactive-worker-sessions.md`
+sections 5.2, 5.5 and 6.
 
 ### 6.1 Watcher (`dux-watch`)
 
@@ -636,7 +649,9 @@ digest (section 14).
 
 ## 9. Runtime backends
 
-One adapter interface, two implementations, selected once per Dux session.
+One adapter interface, two implementations, selected once per Dux session. The `run`,
+`pid` and by-endpoint `title` verbs, and the removal of `report` and `tail`, are in
+`2026-09-14-interactive-worker-sessions.md` sections 5.2 and 9.
 
 Selection: `config/backend` if present; else `herdr` when `HERDR_ENV=1` and
 `$TMUX` is unset; else `tmux`. The innermost multiplexer wins. `dux-doctor`
@@ -1141,7 +1156,9 @@ and is sized against the cap before its plan is written (constitution principle
 ## 17. Decisions already made
 
 - Name: Dux (Latin, leader; root of conductor).
-- Workers headless, Dux interactive.
+- Workers headless, Dux interactive. Reversed by
+  `2026-09-14-interactive-worker-sessions.md`: every worker runs as a live session in its
+  own tab, and Dux still reads nothing from it.
 - Backlog ledger is local markdown. GitHub Issues are an intake source per
   project, pulled on demand, never the ledger.
 - Herdr and tmux are both supported through one adapter interface; auto-detected,
@@ -1212,6 +1229,9 @@ product; there is no build or package.
   default. The operator's global CLAUDE.md may be stricter, never required.
 
 ## 19. Harness support
+
+The launcher a worker starts from, and the process name the wrapper looks for, are in
+`2026-09-14-interactive-worker-sessions.md` section 5.2.
 
 Dux separates the harness that runs the orchestrator from the harness that runs
 workers. They are supported at different levels.
