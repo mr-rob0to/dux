@@ -61,6 +61,17 @@ backend_run() {  # endpoint cwd cmd; replaces the pane's shell with cmd
 # process group equals its pid, and `sh -c 'exec ...'` keeps the pid while the
 # command name becomes the exec'd program's.
 #
+# The name comes from ps, not from #{pane_current_command}. Measured 2026-09-14
+# with a real Claude Code 2.1.270 in a pane on macOS: tmux reported the pane's
+# command as [2.1.270] while ps -o comm= read [claude]. tmux reads the kernel's
+# short process name, which Claude Code sets to its version; ps reads argv[0],
+# which stays claude. Matching the tmux field would have meant the wrapper never
+# finding the harness it had just started, on every real run. ps is also where
+# the Herdr adapter's argv0 comes from, so both adapters now answer the same
+# question from the same place. Nothing the suite can start sets the two apart,
+# so this one is held by that measurement and by the milestone's own run, not by
+# a test. macOS pads the field and can print a path, hence the trim.
+#
 # #{pane_dead} is read first and on its own. Under remain-on-exit a dead pane
 # keeps the pid of the process that exited, which the system is free to hand to
 # something else, and #{pane_current_command} reverts to the pane's shell:
@@ -68,16 +79,16 @@ backend_run() {  # endpoint cwd cmd; replaces the pane's shell with cmd
 backend_pid() {  # endpoint name; prints "<pid> <pgid> <cwd>", 1 when it is not there
   local wid name out rest dead pid cmd cwd pgid
   wid="$(_win "$1")"; name="$2"
-  out="$(_tmux list-panes -t "$wid" -F '#{pane_dead} #{pane_pid} #{pane_current_command} #{pane_current_path}' 2>/dev/null)" \
+  out="$(_tmux list-panes -t "$wid" -F '#{pane_dead} #{pane_pid} #{pane_current_path}' 2>/dev/null)" \
     || finding "tmux could not read the pane of $wid"
   rest="$(printf '%s\n' "$out" | take_line)"
   [ -n "$rest" ] || finding "tmux listed no pane for $wid"
   dead="${rest%% *}"; rest="${rest#* }"
   [ "$dead" = 0 ] || return 1
-  pid="${rest%% *}"; rest="${rest#* }"
-  cmd="${rest%% *}"; cwd="${rest#* }"
-  [ "$cmd" = "$name" ] || return 1
+  pid="${rest%% *}"; cwd="${rest#* }"
   case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  cmd="$(ps -o comm= -p "$pid" 2>/dev/null | sed 's/^ *//; s/ *$//')"
+  [ "${cmd##*/}" = "$name" ] || return 1
   pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
   case "$pgid" in ''|*[!0-9]*) return 1 ;; esac
   printf '%s %s %s\n' "$pid" "$pgid" "$cwd"
