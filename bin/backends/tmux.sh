@@ -50,9 +50,18 @@ backend_open() {  # id cwd; opens the tab as a shell at its prompt
   echo "tmux:$ses:$wid"
 }
 
+# The command line is handed over with "exec", so that the pane's own pid is the
+# command's and not a shell sitting above it waiting. tmux reads the line with
+# the pane's shell, which is the operator's login shell or whatever
+# default-shell names, and shells disagree: measured 2026-09-15, bash and macOS
+# /bin/sh replace themselves with a single -c command while Linux's /bin/sh
+# (dash) forks and waits. Without the handover the pid `pid` reports on Linux is
+# "sh", the wrapper never finds the harness it just started, and every start
+# times out. A command line is still a command line: "exec" applies to the first
+# command in it, which is all any caller here sends.
 backend_run() {  # endpoint cwd cmd; replaces the pane's shell with cmd
   local wid; wid="$(_win "$1")"
-  _tmux respawn-pane -k -t "$wid" -c "$2" "$3" >/dev/null \
+  _tmux respawn-pane -k -t "$wid" -c "$2" "exec $3" >/dev/null \
     || finding "tmux could not start the command in $wid"
 }
 

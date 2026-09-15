@@ -436,6 +436,32 @@ teardown_file() {
   wait_until 15 not_running "$pid"
 }
 
+# tmux hands a command line it cannot read as plain words to the pane's shell,
+# and shells disagree about a single -c command: bash and macOS /bin/sh replace
+# themselves with it, Linux's /bin/sh (dash) forks and waits. A shell left
+# waiting is the pane's process, so `pid` answers "sh", the wrapper never finds
+# the harness it just started, and the start times out at two minutes. Measured
+# 2026-09-15 that was every tmux end-to-end test on Linux, and those suites are
+# what prove the ending; what is read here is the line tmux recorded, because
+# whether a shell stands in the way at all is the machine's business and this
+# reading is the same on every one of them.
+@test "tmux run hands the pane over, so the pane's own pid is the command's" {
+  [ "${DUX_BACKEND:-}" = tmux ] || skip "the Herdr pane keeps the shell it was opened with"
+  printf '#!/bin/sh\nexec sleep 60\n' > "$DUX_HOME/handover"; chmod +x "$DUX_HOME/handover"
+  ep="$(dux-backend open t43 "$DUX_HOME")"
+  tmux -L dux-test set-option -t duxtest default-shell /bin/sh
+  dux-backend run "$ep" "$DUX_HOME" "'$DUX_HOME/handover'"
+  [[ "$(tmux -L dux-test list-panes -t "${ep##*:}" -F '#{pane_start_command}')" == *"exec '$DUX_HOME/handover'"* ]]
+  wait_until 15 dux-backend pid "$ep" sleep
+  run dux-backend pid "$ep" sleep
+  [ "$status" -eq 0 ]
+  pid="$(printf '%s' "$output" | cut -d' ' -f1)"
+  [ "$pid" = "$(tmux -L dux-test list-panes -t "${ep##*:}" -F '#{pane_pid}')" ]
+  tmux -L dux-test set-option -u -t duxtest default-shell
+  kill -TERM -- "-$pid"
+  wait_until 15 not_running "$pid"
+}
+
 @test "pid is a finding when the multiplexer did not answer, never a gone" {
   [ -n "${DUX_BACKEND:-}" ] || skip
   ep="$(dux-backend open t41 "$DUX_HOME")"

@@ -217,7 +217,7 @@ cleanup_channel() {  # the channel and the references only this run owns
 # "the worker has stopped" is a question about the group, not about the one
 # process Dux happened to fork. A child that deliberately starts a session of
 # its own escapes this, and that is outside what Dux claims to contain.
-group_alive() { [ -n "$pgid" ] && kill -0 -- "-$pgid" 2>/dev/null; }
+group_alive() { [ -n "$pgid" ] && group_runs "$pgid"; }
 
 stop_group() {  # TERM, then KILL; returns 1 if anything is still there
   local i limit signals

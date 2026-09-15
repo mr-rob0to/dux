@@ -59,6 +59,24 @@ pid_runs() {  # $1 pid, $2 command-line needle ending at a word boundary
     END { exit !found }'
 }
 
+# Whether a process group still holds anything running. kill -0 is not that
+# question: it answers for a zombie too, and a process nobody has waited on stays
+# one until its parent gets round to it. Measured on Linux 2026-09-15, tmux left
+# a harness it had just killed as [claude] <defunct> for more than thirty
+# seconds, and the stop that had just worked read as a group that survived KILL.
+# A group of nothing but zombies has gone. A ps that will not answer leaves the
+# reading where kill -0 put it, because a group wrongly called gone is a worker
+# left running.
+group_runs() {  # $1 pgid; 0 while the group holds a process that is not a zombie
+  local states
+  case "$1" in ''|*[!0-9]*) return 1 ;; esac
+  kill -0 -- "-$1" 2>/dev/null || return 1
+  states="$(ps -A -o pgid=,stat= 2>/dev/null | awk -v g="$1" '$1 == g { print $2 }')" \
+    || return 0
+  [ -n "$states" ] || return 0
+  printf '%s\n' "$states" | awk '$0 !~ /^Z/ { alive = 1 } END { exit !alive }'
+}
+
 # The one place a task id is accepted, so every script that builds a path from one
 # reaches the same answer. "." and ".." would resolve $DUX_TASKS/$id to a parent.
 valid_task_id() {  # $1 id; a finding when it is not one

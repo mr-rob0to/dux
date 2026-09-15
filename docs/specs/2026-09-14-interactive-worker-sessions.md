@@ -231,7 +231,12 @@ the tab, its label, the wait for a prompt, the fail-closed close. What `run` tak
 command line and a shell reads it on both backends, so the caller quotes: the wrapper
 passes `'<launcher>'`, because a `DUX_HOME` with a space in it would otherwise reach the
 shell as a command and an argument. `worker_launcher` has already refused a path holding
-a single quote, so nothing can close the one the wrapper opens.
+a single quote, so nothing can close the one the wrapper opens. tmux hands the line to
+the pane's shell whenever it cannot read it as plain words, and the shells disagree about
+a single `-c` command: bash and macOS `/bin/sh` replace themselves with it, Linux's
+`/bin/sh` forks and waits. A shell left waiting is the pane's process, so `pid` would
+answer `sh` and the wrapper would never find the harness it had just started, which is why
+the tmux adapter prefixes `exec`.
 
 **The trust dialog.** An interactive `claude` in a directory it has not seen asks whether
 to trust the folder before it reads its prompt, and the cursor sits on "No, exit". Print

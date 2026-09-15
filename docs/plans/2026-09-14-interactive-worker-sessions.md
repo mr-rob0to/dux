@@ -354,6 +354,13 @@ and the real multiplexers.
 - **`--stop`.** A fourth run left to go stale: `dux-recover <id>` printed the status tail
   and the fixed output line with no fence of the worker's, and `--stop` left `ended` for
   the watcher, which applied it.
+- **What the run could not see.** That whole run was on macOS, and Ubuntu CI then found
+  two things macOS cannot reach: tmux hands a command line to the pane's shell and only
+  bash and macOS `/bin/sh` replace themselves with it, and `kill -0` answers on Linux for
+  a process that has exited and not been waited on. Both are fixed in this branch, with
+  the measurements in `bin/backends/tmux.sh` and `bin/dux-env`. The reading for next time
+  is that one operating system is not the matrix: the suites that would have caught both
+  never ran on Linux, because that job stops at the first failure.
 
 Three defects the run found, all fixed in the same branch: the trust check passed a
 repository under a trusted parent, the harness start window was too short for a real

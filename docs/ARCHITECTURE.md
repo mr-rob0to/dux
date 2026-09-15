@@ -125,7 +125,9 @@ Rules that shape every component:
 `backend_title` with identical arguments. `open` makes a container holding a
 shell and nothing else, and prints its endpoint; `run` hands that shell one
 command line, which a shell reads on both backends, so a path in it is the
-caller's to quote; `pid` prints `<pid> <pgid> <cwd>` for the process the shell is
+caller's to quote, and the tmux adapter prefixes `exec` so that the pane's own
+pid is the command's on a machine whose `/bin/sh` forks instead of replacing
+itself; `pid` prints `<pid> <pgid> <cwd>` for the process the shell is
 running, exit 1 for "nothing there yet" and exit 2 for a multiplexer that could
 not answer. `title` names the tab and is a no-op under tmux. No verb reads what
 a pane has drawn: the worker's screen belongs to the operator, and a contract
@@ -457,7 +459,10 @@ text, not about a hostile program.
 
 - It contains the ordinary process group. A child that deliberately starts a
   session of its own escapes it, and a survivor of TERM and KILL is a finding
-  with no result, never a quiet success.
+  with no result, never a quiet success. What counts as a survivor is read from
+  `ps`, not from `kill -0`: a process nobody has waited on is still a process
+  there, and on Linux `kill -0` answers for it, so a group of nothing but those
+  is a group that has gone.
 - It caps what a worker can say: 200 bytes a status line, 64 KiB of status
   proposals, 1 MiB of report. It does not cap what a worker can do inside its
   own worktree with the operator's own rights.
