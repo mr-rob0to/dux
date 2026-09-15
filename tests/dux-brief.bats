@@ -49,9 +49,12 @@ setup_task() {  # $1 shape; prints id
   grep -qxF -- "- Tasks: 3-5" "$b"
   grep -qF '/ship' "$b"
   grep -qF 'done: PR <url>' "$b"
-  grep -qF 'uname -s' "$b"
-  grep -qF 'docker run -d --init' "$b"
-  grep -qF 'ubuntu:24.04' "$b"
+  # The host check and the Docker fallback must be one conditional rule the
+  # worker evaluates itself, not two independent lines.
+  line="$(grep -F 'uname -s' "$b")"
+  [ "$(printf '%s\n' "$line" | wc -l | tr -d ' ')" -eq 1 ]
+  [[ "$line" == *"docker run -d --init"* ]]
+  [[ "$line" == *"ubuntu:24.04"* ]]
 }
 
 @test "plan brief carries the design-review rule and refuses --tasks" {
