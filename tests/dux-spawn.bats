@@ -20,14 +20,14 @@ setup() {
   # Spawn refuses to open a tab in a directory Claude Code has not been told to
   # trust, so every test that expects a start needs a trusted one, and the fake
   # harness has to carry the name the adapter looks for.
-  trust_suite_root
+  trust_suite_root proj other
   harness_shim
   export DUX_SPAWN_START_SECS=20
   dux-lock acquire >/dev/null
 }
 
 # The trusted fixture is shared (helpers/setup). This file also needs the two
-# other readings: another path trusted, and a file that trusts nothing.
+# other readings: some other path trusted, and a file that trusts nothing.
 trust_home() {  # [$1 path to trust]
   CLAUDE_CONFIG_DIR="$DUX_HOME/claude-config"; export CLAUDE_CONFIG_DIR
   mkdir -p "$CLAUDE_CONFIG_DIR"
@@ -443,7 +443,16 @@ exit 2")"
   printf 'not json' > "$CLAUDE_CONFIG_DIR/.claude.json"
   run dux-spawn "$id"
   [ "$status" -eq 2 ]; [[ "$output" == *"is not trusted by Claude Code"* ]]
-  # Trusting the repository is enough: the worktree under it inherits it.
+  # A trusted folder above the repository is not the repository. Measured on
+  # Claude Code 2.1.271, 2026-09-15: a fresh repository under a trusted parent
+  # still raises the dialog, so a spawn that took the parent for an answer
+  # would leave the worker sitting at it.
+  trust_home "$DUX_HOME"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == *"is not trusted by Claude Code"* ]]
+  [ "$(grep -c '^tab create' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
+  # Trusting the repository is enough: the worktree is one of its worktrees, and
+  # Claude Code resolves a worktree to the repository it was made from.
   trust_home "$DUX_HOME/proj"
   run dux-spawn "$id"
   [ "$status" -eq 0 ]

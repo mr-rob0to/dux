@@ -13,7 +13,9 @@
   reviewed. The operator's two changes: the live session is the default for every
   worker, and the harness is the tab's own process found by pid, not a child the wrapper
   forks.
-- Tasks 1 to 5 landed 2026-09-14. The milestone acceptance run is next, then `/ship`.
+- Tasks 1 to 5 landed 2026-09-14. The milestone acceptance run followed on 2026-09-15
+  and holds; it is recorded under "Milestone acceptance", with the three defects it
+  found and their fixes. Next is `/ship`.
 - Merges as one ship PR of five tasks.
 
 **Divergences from the approved plan**
@@ -24,6 +26,24 @@
   now compares `handoff_next_seq` before and after, which sees a published result
   whether or not it has been applied. Two lines; it is the same behaviour the comment
   above it already claimed.
+- Task 4's trust check asks about the project, not the worktree and not an ancestor. The
+  plan and the spec said the worktree path or one of its ancestors, from a measurement
+  that a directory under a trusted path starts without the dialog. The milestone
+  acceptance run found the gap: a fresh repository under the trusted
+  `~/Documents/dev/projects` raised the dialog anyway, the check had passed it, and the
+  worker sat there holding the slot. Five probes on Claude Code 2.1.271 settled it, and
+  they are in spec section 5.2: what Claude Code trusts is the repository. A directory is
+  trusted as the repository it is in, a linked worktree resolves to the repository it was
+  made from (proved at `/tmp`, outside every trusted path), and an ancestor counts only
+  where no repository sits between. So the check asks about the project path alone, which
+  is the path the registry already holds and the one the finding already named.
+- Two defaults and one flag moved after the milestone acceptance run, all measured
+  against the real Herdr and the real Claude Code on 2026-09-15. `DUX_WRAP_START_SECS`
+  goes from 30 to 120: a real start took 40s on a quiet machine, and the first Herdr
+  acceptance run refused a session that was on its way. `herdr pane report-metadata`
+  needs `--source`, which the adapter did not pass, so every worker tab went untitled and
+  the wrapper logged "title not set on this backend"; the fake now refuses the call
+  without it, as the real CLI does.
 - Task 4's "refused before the harness started" case is proved with a stub wrapper, not
   with the real one and its settings file removed as the plan's acceptance says. The
   real wrapper writes its pidfile (`:84`) before it opens its run record (`:204`), so
@@ -67,20 +87,24 @@ Only what the spec does not carry.
 - **`dux-backend pid` output** is one line, three words: `<pid> <pgid> <cwd>`. Exit 0 with
   the line, exit 1 with nothing when no foreground process named `<name>` is there yet or
   the tmux pane is dead, exit 2 with a finding when the multiplexer did not answer.
-- **The trust check** reads `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` with `jq` and
-  walks from the worktree path to `/`, looking for
-  `.projects[<path>].hasTrustDialogAccepted == true`. Tests point `HOME` at a fixture.
-  Missing file, bad JSON and no match are the one finding in spec section 5.2.
+- **The trust check** reads `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` with `jq` and asks
+  one question about one path, the project's own:
+  `.projects[<project path>].hasTrustDialogAccepted == true`. Tests point
+  `CLAUDE_CONFIG_DIR` at a fixture. Missing file, bad JSON and no match are the one
+  finding in spec section 5.2. The ancestor walk the plan first described is gone; the
+  divergence at the top of this file has the measurement that removed it.
 - **Spawn's wait** ends on the first of: the pidfile names a live wrapper; the wrapper's
   pid is gone; `DUX_SPAWN_START_SECS` elapses. The two refusal wordings are in spec
   section 5.1; a handoff directory for the id is what tells them apart.
 - **The wrapper's start window.** `pid` is polled once a second for `DUX_WRAP_START_SECS`
-  (default 30). The refusal wording: `the harness for <id> did not appear in its pane
-  within 30s`. Spawn's own window, `DUX_SPAWN_START_SECS` (default 10), is for the wrapper
-  pid, not the harness.
-- **Task 4's tests need a trusted `HOME`.** Every spawn test that expects a start points
-  `HOME` at a fixture whose `.claude.json` trusts the suite's temporary root; the
-  refusal test uses one that trusts nothing.
+  (default 120; the plan said 30, and the divergence at the top of this file has the
+  measurement that moved it). The refusal wording: `the harness for <id> did not appear in
+  its pane within <n>s`. Spawn's own window, `DUX_SPAWN_START_SECS` (default 10), is for
+  the wrapper pid, not the harness.
+- **Task 4's tests need a trusted project.** Every spawn test that expects a start points
+  `CLAUDE_CONFIG_DIR` at a fixture whose `.claude.json` trusts the test project's own
+  path; the refusal test uses one that trusts nothing, and one that trusts only the
+  folder above the repository.
 - **Tests that drive the wrapper directly** open a real tmux window under the suite's
   socket directory, write `state/<id>.endpoint`, and set the fake's variables with
   `tmux set-environment` on that session; the wrapper is then run from the worktree as
@@ -288,7 +312,13 @@ constitution names no `.out` file and `AGENTS.md` names the new version.
       fails, the file remains. Restore. Paste.
 - [x] The two skills, `docs/ARCHITECTURE.md`, `docs/constitution.md` and `AGENTS.md` as
       the interface says.
-- [ ] `make check` green, `bin/dux-doctor` passing, then `/ship`.
+- [x] `make check` green, `bin/dux-doctor` passing, then `/ship`. Two standing reads:
+      `lint-identifiers` fails on this machine on `main` as well, on `fitfights_api` in
+      plans and specs from September 3rd to 9th that this branch does not touch, and CI
+      skips that target; `dux-doctor` fails only its registry check in a worktree,
+      because `data/` is per-home state and this one has no projects, and it passed in
+      the acceptance run's own home. Everything else is green: 25 unit suites, all
+      eight matrix jobs, shellcheck and the pipe lint.
 
 ## Milestone acceptance
 
@@ -302,6 +332,34 @@ constitution names no `.out` file and `AGENTS.md` names the new version.
   third run yields `ended` within one poll and frees the one-worker guard.
 - The constitution's gates: shellcheck and bash 3.2 clean, identifier lint clean,
   `ARCHITECTURE.md` in the same PR, `/ship` the only gate.
+
+**The run, 2026-09-15.** Four real scout tasks against a scratch repository, under a
+`DUX_HOME` of its own so nothing touched the operator's fleet, with the real Claude Code
+and the real multiplexers.
+
+- **tmux.** The tab came up on the Claude Code screen with no trust dialog. The beat
+  file's mtime moved while the session worked. The worker's own terminal line ended the
+  run: handoff `done | done: report`, `report.md` "3 shell scripts under bin/",
+  `done:` in `state/events.log`, and the watcher applying it, ledger `done`. One gap
+  against the line above: `data/backlog.md` itself was not read, and the scratch home is
+  gone, so the ledger is the evidence there.
+- **Herdr.** Same start, and `herdr tab list` showed the task's tab. A line typed into
+  the tab by hand was acted on by the session: the report came back with the word the
+  line asked for and nothing else. Then the terminal line, `done`, and the tab stayed
+  open with its scrollback. Read "Herdr lists the agent" above as the tab list, not the
+  agent list: the design reports no agent state to Herdr at all (spec section 5.4), so
+  nothing registers the worker as an agent, and a test asserts that.
+- **Closing the tab.** A third run's tab closed by hand: the watcher's next poll wrote
+  `ended`, and the one-worker guard let the next spawn through.
+- **`--stop`.** A fourth run left to go stale: `dux-recover <id>` printed the status tail
+  and the fixed output line with no fence of the worker's, and `--stop` left `ended` for
+  the watcher, which applied it.
+
+Three defects the run found, all fixed in the same branch: the trust check passed a
+repository under a trusted parent, the harness start window was too short for a real
+start, and the Herdr title call was missing `--source`. The first and the third changed
+an assertion and were broken and seen to fail; the second is a default with no assertion
+of its own. The divergences at the top of this file carry the measurements.
 
 ## Risks
 

@@ -140,6 +140,8 @@ case "$1 ${2:-}" in
                 foreground_processes:[],pane_id:"w1:p9"},type:"pane_process_info"}}'
     fi ;;
   "pane report-metadata")
+    # --source is required by the real CLI, which exits non-zero without it.
+    case " $* " in *" --source "*) ;; *) echo "fake herdr: report-metadata needs --source" >&2; exit 2 ;; esac
     [ -n "${FAKE_HERDR_SLOW_METADATA:-}" ] && sleep "$FAKE_HERDR_SLOW_METADATA"
     echo '{"result":{}}' ;;
   "notification show")

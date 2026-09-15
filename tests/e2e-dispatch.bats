@@ -155,7 +155,7 @@ container_gone() {  # $1 endpoint
   id="$(fixture_task proj scout)"
   dux-spawn "$id" >/dev/null
   wait_file "$DUX_HOME/state/$id.handoffs/1/status" 30
-  grep -qF "pane report-metadata w1:p9 --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
+  grep -qF "pane report-metadata w1:p9 --source dux --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
   [ "$(grep -c 'report-agent' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
   [ "$(grep -c 'starting' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
 }

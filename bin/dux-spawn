@@ -189,17 +189,26 @@ fi
 # unattended run. So the answer is read before the tab opens, out of the
 # operator's own file, and never written: Claude Code rewrites that file from
 # every live session, so a Dux write would race the operator's.
-trusted_worktree() {  # $1 a path; 0 when it or an ancestor is trusted
-  local conf p="$1"
+#
+# The question is asked about the project, not about the worktree. Measured on
+# Claude Code 2.1.271, 2026-09-15: a directory inside a git repository is
+# trusted as that repository, and a linked worktree resolves to the repository
+# it was made from, so a worktree of a trusted repository starts with no dialog
+# wherever it sits, even outside the repository's own directory. A trusted
+# ancestor counts for a plain directory and not for a repository: a fresh
+# repository under a trusted parent still asks. So an ancestor walk would pass a
+# project whose worker then sits at the dialog, which is the one thing this
+# check exists to prevent.
+trusted_project() {  # $1 the project's own path; 0 when Claude Code trusts it
+  local conf p
   conf="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
   [ -s "$conf" ] || return 1
-  while :; do
-    jq -e --arg p "$p" '.projects[$p].hasTrustDialogAccepted == true' "$conf" >/dev/null 2>&1 && return 0
-    case "$p" in /|.|'') return 1 ;; esac
-    p="$(dirname "$p")"
-  done
+  # Claude Code records the path the kernel agrees on, so ask with that one.
+  p="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  [ -n "$p" ] || return 1
+  jq -e --arg p "$p" '.projects[$p].hasTrustDialogAccepted == true' "$conf" >/dev/null 2>&1
 }
-if ! trusted_worktree "$wt"; then
+if ! trusted_project "$project_path"; then
   undo
   finding "$project_path is not trusted by Claude Code; open a session in it once and answer \"Yes, I trust this folder\""
 fi

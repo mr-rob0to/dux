@@ -95,14 +95,25 @@ root_with_stub() {  # $1 script name, $2 body; prints the root
 }
 
 # Claude Code records the folders the operator has trusted, and dux-spawn will
-# not open a tab in one that is not there. The fixture trusts the suite's own
-# root under a CLAUDE_CONFIG_DIR of its own, so the operator's real file is
-# neither read nor written.
-trust_suite_root() {
+# not open a tab for a project that is not there. Trust is per repository, so
+# the fixture names the projects themselves and never the suite root above
+# them: a trusted parent does not trust a repository inside it, and a fixture
+# that trusted the root would pass a spawn the real thing would leave sitting
+# at the dialog. The file lives under a CLAUDE_CONFIG_DIR of the suite's own,
+# so the operator's real one is neither read nor written.
+trust_suite_root() {  # [project names]; default proj
+  local n
   CLAUDE_CONFIG_DIR="$DUX_HOME/claude-config"; export CLAUDE_CONFIG_DIR
   mkdir -p "$CLAUDE_CONFIG_DIR"
-  jq -n --arg p "$DUX_HOME" '{ projects: { ($p): { hasTrustDialogAccepted: true } } }' \
-    > "$CLAUDE_CONFIG_DIR/.claude.json"
+  echo '{"projects":{}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
+  [ "$#" -gt 0 ] || set -- proj
+  for n in "$@"; do trust_path "$DUX_HOME/$n"; done
+}
+
+trust_path() {  # $1 a path; adds one trusted entry to the suite's own config
+  local f="$CLAUDE_CONFIG_DIR/.claude.json"
+  jq --arg p "$1" '.projects[$p] = { hasTrustDialogAccepted: true }' "$f" > "$f.tmp" \
+    && mv "$f.tmp" "$f"
 }
 
 # A fake harness whose process really is called claude, for any test where the

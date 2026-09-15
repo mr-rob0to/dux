@@ -221,17 +221,24 @@ the tab, its label, the wait for a prompt, the fail-closed close.
 
 **The trust dialog.** An interactive `claude` in a directory it has not seen asks whether
 to trust the folder before it reads its prompt, and the cursor sits on "No, exit". Print
-mode skips the question (`claude --help`, under `-p`); a live session does not. Measured
-2026-09-14 on Claude Code 2.1.270, in a tmux pane: a fresh directory outside any trusted
-path shows the dialog; a directory under a path the operator has trusted starts without
-it. Trust is recorded per path as `projects.<path>.hasTrustDialogAccepted` in the
-operator's own `~/.claude.json` (under `CLAUDE_CONFIG_DIR` when the orchestrator's
-environment sets it), and a worktree under a trusted repository inherits it. A worker
+mode skips the question (`claude --help`, under `-p`); a live session does not. Trust is
+recorded per path as `projects.<path>.hasTrustDialogAccepted` in the operator's own
+`~/.claude.json` (under `CLAUDE_CONFIG_DIR` when the orchestrator's environment sets it).
+Measured 2026-09-15 on Claude Code 2.1.271, in tmux panes, five directories: a plain
+directory under a trusted path starts without the dialog, at one level down and at two; a
+git repository under that same trusted path shows it; a directory inside an untrusted
+repository shows it; and a linked worktree of a trusted repository starts without it even
+when the worktree sits outside the repository's own directory, in `/tmp`. So the unit
+Claude Code trusts is the repository, not the directory and not the ancestor: a directory
+in a repository is trusted as that repository, a worktree resolves to the repository it
+was made from, and an ancestor counts only where there is no repository between. A worker
 sitting at that dialog would pass discovery (a `claude` pid in the right directory),
 never move the beat, and hold the slot until the stale wake, on every unattended run.
-So `dux-spawn` checks before it opens the tab: the worktree path or one of its ancestors
-must be trusted in that file, read through `jq` and never written. Otherwise the finding
-is `<repo> is not trusted by Claude Code; open a session in it once and answer "Yes, I
+So `dux-spawn` checks before it opens the tab: the project's own path, the one the
+registry holds, must be trusted in that file, read through `jq` and never written. Not
+the worktree, which is new on every task and has never been seen; not an ancestor, which
+would pass a repository whose worker then sits at the dialog. Otherwise the finding is
+`<repo> is not trusted by Claude Code; open a session in it once and answer "Yes, I
 trust this folder"`, and the task stays `queued`. A file that is missing or does not
 parse is the same finding. Rejected: writing the trust entry from Dux, because Claude
 Code rewrites that file from every live session and a Dux write races the operator's
@@ -257,7 +264,7 @@ where an install that shows another name would change. Measured 2026-09-14:
   under `remain-on-exit` keeps a stale `pane_pid` that the system can recycle, so the
   adapter reads `#{pane_dead}` first and exits 1 on it outright.
 
-The wrapper polls `pid` every second for up to `DUX_WRAP_START_SECS` (default 30) until it
+The wrapper polls `pid` every second for up to `DUX_WRAP_START_SECS` (default 120) until it
 answers with the adapter's name and the worktree as `cwd`; anything else at the end of that window
 is a refusal, `the harness for <id> did not appear in its pane`, published as `failed`
 like every wrapper refusal. It then writes the group to `state/<id>.pgid`, the file that

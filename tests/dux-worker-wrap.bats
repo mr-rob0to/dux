@@ -669,7 +669,7 @@ EOF
   pane="${ep#herdr:}"
   (cd "$wt" && DUX_BACKEND=herdr dux-worker-wrap "$id")
   [ "$(handoff_status)" = "done: report" ]
-  grep -qF "pane report-metadata $pane --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
+  grep -qF "pane report-metadata $pane --source dux --title proj: Do the thing the operator asked for." "$FAKE_HERDR_LOG"
   # No agent state, and not one word the worker wrote.
   [ "$(grep -c 'report-agent' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
   [ "$(grep -c 'starting' "$FAKE_HERDR_LOG" || true)" -eq 0 ]

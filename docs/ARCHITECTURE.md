@@ -240,8 +240,11 @@ the tab and catches a worker in a server whose socket vanished.
    finding; no example at all is a log line.
 5. Spawn opens the tab, then starts the wrapper beside it. First it asks Claude
    Code whether it trusts the project: `hasTrustDialogAccepted` for the project
-   path or one of its ancestors in `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`.
-   An untrusted path is a finding naming the project and how to fix it, and
+   path itself in `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`. It is the project
+   and not the worktree, and not an ancestor of either: Claude Code trusts a
+   directory as the repository it is in, resolves a linked worktree to the
+   repository it was made from, and asks again for a repository whose parent is
+   trusted. An untrusted project is a finding naming it and how to fix it, and
    nothing is opened, because the harness would otherwise raise its "do you
    trust this folder" dialog in the worker's tab and wait there for a keystroke
    nobody is watching for. Then `dux-backend open <id> <wt>` makes a tab holding
@@ -276,7 +279,7 @@ the tab and catches a worker in a server whose socket vanished.
    the wrapper used to do to its own environment before forking has to travel
    in it. The wrapper titles the tab, runs the launcher in it with `dux-backend
    run`, and then asks `dux-backend pid` once a second, for up to
-   `DUX_WRAP_START_SECS` (30 seconds), what that pane is running. The answer
+   `DUX_WRAP_START_SECS` (120 seconds), what that pane is running. The answer
    counts only when it carries the harness's own process name and the task
    worktree as its directory; a harness that never appears, or a multiplexer
    that cannot say, is a refusal rather than a guess. The process group that

@@ -113,8 +113,12 @@ backend_notify() {  # title body
   herdr notification show "$1" --body "$2" --sound "done" >/dev/null 2>&1 || true
 }
 
+# --source names who is reporting, so several reporters can set and clear their
+# own metadata on one pane. It is required: measured 2026-09-15 against Herdr's
+# own CLI, report-metadata without it exits non-zero and sets nothing, which is
+# how the milestone acceptance run found every worker tab untitled.
 backend_title() {  # endpoint text
   local pane; pane="$(_pane "$1")"
-  herdr pane report-metadata "$pane" --title "$2" >/dev/null 2>&1 \
+  herdr pane report-metadata "$pane" --source dux --title "$2" >/dev/null 2>&1 \
     || finding "herdr pane report-metadata failed for $pane"
 }

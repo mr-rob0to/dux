@@ -364,7 +364,7 @@ teardown_file() {
   HERDR_PANE_ID=w1:pORCH run dux-backend title "$ep" "proj: ship the login screen"
   [ "$status" -eq 0 ]
   if [ "$DUX_BACKEND" = herdr ]; then
-    grep -qF "pane report-metadata ${ep#herdr:} --title proj: ship the login screen" "$FAKE_HERDR_LOG"
+    grep -qF "pane report-metadata ${ep#herdr:} --source dux --title proj: ship the login screen" "$FAKE_HERDR_LOG"
     [ "$(grep -c 'w1:pORCH' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
   else
     [ ! -s "$FAKE_HERDR_LOG" ]
