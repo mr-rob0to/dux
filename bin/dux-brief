@@ -82,7 +82,8 @@ esac
 shape_rules() {
   case "$shape" in
     plan)  echo "- The design review is a subagent inside this task; the docs-only PR is the approval artifact; never wait on the operator." ;;
-    ship)  echo "- Deliver through /ship; it is the only gate. Never open a PR by hand." ;;
+    ship)  echo "- Deliver through /ship; it is the only gate. Never open a PR by hand."
+           echo "- If your change touches process handling, stat, readlink, sed -i, date, mktemp, find, or file identity by device:inode, run the suite in a non-root user inside \`docker run -d --init -v <repo>:<repo> -w <worktree> ubuntu:24.04 sleep infinity\` before pushing; macos-bash32 alone will not catch what check (Linux) catches." ;;
     scout) echo "- Read only. Change nothing in the worktree; write findings to the report file." ;;
   esac
 }
