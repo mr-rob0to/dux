@@ -116,6 +116,12 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$p6" == *'trusted to act with the operator account'* ]]
   [[ "$p6" == *'untrusted application data'* ]]
   [[ "$p6" == *'not an authentication boundary'* ]]
+  # The worker's tab is a path for worker text that Dux does not mediate at all,
+  # so the rule about operator-facing text has to say so rather than claim every
+  # path runs through recovery. The pane-reader test below is its other half:
+  # this one keeps the prose true, that one keeps the code true.
+  [[ "$p6" == *"worker's own tab is the operator's screen"* ]]
+  [[ "$p6" == *'neither reads it nor relays it'* ]]
   grep -qE '^\*\*Version\*\*: 2\.[0-9]+\.[0-9]+ ' "$DUX_ROOT/docs/constitution.md"
 }
 

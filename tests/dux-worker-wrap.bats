@@ -866,8 +866,10 @@ EOF
   export DUX_WRAP_START_SECS=2
   run wrap
   [ "$status" -eq 2 ]
-  [[ "$output" == *"the harness for $id did not appear in its pane within 2s"* ]]
-  [ "$(handoff_status)" = "failed: wrapper: the harness for $id did not appear in its pane within 2s" ]
+  # And the refusal says what to do about the pane, because this is the refusal
+  # that can leave a session running with no group file to hold the slot.
+  [[ "$output" == *"the harness for $id did not appear in its pane within 2s; if a session is running there, end it in the tab before starting another task"* ]]
+  [ "$(handoff_status)" = "failed: wrapper: the harness for $id did not appear in its pane within 2s; if a session is running there, end it in the tab before starting another task" ]
   [ "$(handoff_event)" = failed ]
   # Nothing was supervised, so no group was ever recorded.
   [ ! -e "$DUX_HOME/state/$id.pgid" ]

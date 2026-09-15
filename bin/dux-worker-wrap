@@ -370,6 +370,12 @@ worker_launcher "$launcher" "$c_brief" "$model" "$effort" "$c_settings" "$DUX_RO
 # pane's shell with it, and the exec chain takes a moment to settle. Anything
 # else at the end of the window is a refusal rather than a guess, because a
 # wrapper supervising the wrong process would report on the wrong thing.
+#
+# Both refusals below say to end the session in the tab, because a refusal here
+# is the one that can leave one running: the launcher has already gone to the
+# pane, and a harness this never named leaves no group file, so nothing holds
+# the one-worker slot for it. The operator reads that sentence with the failed
+# wake, in front of the tab it names.
 hname="$(worker_process_name)"
 hpid=""; waited=0
 while [ "$waited" -lt "$start_secs" ]; do
@@ -382,12 +388,12 @@ while [ "$waited" -lt "$start_secs" ]; do
   elif [ "$prc" != 1 ]; then
     # 1 is "not there yet". Anything else is the multiplexer itself failing, and
     # waiting out the window would report that as a harness that never started.
-    refuse "the multiplexer could not say what is running in the tab for $id at $endpoint"
+    refuse "the multiplexer could not say what is running in the tab for $id at $endpoint; if a session is running there, end it in the tab before starting another task"
   fi
   waited=$((waited + 1)); sleep 1
 done
 [ -n "$hpid" ] \
-  || refuse "the harness for $id did not appear in its pane within ${start_secs}s"
+  || refuse "the harness for $id did not appear in its pane within ${start_secs}s; if a session is running there, end it in the tab before starting another task"
 echo "$pgid" > "$pgidfile" \
   || { kill -TERM -- "-$pgid" 2>/dev/null || true; refuse "cannot write $pgidfile"; }
 # A signal that arrived before there was a group to send it to did nothing, and

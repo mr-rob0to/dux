@@ -281,7 +281,15 @@ where an install that shows another name would change. Measured 2026-09-14:
 The wrapper polls `pid` every second for up to `DUX_WRAP_START_SECS` (default 120) until it
 answers with the adapter's name and the worktree as `cwd`; anything else at the end of that window
 is a refusal, `the harness for <id> did not appear in its pane`, published as `failed`
-like every wrapper refusal. It then writes the group to `state/<id>.pgid`, the file that
+like every wrapper refusal. Both refusals in this window end with `if a session is running
+there, end it in the tab before starting another task`, because this is the one refusal that
+can leave one running: the launcher has already gone to the pane, and a harness the wrapper
+never named leaves no `state/<id>.pgid`, so nothing holds the one-worker slot for it. The
+operator reads that sentence with the `failed` wake, in front of the tab it names. A marker
+written before `run` and cleared on discovery would hold the slot without asking them, and
+is the shape to reach for if this is ever seen; it is a fifth reference for teardown and
+recovery to own, which is why it is not built here.
+It then writes the group to `state/<id>.pgid`, the file that
 already holds the harness's group today (`:374`) and that teardown
 (`bin/dux-teardown:97-104`) and recovery (`bin/dux-recover:193-210`) already read.
 
