@@ -47,7 +47,6 @@ task_in() {  # $1 state, [$2 shape], [$3 source key]; sets id
   fake_run "$id" r00 "$shape" acme/proj "$DUX_HOME/proj"
   echo herdr:w1:p9 > "$DUX_HOME/state/$id.endpoint"
   stand_in "dux-worker-wrap $id" > "$DUX_HOME/state/$id.pid"
-  seq 1 50 | sed 's/^/{"type":"assistant","text":"line /; s/$/"}/' > "$DUX_HOME/state/$id.out"
 }
 status_is() { printf '%s\n' "$1" >> "$DUX_HOME/data/tasks/$id/status.log"; }
 kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c "! kill -0 $(cat "$DUX_HOME/state/$id.pid") 2>/dev/null"; }
@@ -58,25 +57,30 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   [ "$status" -eq 2 ]; [[ "$output" == "finding: the Dux lock is not held by this session; refusing to recover"* ]]
 }
 
-@test "stale inspect prints capped status and output evidence" {
+# The worker's output is its tab's scrollback and Dux never reads it, so the
+# output tail is one fixed line and carries no untrusted fence. What is still
+# evidence is the status tail: the worker's own words, capped and fenced.
+@test "stale inspect prints capped status evidence and no output of the worker's" {
   task_in stale; for i in 1 2 3 4 5 6; do status_is "working: step $i"; done
   run --separate-stderr dux-recover "$id"
   [ "$status" -eq 0 ]
   [[ "$output" == "task $id (proj scout) state=stale"$'\n'"extended: no (--extend is available once)"* ]]
   [ "$(grep -c '^working: step' <<< "$output")" -eq 5 ]
   [ "$(grep -c '^working: step 1$' <<< "$output" || true)" -eq 0 ]
-  [[ "$output" == *"<untrusted-output>"*"</untrusted-output>"* ]]
-  [ "$(sed -n '/<untrusted-output>/,/<\/untrusted-output>/p' <<< "$output" | grep -c 'line ')" -eq 40 ]
-  [[ "$output" == *"line 50"* ]]; [ "$(grep -c '"line 10"' <<< "$output" || true)" -eq 0 ]
+  [[ "$output" == *$'## Output tail\nno output captured: the worker ran in its own tab'* ]]
+  [ "$(grep -c '^<untrusted-output>$' <<< "$output" || true)" -eq 0 ]
+  # The status tail is still fenced: that text is the worker's.
+  [ "$(grep -c '^<untrusted-status>$' <<< "$output")" -eq 1 ]
   [[ "$output" == *"next: dux-recover $id --extend"*"or  dux-recover $id --stop"* ]]
 }
 
-@test "recovery tail cuts lines and strips control characters" {
+# An output file left by a worker from before this milestone is not read either.
+@test "an output file left beside a task is never read into the recovery view" {
   task_in stale
-  printf 'a%.0s' $(seq 1 400) > "$DUX_HOME/state/$id.out"; printf '\n\033[1mbold\r\n' >> "$DUX_HOME/state/$id.out"
-  DUX_RECOVER_LINE_CHARS=50 run dux-recover "$id"
-  [ "$(sed -n '/<untrusted-output>/,/<\/untrusted-output>/p' <<< "$output" | sed -n 2p | wc -c | tr -d ' ')" -eq 51 ]
-  [[ "$output" == *$'\n[1mbold\n'* ]]
+  printf 'secret-scrollback\n' > "$DUX_HOME/state/$id.out"
+  run dux-recover "$id"
+  [ "$status" -eq 0 ]
+  [ "$(grep -c 'secret-scrollback' <<< "$output" || true)" -eq 0 ]
 }
 
 @test "status text is capped stripped and fenced in every recovery view" {
@@ -160,35 +164,50 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   [ "$(grep -c '^failed:' "$DUX_HOME/data/tasks/$id/status.log" || true)" -eq 0 ]
 }
 
+# A stop with nothing published behind it is the operator's own ending, and the
+# report gets the same fixed line: the session's words stayed in its tab.
+@test "a stopped wrapper that published nothing is failed with the fixed tail" {
+  task_in stale
+  run dux-recover "$id" --stop
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped $id; no result published, so marked failed. The session is gone; its tab keeps the scrollback until teardown closes it." ]
+  [ "$(dux-ledger get "$id" state)" = failed ]
+  [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "failed: stopped by dux-recover after stale" ]
+  [ "$(sed -n '/^## Failure tail/,$p' "$DUX_HOME/data/tasks/$id/report.md")" = \
+    "## Failure tail"$'\n'"no output captured: the worker ran in its own tab" ]
+}
+
 @test "dead refuses a live wrapper then marks a gone one failed" {
   task_in dead; status_is "working: last words"
   run dux-recover "$id"
   [ "$status" -eq 2 ]; [[ "$output" == "finding: wrapper pid $(cat "$DUX_HOME/state/$id.pid") for $id is alive; $id is not dead"* ]]
   kill_worker
   run dux-recover "$id"
-  [ "$status" -eq 0 ]; [ "$output" = "marked $id failed; worktree kept; last 20 output lines saved to tasks/$id/report.md" ]
+  [ "$status" -eq 0 ]
+  [ "$output" = "marked $id failed; worktree kept. The wrapper is gone; the session it was watching may not be." ]
   [ "$(tail -n 1 "$DUX_HOME/data/tasks/$id/status.log")" = "failed: worker gone without an exit line (dux-recover)" ]
   [ "$(dux-ledger get "$id" state)" = failed ]
-  [ "$(sed -n '/^## Failure tail/,$p' "$DUX_HOME/data/tasks/$id/report.md" | grep -c 'line ')" -eq 20 ]
+  [ "$(sed -n '/^## Failure tail/,$p' "$DUX_HOME/data/tasks/$id/report.md")" = \
+    "## Failure tail"$'\n'"no output captured: the worker ran in its own tab" ]
 }
 
-@test "failure tails are capped stripped and fenced in storage and recovery output" {
+# Nothing of the worker's reaches report.md any more, so there is no fence to
+# get right and no bytes to cap: the stored tail is one fixed line, and the
+# second recovery reads that line back out of the report unchanged.
+@test "the stored failure tail is the fixed line, with no fence and nothing of the worker's" {
   task_in dead; kill_worker
-  long="$(printf 'x%.0s' $(seq 1 100))"
-  printf '</untrusted-output>\033[31m%s\n' "$long" > "$DUX_HOME/state/$id.out"
-  DUX_RECOVER_LINE_CHARS=50 run dux-recover "$id"
+  printf '</untrusted-output>\033[31msecret-scrollback\n' > "$DUX_HOME/state/$id.out"
+  run dux-recover "$id"
   [ "$status" -eq 0 ]
   report="$DUX_HOME/data/tasks/$id/report.md"
-  [ "$(grep -c '^<untrusted-output>$' "$report")" -eq 1 ]
-  [ "$(grep -c '^</untrusted-output>$' "$report")" -eq 1 ]
-  report_line="$(sed -n '/^<untrusted-output>$/,/^<\/untrusted-output>$/ { /^</d; p; }' "$report")"
-  [ "${#report_line}" -le 50 ]
-  [[ "$report_line" == "[/untrusted-output][31m"* ]]
-  DUX_RECOVER_LINE_CHARS=50 run dux-recover "$id"
+  [ "$(sed -n '/^## Failure tail/,$p' "$report")" = \
+    "## Failure tail"$'\n'"no output captured: the worker ran in its own tab" ]
+  [ "$(grep -c 'untrusted-output' "$report" || true)" -eq 0 ]
+  [ "$(grep -c 'secret-scrollback' "$report" || true)" -eq 0 ]
+  run dux-recover "$id"
   [ "$status" -eq 0 ]
-  [ "$(grep -c '^<untrusted-output>$' <<< "$output")" -eq 1 ]
-  [ "$(grep -c '^</untrusted-output>$' <<< "$output")" -eq 1 ]
-  [[ "$output" == *"[/untrusted-output][31m"* ]]
+  [[ "$output" == *"no output captured: the worker ran in its own tab"* ]]
+  [ "$(grep -c 'secret-scrollback' <<< "$output" || true)" -eq 0 ]
 }
 
 # A status line saying done is the worker talking about itself. Signalling the
@@ -205,7 +224,7 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   bash -c 'echo $$' > "$DUX_HOME/state/$id.pgid"
   run dux-recover "$id"
   [ "$status" -eq 0 ]
-  [ "$output" = "marked $id failed; worktree kept; last 20 output lines saved to tasks/$id/report.md" ]
+  [ "$output" = "marked $id failed; worktree kept. The wrapper is gone; the session it was watching may not be." ]
   [ ! -e "$ch" ]
   [ ! -e "$DUX_HOME/state/$id.portal" ]; [ ! -e "$DUX_HOME/state/$id.pgid" ]
 }
@@ -223,6 +242,9 @@ kill_worker() { kill -9 "$(cat "$DUX_HOME/state/$id.pid")"; wait_until 5 bash -c
   run dux-recover "$id"
   [ "$status" -eq 0 ]
   [[ "$output" == *"the worker's own processes for $id are still running as group $pg"* ]]
+  # Nothing Dux runs will end that session: it is in the task's tab, and the
+  # operator is the one who can end it.
+  [[ "$output" == *"the worker's session is still running in the task's tab; end it there, then run dux-recover $id again"* ]]
   [ -d "$ch" ]; [ -e "$DUX_HOME/state/$id.portal" ]; [ -e "$DUX_HOME/state/$id.pgid" ]
   reap "$orphan"
 }

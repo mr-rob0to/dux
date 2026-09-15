@@ -169,8 +169,8 @@ Failures MUST be visible and attributable.
 
 - A refusal is a finding, never an obstacle to work around. Findings are relayed to the
   operator verbatim.
-- Worker output goes to `state/<id>.out`; status goes to `status.log`; events go to
-  `state/events.log`. Every failure leaves a tail in `tasks/<id>/report.md`.
+- The worker's output stays in its own tab; status goes to `status.log`; events go to
+  `state/events.log`.
 - The watcher emits one event per state change and never for `working`. Silence is not
   success: stale and dead are events.
 - Logging is line-oriented plain text, prefixed `dux:` on stderr. No JSON logging, no
@@ -234,7 +234,18 @@ that edits this file, bumps the version, and updates Last Amended: MAJOR for a r
 removed principle, MINOR for a new principle, PATCH for a clarification. A plan that must
 deviate from a principle says so in its header and names the principle.
 
-**Version**: 2.0.6 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-10
+**Version**: 2.0.7 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-14
+
+Version 2.0.7 changes where a worker's output lives in principle 7. It used to go to
+`state/<id>.out`, a file Dux owned and a capped tail of which reached `tasks/<id>/report.md`
+on every failure. Workers now run as live sessions in their own tab, so their output is that
+tab's scrollback: the operator reads it by looking, and Dux never copies it anywhere. The
+failure tail in `report.md` becomes one fixed line saying so. Nothing else about the
+principle moves: status still goes to `status.log`, events still go to `state/events.log`,
+and a failure is still visible and attributable, now through the task's own channel and the
+tab it names. This is a PATCH by the same reading as version 2.0.5, which added a rule inside
+principle 2: the principle is neither redefined nor removed, only the mechanism one of its
+rules names.
 
 Version 2.0.6 raises the brief cap in principle 5 from 60 lines to 100. The cap counts the
 whole rendered brief, and the fixed template is about 26 lines of it, so 60 left the operator

@@ -13,7 +13,7 @@
   reviewed. The operator's two changes: the live session is the default for every
   worker, and the harness is the tab's own process found by pid, not a child the wrapper
   forks.
-- Tasks 1 to 4 landed 2026-09-14. Task 5 is next, then the milestone acceptance run.
+- Tasks 1 to 5 landed 2026-09-14. The milestone acceptance run is next, then `/ship`.
 - Merges as one ship PR of five tasks.
 
 **Divergences from the approved plan**
@@ -278,15 +278,15 @@ constitution names no `.out` file and `AGENTS.md` names the new version.
 
 **Steps**
 
-- [ ] `bin/dux-recover`: the two tails; the `dead()` wording.
-- [ ] `tests/dux-recover.bats`: the fixtures that wrote `.out` removed; the two cases.
-- [ ] Break-verify: make `print_tail` read `state/<id>.out` again with a fixture present.
+- [x] `bin/dux-recover`: the two tails; the `dead()` wording.
+- [x] `tests/dux-recover.bats`: the fixtures that wrote `.out` removed; the two cases.
+- [x] Break-verify: make `print_tail` read `state/<id>.out` again with a fixture present.
       Expected: the stale case fails, a fence appears. Restore. Paste.
-- [ ] `bin/dux-teardown`: the log in the removal list. `tests/dux-teardown.bats`: the
+- [x] `bin/dux-teardown`: the log in the removal list. `tests/dux-teardown.bats`: the
       case.
-- [ ] Break-verify: drop the log from the removal list. Expected: the teardown case
+- [x] Break-verify: drop the log from the removal list. Expected: the teardown case
       fails, the file remains. Restore. Paste.
-- [ ] The two skills, `docs/ARCHITECTURE.md`, `docs/constitution.md` and `AGENTS.md` as
+- [x] The two skills, `docs/ARCHITECTURE.md`, `docs/constitution.md` and `AGENTS.md` as
       the interface says.
 - [ ] `make check` green, `bin/dux-doctor` passing, then `/ship`.
 
