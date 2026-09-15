@@ -270,6 +270,9 @@ issue text; that line is what `/ship` reads for `Closes #<n>`.
 How the worker reaches this file when it runs as a live session in its own tab, and
 what the brief says about the operator typing to it, is in
 `2026-09-14-interactive-worker-sessions.md` sections 3 and 5.6.
+A `done: PR <url>` no longer ends the session: the wrapper proves, then parks it, and the
+operator's feedback arrives as a round typed into that session (`2026-09-15-feedback-rounds-on-a-delivered-pr.md`,
+sections 3 to 5). The protocol is one terminal line per round.
 
 The worker appends to `tasks/<id>/status.log`:
 
@@ -319,6 +322,8 @@ Spawn's shape changes when workers run as live sessions: the tab holds the harne
 wrapper is a detached supervisor, and spawn refuses a worktree Claude Code does not
 trust. `2026-09-14-interactive-worker-sessions.md` sections 5.1 and 5.2 are the
 authority for that; the rest of this section stands.
+The one-worker guard skips the process-group signal of a task whose ledger state is
+`done`: a parked session is idle (`2026-09-15-feedback-rounds-on-a-delivered-pr.md`, section 8).
 
 `dux-task-new <project> <shape> [--source local|gh:<owner>/<repo>#<n>]`
 allocates the id, creates `tasks/<id>/` with an empty `status.log`, and appends
@@ -454,6 +459,8 @@ the run's retained references (`state/<id>.handoffs`, `state/<id>.run`,
 It then sets the ledger's `endpoint` to `-`, which is how the digest tells a
 torn-down task from one awaiting merge. A worktree or container that is already gone is logged, not refused, so an
 interrupted teardown completes on rerun. The task folder is kept.
+A `done` task whose session is still parked in its tab is stopped first, then torn
+down as above (`2026-09-15-feedback-rounds-on-a-delivered-pr.md`, section 7).
 For a `done` task with a PR from a `gh:` source, teardown posts one comment,
 "Dux delivered PR <url>.", when the URL is in the source's repository; a
 failed comment is a warning.
@@ -561,6 +568,8 @@ persist past one recovery attempt. The watcher raises the backend's local toast
 when it emits; `dux-notify --toast` raises it again only where a push is
 unavailable. Remote Control on the Dux session is how the operator replies from
 a phone.
+For `done` with a pull request the line is `Review, then merge or send feedback:`
+(`2026-09-15-feedback-rounds-on-a-delivered-pr.md`, section 10).
 
 ### 6.4 Recovery (`dux-recover`)
 
@@ -652,6 +661,8 @@ digest (section 14).
 One adapter interface, two implementations, selected once per Dux session. The `run`,
 `pid` and by-endpoint `title` verbs, and the removal of `report` and `tail`, are in
 `2026-09-14-interactive-worker-sessions.md` sections 5.2 and 9.
+`prompt <endpoint> <text>`, which types one line and Enter into the pane, is in
+`2026-09-15-feedback-rounds-on-a-delivered-pr.md`, section 5.
 
 Selection: `config/backend` if present; else `herdr` when `HERDR_ENV=1` and
 `$TMUX` is unset; else `tmux`. The innermost multiplexer wins. `dux-doctor`
@@ -873,6 +884,10 @@ skill calls, kept in the ship skill directory.
    goes inside `<details>`. Dropping `--fill` drops the title with it, so step 8
    passes `--title`: the one the operator gave, else the subject of the branch's
    first commit after the base.
+   Step 8 first looks up an open pull request for the branch into the base and edits
+   its body, keeping its title, because `gh pr create` refuses a branch that already
+   has one; a round's second `/ship` is what needs this (`2026-09-15-feedback-rounds-on-a-delivered-pr.md`,
+   section 9).
 
    The lookup is not copied, and it does not move. An earlier draft had `/ship`
    carry its own copy, on the grounds that it cannot call `bin/dux-project`. It
@@ -1171,6 +1186,9 @@ and is sized against the cap before its plan is written (constitution principle
   2026-09-10: an answer, a retry, an approval and a change request resume the
   same session as a new run of the same task, and nothing makes a second task
   from a first one (`2026-09-10-one-session-planning.md`, sections 2 and 7).
+  Built first for a delivered pull request, on 2026-09-15, as one line typed into the
+  live session and no session id (`2026-09-15-feedback-rounds-on-a-delivered-pr.md`, section 12);
+  the other states still respawn until the next milestone.
 - The ship skill is bundled in this repo and installed by symlink.
 - Dux is open source under the MIT license. The operator's personal rules stay in
   their global CLAUDE.md; the repo encodes them only as configurable defaults.

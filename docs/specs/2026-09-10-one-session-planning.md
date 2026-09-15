@@ -1,5 +1,11 @@
 # Dux: one session, from plan to pull request, and back
 
+Status: section 7's mechanism, a headless session resumed by id, is superseded on 2026-09-15
+for live sessions by `2026-09-15-feedback-rounds-on-a-delivered-pr.md`: a round is one line
+typed into the session already at its prompt. Built first for a delivered pull request; the
+other rounds in section 7 remain the design for the next milestone, on that mechanism.
+
+
 Design authority for the change that lets the operator talk to the Dux session and
 nothing else: a plan comes back to that session, is read as a page, is approved
 there, and the worker that wrote it goes on to build it. A worker's question comes
