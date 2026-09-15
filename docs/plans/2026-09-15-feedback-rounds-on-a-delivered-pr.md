@@ -11,16 +11,22 @@
   an old task's branch; the operator redirected it mid-flight to "the existing worker
   waits for feedback, sent through Dux". One independent design review the same day:
   fourteen findings, all taken, recorded at the bottom.
+- Re-cut the same day, after the operator asked why the design was this large for what
+  it does. The wrapper now stays alive across a park instead of exiting and being started
+  again once per round. That removed a second wrapper process, the `start_wrapper`
+  helper, the `--round` flag and every check that reattaching to a released session
+  needed: about 275 lines, and the first critical review finding stops being reachable
+  rather than being answered. Spec section 12 records the decision.
 - Picks up the cost pull request #44 paid: a one-line correction needed a second task,
   worktree, gate and pull request (#45).
 - Merges as one ship PR of nine tasks. When it merges, a worker with an open pull request
   waits in its tab; `bin/dux-round <id> --file <f>` sends the operator's feedback into it.
 
-**Estimated diff:** ~1,900 added lines across 9 tasks. The cap is 2,500 lines or 12 tasks
-(constitution principle 1). Sizing procedure: roadmap, "How a milestone is sized". Per
-task, from this repository's density (the wrapper's bats file is 43 tests, spawn's 32):
-Task 1 ~120, Task 2 ~80 net, Task 3 ~280, Task 4 ~150, Task 5 ~400, Task 6 ~400, Task 7
-~100, Task 8 ~60, Task 9 ~310. Stop rule: if the running total passes 2,200 before Task
+**Estimated diff:** ~1,625 added lines across 9 tasks, re-cut down from ~1,900. The cap
+is 2,500 lines or 12 tasks (constitution principle 1). Sizing procedure: roadmap, "How a
+milestone is sized". Per task, from this repository's density (the wrapper's bats file is
+43 tests, spawn's 32): Task 1 ~120, Task 2 ~55 net, Task 3 ~300, Task 4 ~170, Task 5
+~220, Task 6 ~300, Task 7 ~100, Task 8 ~60, Task 9 ~300. Stop rule: if the running total passes 2,200 before Task
 8, Task 8 moves to a follow-up and this header says so; until then a round's `/ship`
 stops at `gh pr create` and the milestone is not usable, so Task 8 is not optional.
 
@@ -45,11 +51,13 @@ sections and add only what an implementer cannot derive.
 ## Design
 
 Order matters. The adapter verb (1) and the moved helpers (2) are what everything else
-calls. The park (3) leaves a `done` task with a live process group, which `dux-teardown`
-refuses and `dux-spawn` reads as a busy fleet, so the guard and teardown changes (4)
-come straight after it and the tree is inconsistent for exactly one task. The round
-wrapper (5) and `dux-round` (6) are the mechanism; proof (7) closes it; `/ship` (8) is
-what lets a round's gate finish; the documents (9) go last with the constitution bump.
+calls. The park (3) leaves a `done` task with a live wrapper and a live process group,
+which `dux-teardown` refuses and `dux-spawn` reads as a busy fleet, so the guard and
+teardown changes (4) come straight after it and the tree is inconsistent for exactly one
+task. Task 3 parks and waits; Task 5 fills in what the wait does when a round arrives, in
+the same process, which is why they are the same script and not two. `dux-round` (6) is
+the operator's end of it; proof (7) closes it; `/ship` (8) is what lets a round's gate
+finish; the documents (9) go last with the constitution bump.
 
 The fake harness (`tests/harness`) needs one new verb for Tasks 3, 5 and 6: `idle`, which
 blocks until a line arrives and then replays the script named by
@@ -90,22 +98,21 @@ a failed send is a finding and not a silent success.
       3.6a, a one-argument line that is not a key name is delivered literally with or
       without it, so that break would pass (spec section 5).
 
-## Task 2: three helpers move into `dux-env`
+## Task 2: two helpers move into `dux-env`
 
 **Files:** `bin/dux-env`, `bin/dux-spawn`, `bin/dux-worker-wrap`, `tests/dux-env.bats`.
 
 **Interface:** `fleet_busy <id>` prints `<why> <other>` and returns 0 when another task's
 worker may be alive, else returns 1: the body of `dux-spawn`'s `another_worker`, moved
-verbatim, comments included. `start_wrapper <id> <worktree> [args...]` starts
-`dux-worker-wrap <id> [args...]` detached and waits for its pidfile as `dux-spawn` does
-today, printing the wrapper pid; its three failure readings become return codes the
-caller turns into its own findings (refused with a handoff, will not stop, did not
-start). `stop_pgid <pgid>` is the wrapper's `stop_group` with the group as an argument,
-same signals, grace and test-only switch.
+verbatim, comments included. It moves because `dux-round` runs the same guard.
+`stop_pgid <pgid>` is the wrapper's `stop_group` with the group as an argument, same
+signals, grace and test-only switch; `dux-teardown` calls it in Task 4. Nothing else
+moves. In particular `dux-spawn` keeps its wrapper start where it is, because it stays
+the only thing that ever starts a wrapper.
 
 **Acceptance:** `dux-spawn` and `dux-worker-wrap` call the helpers and keep every
 refusal wording; every existing test in `tests/dux-spawn.bats` and
-`tests/dux-worker-wrap.bats` passes unchanged; the three functions have direct tests
+`tests/dux-worker-wrap.bats` passes unchanged; both functions have direct tests
 in `tests/dux-env.bats`.
 
 **Steps**
@@ -113,44 +120,52 @@ in `tests/dux-env.bats`.
 - [ ] Count the lines of each moved block before and after; the counts match.
 - [ ] Move `another_worker` as `fleet_busy`; `dux-spawn` maps its answer to the same
       six findings.
-- [ ] Move the start block as `start_wrapper`; `dux-spawn` keeps its undo paths.
 - [ ] Move `stop_group` as `stop_pgid`; the wrapper calls it with `$pgid`.
 - [ ] Break-verify: make `fleet_busy` skip the pgid read, run, confirm
       `tests/dux-spawn.bats:552`, "another task's live harness group refuses the start,
       and an unreadable one blocks it", fails, restore, paste.
 
-## Task 3: the wrapper parks after `done: PR <url>`
+## Task 3: the wrapper parks and waits after `done: PR <url>`
 
 **Files:** `bin/dux-worker-wrap`, `templates/worker-settings.json`, `tests/harness`,
 `tests/dux-worker-wrap.bats`, `tests/e2e-supervise.bats`.
 
 **Interface:** spec section 3. A third hook in the settings template touches
 `__CHANNEL__/stopped` on `Stop` only; `DUX_WRAP_IDLE_SECS` (default 60) bounds the wait
-for that file. When the published line is `done: PR <url>` the wrapper exits 0 without
-`stop_pgid` and without `cleanup_channel`, renames `state/<id>.ship-receipt` to
-`state/<id>.ship-receipt.delivered`, and logs `worker for <id> parked in its tab;
-feedback goes through dux-round`. On that path the final import drops the
-"kept writing after its terminal status" and "left a status line unfinished" rules. The
-result context gains `round=0` and `since=<tip of refs/heads/dux/<id> at run start>`.
+for that file. When the published line is `done: PR <url>` the wrapper does not exit. It
+skips `stop_pgid` and `cleanup_channel`, renames `state/<id>.ship-receipt` to
+`state/<id>.ship-receipt.delivered`, logs `worker for <id> parked in its tab; feedback
+goes through dux-round` once, and then polls once a second for
+`data/tasks/<id>/round-<n>.md`, `n` one above its own count of rounds run. The poll
+writes nothing to the log per pass. This task stops at the wait: the loop body is Task 5,
+so here the loop returns and the wrapper exits 0 once the pass budget in the test-only
+`DUX_WRAP_PARK_MAX_PASSES` runs out, which is empty and unbounded in production. On the
+parking path the final import drops the "kept writing after its terminal status" and
+"left a status line unfinished" rules. The result context gains `round=0` and
+`since=<tip of refs/heads/dux/<id> at run start>`.
 
-**Acceptance:** after a fake worker writes `done: PR <url>` and idles, the group is
-alive, the three references exist, the receipt is at its delivered name, the handoff is
-published and the watcher applies `done`; a worker that writes bytes after its terminal
-line still parks; after `done: report`, `failed:` or a violation, the group is gone, the
-channel is cleared and both rules still bite; the wait ends early when `stopped` appears
-and at the bound when it does not, and the proof runs in both cases.
+**Acceptance:** after a fake worker writes `done: PR <url>` and idles, the wrapper is
+still running and `state/<id>.pid` still names it, the group is alive, the three
+references exist, the receipt is at its delivered name, the handoff is published and the
+watcher applies `done`; a worker that writes bytes after its terminal line still parks;
+the park line is logged once and many poll passes add nothing after it; after
+`done: report`, `failed:` or a violation the wrapper exits, the group is gone, the
+channel is cleared and both rules still bite; the `stopped` wait ends early when the file
+appears and at the bound when it does not, and the proof runs in both cases.
 
 **Steps**
 
 - [ ] Add the `Stop`-only hook to the settings template and the fake harness's `idle`
       verb and scripted `stopped` touch (Design).
-- [ ] Write the tests: parked references, live group and renamed receipt after
-      `done: PR`; post-terminal bytes tolerated only on that path; unchanged endings for
-      the other four; the early and bounded wait; `round=0` and a forty-hex `since`.
-- [ ] Implement: wait, prove, publish, then stop and clean only when not parking.
-- [ ] `tests/dux-teardown.bats:277` and the e2e teardown step now meet a live group on a
-      `done` task. Mark both `skip` with a one-line reason naming Task 4, which restores
-      them. No other suite is expected to move.
+- [ ] Write the tests: a live wrapper and group, parked references and renamed receipt
+      after `done: PR`; a silent poll log; post-terminal bytes tolerated only on that
+      path; unchanged endings for the other four; the early and bounded `stopped` wait;
+      `round=0` and a forty-hex `since`.
+- [ ] Implement: wait for `stopped`, prove, publish, then either park into the poll loop
+      or stop, clean and exit.
+- [ ] `tests/dux-teardown.bats:277` and the e2e teardown step now meet a live wrapper and
+      group on a `done` task. Mark both `skip` with a one-line reason naming Task 4,
+      which restores them. No other suite is expected to move.
 - [ ] Break-verify: make the park branch also skip `publish_handoff`, run, confirm the
       "watcher applies done" assertion fails, restore, paste.
 
@@ -162,90 +177,100 @@ and at the bound when it does not, and the proof runs in both cases.
 **Interface:** spec sections 7 and 8. `fleet_busy` reads the other task's ledger state
 before its pgid file and skips the pgid signal when that state is `done`; every other
 reading is unchanged, and an unreadable ledger still refuses. `dux-teardown` on a `done`
-task with a live group runs `stop_pgid` before `dux-worktree remove`; a group that
-survives is the existing finding; on `failed` the refusal is unchanged. Teardown also
-removes `state/<id>.ship-receipt.delivered`.
+task ends two processes in order: the parked wrapper named by `state/<id>.pid`, with
+`TERM`, then the harness group through `stop_pgid`. The wrapper goes first so it cannot
+pick up a round file that arrives mid-teardown. Either one surviving is the existing
+finding; on `failed` the refusal is unchanged. Teardown also removes
+`state/<id>.ship-receipt.delivered`.
 
 **Acceptance:** a spawn beside a parked task goes ahead; beside a parked task whose
-ledger reads `running` it refuses as today; teardown of a parked task ends the group,
-removes the worktree, closes the pane and leaves no delivered receipt; teardown of a
-failed task with a live group refuses; the two tests Task 3 skipped are un-skipped and
-green.
+ledger reads `running` it refuses as today; teardown of a parked task ends the wrapper
+and the group, leaves nothing polling, removes the worktree, closes the pane and leaves
+no delivered receipt; a round file dropped into the task folder during a teardown is
+never acted on; teardown of a failed task with a live group refuses; the two tests Task 3
+skipped are un-skipped and green.
 
 **Steps**
 
 - [ ] Un-skip the two tests from Task 3 and see them fail for the right reason.
 - [ ] Reorder `fleet_busy`'s reads and add the `done` exemption.
-- [ ] Add the stop and the delivered-receipt removal to teardown's `done` path.
+- [ ] Add the wrapper stop, the group stop and the delivered-receipt removal to
+      teardown's `done` path, in that order.
 - [ ] Break-verify: make the exemption apply to every state, run, confirm the
       "parked task whose ledger reads running" test fails, restore, paste.
+- [ ] Break-verify: stop the group before the wrapper, run, confirm the test that asserts
+      nothing is left polling fails, restore, paste.
 
-## Task 5: `dux-worker-wrap --round <n>`
+## Task 5: the wrapper runs a round in place
 
 **Files:** `bin/dux-worker-wrap`, `tests/dux-worker-wrap.bats`.
 
-**Interface:** spec section 5. `dux-worker-wrap <id> --round <n>`, `n` a positive
-integer, `data/tasks/<id>/round-<n>.md` present and the highest-numbered round.
-Refusals, each a failed handoff once the run record exists and a status line before:
-`no round <n> for <id>`; `round <n> is not the newest round for <id>`; `<id> is not
-parked: no live group in state/<id>.pgid`; `<id> has no task channel to resume`; `the
-outboxes of <id> do not match their pins`; `the pane for <id> holds no supervised
-session; tear the task down`. The round file is copied to `<channel>/round-<n>.md`
-mode 400, and the typed line is `Read <channel>/round-<n>.md and follow it.` The ship
-recorder is rewritten under `chmod 600`, write, `chmod 500`, because it is mode 500 and
-a plain redirect onto it fails. Both outbox caps are measured over the region past
-`accepted`.
+**Interface:** spec section 5. The poll loop from Task 3 gains its body. No flag is
+parsed and no process is started: this is the same wrapper carrying on. On seeing
+`data/tasks/<id>/round-<n>.md` it runs `kill -0` on the group it already holds, then
+computes the run id `<channel nonce>r<n>`, writes a new `state/<id>.run` and
+`state/<id>.result-context` carrying `round=<n>` and `since=<tip>`, rewrites the ship
+recorder under `chmod 600`, write, `chmod 500` because that file is mode 500 and a plain
+redirect onto it fails, seeks `accepted` and the report offset to the outboxes' current
+sizes with both caps measured past `accepted`, copies the round file to
+`<channel>/round-<n>.md` at mode 400, types `Read <channel>/round-<n>.md and follow it.`
+through `dux-backend prompt`, and re-enters the import loop. A group that has gone
+publishes `failed: the session for <id> was ended in its tab before round <n> could run`,
+cleans up and exits. `done: PR <url>` parks again with the round count up by one;
+anything else stops the group, clears the channel and exits.
 
-**Acceptance:** with a parked fake harness, a round run types the line, the fake
-replays `FAKE_WORKER_ROUND_SCRIPT`, a `done: PR` there is proved with a receipt for the
-new run id and parks again; the parked run's terminal line and report are not read
-again; anything the worker wrote while parked is skipped, not judged; `run=`, `round=<n>`
-and `since=` name the new run in both `state/<id>.run` and the context; a first-run
-refusal on existing references does not fire in round mode; each round refusal above
-fires; a status outbox already near `STATUS_CAP` from earlier rounds does not trip the
-cap on a small round.
+**Acceptance:** with a parked fake harness, a round file appearing makes the wrapper type
+the line, the fake replays `FAKE_WORKER_ROUND_SCRIPT`, and a `done: PR` there is proved
+with a receipt for the new run id and parks again; the parked run's terminal line and
+report are not read a second time; anything the worker wrote while parked is skipped, not
+judged; `run=`, `round=<n>` and `since=` name the new run in both `state/<id>.run` and
+the context; `state/<id>.pid` names the same process before, during and after the round;
+two rounds in sequence each get their own run id and their own receipt; a status outbox
+already near `STATUS_CAP` from earlier rounds does not trip the cap on a small round; a
+group killed while parked produces the ended-in-its-tab failure.
 
 **Steps**
 
-- [ ] Tests first, one per refusal and one per acceptance clause.
-- [ ] Parse `--round`; branch the reference checks; compute the run id; rewrite the
-      recorder with the chmod sequence; set `accepted`, the report offset and both cap
-      windows; overwrite run and context; discover with the pgid equality; stage and
-      prompt.
-- [ ] Break-verify: make the round skip the pgid equality, run, confirm the "holds no
-      supervised session" test fails, restore, paste.
-- [ ] Break-verify: make `accepted` start at 0, run, confirm the "parked terminal line
-      is not read again" test fails with the second-terminal violation, restore, paste.
+- [ ] Tests first, one per acceptance clause.
+- [ ] Implement the loop body in the order above, with the recorder rewrite and the
+      outbox seek before the line is typed, never after.
+- [ ] Break-verify: drop the `kill -0`, run, confirm the "ended in its tab" test fails,
+      restore, paste.
+- [ ] Break-verify: leave `accepted` where the parked run left it, run, confirm the
+      "terminal line is not read again" test fails with the second-terminal violation,
+      restore, paste.
 
 ## Task 6: `dux-round`
 
 **Files:** `bin/dux-round`, `templates/round.md`, `tests/dux-round.bats`,
 `docs/ARCHITECTURE.md` (component line only; the flow text is Task 9).
 
-**Interface:** spec section 4, all twelve steps and the round file. Usage line:
+**Interface:** spec section 4, all eleven steps and the round file. Usage line:
 `usage: dux-round <id> --file <path>`. Success prints `round <n> sent to <id>`. The
-rendered file is refused over 40 lines. The ledger moves to `running` last, after the
-wrapper's pidfile is live, so the task is never watched while `state/<id>.pid` still
-names the parked run's exited wrapper. The `gh` calls are `gh pr view <url> --json
+rendered file is refused over 40 lines. `dux-round` starts nothing and types nothing:
+step 5 proves a live parked wrapper through `state/<id>.pid` alongside the pgid, portal
+and endpoint checks, and step 10 moves the ledger to `running` and unacks it, then
+renames `data/tasks/<id>/.round-<n>.tmp` onto `data/tasks/<id>/round-<n>.md`, which is
+the trigger the parked wrapper is waiting for. A rename that fails puts the ledger back
+to `done` and is a finding. The `gh` calls are `gh pr view <url> --json
 state,headRefName,baseRefName`; the fake `gh`'s `FAKE_GH_PR_STATE` drives them.
 
 **Acceptance:** every refusal in section 4 has a test that reaches it and asserts the
-wording, the pending-handoff refusal included; the happy path renders `round-1.md` with
-the six tokens filled and the feedback verbatim, starts a wrapper in round mode (fake
-harness parked in a real tmux window, as the wrapper tests do), sets the ledger `running`
-with `acked=-` only after the wrapper is live, and the second `done` produces a second
-`done` event; a start that never reaches the run record leaves the ledger at `done`; a
-ninth round is refused with the file count at eight.
+wording, the pending-handoff and the dead-wrapper refusals included; the happy path
+renders `round-1.md` with the six tokens filled and the feedback verbatim, leaves the
+ledger `running` with `acked=-`, and a wrapper parked in a real tmux window (as the
+wrapper tests do) picks the file up and produces a second `done` event; the ledger is
+`running` before the file exists, never after; no temporary file is left behind by any
+refusal; a ninth round is refused with the file count at eight.
 
 **Steps**
 
 - [ ] Write `templates/round.md` (spec section 4, "The round file") and the tests.
 - [ ] Implement the checks in the spec's order; nothing is written before all pass.
-- [ ] Start the wrapper through `start_wrapper`; map its three readings; move the ledger
-      only after it is live.
-- [ ] Break-verify: move the `set-if state done running` line above the wrapper start,
-      run with a watcher pass forced in between, confirm the test asserting no `dead`
-      event fails, restore, paste.
+- [ ] Render to `.round-<n>.tmp`, move the ledger, then rename; put the ledger back if
+      the rename fails.
+- [ ] Break-verify: drop the `state/<id>.pid` liveness read from step 5, run, confirm the
+      dead-wrapper refusal test fails, restore, paste.
 - [ ] Break-verify: make the base-ancestry check pass unconditionally, run, confirm
       the "behind base" refusal test fails, restore, paste.
 
@@ -336,16 +361,23 @@ The constitution's quality gates, plus: on a real Claude Code worker in a real t
 this machine, one full loop: dispatch a bounded ship task in a throwaway project, let
 it deliver, run `bin/dux-round` with a one-line feedback, watch the same session make a
 commit and update the same pull request, get the second `done` wake, tear down and see
-the tab close. The transcript excerpt goes in the pull request body with the added-line
-count against the estimate.
+the tab close. `ps` before the round and after it must show the same wrapper pid, which
+is the re-cut's whole claim. The transcript excerpt goes in the pull request body with
+the added-line count against the estimate.
 
 ## Risks
 
 - `herdr pane run` against a live Claude Code prompt is unmeasured. The header makes the
   measurement the first thing that happens and says what the milestone becomes if it
   fails. Everything from Task 3 on assumes it works.
-- A parked session that the operator ends with `/exit` leaves a task `done` with no
-  session; `dux-round` refuses and names teardown, which is the right answer.
+- A parked session that the operator ends with `/exit` leaves a live wrapper polling for
+  a round it could no longer run. `dux-round` refuses on the pgid check and names
+  teardown; a round already in flight fails with the ended-in-its-tab line. Both are the
+  right answer.
+- A wrapper now lives as long as its task rather than as long as one run. A poll loop
+  that spun instead of sleeping would burn a core for days rather than seconds. The loop
+  is a `sleep 1` and a file test, and Task 3 asserts the log stays silent across many
+  passes so a chatty loop is caught there.
 - The idle wait reads a `Stop` hook. If it does not fire on this Claude Code, every
   delivery costs sixty seconds; the proof still runs.
 - A round's `/ship` runs a full review of the whole branch for a ship task. That is the
@@ -383,11 +415,24 @@ measured rather than argued. All fourteen were taken.
 | 13 | Minor: the guard and teardown changes sat four tasks after the park, leaving the tree inconsistent in between, and the plan accounted only for the e2e test. | Accepted. They are now Task 4, straight after the park, and Task 3 names the two tests it skips and Task 4 un-skips. |
 | 14 | Minor: the one-worker exemption assumes a parked session is idle while the brief invites the operator to type into it. | Accepted as a note, recorded in spec 8 and 13, with the `stopped` file named as what a later milestone could check instead. |
 
+**Finding 1's answer was superseded the same day, by the re-cut.** The operator asked why
+the design was this large. The answer was that most of it existed so a second wrapper
+process could reattach to a session the first had let go, so the wrapper now stays alive
+across a park instead (spec section 12). Finding 1 was real and the reviewer was right
+about the code: `dux-teardown:120` is the only line that removes `state/<id>.pid`. But
+the ordering fix it produced is gone, because there is no longer a moment when that file
+names a process that has ended, so the watcher cannot read a gap that does not exist. The
+finding stays recorded as it was raised; this paragraph is what replaced its answer.
+Findings 7 and 11 still hold and moved with the recorder rewrite and the cap windows into
+Task 5's new shape. Finding 13's ordering still holds. No other finding is touched, and
+none of the re-cut's changes were reviewed independently: that is the one thing this plan
+now carries unreviewed, and it is named here rather than left for the reader to notice.
+
 Claims the reviewer confirmed against the code, which stand: the outbox accounting works
 as designed; the new run id satisfies every `run=` equality unchanged; relaxing
 teardown's refusal for `done` alone is right and a hand-killed session is caught by the
 round's own check; `dux-doctor` looks at none of these files, so a parked task does not
 fail session start; the end of a round cannot produce a false `dead`, because the
-handoff is published before the wrapper exits and `target_for` reads handoffs before
-liveness; `ship-guard` genuinely starts a round at zero phases; and the constitution
+handoff is published before the wrapper moves on and `target_for` reads handoffs before
+liveness, which the re-cut only strengthens, because the wrapper is alive throughout; `ship-guard` genuinely starts a round at zero phases; and the constitution
 compliance of every task, including the 2.0.9 PATCH reading.

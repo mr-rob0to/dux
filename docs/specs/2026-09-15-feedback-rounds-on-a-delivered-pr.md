@@ -2,8 +2,11 @@
 
 Status: drafted 2026-09-15 by a Dux plan worker, after the operator redirected the task
 mid-flight (section 1). One independent design review the same day, fourteen findings, all
-taken; the record is at the end of the plan. Nothing here changes a running system until the
-plan's milestone merges.
+taken; the record is at the end of the plan. **Re-cut the same day**, after the operator
+asked why the design was this large: the wrapper now stays alive across a park instead of
+exiting and being started again per round, which removed a second wrapper process and the
+whole family of checks that reattaching needed. Section 12 records that decision and what
+it replaced. Nothing here changes a running system until the plan's milestone merges.
 
 ## 1. What the operator gets
 
@@ -43,16 +46,19 @@ which the worker's session is known to be idle and its work is known to be prove
 ## 2. Vocabulary
 
 - **Parked.** A task whose ledger state is `done` with a pull request url, whose worker
-  session is alive at its prompt in the task's tab, and whose wrapper has exited. The
+  session is alive at its prompt in the task's tab, and whose wrapper is alive and
+  waiting for the next round. The
   ledger does not get a new state: `done` already means "proved, awaiting the operator",
   and `dux-status` already lists it under `ready`. What is new is that the session behind
   it is alive.
 - **Round.** One operator feedback and the run it starts. Round files are
   `data/tasks/<id>/round-<n>.md`, `n` from 1, at most 8. The first run of a task is not
   a round; it is the run the brief started.
-- **Run.** Unchanged: one wrapper process supervising one stretch of the session from a
-  start to a terminal line, with its own run id, run record, result context and handoff.
-  A task now has one run per round plus the first.
+- **Run.** One stretch of the session from a start to a terminal line, with its own run
+  id, run record, result context and handoff. A task has one run per round plus the
+  first. What changes is that one wrapper process now covers all of them: it does not
+  exit between runs, so a run is a stretch of that process's life rather than the whole
+  of it.
 
 ## 3. The session parks after `done: PR <url>`
 
@@ -68,26 +74,33 @@ section 5.3, point 1). The order changes and the stop becomes conditional:
    wait is asking. The wait running out is a log line, not a refusal: the proof runs
    either way, and the worker was told to stop after its terminal line.
 2. **Prove and publish**, exactly as today.
-3. **Park, for `done: PR <url>` only.** The wrapper exits without stopping the group and
-   without clearing the channel, `state/<id>.pgid` or `state/<id>.portal`. It renames
-   `state/<id>.ship-receipt` to `state/<id>.ship-receipt.delivered`, so the receipt that
+3. **Park, for `done: PR <url>` only.** The wrapper does not exit. It leaves the group
+   running and the channel, `state/<id>.pgid` and `state/<id>.portal` in place, renames
+   `state/<id>.ship-receipt` to `state/<id>.ship-receipt.delivered` so the receipt that
    proved this delivery is kept and a round starts with no receipt of its own
-   (section 5). It logs `worker for <id> parked in its tab; feedback goes through
-   dux-round`. Every other ending, `done: report` included, stops the group and clears
-   the channel as today.
+   (section 5), logs `worker for <id> parked in its tab; feedback goes through dux-round`
+   once, and then waits: every second it looks for `data/tasks/<id>/round-<n>.md`, where
+   `n` is one more than the number of rounds it has already run. When that file appears
+   it runs the round in place (section 5) and, at the end of it, parks again. The wait is
+   unbounded, silent and cheap: it logs nothing per pass, because a task can sit parked
+   for days and `state/<id>.wrap.log` is never rotated. Every other ending, `done: report`
+   included, stops the group, clears the channel and exits as today.
 
 **The final import does not judge a parked session.** Today the group is stopped before
 `import_proposals final` runs, so "the worker kept writing after its terminal status" and
 "left a status line unfinished" are statements about a dead process. A parked session is
 alive and the operator may be typing to it, so on the parking path both rules are off:
-bytes after the terminal line belong to no run, and the round's own wrapper starts from
-the outbox's size at that later moment (section 5), not from where this run stopped
-reading. Every other ending keeps both rules exactly as they are.
+bytes after the terminal line belong to no run, and the next round resumes reading from
+wherever the outboxes have reached by the time it starts (section 5), not from where this
+run stopped reading. Every other ending keeps both rules exactly as they are.
 
-`state/<id>.pid` is left behind, as it is after every run that is not torn down; only
-`dux-teardown` removes it. It names an exited wrapper, which the watcher would read as a
-dead worker, so the order in section 4 keeps the task out of the watched set until the
-round's own wrapper has written its pid over it.
+`state/<id>.pid` keeps naming this wrapper, which is still running, so it stays true for
+the whole life of the task and there is no window in which it names a process that has
+gone. That is the point of not exiting: the earlier design exited here and started a
+second wrapper per round, which left the file naming a dead process between the two and
+forced the ledger, the watcher and the round to be ordered around that gap (section 12).
+`dux-round` now reads the file as positive evidence that something is listening
+(section 4, step 5).
 
 The proof of a parked task is the proof of the moment: branch tip, pull request head and
 receipt agree at that commit. A session that keeps working after its terminal line
@@ -113,12 +126,16 @@ One command, run by Dux in the orchestrator session. Every check below is a find
 4. `n` is one more than the number of `data/tasks/<id>/round-*.md` files. A ninth is
    refused: `eight rounds already on <id>; the pull request is not converging: tear it
    down and dispatch a sharper task`.
-5. The session is there to receive it: `state/<id>.pgid` holds a process group `kill -0`
-   reaches, `state/<id>.portal` names a directory that exists, `state/<id>.endpoint` is
-   recorded and `dux-backend exists` says present. Any miss: `the session for <id> is no
-   longer in its tab (<which check>); tear the task down and dispatch a fresh task`.
-   The wrapper's own discovery (section 5) is the backstop for a pane that holds
-   something other than the parked harness.
+5. Something is there to receive it: `state/<id>.pid` names a live process, which is
+   the parked wrapper waiting for exactly this file; `state/<id>.pgid` holds a process
+   group `kill -0` reaches; `state/<id>.portal` names a directory that exists;
+   `state/<id>.endpoint` is recorded and `dux-backend exists` says present. Any miss:
+   `the session for <id> is no longer in its tab (<which check>); tear the task down and
+   dispatch a fresh task`. The live wrapper is the check that matters most and the one
+   the earlier design could not make: a parked wrapper is the thing that reads the round
+   file, so its absence means the round would be written and never picked up. The
+   wrapper's own group check (section 5) is the backstop for a session ended between
+   this moment and the round starting.
 6. No other worker may be alive: the same fleet check `dux-spawn` runs, moved into
    `dux-env` as `fleet_busy <id>` so both call one function, with the same refusal
    wording. A parked session does not count (section 8).
@@ -134,21 +151,18 @@ One command, run by Dux in the orchestrator session. Every check below is a find
 9. Render `data/tasks/<id>/round-<n>.md` from `templates/round.md`. The file is under
    40 lines or the round is refused: `round <n> is <k> lines; the limit is 40: shorten
    the feedback`. The 40 is the one-session spec's cap, kept.
-10. Start `dux-worker-wrap <id> --round <n>` exactly as `dux-spawn` starts a first run:
-    its own process group, `nohup`, `stdin` from `/dev/null`, output appended to
-    `state/<id>.wrap.log`, the worktree as its directory, and the same bounded wait for
-    the wrapper's pidfile. That block moves out of `dux-spawn` into `dux-env` as
-    `start_wrapper <id> <worktree> [args]` so the two starts cannot drift. A wrapper
-    that refused after opening its run record has left a `failed` handoff and is left
-    alone; one that never got that far is a finding naming `state/<id>.wrap.log`.
-11. **Only now** `dux-ledger set-if <id> state done running`, then `dux-ledger unack
-    <id>`, so the next `done` wakes Dux instead of reading as a duplicate of the last
-    one. The ledger moves last for the same reason `dux-spawn` moves it last: `done` is
-    not a watched state, so until this line the watcher never looks at the task, and the
-    stale `state/<id>.pid` from the parked run cannot be read as a dead worker. By the
-    time the state is `running` the round's own wrapper has written its pid over it.
-    A start that failed never reaches this line, so there is no ledger write to undo.
-12. Print `round <n> sent to <id>`.
+10. Move the ledger, then arm the round. `dux-ledger set-if <id> state done running`,
+    then `dux-ledger unack <id>`, so the next `done` wakes Dux instead of reading as a
+    duplicate of the last one. Then `mv` the rendered file from
+    `data/tasks/<id>/.round-<n>.tmp` onto `data/tasks/<id>/round-<n>.md`. That rename is
+    the trigger and the last thing that happens: the parked wrapper is waiting for
+    exactly that path and picks it up within a second. The rename is atomic within the
+    directory, so the wrapper never reads a half-written file. It is ordered after the
+    ledger so the task is already `running` before a round exists to be proved, and a
+    rename that fails puts the ledger back to `done` and is a finding. No wrapper is
+    started and no pidfile is waited on, because the wrapper this round needs has been
+    running since the task was dispatched.
+11. Print `round <n> sent to <id>`.
 
 ### The round file
 
@@ -167,45 +181,57 @@ session already holds those.
 The line typed into the tab is Dux's own text and never the operator's:
 `Read <channel>/round-<n>.md and follow it.` It names the copy the wrapper staged in the
 task channel, mode 400, beside the brief. If the pane had somehow returned to a shell, a
-shell reads that line as `Read: command not found`, and the wrapper's discovery refuses
-before typing it anyway (section 5).
+shell reads that line as `Read: command not found`, and the wrapper's group check refuses
+before typing it anyway (section 5): a session that fell back to a shell is a session
+whose harness group has gone.
 
-## 5. `dux-worker-wrap <id> --round <n>`
+## 5. The wrapper runs a round in place
 
-The wrapper gains one flag. In round mode it supervises a session it did not start, in
-a channel it did not make. The differences from a first run, in order; everything not
-named is the same code path:
+The wrapper that parked is the wrapper that runs the round. It never released the
+channel, the outbox pins, the process group or its own pidfile, so a round needs none of
+the reattachment a second process would need: no flag, no rediscovery of the pane, no
+revalidation of the pins, no run id negotiated against what is on disk. What changes
+between one run and the next, in order:
 
-- **Its references are the parked run's.** `state/<id>.pgid` must hold a live group,
-  `state/<id>.portal` must name a channel directory directly under `state/channels/`
-  whose two outboxes still match their pins. A first run refuses on any of these
-  existing; a round refuses on any of them missing. `state/<id>.run` and
-  `state/<id>.result-context` belong to the run that parked, whose result the watcher
-  has already applied, and the round overwrites both. There is no receipt to remove:
-  parking renamed it to `state/<id>.ship-receipt.delivered` (section 3), which
-  `dux-result` never reads and `dux-teardown` removes with the rest.
+- **It sees the file.** The wait in section 3 ends when `data/tasks/<id>/round-<n>.md`
+  appears. `n` is the wrapper's own count of rounds run, plus one, so it waits for one
+  exact path and no older round file can be mistaken for it. `dux-round` renames the
+  file into place (section 4, step 10), so what the wrapper opens is always whole.
+- **The group must still be there.** Before anything else, `kill -0` on the group it has
+  been holding all along. If it has gone, the operator ended the session in the tab: the
+  wrapper publishes `failed: the session for <id> was ended in its tab before round <n>
+  could run`, cleans up and exits. That is one signal on a value the wrapper already
+  holds, not a rediscovery.
 - **The run id is new.** `<channel nonce>r<n>`, alphanumeric, so every existing equality
-  test on `run=` holds unchanged. The ship recorder in the channel is rewritten with it,
-  at the same path the worker's `DUX_SHIP_RECORD` already names. That file is mode 500,
-  so the rewrite is `chmod 600`, write, `chmod 500`; a plain redirect onto it fails.
-- **Earlier proposals are already read.** `accepted` starts at the status outbox's
-  current size with the checksum of that prefix, and the report outbox is copied from
-  its current size, so the parked run's terminal line is not a second terminal line
-  and its report is not appended twice. Anything the worker wrote while parked, outside
-  any run, is skipped rather than judged: the round the operator sent is the run.
-  The two size caps are measured over the region past `accepted`, not over the whole
-  file, or eight rounds would share one 64 KiB status budget and one 1 MiB report budget.
-- **The result context carries two more keys.** `round=<n>` and `since=<sha>`, the
-  tip of `refs/heads/dux/<id>` read before the prompt is typed. `dux-result` reads
-  both (section 6). A first run writes `round=0` and its `since` as well, so the file
-  has one shape.
-- **Discovery, then the prompt.** The harness is found in the pane as today (`dux-backend
-  pid`, command name and worktree cwd), and its group must equal the pgid file's, or
-  the run refuses: `the pane for <id> holds no supervised session; tear the task down`.
-  Only then is the round file copied into the channel and the fixed line typed with
-  `dux-backend prompt <endpoint> <text>`.
-- **The ending is the same.** `done: PR <url>` parks again; anything else stops the
-  group and clears the channel as a first run does.
+  test on `run=` holds unchanged. A new run record and result context are written over
+  `state/<id>.run` and `state/<id>.result-context`, whose contents belong to the run
+  that parked and whose result the watcher has already applied. There is no receipt to
+  remove: parking renamed it to `state/<id>.ship-receipt.delivered` (section 3), which
+  `dux-result` never reads and `dux-teardown` removes with the rest.
+- **The ship recorder is rewritten** with the new run id, at the path the worker's
+  `DUX_SHIP_RECORD` already names. That file is mode 500, so the rewrite is `chmod 600`,
+  write, `chmod 500`; a plain redirect onto it fails.
+- **The outboxes are seeked forward.** `accepted` becomes the status outbox's current
+  size and the report copy offset its current size, so the parked run's terminal line is
+  not read as a second terminal line and its report is not appended twice. Anything the
+  worker wrote while parked, outside any run, is skipped rather than judged: the round
+  the operator sent is the run. No checksum of the prefix is needed, because the wrapper
+  has held the pins since it made them. Both size caps are measured over the region past
+  `accepted`, not over the whole file, or eight rounds would share one 64 KiB status
+  budget and one 1 MiB report budget.
+- **The context carries two more keys.** `round=<n>` and `since=<sha>`, the tip of
+  `refs/heads/dux/<id>` read before the prompt is typed. `dux-result` reads both
+  (section 6). A first run writes `round=0` and its own `since`, so the file has one
+  shape.
+- **The file is staged and the line is typed.** The round file is copied into the task
+  channel at mode 400, beside the brief, and `dux-backend prompt <endpoint> <text>` types
+  `Read <channel>/round-<n>.md and follow it.` into the pane. `dux-round` never writes to
+  the channel and never types into a tab: it renders under `data/tasks/<id>/` and the
+  wrapper carries it the last step, so the channel keeps its one writer.
+- **Then it supervises as it always has.** The same import loop, the same caps, the same
+  terminal-line rules. `done: PR <url>` parks again and the count of rounds run goes up
+  by one; anything else stops the group, clears the channel and exits, as a first run
+  does.
 
 `dux-backend prompt <endpoint> <text>` is the one new adapter verb: send `<text>` and
 Enter to the pane's foreground process, nothing else. The text is one line, Dux's own,
@@ -258,11 +284,16 @@ argument applies to ship rounds only.
 
 ## 7. Teardown and recovery of a parked task
 
-`dux-teardown <id>` on a `done` task finds the group in `state/<id>.pgid` alive. Today
-that is a refusal. Now, for `done` only, teardown stops the group first, `TERM` then
-`KILL` with the wrapper's own grace, through `stop_pgid <pgid>` moved into `dux-env`
-from the wrapper's `stop_group`. A group that survives both is the same finding as
-today. Then the worktree, the pane, the channel and the references go as today,
+`dux-teardown <id>` on a `done` task finds two live processes: the wrapper named by
+`state/<id>.pid`, waiting for a round, and the harness group in `state/<id>.pgid`. Today
+a live group here is a refusal. Now, for `done` only, teardown ends both, in that order.
+The wrapper goes first, with `TERM`. It is sitting in a one-second wait with nothing in
+flight, because a task mid-round is `running` and not `done`; ending it first also means
+it cannot pick up a round file that arrives while teardown is running. Then the group,
+`TERM` then `KILL` with the wrapper's own grace, through `stop_pgid <pgid>` moved into
+`dux-env` from the wrapper's `stop_group`. A wrapper or a group that survives is the
+same finding as today. Then the worktree, the pane, the channel and the references go as
+today,
 `state/<id>.ship-receipt.delivered` with them. For `failed` the refusal stands: a failed
 task's group should be gone, and one that is not is something the operator ends in the
 tab.
@@ -342,9 +373,10 @@ no recorded phases and a fix count of zero. Nothing to change.
 ## 11. What changes where
 
 - `bin/backends/herdr.sh`, `bin/backends/tmux.sh`, `bin/dux-backend`: `prompt`.
-- `bin/dux-env`: `fleet_busy`, `start_wrapper`, `stop_pgid`, moved from `dux-spawn` and
-  `dux-worker-wrap`, not rewritten.
-- `bin/dux-worker-wrap`: the idle wait, the conditional park, `--round <n>`.
+- `bin/dux-env`: `fleet_busy` and `stop_pgid`, moved from `dux-spawn` and
+  `dux-worker-wrap`, not rewritten. There is no `start_wrapper`: `dux-spawn` remains the
+  only thing that ever starts one.
+- `bin/dux-worker-wrap`: the idle wait, the conditional park, the round loop.
 - `bin/dux-round`, `templates/round.md`: new.
 - `templates/worker-settings.json`: the `Stop`-only `stopped` hook.
 - `bin/dux-result`: `round` and `since`.
@@ -369,11 +401,19 @@ no recorded phases and a fix count of zero. Nothing to change.
   retire `--retry`'s respawn, which the operator wants. It is the next milestone, on
   this mechanism, because those states leave a session mid-work and unproved, and
   this one is scoped to the case that cost money.
-- **The ledger moves to `running` last, after the wrapper is live.** Setting it first
-  would put the task in the watched set while `state/<id>.pid` still named the exited
-  wrapper, and the watcher would emit a false `dead` on a round that was starting
-  normally. `dux-spawn` already orders it this way; the round copies it rather than
-  inventing a cleanup of the pidfile.
+- **The wrapper stays alive across a park instead of exiting and being started again.**
+  This is the re-cut, and it replaces the first draft's answer to review finding 1. That
+  draft had the wrapper exit at the park and `dux-round` start a second one with
+  `--round <n>`. The second process had to find the channel again, revalidate both
+  outbox pins, rediscover the harness in the pane and prove its group matched the pgid
+  file, and between the two processes `state/<id>.pid` named something dead, which
+  forced the ledger write to be ordered last so the watcher could not read that gap as a
+  dead worker. Keeping the one process alive removes all of it: nothing was released, so
+  nothing is reacquired, and the pidfile is never untrue, so the ordering problem cannot
+  arise rather than being ordered around. It is about 275 fewer lines and it deletes
+  that critical finding by construction instead of answering it. What it costs: one
+  shell per parked task sitting in a one-second wait, and teardown must end that process
+  as well as the harness group (section 7).
 - **A parked session does not hold the one-worker slot.** It spends nothing. The
   alternative, one task at a time including the wait for a merge, would make every
   review block the fleet.
@@ -392,6 +432,13 @@ no recorded phases and a fix count of zero. Nothing to change.
 - **Eight rounds, then stop.** The one-session spec's cap, for the same reason: past
   it the pull request is not converging and the session is too long to be the right
   tool.
+- **The round is triggered by a file, not a signal or a socket.** `dux-round` renames a
+  file into the task folder and the wrapper polls for that one path once a second. A
+  signal would need the wrapper to carry a handler across every wait it already does, and
+  a socket or a named pipe would add a thing to create, clean up and reason about when
+  one end dies. The file is the state either way, because the wrapper has to read it; the
+  poll just removes the second mechanism. One second of latency on a correction a human
+  is about to read costs nothing.
 - **The new-task-on-an-old-branch design is not built.** It was the brief's framing
   and it answers the same cost with a new task, a new worktree, a checkout of a branch
   another task owns, and proof rules for a continued pull request. The operator's
@@ -401,6 +448,11 @@ no recorded phases and a fix count of zero. Nothing to change.
 
 ## 13. Accepted limits
 
+- A parked task holds a wrapper process as well as a tab and a worktree, until its pull
+  request merges or it is torn down. It is a shell in a one-second wait and costs nothing
+  measurable, but it is a process, and a machine restart takes it with the session it was
+  watching. That leaves the task `done` in the ledger with no session, which `dux-round`
+  refuses on its liveness checks exactly as it would have before.
 - A parked task holds a tab and a worktree until its pull request merges. The digest
   counts it under `ready`, as today. It is never marked long-running, because
   `dux-status` asks that question only of `running` and `stale` tasks; conversely a
