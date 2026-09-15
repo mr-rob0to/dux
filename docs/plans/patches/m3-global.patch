@@ -1,0 +1,160 @@
+# M3 global policy patch
+
+Target: `~/.codex/AGENTS.md`, preserving the shared global-file link.
+
+Format: focused before/after prose patch applied after M1 and M2. Each BEFORE block identifies
+either unchanged original local text or the exact staged text from an earlier patch. No whole-file
+replacement is required.
+
+Activation: R3 must be a recorded full merged commit containing all M3 acceptance requirements.
+Install R3, or a descendant retaining earlier support, before applying this patch.
+
+Source: approved artifact sections 04, 05.2, 05.4, 07, and 08.
+
+## 1. Name the integrated planning exception
+
+BEFORE:
+| Planning, reasoning, architecture | Fable, high effort |
+
+AFTER:
+| Standalone planning and required independent design review | Fable, high effort |
+| Integrated planning and implementation in one Dux deliverable | Opus, max effort |
+
+## 2. Activate integrated Opus ownership
+
+BEFORE:
+**Implementation model.** Retain Sonnet medium for bounded implementation and Opus max for complex
+implementation. Standalone planning and required independent design reviews remain Fable high.
+Integrated plan-and-build continuation is unavailable until Dux R3 is installed.
+
+AFTER:
+**Implementation model.** Retain Sonnet medium for bounded implementation and Opus max for complex
+implementation. For an integrated plan-and-build task, Opus owns both phases. This avoids an
+unverified live model switch and nested implementation. Standalone planning and required
+independent design reviews remain Fable high.
+
+## 3. Align the planning owner
+
+BEFORE:
+1. **Fable plans in full before any code**: target files, constraints, risks, acceptance criteria,
+   open questions. No design decisions left for mid-implementation.
+
+AFTER:
+1. **Plan in full before implementation**: target files, constraints, risks, acceptance criteria,
+   open questions. No design decisions left for mid-implementation. Standalone planning uses
+   Fable high. For integrated Dux plan-and-build work, the owning Opus worker writes the plan and
+   pauses for recorded approval before implementation.
+
+## 4. Preserve approval only for the permitted progress edits
+
+BEFORE:
+4. **After approval, stop planning.** No per-task plans, no re-planning between milestones. If
+   reality diverges enough to matter, say so in one line and adjust. **Amending the approved plan
+   mid-implementation is re-planning.** When a task genuinely has to be added, add it and record it
+   in the plan header as a divergence, with one line on what changed and why. Three amendments in
+   one milestone means the plan was approved too early: stop and say so rather than adding a fourth.
+
+AFTER:
+4. **After approval, stop planning.** No per-task plans or repeated planning between milestones.
+   For integrated Dux work, approval records the exact committed plan path, approved commit, and
+   task range. Only checkbox state changes on existing task entries and progress-only updates
+   inside the designated three-line "where this stands" block preserve approval.
+   Checkbox changes must not change task text, identity, order, or membership.
+   All other plan changes invalidate approval, including changed acceptance criteria, task
+   descriptions, constraints, membership, and substantive amendments. A changed approved task
+   range also requires renewed approval, even when the plan file is unchanged.
+   Progress text cannot authorize new work. A substantive amendment recorded in the status block
+   still requires a substantive plan change and renewed approval before affected work proceeds.
+   Record a required divergence in the plan header. Three amendments in one milestone mean the
+   plan was approved too early: stop rather than adding a fourth.
+
+## 5. Keep integrated ownership through the handoff
+
+BEFORE:
+5. Hand the implementer the plan, target files, constraints, and acceptance criteria. Not the
+   exploratory discussion.
+
+AFTER:
+5. For a separate implementation assignment, hand the implementer the plan, target files,
+   constraints, and acceptance criteria, not the exploratory discussion. Integrated Dux
+   plan-and-build work remains with its owning Opus worker after approval is recorded.
+
+## 6. Activate same-session answers and approval
+
+BEFORE:
+- **Until R3 is installed, questions and approval use existing recovery.** Integrated
+  plan-and-build continuation and recorded prerequisite dispatch remain unavailable.
+
+AFTER:
+- **Questions and recoverable blockers within the deliverable continue the live owning worker.**
+  Extend PR #46's existing round mechanism with explicit purposes: feedback, answer, and approval.
+  An answer requires the matching waiting state and a live, positively parked owner.
+  Approval additionally identifies the committed plan path, task range, and approved commit.
+  An ordinary answer cannot authorize implementation.
+- **Every resumed stretch receives fresh run identity and supervision.** Failed or dead sessions
+  use the existing explicit recovery path. Retain the eight-round limit across continuations;
+  reaching it requires a clearer task boundary, not an automatic context reset.
+- **Integrated work retains the `ship` task shape with `planning|implementation` phase metadata.**
+  A planning-phase ship task may start without an existing plan only when explicitly declared as
+  such. It creates the plan and pauses at `needs-decision`. Approval records the committed plan
+  and approved task range before advancing to implementation.
+- **Completion proof requires valid approval and completed approved tasks.** Compare the current
+  plan with the approved commit, permitting only the specified checkbox and designated status-block
+  progress edits, then check the current completion boxes for the approved range. Checkbox updates
+  preserve authorization; they do not replace delivery evidence.
+- **Use one implementation worktree from the start.** Never promote a plan-only task's worktree or
+  change its permissions midway. An explicit plan-only assignment remains a Fable planning
+  worker whose deliverable is the plan.
+- **Dependent repository dispatch is available through the verified prerequisite rule below.**
+  Activation still passes the global one-active-worker admission check.
+
+## 7. Add verified repository prerequisites
+
+BEFORE:
+## Cross-repo changes
+
+AFTER:
+## Dux verified repository prerequisites
+
+Use one optional `--after <task-id>` dependency at task creation. Support linear sequencing only.
+
+Before starting a dependent task:
+
+1. Resolve the predecessor through Dux's recorded project and proved PR.
+2. Verify its final delivery evidence.
+3. Confirm the expected PR merged through GitHub.
+4. Fetch the registered upstream base and verify the merge commit is present.
+5. Store the verified repository, PR, delivered head, and merge commit with the dependent task.
+
+Capture the necessary delivery evidence before predecessor teardown removes receipts. A ledger
+label alone is insufficient.
+
+If deployment is required, merged code is insufficient. The brief must name the existing
+deployment or contract check and the required result. Do not invent a generic deployment checker.
+For API/client work, preserve API-first ordering and the repositories' existing contract
+generation and synchronization commands.
+
+The dependency record belongs to the dependent task. Retry preserves and revalidates it; task
+removal removes it. Missing, failed, abandoned, or unverifiable predecessors leave work queued.
+
+Dux chooses and starts the next already-authorized task when handling the predecessor's verified
+completion or merge, using existing events and task files. This is not a background scheduling
+service. A prerequisite requiring merge is not satisfied by delivery alone.
+
+Separate repositories retain separate tasks and isolated worktrees, executed sequentially.
+The operator does not manage capacity or worktrees. Merge still requires the operator's explicit
+word.
+
+## Cross-repo changes
+
+## Application checks
+
+Confirm the installed runtime rejects ordinary answers as implementation approval, permits only
+the named progress edits, rejects incomplete approved tasks, and preserves prerequisite evidence
+through teardown and retry.
+
+Confirm open, failed, wrongly targeted, unverifiable, or deployment-incomplete prerequisites leave
+dependent work queued. No continuation or dependent dispatch may bypass global admission.
+
+Preserve the M2 same-PR feedback, positive parking, receipt-retention, and history-preserving base
+merge rules. No additional global patch is required for M4 usage reporting.

@@ -1,0 +1,253 @@
+<!-- INSUFFICIENT SOURCE DETAIL: The approved artifact specifies versioned review modes and evidence requirements but does not supply the new receipt schema or recording-command syntax. The current standalone skill contains no receipt helper integration. This patch transcribes the required evidence behavior without inventing commands or a schema; the R1 gate implementation must supply compatible proof support, or the operator must explicitly select the reviewed Dux skill link. -->
+
+# M1 standalone ship policy patch
+
+Target: `~/.agents/skills/ship/SKILL.md`.
+
+Format: focused before/after prose patch against the current installed text. Replace each exact BEFORE block with AFTER, in order. Unmentioned sections remain unchanged. The security coverage checklist keeps its current text; replacement 7 makes it apply in both review modes.
+
+Activation: recorded and installed R1, including compatible gate and proof support. Compare local drift and preserve links and dated backups first. Applying this text alone does not establish runtime support.
+
+Source: approved artifact sections 04, 05.1, and 07.
+
+## 1. Describe conditional security review
+
+BEFORE:
+description: Use when a feature branch is finished and needs to go through the full pre-merge gate: verifying it is based on the right branch, running the project's checks, getting independent adversarial and security reviews, opening or updating the PR, and watching CI. Triggers on "ship it", "ship this branch", "this is ready to merge", "open the PR", or asking whether a branch is ready to merge.
+
+AFTER:
+description: Use when a feature branch is finished and needs the full pre-merge gate: base verification, project checks, one independent combined review or separate correctness and security reviews for sensitive changes, a PR, and CI. Triggers on "ship it", "ship this branch", "this is ready to merge", "open the PR", or asking whether a branch is ready to merge.
+
+BEFORE:
+Take a finished branch through the pre-merge gate: correct base, clean tree,
+green checks, an independent correctness review, a security audit, a PR, and green CI.
+
+AFTER:
+Take a finished branch through the pre-merge gate: correct base, clean tree,
+green checks, the required independent review or reviews, a PR, and green CI.
+
+## 2. Keep reviews inside the gate
+
+BEFORE:
+**This gate is the only place the reviews run.** Step 6 is the PR's one code review and step 7 is
+its security pass. Neither is run by hand before or after invoking this skill — a review run outside
+the gate either duplicates step 6 or, worse, becomes the excuse to skip the gate and lose step 7
+with it.
+
+AFTER:
+**This gate is the only place the shipping reviews run.** Step 6 is the independent combined or
+correctness review. Step 7 is the separate security review when classification requires it.
+Fix commits receive scoped review sufficient to cover the changed code. Do not run shipping
+reviews by hand outside the gate.
+
+The gate owns the full pre-merge checks. Do not duplicate those full checks immediately before
+invoking it. Task-level verification and installed-path exercises remain required.
+
+## 3. Clarify the prose exception
+
+BEFORE:
+**Docs-only changes skip the gate entirely.** If every file the branch touches is prose that nothing
+reads but a human — `.md`, comments, design mockups — stop here, open or update the PR, and say the
+gate was skipped as docs-only. It is *not* docs-only the moment it touches anything the build, the
+tests, or CI consume: a manifest, a workflow, a Makefile, a build config, a script, a generated
+contract such as `contracts/openapi.json`. When in doubt, run the gate.
+
+AFTER:
+**Docs-only changes skip the gate entirely only when every changed file is human-only prose.**
+Open or update the docs PR and say the gate was skipped as docs-only.
+
+Operational instructions are not human-only prose: `AGENTS.md`, skills, templates, and
+agent/tool-consumed configuration do not qualify. Anything the build, tests, or CI consume also
+requires the gate. A Markdown extension alone does not establish the exception.
+
+## 4. Classify before launching reviewers
+
+BEFORE:
+## Step 6. Independent adversarial review (REQUIRED)
+
+AFTER:
+## Review classification and evidence
+
+Before launching reviewers, check the actual whole-branch diff.
+
+| Change | Required review |
+|---|---|
+| Bounded implementation | One independent combined review |
+| Ordinary complex implementation | One independent combined review |
+| Auth, permissions, secrets, migrations, data integrity, concurrency, or cross-repository ordering | Separate correctness and security reviews |
+
+Any named sensitive category requires separate reviews, regardless of size or planning
+classification. Combined review applies only after the whole-branch diff has been checked and
+classified as non-sensitive.
+
+Dux records its initial classification and reason in the brief. The gate checks that classification
+against the actual diff. Sensitive changes escalate to separate reviews. Unknown or missing
+classification defaults to separate. A combined-review receipt cannot satisfy a separate-review
+task.
+
+For standalone `/ship`, no Dux brief is required. Establish and record the classification and
+reason in local evidence by checking the same categories before launching reviewers. A missing
+brief does not prevent explicit classification. If classification cannot be established or
+recorded, use separate reviews. This is an instruction and evidence requirement, not a new
+classifier.
+
+A small permissions fix or migration needs separate reviews. An ordinary complex change within
+settled architecture may use combined review. A one-step public API change still needs planning
+and design review, but uses combined shipping review unless a sensitive category also applies.
+
+Use the installed R1 versioned evidence support:
+
+- Combined sequence: checks, review, PR, CI.
+- Separate sequence: checks, review, security, PR, CI.
+- Never record a security phase as completed when it did not run.
+- Bind review mode and phase evidence to the task, run, branch, and relevant commit where applicable.
+- Reject missing, invalid, mismatched, stale, or incomplete evidence.
+- Read legacy receipts only under their existing separate-review requirements.
+- Clear required phase evidence on a fix pass and re-establish it before push and delivery.
+
+For a Dux delivery, retain the completed run-bound receipt at the path the watcher validates until
+the watcher has validated and durably applied the handoff. Publication, a Stop event, and parking
+do not establish consumption. Do not rename, delete, or overwrite the receipt before consumption.
+
+## Step 6. Independent combined or correctness review (REQUIRED)
+
+## 5. Remove Critical-only re-review
+
+BEFORE:
+**This is the PR's one code review.** Not one of several: no per-task reviews, no separate
+whole-branch review on top of it, and no re-review unless a Critical was fixed. If a review was
+already run by hand before this skill was invoked, that was the mistake — do not run a second one
+here; carry the first one's findings forward, note in the PR that it ran outside the gate, and go
+on to step 7, which is the pass a manual review does not cover.
+
+AFTER:
+The combined review covers correctness, regressions, tests, compatibility, and relevant security
+concerns, and explicitly reports what it examined and any clean areas. In combined mode, give this
+reviewer step 7's coverage list with the diff; nothing else applies it.
+
+Verify each finding against the code and a reachable failure or attack path. Verified
+Critical/High findings, including findings described as Important, block delivery. Lower findings
+are fixed or explicitly deferred with a reason. A proposed architectural change goes to the
+operator.
+
+Fix commits receive scoped review sufficient to cover the changed code, with no "Critical fixes
+only" exception that contradicts final-commit proof.
+
+## 6. Require scoped coverage of fixes
+
+BEFORE:
+- After material fixes, re-review **scoped to the new commits only**, so round two
+  does not re-litigate round one.
+
+AFTER:
+- Fix commits receive review scoped to the changed code, sufficient to establish final-commit
+  coverage. Re-establish required phase evidence before push and delivery.
+
+## 7. Make separate security review conditional
+
+BEFORE:
+## Step 7. Security review (REQUIRED)
+
+Separate pass, separate reviewer. The correctness review in step 6 is not a
+security review and does not substitute for one, and a clean step 6 is not a
+reason to skip this.
+
+Run this on **every** ship, not only when the diff "looks security-relevant".
+Auth bugs arrive inside ordinary refactors, and deciding case by case is itself
+the failure mode: the judgment call "this one doesn't need it" is the one that
+gets made wrong. There is no per-release alternative that replaces it — a
+release-time pass over the accumulated diff is *in addition to* these, not
+instead of them.
+
+AFTER:
+## Step 7. Security review (REQUIRED FOR SEPARATE MODE)
+
+Auth, permissions, secrets, migrations, data integrity, concurrency, or cross-repository ordering
+require a separate security review. Unknown or missing classification also requires separate
+reviews. A clean correctness review does not waive this requirement.
+
+For a recorded non-sensitive combined classification, step 6 covers relevant security concerns.
+Do not run or record a separate security phase that the combined mode does not require.
+
+The coverage list below applies to whichever review is running. In combined mode, pass it to the
+step 6 reviewer with the diff; the checks it names do not depend on the diff obviously touching
+them, and combined mode removes the separate pass, not the coverage.
+
+## 8. Include Important findings in the blocking rule
+
+BEFORE:
+- **Critical or High findings block the PR.** Fix them on this branch, then
+  re-audit the new commits. Do not open the PR with them outstanding and do not
+  file them as follow-ups.
+
+AFTER:
+- **Verified Critical/High findings, including findings described as Important, block delivery.**
+  Fix them on this branch and review the changed code sufficiently to establish final-commit
+  coverage. Do not open the PR with them outstanding or file them as follow-ups.
+
+## 9. Report the reviews actually performed
+
+BEFORE:
+Body must carry: summary of the change, test evidence (actual command output, not
+"tests pass"), the correctness-review and security-review findings with how each
+was resolved, an explicit note when an audit came back clean, and anything
+deliberately deferred.
+
+AFTER:
+Body must carry: summary of the change, test evidence with actual command output, findings from
+the required combined review or separate correctness and security reviews, how findings were
+resolved, explicit checked-clean areas, and anything deliberately deferred with its reason.
+Do not describe an unperformed separate security review as completed. Keep PR prose free of model
+attribution; actual reviewer identity belongs in local review evidence.
+
+## 10. Align stop conditions
+
+BEFORE:
+| Critical or High security finding | Must be fixed and re-audited before the PR opens |
+| Security review could not be run | An unaudited PR is not shipped |
+
+AFTER:
+| Verified Critical/High finding, including Important | Must be fixed with review covering the changed code before delivery |
+| A required review could not be run | Missing required review evidence prevents delivery |
+
+## 11. Align red flags with classification
+
+BEFORE:
+- "The correctness review covered security too."
+- "This diff doesn't touch auth, so a security pass is overkill."
+
+AFTER:
+- "The task requires separate reviews, but the correctness review is enough."
+- "It is small, so I can skip checking the whole-branch diff for sensitive categories."
+
+## 12. Use explicit fresh review commands
+
+BEFORE:
+- **Step 6 reviewer** is the `codex exec` command above on every host. From inside Codex it is a
+  nested, read-only `codex exec`; that is intended, because the reviewer must be a fresh session.
+- **Step 7 reviewer on Claude Code:** dispatch the `security-reviewer` agent; if it is
+  unavailable, run the `/security-review` skill.
+- **Step 7 reviewer on Codex:** run `codex exec -m gpt-5.6-sol --sandbox read-only` with the
+  audit prompt above and the coverage list, as a separate run from step 6.
+- If Sol returns a 400, fall back to Terra and say in the PR which reviewer actually ran.
+
+AFTER:
+- Required independent reviews use fresh read-only sessions through explicit commands.
+- **Step 6 reviewer** is the named `codex exec -m gpt-5.6-sol --sandbox read-only` command above.
+- **Step 7 reviewer**, when separate mode requires it, uses a fresh
+  `codex exec -m gpt-5.6-sol --sandbox read-only` run with the audit prompt and coverage list.
+- **Step 7 reviewer on a Claude Code host without the `codex` CLI:** dispatch the
+  `security-reviewer` agent; if it is unavailable, run the `/security-review` skill. Step 7 still
+  names a mechanism on every host, because step 7's own text points here for it.
+- Sol remains the named shipping reviewer. An HTTP 400 permits the existing Terra fallback once.
+  Record the actual reviewer in local evidence and disclose the fallback to the operator.
+  Keep commits and PR prose free of model attribution.
+- Preserve explicit installed reviewer choices and report incompatible overrides rather than
+  rewriting them.
+- Keep the existing six Claude tools and empty MCP configuration. Do not add a general Agent tool
+  merely to satisfy old instructions.
+
+## Availability
+
+This patch does not activate same-session PR feedback, answers, or approval. Feedback uses existing
+recovery until R2. Questions and approval use existing recovery until R3.

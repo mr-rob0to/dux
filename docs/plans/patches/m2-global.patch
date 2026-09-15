@@ -1,0 +1,83 @@
+# M2 global policy patch
+
+Target: `~/.codex/AGENTS.md`, preserving the shared global-file link.
+
+Format: focused before/after prose patch. Replacements 1 and 3 use exact text present in the
+original local file and left unchanged by M1. Replacement 2 uses the exact staged text introduced
+by `m1-global.patch`. Apply after M1; do not reapply M1 over M2.
+
+Activation: R2 must record the merged revision containing all nine amended PR #46 tasks. Install
+R2, or a descendant retaining R1 and R2 support, before applying this patch.
+
+Source: approved artifact sections 03, 04, 05.1, 05.3, 07, and 08.
+
+## 1. Keep delivered-PR feedback with its owner
+
+BEFORE:
+- **End the session at the task boundary**: roughly one commit-sized change, or one milestone of
+  8 to 12 tasks.
+
+AFTER:
+- **Use a fresh worker and its own worktree for a new deliverable, different repository,
+  substantial milestone, or lost session.**
+- **For Dux-managed feedback on a proved delivered PR, use PR #46's round mechanism in the same
+  worker, task, worktree, and PR.** Retain the existing eight-feedback-round limit and safe
+  teardown. Failed or dead sessions use explicit recovery.
+
+## 2. Activate feedback and positive parking, not answers or approval
+
+BEFORE:
+- **Dux staged availability:** until R2 is installed, feedback uses existing recovery. Until R3 is
+  installed, questions and approval use existing recovery, integrated plan-and-build continuation
+  is unavailable, and recorded prerequisite dispatch is unavailable.
+
+AFTER:
+- **Dux feedback is available after installed R2.** Feedback requires a proved delivered PR and
+  uses the owning live worker through the existing round mechanism. Every round receives fresh
+  run identity and completion proof, updates the same PR through `/ship`, and proves its final
+  commit.
+- **Positive parking is required.** A worker may remain open after the wrapper observes the
+  Stop-only event for that run and records consistent run-bound parking evidence. Spawn and round
+  activation use the same admission check. A consistent parked marker exempts both the live
+  wrapper and its process group; active or uncertain evidence blocks activation.
+- **Claiming a round clears the parking exemption before prompting.** Repeated requests and
+  pending handoffs cannot start a second activation. Timeout or inconsistent evidence triggers
+  recovery, never an assumption that the worker is idle.
+- **Parking does not consume a delivery handoff.** Keep the completed run-bound receipt immutable
+  and readable at the watcher's validation path until the watcher has validated and durably
+  applied that run's handoff. Publication and parking do not establish consumption. A new round
+  stays blocked while the preceding handoff is pending.
+- **Each feedback round rechecks whole-branch classification.** Sensitive changes escalate to
+  separate reviews; the task cannot silently downgrade. A new operator feedback round gets the
+  required whole-branch review and fresh final-commit proof. Further reduction of that repetition
+  is deferred pending evidence.
+- **Managed feedback goes through Dux.** The operator's tab remains outside coordinator context.
+  Direct typing into parked tabs is outside the enforced one-active-worker guarantee.
+- **Until R3 is installed, questions and approval use existing recovery.** Integrated
+  plan-and-build continuation and recorded prerequisite dispatch remain unavailable.
+
+## 3. Preserve feedback-round history
+
+BEFORE:
+- Never merge into or push directly to the base branch. Rebase onto freshly fetched `origin/<base>`
+  before opening the PR and before merging; push with `--force-with-lease` after a fresh fetch.
+
+AFTER:
+- Never merge into or push directly to the base branch. Outside a Dux-managed feedback round,
+  rebase onto freshly fetched `origin/<base>` before opening the PR and before merging; push with
+  `--force-with-lease` after a fresh fetch.
+- During a Dux-managed feedback round, Dux assigns an outdated-base repair to the owning worker:
+  an ordinary merge from the fetched base, preserving reviewed commits. Stop for a consequential
+  conflict decision. The round still completes the required whole-branch review, final-commit
+  proof, same-PR update, and CI. Merge approval remains the operator's decision.
+
+## Application checks
+
+Confirm M1's Dux routing ownership remains in force and no automatic Herdr worker is launched
+outside Dux after a Dux-managed merge.
+
+Confirm same-PR updating is installed, not deferred. The parked-worker exception must cover both
+wrapper PID and process-group checks. Timeout must not release capacity.
+
+Questions, approval, integrated plan-and-build continuation, and recorded dependent dispatch stay
+unavailable until R3.

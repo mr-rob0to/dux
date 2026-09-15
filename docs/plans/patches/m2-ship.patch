@@ -1,0 +1,104 @@
+<!-- INSUFFICIENT SOURCE DETAIL: The approved artifact requires finding and updating the existing PR but does not give the literal PR lookup/edit command sequence for this standalone skill. The patch states the required same-PR behavior without inventing command flags, PR-selection rules, or a second round implementation. PR #46 Task 8 supplies and verifies the implementation before R2 activation. -->
+
+# M2 standalone ship policy patch
+
+Target: `~/.agents/skills/ship/SKILL.md`.
+
+Format: focused before/after prose patch, applied after `m1-ship.patch`. The BEFORE blocks below
+are exact current-file text left unchanged by M1.
+
+Activation: recorded and installed R2 containing all nine amended PR #46 tasks, including existing
+PR updates. Preserve the M1 review classification and proof changes.
+
+Source: approved artifact sections 03, 04, 05.1, 05.3, 07, and 08.
+
+## 1. Repair an outdated feedback base in the owning worker
+
+BEFORE:
+Not based on `$BASE`? **Stop and report.** Say which branch it actually forked from
+(`git merge-base --fork-point` or the first shared commit with each candidate).
+Offer a rebase; do not perform it unattended.
+
+AFTER:
+For a Dux-managed feedback round whose base is outdated, Dux assigns the repair to the owning
+worker: an ordinary merge from the fetched base, preserving reviewed commits. Stop for a
+consequential conflict decision.
+
+Outside that feedback-round case, if the branch is not based on `$BASE`, stop and report which
+branch it actually forked from. Offer a rebase; do not perform it unattended.
+
+## 2. Reclassify and review every feedback round
+
+BEFORE:
+A fresh reviewer that did not plan or implement the change. Never merge without it.
+
+AFTER:
+A fresh reviewer that did not plan or implement the change. Never merge without it.
+
+A new operator feedback round gets the required whole-branch review. Recheck classification against
+the current whole-branch diff. Sensitive changes escalate to separate reviews; feedback cannot
+silently downgrade the task. A separate-review task cannot satisfy its gate with a combined receipt.
+
+Every delivered round requires fresh run identity, a fresh receipt, and final-commit proof.
+Fix commits within the gate receive scoped review sufficient to cover the changed code.
+
+## 3. Update the existing PR
+
+BEFORE:
+```bash
+gh pr create --base "$BASE" --fill
+```
+
+AFTER:
+For a Dux-managed feedback round, find and update the existing proved PR for the owning task.
+Keep the same worker, task, worktree, and PR. Do not create a replacement PR for that feedback.
+
+PR #46's installed existing-PR update support owns the operation. Update the PR's description and
+evidence to describe the delivered result, the reviews actually performed, the final commit, and
+the current checks. Preserve the required project PR template and no-attribution policy.
+
+For a first delivery, create the PR against the resolved base using the required project template
+and the current gate evidence.
+
+Same-PR updating is required in this milestone. It cannot be deferred while calling feedback rounds
+usable.
+
+## 4. Retain proof until watcher consumption
+
+BEFORE:
+Watch until green. Report the run URL. A red run, or one that never started, is not shipped.
+
+AFTER:
+Watch until green. Report the run URL. A red run, or one that never started, is not shipped.
+
+Each feedback round proves its own run and final commit against the same PR.
+
+Keep that run's completed receipt immutable and readable at the path the watcher validates until
+the watcher has validated and durably applied its handoff. Publication, a Stop event, and positive
+parking do not establish consumption. Do not rename the receipt to `.delivered`, delete it, or
+overwrite it for a later run before consumption.
+
+After consumption it may be archived as that run's `.delivered` evidence. A new round remains
+blocked while the preceding handoff is pending. Watcher retries must not apply consumed handoffs
+twice.
+
+The wrapper records parking only after that run's Stop-only event. Timeout does not establish
+idleness or release capacity. Round activation still passes the global admission check and clears
+parking before prompting.
+
+## 5. Align the base stop condition
+
+BEFORE:
+| Branch not based on the resolved base | Same |
+
+AFTER:
+| Branch not based on the resolved base outside the supported feedback repair | Stop and resolve the base before proceeding |
+| Feedback base repair needs a consequential conflict decision | The operator decides before the owning worker continues |
+
+## Availability and checks
+
+Apply only after the live prompt, Stop hook, parking, timeout, same-PR update, receipt retention,
+and actual PR-through-CI rehearsal have passed on the supported runtime.
+
+Same-session answers and approval remain unavailable until R3. This patch extends no task shapes
+and creates no competing round mechanism. It does not authorize merge.
