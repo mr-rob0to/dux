@@ -49,6 +49,12 @@ setup_task() {  # $1 shape; prints id
   grep -qxF -- "- Tasks: 3-5" "$b"
   grep -qF '/ship' "$b"
   grep -qF 'done: PR <url>' "$b"
+  # The host check and the Docker fallback must be one conditional rule the
+  # worker evaluates itself, not two independent lines.
+  line="$(grep -F 'uname -s' "$b")"
+  [ "$(printf '%s\n' "$line" | wc -l | tr -d ' ')" -eq 1 ]
+  [[ "$line" == *"docker run -d --init"* ]]
+  [[ "$line" == *"ubuntu:24.04"* ]]
 }
 
 @test "plan brief carries the design-review rule and refuses --tasks" {
@@ -57,8 +63,16 @@ setup_task() {  # $1 shape; prints id
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: --plan and --tasks are for ship briefs only"* ]]
   dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" >/dev/null
-  grep -qF 'design review is a subagent inside this task' "$DUX_HOME/data/tasks/$id/brief.md"
-  grep -qF 'never wait on the operator' "$DUX_HOME/data/tasks/$id/brief.md"
+  b="$DUX_HOME/data/tasks/$id/brief.md"
+  grep -qF 'design review is a subagent inside this task' "$b"
+  grep -qF 'never wait on the operator' "$b"
+  [ "$(grep -c 'ubuntu:24.04' "$b" || true)" -eq 0 ]
+}
+
+@test "the host-aware Docker rule is ship-only, not scout" {
+  id="$(setup_task scout)"
+  dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" >/dev/null
+  [ "$(grep -c 'ubuntu:24.04' "$DUX_HOME/data/tasks/$id/brief.md" || true)" -eq 0 ]
 }
 
 @test "a brief over 100 lines is a finding and nothing is written" {
