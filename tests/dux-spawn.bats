@@ -260,7 +260,9 @@ wait_result() {  # $1 id
   grep -qF "tab create --workspace w1 --cwd $wt --label dux-$id --no-focus" "$FAKE_HERDR_LOG"
   # The pane runs the launcher the wrapper staged, and the wrapper itself is a
   # process of Dux's own, not the pane's.
-  grep -qE "^pane run w1:p9 $DUX_HOME/state/channels/$id\\.[A-Za-z0-9]+/launch$" "$FAKE_HERDR_LOG"
+  # Quoted: the pane's shell reads this line, and a DUX_HOME with a space in it
+  # would otherwise arrive as a command and an argument.
+  grep -qE "^pane run w1:p9 '$DUX_HOME/state/channels/$id\\.[A-Za-z0-9]+/launch'$" "$FAKE_HERDR_LOG"
   [ "$(grep -c "dux-worker-wrap" "$FAKE_HERDR_LOG" || true)" -eq 0 ]
   # Alive after spawn returned, and in a process group of its own: a wrapper
   # sharing Dux's group would take every signal the operator sends Dux.
@@ -380,6 +382,30 @@ exit 2')"
   run dux-spawn "$id"
   [ "$status" -eq 0 ]
   wait_result "$id"
+}
+
+# The other half of that ending: a wrapper spawn cannot stop.
+@test "a wrapper that will not stop keeps the tab, the endpoint and the worktree" {
+  id="$(fixture_task proj scout)"
+  # It ignores the signal and never writes a pidfile, so spawn has nothing that
+  # says it stopped. Undoing under it would close the tab it is about to run in
+  # and discard the worktree it is about to work in.
+  r="$(root_with_stub dux-worker-wrap '#!/bin/sh
+trap "" TERM
+echo $$ > "$DUX_HOME/state/stubborn.pid"
+sleep 60')"
+  run env DUX_ROOT="$r" DUX_SPAWN_START_SECS=1 "$r/bin/dux-spawn" "$id"
+  stub="$(cat "$DUX_HOME/state/stubborn.pid" 2>/dev/null)"
+  [ -n "$stub" ] && kill -9 "$stub" 2>/dev/null
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the wrapper for $id did not start and pid "*" will not stop; stop it, then run dux-recover $id"* ]]
+  # Every reference spawn made is still there, for recovery to read.
+  [ "$(cat "$DUX_HOME/state/$id.endpoint")" = herdr:w1:p9 ]
+  [ "$(dux-ledger get "$id" endpoint)" = herdr:w1:p9 ]
+  [ -n "$(dux-backend find "$id")" ]
+  [ -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
+  grep -qxF -- "- Worktree: $DUX_HOME/proj/.worktrees/dux-$id" "$DUX_HOME/data/tasks/$id/brief.md"
+  [ "$(dux-ledger get "$id" state)" = queued ]
 }
 
 # A refusal made after the wrapper opened its run record is a proved result, so

@@ -356,7 +356,11 @@ worker_launcher "$launcher" "$c_brief" "$model" "$effort" "$c_settings" "$DUX_RO
 [ "$signalled" = 0 ] || refuse "signalled before the harness started"
 # Tests only: widens the gap the trap cannot cover, so the re-check below is reachable.
 [ -z "${DUX_WRAP_FORK_PAUSE_SECS:-}" ] || sleep "$DUX_WRAP_FORK_PAUSE_SECS"
-"$backend" run "$endpoint" "$worktree_path" "$launcher" \
+# Quoted, because what `run` takes is a command line and a shell in the pane is
+# what reads it: an unquoted DUX_HOME holding a space would arrive as a command
+# and an argument. worker_launcher has already refused a path with a single
+# quote in it, so nothing here can close the one this opens.
+"$backend" run "$endpoint" "$worktree_path" "'$launcher'" \
   || refuse "cannot start the worker for $id in its tab at $endpoint"
 
 # ---- finding the process the pane started ---------------------------------

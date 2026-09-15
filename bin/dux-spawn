@@ -254,6 +254,14 @@ if [ "$live" = 0 ]; then
   if [ "$(handoff_next_seq "$id")" != "$seq_before" ]; then
     finding "the wrapper for $id refused before the harness started; see $wraplog"
   fi
+  # A wrapper still there after the signal and the wait is one undo cannot run
+  # under: it is about to open the tab spawn would close and work in the
+  # worktree spawn would discard, and nothing here can tell it to stop. So the
+  # tab, the endpoint and the worktree stay where they are and the pid is named,
+  # the same answer undo gives when a container is alive.
+  if kill -0 "$wpid" 2>/dev/null; then
+    finding "the wrapper for $id did not start and pid $wpid will not stop; stop it, then run dux-recover $id"
+  fi
   undo_open
   finding "the wrapper for $id did not start; see $wraplog"
 fi

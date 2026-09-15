@@ -416,6 +416,26 @@ teardown_file() {
   [ "$status" -eq 0 ]
 }
 
+# What `run` takes is a command line, and both multiplexers put it through a
+# shell: Herdr types it into the pane's own shell and tmux respawns the pane
+# under sh -c. So a path with a space in it, a Dux home under "My Projects",
+# reaches the shell as two words unless the caller quoted it, and the wrapper
+# quotes it for exactly this reason.
+@test "run starts a program whose path holds a space, when the caller quoted it" {
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  spaced="$DUX_HOME/a dir"; mkdir -p "$spaced"
+  printf '#!/bin/sh\nexec sleep 60\n' > "$spaced/launch"; chmod +x "$spaced/launch"
+  ep="$(dux-backend open t42 "$DUX_HOME")"
+  dux-backend run "$ep" "$DUX_HOME" "'$spaced/launch'"
+  wait_until 15 dux-backend pid "$ep" sleep
+  run dux-backend pid "$ep" sleep
+  [ "$status" -eq 0 ]
+  pid="$(printf '%s' "$output" | cut -d' ' -f1)"
+  pgid="$(printf '%s' "$output" | cut -d' ' -f2)"
+  kill -TERM -- "-$pgid"
+  wait_until 15 not_running "$pid"
+}
+
 @test "pid is a finding when the multiplexer did not answer, never a gone" {
   [ -n "${DUX_BACKEND:-}" ] || skip
   ep="$(dux-backend open t41 "$DUX_HOME")"

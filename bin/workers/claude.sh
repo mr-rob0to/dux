@@ -46,7 +46,8 @@ worker_launcher() {  # path brief model effort settings dux_bin [ship_record]
   local path="$1" brief="$2" model="$3" effort="$4" settings="$5" dux_bin="$6" ship="${7:-}"
   local channel q flag
   channel="$(dirname "$path")"
-  for q in "$path" "$brief" "$model" "$effort" "$settings" "$dux_bin" "$ship" "$channel" "${claude_flags[@]}"; do
+  for q in "$path" "$brief" "$model" "$effort" "$settings" "$dux_bin" "$ship" "$channel" \
+           "${CLAUDE_CONFIG_DIR:-}" "${claude_flags[@]}"; do
     case "$q" in *\'*) log "cannot build a launcher: a path or value holds a quote"; return 1 ;; esac
   done
   # Every line below is written literally into the launcher; nothing in a
@@ -76,6 +77,14 @@ worker_launcher() {  # path brief model effort settings dux_bin [ship_record]
     # 3. The outboxes, which live in the channel this launcher was written into.
     printf "export DUX_STATUS_LOG='%s' DUX_REPORT='%s'\n" \
       "$channel/status.outbox" "$channel/report.outbox"
+    # And the config directory, when Dux itself was given one. Claude Code reads
+    # its record of trusted folders from there, and spawn read that same file to
+    # decide this project was trusted. The scrub above takes every CLAUDE_ name,
+    # so without this line the worker would answer the trust question out of a
+    # different file than the one that cleared it, and sit at the dialog spawn
+    # exists to keep it away from. Nothing else CLAUDE_ survives.
+    [ -z "${CLAUDE_CONFIG_DIR:-}" ] \
+      || printf "export CLAUDE_CONFIG_DIR='%s'\n" "$CLAUDE_CONFIG_DIR"
     [ -z "$ship" ] || printf "export DUX_SHIP_RECORD='%s'\n" "$ship"
     # 4. The harness itself, as an ordinary interactive session whose opening
     # prompt is the brief. No -p, no --output-format, no --verbose.

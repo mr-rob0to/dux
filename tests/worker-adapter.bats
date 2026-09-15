@@ -156,6 +156,24 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
   [ "$kept" -eq 1 ] || { echo "the strip took more than Dux's bin: $path"; return 1; }
 }
 
+# The one CLAUDE_ name that survives the scrub, and why. Spawn decides a project
+# is trusted by reading Claude Code's record under CLAUDE_CONFIG_DIR. With the
+# name scrubbed and nothing put back, the worker would answer the trust question
+# out of a different file than the one that cleared it, and sit at the dialog
+# spawn exists to keep it away from. The value is Dux's own, read where the
+# launcher is written; a pane carrying another session's loses to it.
+@test "the launcher gives the harness the config directory Dux itself was given" {
+  [ "${DUX_WORKER_HARNESS:-}" = claude ] || skip "claude only"
+  dump="$DUX_HOME/state/dumped-env"
+  printf 'dump-env %s\n' "$dump" > "$FAKE_WORKER_SCRIPT"
+  CLAUDE_CONFIG_DIR="$DUX_HOME/dux-config" adapter worker_launcher "$chan/launch" \
+    "$DUX_HOME/brief.md" model-x high "$DUX_HOME/settings.json" "$DUX_ROOT/bin"
+  CLAUDE_CONFIG_DIR=/tmp/another-session run "$chan/launch"
+  [ "$status" -eq 0 ]
+  [ -s "$dump" ] || { echo "the harness dumped nothing: $output"; return 1; }
+  [ "$(sed -n 's/^CLAUDE_CONFIG_DIR=//p' "$dump")" = "$DUX_HOME/dux-config" ]
+}
+
 # A ship recorder is only a ship task's, and the launcher says so by leaving the
 # variable out rather than exporting an empty one a worker could still name.
 @test "a launcher without a ship recorder exports no DUX_SHIP_RECORD" {

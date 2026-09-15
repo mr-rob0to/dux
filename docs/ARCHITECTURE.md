@@ -124,7 +124,8 @@ Rules that shape every component:
 `backend_find`, `backend_exists`, `backend_close`, `backend_notify` and
 `backend_title` with identical arguments. `open` makes a container holding a
 shell and nothing else, and prints its endpoint; `run` hands that shell one
-command line; `pid` prints `<pid> <pgid> <cwd>` for the process the shell is
+command line, which a shell reads on both backends, so a path in it is the
+caller's to quote; `pid` prints `<pid> <pgid> <cwd>` for the process the shell is
 running, exit 1 for "nothing there yet" and exit 2 for a multiplexer that could
 not answer. `title` names the tab and is a no-op under tmux. No verb reads what
 a pane has drawn: the worker's screen belongs to the operator, and a contract
@@ -258,7 +259,11 @@ the tab and catches a worker in a server whose socket vanished.
    wrapper lived: one that published nothing is undone, tab closed, endpoint
    cleared, worktree discarded and the brief's line put back, and one that
    published its refusal is left exactly as it stands, because the watcher owns
-   what follows and the tab holds what the operator would want to see. Spawn
+   what follows and the tab holds what the operator would want to see. A wrapper
+   that is still there after the signal and ten more seconds is neither: undoing
+   under a live wrapper would close the tab it is about to run in and discard
+   the worktree it is about to work in, so everything stays where it is and the
+   finding names the pid to stop, as `undo` does for a live container. Spawn
    then marks `running` and comments on a `gh:` issue. The `running` write is
    `dux-ledger set-if <id> state queued running`:
    the wrapper is already running by then, a worker that refuses at once leaves
@@ -331,7 +336,12 @@ and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
   to answer with. Both readings fail the task.
 - The worker's environment is scrubbed by the launcher, of `DUX_*`, `CLAUDE_*`,
   `HERDR_*`, `TMUX*` and `GIT_CONFIG_*`, and of Dux's own `PATH` entry. Only
-  `DUX_STATUS_LOG` and `DUX_REPORT` are put back, and no `GIT_CONFIG_` name at
+  `DUX_STATUS_LOG`, `DUX_REPORT` and, when Dux has one, `CLAUDE_CONFIG_DIR` are
+  put back. The config directory travels because spawn read the trust record out
+  of it: with the name scrubbed and nothing put back, the worker would answer the
+  trust question out of a different file than the one that cleared it. It is the
+  value Dux itself was given, baked in where the launcher is written, so a pane
+  carrying another session's does not win. No `GIT_CONFIG_` name travels at
   all: an environment setting applies in every repository the worker touches,
   and the push guard belongs to the task worktree alone, which is where
   `dux-worktree` wrote it. The brief names those two variables; no Dux path is

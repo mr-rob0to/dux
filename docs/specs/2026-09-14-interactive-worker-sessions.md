@@ -183,7 +183,12 @@ design separates the two:
     and clear the endpoint file and ledger field, and prints `the wrapper for <id> did
     not start; see state/<id>.wrap.log`. Either way the task is not `running`.
   - the window ends with the wrapper alive and no pidfile: spawn sends it `TERM`, waits
-    for it to go, and takes one of the two branches above by whether a handoff exists.
+    up to ten seconds for it to go, and takes one of the two branches above by whether a
+    handoff exists. A wrapper still alive after that wait takes neither: undo would close
+    the tab it is about to run in and discard the worktree it is about to work in, and
+    nothing here can tell it to stop. So spawn leaves every reference where it is and
+    prints `the wrapper for <id> did not start and pid <pid> will not stop; stop it, then
+    run dux-recover <id>`, the same answer `undo` gives for a live container (`:147`).
   A fast refusal is already why `set-if` compares from `queued` (`:162-167`); the wait
   keeps that reasoning and adds the pid.
 
@@ -204,8 +209,13 @@ carries this run's paths baked in, so no environment has to reach the pane's she
 2. `PATH` with Dux's own `bin` directory removed, the directory baked in as a literal
    (the wrapper cannot know the pane shell's `PATH`, and `strip_dux_bin` needs
    `dux-env`, which the launcher must not source);
-3. `export DUX_STATUS_LOG=<outbox> DUX_REPORT=<outbox>`, and `DUX_SHIP_RECORD` for a
-   ship task;
+3. `export DUX_STATUS_LOG=<outbox> DUX_REPORT=<outbox>`, `DUX_SHIP_RECORD` for a
+   ship task, and `CLAUDE_CONFIG_DIR` when Dux itself has one. That last is the one
+   `CLAUDE_` name that survives the scrub, and it survives because spawn read the trust
+   record out of it: scrubbed and not put back, the worker would answer the trust
+   question from a different file than the one that cleared it, and sit at the dialog
+   5.2 exists to keep it away from. The value is Dux's own, read where the launcher is
+   written, so a pane carrying another session's does not win;
 4. `exec claude --model <m> --effort <e> --dangerously-skip-permissions --settings
    <staged settings> <claude_flags> "$(cat <staged brief>)"`. No `-p`, no
    `--output-format`, no `--verbose`: the brief is the opening prompt of an ordinary
@@ -217,7 +227,11 @@ carries this run's paths baked in, so no environment has to reach the pane's she
 the pane's shell (`herdr pane run`, `bin/backends/herdr.sh:29`, moved out of `open`);
 tmux replaces the pane's shell with it (`respawn-pane -k -c <cwd>`,
 `bin/backends/tmux.sh:50`, likewise moved). `open` keeps everything else it does today:
-the tab, its label, the wait for a prompt, the fail-closed close.
+the tab, its label, the wait for a prompt, the fail-closed close. What `run` takes is a
+command line and a shell reads it on both backends, so the caller quotes: the wrapper
+passes `'<launcher>'`, because a `DUX_HOME` with a space in it would otherwise reach the
+shell as a command and an argument. `worker_launcher` has already refused a path holding
+a single quote, so nothing can close the one the wrapper opens.
 
 **The trust dialog.** An interactive `claude` in a directory it has not seen asks whether
 to trust the folder before it reads its prompt, and the cursor sits on "No, exit". Print
