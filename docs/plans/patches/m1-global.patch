@@ -1,0 +1,252 @@
+<!-- INSUFFICIENT SOURCE DETAIL: The approved artifact explicitly removes duplicate full checks before /ship but does not provide an exact replacement sentence for workflow step 7. The replacement below keeps task-level verification and makes /ship own the full pre-merge checks. Other replacements transcribe the artifact's stated policy and retain unrelated current instructions. -->
+
+# M1 global policy patch
+
+Target: `~/.codex/AGENTS.md`, preserving the shared `~/.claude/CLAUDE.md` link.
+
+Format: focused before/after prose patch. Each BEFORE block is exact current text. Replace only that block with AFTER. Apply replacements in order. Unmentioned text remains unchanged.
+
+Activation: only after R1 is a recorded full merged commit and that revision, or a descendant retaining its support, is installed. Review current-file drift, links, and dated backups first.
+
+Source: approved artifact sections 04 and 07; paired spec sections 2–7.
+
+## 1. Reviewer fallback evidence
+
+BEFORE:
+**Name the model.** The CLI still defaults to Terra, so omitting `-m` silently gets the weaker
+reviewer. If Sol returns a 400, fall back to Terra and say in the PR which reviewer actually ran — a
+review that silently downgraded is worse than one that did not happen. Sol was blocked on this
+account until 2026-09-01; the history is in the `feedback-codex-reviewer-status` memory.
+
+AFTER:
+**Name the model.** Sol remains the named shipping reviewer. An HTTP 400 permits the existing
+Terra fallback once. Record the actual reviewer in local review evidence and disclose the fallback
+to the operator; keep commits and PR prose free of model attribution.
+
+## 2. Implementation models
+
+BEFORE:
+**Implementation model.** Opus 5 at max effort when the change is complex, ambiguous, risky, or
+crosses systems (client/API, migrations, concurrency). Lighter otherwise. Never trade correctness
+for speed; when unsure, go heavier.
+
+AFTER:
+**Implementation model.** Retain Sonnet medium for bounded implementation and Opus max for complex
+implementation. Standalone planning and required independent design reviews remain Fable high.
+Integrated plan-and-build continuation is unavailable until Dux R3 is installed.
+
+## 3. Planning triggers and precedence
+
+BEFORE:
+For non-trivial changes:
+
+1. **Fable plans in full before any code**: target files, constraints, risks, acceptance criteria,
+   open questions. No design decisions left for mid-implementation.
+2. **The design gets exactly one independent review**, from a fresh Fable session that did not
+   write it. Once, at the start.
+
+AFTER:
+Apply these planning rules in order:
+
+1. Named interface or boundary changes require a plan and design review regardless of size or
+   whether the intended behavior is settled: public contract, stored data, security boundary,
+   concurrency, or cross-system ordering.
+2. Other unresolved consequential choices also require a plan and design review.
+3. An explicit plan request requires a plan; the same design-review triggers apply.
+4. Otherwise bounded work with no named interface or boundary change, no unresolved consequential
+   choice, and at most three commit-sized steps needs no plan or design review. Ordinary complex
+   work within settled architecture needs a plan, with design review only if consequential
+   decisions remain.
+
+A consequential decision is an unresolved choice about externally visible behavior, stored
+information, authority, ordering, or an expensive-to-reverse architectural choice. Naming,
+formatting, and routine choices within an established pattern do not qualify. Implementing
+already-settled behavior does not itself create an unresolved consequential choice.
+
+Human-only prose needs a plan when useful or requested. A prose document proposing a consequential
+design still receives the required design review. Complexity and review sensitivity are separate
+decisions.
+
+When a plan is required:
+
+1. **Fable plans in full before any code**: target files, constraints, risks, acceptance criteria,
+   open questions. No design decisions left for mid-implementation.
+2. **When the triggers above require design review, the design gets exactly one independent
+   review**, from a fresh Fable session that did not write it, once at the start.
+
+## 4. Remove duplicate full checks
+
+BEFORE:
+7. **Run the project's own build, tests, and lint, inspect the diff yourself, then invoke `/ship`
+   automatically.** Announce it in one line first. Do not run any part of the gate by hand and do
+   not open the PR first; `/ship` opens or updates it. A red check means fix it before shipping.
+
+AFTER:
+7. **Complete task-level verification, inspect the diff yourself, then invoke `/ship`
+   automatically.** Announce it in one line first. `/ship` owns the full pre-merge checks; do not
+   duplicate them immediately before invoking it. Do not run the gate by hand or open the PR
+   first; `/ship` opens or updates it. A red check means fix it before shipping.
+
+## 5. Review modes and classification
+
+BEFORE:
+**`/ship` owns the whole pre-merge gate**: base verification, checks, the branch's one code review,
+the security pass, the PR, and CI. Do not run those steps yourself and do not run a second review.
+A manual review is how the gate gets skipped entirely.
+
+AFTER:
+**`/ship` owns the whole pre-merge gate**: base verification, checks, the required independent
+review or reviews, the PR, and CI. Do not run those steps by hand outside the gate.
+
+| Change | Required review |
+|---|---|
+| Bounded implementation | One independent combined review |
+| Ordinary complex implementation | One independent combined review |
+| Auth, permissions, secrets, migrations, data integrity, concurrency, or cross-repository ordering | Separate correctness and security reviews |
+| Human-only prose | Skip `/ship`; open or update the docs PR |
+
+The combined review covers correctness, regressions, tests, compatibility, and relevant security
+concerns, and explicitly reports what it examined and any clean areas.
+
+Shipping precedence: the human-only prose exception applies only when every changed file
+qualifies; otherwise any named sensitive category requires separate reviews, regardless of size,
+planning classification, or other overlapping categories. Combined review applies only after the
+whole-branch diff has been checked and classified as non-sensitive.
+
+Dux records the initial classification and reason in the brief. `/ship` checks the actual
+whole-branch diff before launching reviewers. Sensitive changes always escalate to separate
+reviews. Unknown or missing classification defaults to separate reviews. A separate-review task
+cannot satisfy its gate with a combined-review receipt.
+
+For standalone `/ship`, no Dux brief is required. The gate establishes and records the
+classification and reason in its local evidence by checking the whole-branch diff against these
+same categories before launching reviewers. A missing brief does not prevent an explicit
+classification; if the gate cannot establish or record one, it uses separate reviews. This is an
+instruction and evidence requirement, not a new classifier.
+
+Examples:
+
+| Change | Planning | Shipping |
+|---|---|---|
+| Small visible change implementing agreed wording, without a named boundary change | Bounded; no plan unless requested | Combined |
+| Small visible change with an unresolved consequential choice | Plan and design review | Combined unless sensitive |
+| One-step public API change with settled behavior | Plan and design review | Combined unless sensitive |
+| Small permissions fix or data migration | Plan and design review | Separate |
+| Several steps within settled architecture | Plan; no design review | Combined |
+| Human-only design document proposing concurrency changes | Plan and design review | Docs PR; skip `/ship` |
+| Standalone ordinary complex change without a brief | Planning rules still apply | Combined after recorded non-sensitive classification |
+| Classification remains uncertain | Planning rules still apply | Separate |
+
+## 6. Finding resolution and changed-commit review
+
+BEFORE:
+- **Fix Critical and Important, log the rest** in the PR body. Only a fixed Critical earns a
+  re-review, scoped to the new commits.
+
+AFTER:
+- **Verify each finding against the code and a reachable failure or attack path.** Verified
+  Critical/High findings, including findings described as Important, block delivery. Lower
+  findings are fixed or explicitly deferred with a reason. A proposed architectural change goes
+  to the operator. Fix commits receive scoped review sufficient to cover the changed code, with
+  no "Critical fixes only" exception that contradicts final-commit proof.
+
+## 7. Human-only prose boundary
+
+BEFORE:
+- **Docs-only changes skip the gate**, `/ship` included. Docs-only means every touched file is prose
+  nothing but a human reads. Anything the build, tests, or CI consume is not docs-only.
+
+AFTER:
+- **Docs-only changes skip the gate**, `/ship` included, only when every changed file is prose
+  nothing but a human reads. Operational instructions are not human-only prose: `AGENTS.md`,
+  skills, templates, and agent/tool-consumed configuration do not qualify. Anything the build,
+  tests, or CI consume is not docs-only.
+
+## 8. Dux routing and capacity ownership
+
+BEFORE:
+- **Start the next task automatically after the approved PR merges.** I work in a terminal inside
+  Herdr, so open the next session yourself; there is no `spawn_task` tool and no chip to click.
+
+AFTER:
+- **For Dux-managed work, Dux owns routing and authorized dispatch.** Select a registered
+  repository from registry facts when the goal clearly belongs there. Ask which product or
+  repository the operator intends only when it is genuinely ambiguous. Create an isolated
+  worktree in the registered repository for each new task. Cross-repository deliverables use
+  separate tasks and worktrees, executed sequentially.
+- **When another worker is active, leave work queued.** Dux dispatches the next authorized task
+  after verified capacity release. The cap applies across all registered repositories and worker
+  harnesses. Required reviewers operate within the active deliverable; they do not create another
+  implementation owner. Do not launch a Herdr or tmux worker outside Dux for Dux-managed work.
+  No capacity settings, repository-picker workflow, parallel execution, or reservations are
+  introduced.
+- **Dux staged availability:** until R2 is installed, feedback uses existing recovery. Until R3 is
+  installed, questions and approval use existing recovery, integrated plan-and-build continuation
+  is unavailable, and recorded prerequisite dispatch is unavailable.
+- **Outside Dux-managed work, start the next task automatically after the approved PR merges.**
+  I work in a terminal inside Herdr, so open the next session yourself; there is no `spawn_task`
+  tool and no chip to click.
+
+## 9. Routine debugging and delegation
+
+BEFORE:
+- **Never debug in the session that wrote the code.**
+- **Push read-heavy work into subagents** so file dumps stay out of the main transcript.
+
+AFTER:
+- **Routine test failures while implementing are fixed by the owning worker.**
+- **Implementation is owned by the project worker; no nested parallel implementation.**
+  Required independent reviews use fresh read-only sessions through explicit commands.
+  Clearly independent, bounded read-only research is optional when it answers a specific
+  question and reduces useful work. Routine file reading or exploration without a defined
+  question is not automatically delegated.
+- **Dux dispatches, supervises, and reports; it does not implement project changes.** Keep the
+  existing six Claude tools and empty MCP configuration. Do not add a general Agent tool merely
+  to satisfy old instructions.
+
+## 10. Targeted break-verification
+
+BEFORE:
+Write the test, **break the thing it watches, confirm it fails**, put it back. Passing tells you it
+passes; it does not tell you it can fail.
+
+AFTER:
+Use test-first development. Require a deliberate break for protection against validation bypass,
+auth or permission failure, money error, data loss or corruption, concurrency failure, missed
+cleanup, security defects, or a previously observed bug.
+
+Ordinary formatting, layout, straightforward mapping, and happy-path behavior without those
+consequences need normal test-first evidence. For a mixed test, break the important protected
+behavior; ordinary assertions do not each require a mutation.
+
+The unit is a distinct failure protection, not an assertion count. For each important protection,
+record the behavior broken, the named test that failed, actual failure output, and restoration.
+Distinct protections require distinct observed failures. If a deliberate break leaves the test
+green, investigate before completing the task.
+
+## 11. Keep required breaks at the task boundary
+
+BEFORE:
+Every assertion a task adds gets broken and seen to fail before that task is called done. Not at the
+end of the milestone, not when `/ship` runs. A defect caught inside the task costs minutes. The same
+defect caught at the ship gate costs hours, and it never arrives alone.
+
+- **"Done" means break-verified.** A task with a green test and no recorded break is not finished,
+  it is untested. Do not start the next task.
+
+AFTER:
+Every important failure protection named above gets broken and seen to fail before its task is
+called done, not at the end of the milestone or when `/ship` runs. Ordinary assertions do not each
+require a mutation.
+
+- **"Done" includes the required break-verification.** Do not start the next task while an
+  important protection lacks its recorded deliberate failure and restoration.
+
+## Application checks
+
+Confirm the old universal two-review, Critical-only re-review, universal delegation, fresh-session
+debugging, and per-assertion mutation requirements no longer remain in the replaced passages.
+
+Retain the existing approval requirement, no-attribution rule, installed-app verification,
+control-flow rereading, worktree protections, and operator-only merge. M1 does not enable
+same-session feedback, answers, approval, or recorded dependent dispatch.
