@@ -50,10 +50,12 @@ bin/
                            and for a ship task write tasks/<id>/risk (mode 600) from
                            --risk bounded|complex, defaulting to complex
   dux-worktree             create/remove/discard a worktree per the project's mechanism
-  dux-spawn                worktree plus backend container for a queued task; six refusals,
-                           one of them a live worker on any other task
-  dux-worker-wrap          runs inside the container: task channel, scrubbed environment,
-                           process group, proposal rules, heartbeat, terminal state
+  dux-spawn                worktree, tab and wrapper for a queued task; refusals including a
+                           worktree Claude Code does not trust and a live worker on any
+                           other task
+  dux-worker-wrap          runs beside the tab, not inside it: task channel, launcher,
+                           the harness's own process group, proposal rules, heartbeat,
+                           terminal state
   dux-result               record-ship files the five /ship phases in order; verify proves a
                            plan, ship, or scout result from the registry, Git, and GitHub.
                            A ship brief naming no plan and no task range skips the checkbox
@@ -95,7 +97,7 @@ data/         (gitignored) projects.md registry; backlog.md ledger with acked st
                            report.md,worker-settings.json,risk,harness,hooks/,worktree.log,
                            retry,retried-from}
 state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
-                           <id>.endpoint; <id>.pid; <id>.pgid; <id>.out; events.log;
+                           <id>.endpoint; <id>.pid; <id>.pgid; <id>.wrap.log; events.log;
                            <id>.run; <id>.portal; <id>.result-context;
                            channels/<id>.<run>/{status.outbox,report.outbox,brief.md,
                            worker-settings.json}
@@ -118,12 +120,21 @@ Rules that shape every component:
 
 `dux-backend` picks the backend once per invocation: `$DUX_BACKEND`, else
 `config/backend`, else `herdr` when `HERDR_ENV=1` and `$TMUX` is unset, else
-`tmux`. Adapters implement `backend_open`, `backend_find`, `backend_exists`,
-`backend_tail`, `backend_close`, `backend_notify`, `backend_report`, and
-`backend_title` with identical arguments; `report` and `title` mirror a worker's
-status into the container's own chrome and are no-ops under tmux. Endpoints are
-opaque strings recorded from creation responses, never derived from labels. `close`
-refuses the operator's focused pane and treats a failed Herdr close as a finding.
+`tmux`. Adapters implement `backend_open`, `backend_run`, `backend_pid`,
+`backend_find`, `backend_exists`, `backend_close`, `backend_notify` and
+`backend_title` with identical arguments. `open` makes a container holding a
+shell and nothing else, and prints its endpoint; `run` hands that shell one
+command line, which a shell reads on both backends, so a path in it is the
+caller's to quote, and the tmux adapter prefixes `exec` so that the pane's own
+pid is the command's on a machine whose `/bin/sh` forks instead of replacing
+itself; `pid` prints `<pid> <pgid> <cwd>` for the process the shell is
+running, exit 1 for "nothing there yet" and exit 2 for a multiplexer that could
+not answer. `title` names the tab and is a no-op under tmux. No verb reads what
+a pane has drawn: the worker's screen belongs to the operator, and a contract
+test greps `bin/` and `skills/` for `pane read` and `capture-pane` so no branch
+can bring one back. Endpoints are opaque strings recorded from creation
+responses, never derived from labels. `close` refuses the operator's focused
+pane and treats a failed Herdr close as a finding.
 
 `find <id>` is the one operation that reads a container back from the label both
 backends already set (`dux-<id>`): it prints that container's endpoint, or nothing
@@ -143,8 +154,9 @@ every first spawn on a machine. A socket there means tmux looked through it, so
 too; every other failure there is a finding, because tmux did not look and a live
 server holding the worker reads the same way. Anything else at that path is a
 finding. `find` is one of the two ways spawn asks whether a worker may still be
-alive; the other is the wrapper's own `state/<id>.pid`, which answers whichever
-backend started it and catches a worker in a server whose socket vanished.
+alive; the other is the wrapper's own `state/<id>.pid`. Spawn starts the wrapper
+itself, outside the container, so that file answers on whichever backend opened
+the tab and catches a worker in a server whose socket vanished.
 
 ## Intake flow (exists today)
 
@@ -190,13 +202,19 @@ backend started it and catches a worker in a server whose socket vanished.
    `state/<id>.pid` is absent or names a pid that is gone. The last two are
    independent signals and either one that cannot say "gone" refuses: `find`
    answers only for the current backend and an unrenamed container, while the
-   pidfile is written by the wrapper inside the container on every backend.
+   pidfile is written by the wrapper, which spawn starts itself on every
+   backend.
    One more refusal covers the whole fleet: no other registered task may have a
    worker that might be alive. Its `state/<other>.pid` must be absent or name a
-   pid no longer running `dux-worker-wrap <other>`, and where the ledger still
-   records that task as `running` or `stale`, `dux-backend find <other>` must
-   report no container. The pane outlives the worker on both backends, so a task
-   the ledger has settled is not read as busy. Evidence that cannot be read
+   pid no longer running `dux-worker-wrap <other>`; its `state/<other>.pgid`
+   must be absent or name a process group nothing answers for; and where the
+   ledger still records that task as `running` or `stale`, `dux-backend find
+   <other>` must report no container. The pgid file is the one that matters now
+   that a worker is a live session: the session outlives its wrapper, so a
+   wrapper killed while the harness sits at its prompt leaves a pidfile reading
+   gone and a tab full of agent, and the pidfile alone would let a second worker
+   start beside it. The pane outlives the worker on both backends, so a task the
+   ledger has settled is not read as busy. Evidence that cannot be read
    refuses. This is a refusal and not a queue: nothing is reserved, nothing is
    started later, and the operator runs the same command again once the active
    task has stopped. It comes before the worktree and the container, so a
@@ -223,12 +241,34 @@ backend started it and catches a worker in a server whose socket vanished.
    is created with `O_EXCL` so it cannot follow a committed symlink. An
    uncommitted example, or a destination name the project does not ignore, is a
    finding; no example at all is a log line.
-5. Spawn calls `dux-backend open <id> <wt> <abs>/bin/dux-worker-wrap <id>`, which
-   starts the wrapper in a new container; the command is composed as shell words
-   because both backends hand it to a shell. Spawn records the endpoint in
-   `state/<id>.endpoint` and the ledger, marks `running`, and comments on a `gh:`
-   issue. The `running` write is `dux-ledger set-if <id> state queued running`:
-   the open has already started the worker, a worker that refuses at once leaves
+5. Spawn opens the tab, then starts the wrapper beside it. First it asks Claude
+   Code whether it trusts the project: `hasTrustDialogAccepted` for the project
+   path itself in `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`. It is the project
+   and not the worktree, and not an ancestor of either: Claude Code trusts a
+   directory as the repository it is in, resolves a linked worktree to the
+   repository it was made from, and asks again for a repository whose parent is
+   trusted. An untrusted project is a finding naming it and how to fix it, and
+   nothing is opened, because the harness would otherwise raise its "do you
+   trust this folder" dialog in the worker's tab and wait there for a keystroke
+   nobody is watching for. Then `dux-backend open <id> <wt>` makes a tab holding
+   a shell and nothing else, and its endpoint goes to `state/<id>.endpoint` and
+   the ledger. Then spawn starts `bin/dux-worker-wrap <id>` itself, outside that
+   tab, under `nohup` with its output appended to `state/<id>.wrap.log`, and
+   keeps the pid it forked. It waits up to `DUX_SPAWN_START_SECS` (10 seconds)
+   for the wrapper to write its own `state/<id>.pid`, and stops waiting the
+   moment that forked pid exits, so a wrapper that refuses at once costs no
+   wait. What happens next is decided by whether a handoff appeared while the
+   wrapper lived: one that published nothing is undone, tab closed, endpoint
+   cleared, worktree discarded and the brief's line put back, and one that
+   published its refusal is left exactly as it stands, because the watcher owns
+   what follows and the tab holds what the operator would want to see. A wrapper
+   that is still there after the signal and ten more seconds is neither: undoing
+   under a live wrapper would close the tab it is about to run in and discard
+   the worktree it is about to work in, so everything stays where it is and the
+   finding names the pid to stop, as `undo` does for a live container. Spawn
+   then marks `running` and comments on a `gh:` issue. The `running` write is
+   `dux-ledger set-if <id> state queued running`:
+   the wrapper is already running by then, a worker that refuses at once leaves
    a proved terminal handoff the watcher can apply before that line runs, and an
    unconditional write would put a finished task back to `running` for good.
    `set-if` compares and writes under the ledger's own lock, so nothing can move
@@ -237,12 +277,29 @@ backend started it and catches a worker in a server whose socket vanished.
    way, and the worktree is discarded only when `find` shows no container; a
    container that outlived the failed `open` is a finding naming it, never a
    silent cleanup around a live worker.
-6. `dux-worker-wrap <id>` writes `state/<id>.pid`, makes the task channel (below),
-   runs `worker_run` from `bin/workers/<harness>.sh` in a process group of its own
-   with output to `state/<id>.out`, heartbeats while that output grows, mirrors the
-   dux state to the pane as fixed text, and publishes the run's result as a
-   handoff (below). A `done` proposal goes through `dux-result verify` first; a
-   harness that exits without a terminal proposal gets `failed:` or `ended:`.
+6. `dux-worker-wrap <id>` writes `state/<id>.pid`, makes the task channel
+   (below), and writes a launcher into it: one `/bin/sh` file, mode 500, built
+   by `worker_launcher` in `bin/workers/<harness>.sh`, which scrubs the
+   environment, drops Dux's own `bin` from `PATH`, exports the two outbox
+   variables and then execs the harness on the brief. That file exists because
+   the pane's shell is the harness's parent now, not the wrapper, so everything
+   the wrapper used to do to its own environment before forking has to travel
+   in it. The wrapper titles the tab, runs the launcher in it with `dux-backend
+   run`, and then asks `dux-backend pid` once a second, for up to
+   `DUX_WRAP_START_SECS` (120 seconds), what that pane is running. The answer
+   counts only when it carries the harness's own process name and the task
+   worktree as its directory; a harness that never appears, or a multiplexer
+   that cannot say, is a refusal rather than a guess. The process group that
+   comes back is written to `state/<id>.pgid`. The heartbeat is the harness's
+   own `PostToolUse` and `Stop` hooks, which the task's settings file points at
+   `<channel>/beat`: every `DUX_HEARTBEAT_SECS` the wrapper compares that file's
+   modification time with the last one it saw, and a beat that moved is one
+   `working: heartbeat` line in `status.log`. A session that is thinking and not
+   using tools writes nothing, which is what eventually reads as stale. The
+   run's result is published as a handoff (below). A `done` proposal goes through `dux-result verify`
+   first; a session that ends with no terminal proposal gets
+   `ended: the session ended without a terminal status`, because a process the
+   wrapper did not fork leaves no exit status to read.
 7. `dux-teardown <id>` (the ledger says terminal, worktree clean, branch pushed)
    removes the worktree, closes the container, clears the run's retained
    references, and reports the ledger's own state and PR url. For a `done` task
@@ -279,17 +336,26 @@ and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
   written in its place, so the number alone would read a replacement as the
   original. Removing the pin is a replacement too: the question then has nothing
   to answer with. Both readings fail the task.
-- The worker's environment is scrubbed of `DUX_*`, `CLAUDE_*`, `HERDR_*`,
-  `TMUX*` and `GIT_CONFIG_*`, and of Dux's own `PATH` entry. Only
-  `DUX_STATUS_LOG` and `DUX_REPORT` are put back, and no `GIT_CONFIG_` name at
+- The worker's environment is scrubbed by the launcher, of `DUX_*`, `CLAUDE_*`,
+  `HERDR_*`, `TMUX*` and `GIT_CONFIG_*`, and of Dux's own `PATH` entry. Only
+  `DUX_STATUS_LOG`, `DUX_REPORT` and, when Dux has one, `CLAUDE_CONFIG_DIR` are
+  put back. The config directory travels because spawn read the trust record out
+  of it: with the name scrubbed and nothing put back, the worker would answer the
+  trust question out of a different file than the one that cleared it. It is the
+  value Dux itself was given, baked in where the launcher is written, so a pane
+  carrying another session's does not win. No `GIT_CONFIG_` name travels at
   all: an environment setting applies in every repository the worker touches,
   and the push guard belongs to the task worktree alone, which is where
   `dux-worktree` wrote it. The brief names those two variables; no Dux path is
   handed to a worker.
-- The worker runs in its own process group with stdin on `/dev/null`. Before any
-  terminal state is written the wrapper stops that whole group, TERM then KILL,
-  and proves it gone. A survivor is a cleanup finding and no terminal state, so
-  a parent that claims done while its children keep running completes nothing.
+- The harness runs in the pane's own process group, with the operator's keyboard
+  on its standard input. The wrapper did not fork it and so cannot wait on it:
+  it learns the group from the multiplexer, writes it to `state/<id>.pgid`, and
+  polls the pid with a command-line match, which is what makes a recycled pid,
+  and a zombie, both read as gone. Before any terminal state is written the
+  wrapper stops that whole group, TERM then KILL, and proves it gone. A survivor
+  is a cleanup finding and no terminal state, so a parent that claims done while
+  its children keep running completes nothing.
 - Proposal rules, each one a failed task: what Dux has already read may not be
   rewritten or truncated, every line is `<state>: <text>` with a known state, a
   line is at most 200 bytes, the whole status outbox at most 64 KiB and the
@@ -297,10 +363,13 @@ and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
   Control characters are stripped. Only `working:` lines reach `status.log` from
   the wrapper; the terminal state is held until the run is over and leaves as a
   handoff, never as a line the wrapper appends.
-- The pane shows `dux <id>: <state>`, fixed text chosen by the state. Every
-  notification, toast and digest line is likewise fixed by state, with the url
-  the ledger holds; `dux-recover` is the only place worker text reaches the
-  operator, capped, cleaned and fenced as data.
+- The tab is titled `<project>: <the brief's first line of intent>` once, when
+  the run starts, and nothing else is ever written to it. What it draws is the
+  worker's own screen: the operator reads it by looking and may type into it,
+  and Dux never reads it by any means. Every notification, toast and digest line
+  is fixed text chosen by state, with the url the ledger holds; `dux-recover` is
+  the only place worker text reaches the operator, capped, cleaned and fenced as
+  data.
 
 ## The terminal handoff
 
@@ -331,8 +400,11 @@ whole handoff or none of it.
   ignored by the watcher, the digest and teardown alike.
 - Sequences are retained for the whole run. `dux-teardown` is their lifecycle
   owner, and clears them with `state/<id>.run`, `state/<id>.result-context`,
-  `state/<id>.ship-receipt`, `state/<id>.portal`, `state/<id>.pgid` and the task
-  channel the portal names. A wrapper that died without cleaning up leaves those
+  `state/<id>.ship-receipt`, `state/<id>.wrap.log`, `state/<id>.portal`,
+  `state/<id>.pgid` and the task channel the portal names. The wrapper's log
+  holds Dux's own lines about the run and nothing the worker wrote; spawn's
+  start refusals point the operator at it, so it lives exactly as long as the
+  task does. A wrapper that died without cleaning up leaves those
   last three behind; recovery clears them only once the worker's own process
   group is proved gone, and teardown asks the same question before it removes
   anything: a live group in `state/<id>.pgid`, or a file it cannot read as one,
@@ -387,14 +459,22 @@ text, not about a hostile program.
 
 - It contains the ordinary process group. A child that deliberately starts a
   session of its own escapes it, and a survivor of TERM and KILL is a finding
-  with no result, never a quiet success.
+  with no result, never a quiet success. What counts as a survivor is read from
+  `ps`, not from `kill -0`: a process nobody has waited on is still a process
+  there, and on Linux `kill -0` answers for it, so a group of nothing but those
+  is a group that has gone.
 - It caps what a worker can say: 200 bytes a status line, 64 KiB of status
   proposals, 1 MiB of report. It does not cap what a worker can do inside its
   own worktree with the operator's own rights.
-- Every operator surface, pane, toast, notification and digest line, carries
-  fixed text chosen by state and the url the ledger holds. `dux-recover` is the
-  only place worker text reaches the operator, capped, cleaned and fenced as
-  data.
+- Every operator surface Dux writes to, tab title, toast, notification and
+  digest line, carries fixed text chosen by state and the url the ledger holds.
+  `dux-recover` is the only place worker text reaches the operator, capped,
+  cleaned and fenced as data.
+- The worker's tab is not one of those surfaces. It is the harness's own screen,
+  the operator reads and types into it directly, and nothing in `bin/` or
+  `skills/` may read it back: no pane capture, no scrollback, no screenshot. So
+  a worker's output is never summarised anywhere, and a failure tail says only
+  that the output stayed in its tab.
 - A stronger boundary, a separate user account or a sandbox, is possible later
   and is not required by anything here. If one is added it fails closed: no
   isolation, no dispatch.
@@ -427,8 +507,8 @@ text, not about a hostile program.
 
 | State | Recovery |
 |---|---|
-| `stale` | Inspect a capped, fenced output tail; extend once when progressing, otherwise stop the matching wrapper. |
-| `dead` | Mark failed, save the last 20 output lines, and keep the worktree. |
+| `stale` | Inspect a capped, fenced status tail, which is all the worker said; extend once when progressing, otherwise stop the matching wrapper. |
+| `dead` | Mark failed and keep the worktree; the session the wrapper was watching may still be running in the task's tab. |
 | `ended` | Run the same proof the wrapper would have run and publish what it proves into the next sequence; otherwise ask the operator, whose only classification is `failed`. |
 | `failed` | Show the saved failure and offer one retry or a scout. |
 | from before the upgrade | `--retire-legacy` stops the old wrapper and publishes one retirement handoff; the branch and worktree are kept for one retry or a teardown. |

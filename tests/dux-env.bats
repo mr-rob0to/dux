@@ -42,6 +42,44 @@ load helpers/setup
   [[ "$output" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]]
 }
 
+# A group whose every member has exited but has not been waited on is a group
+# that has gone. The shape built here is the one measured on Linux: a parent
+# that never reaps, and a child in a group of its own, so the group holds one
+# zombie and nothing else. The two systems do not read that group the same way
+# and the context line says which one ran: kill -0 answers yes on Linux and no
+# on macOS, which is why the wrapper trusted it for a year and why it then
+# reported a harness it had killed as one that survived KILL.
+@test "group_runs reads a group of nothing but zombies as gone" {
+  run bash -c '
+    source "$DUX_ROOT/bin/dux-env"
+    # Line-buffered, or the pid stays in perl own buffer until it exits and the
+    # reader below waits for a file that is never written.
+    perl -MPOSIX -e '"'"'$| = 1; my $pid = fork();
+      if ($pid == 0) { POSIX::setpgid(0, 0); exit 0; }
+      print "$pid\n"; sleep 60;'"'"' > "$DUX_HOME/state/zpid" &
+    parent=$!
+    zombie() {  # $1 pid
+      case "$(ps -o stat= -p "$1" 2>/dev/null)" in *Z*) return 0 ;; esac
+      return 1
+    }
+    i=0; z=""
+    until [ -n "$z" ] && zombie "$z"; do
+      i=$((i + 1)); [ "$i" -ge 100 ] && break
+      sleep 0.1
+      z="$(cat "$DUX_HOME/state/zpid" 2>/dev/null)"
+    done
+    kill -0 -- "-$z" 2>/dev/null; k=$?
+    group_runs "$z"; g=$?
+    echo "context: [$z] is [$(ps -o stat= -p "$z" 2>/dev/null)] after $i tenths, kill0=$k"
+    echo "answers: group_runs=$g"
+    kill -KILL "$parent" 2>/dev/null
+  '
+  echo "$output"
+  [[ "$output" == *"answers: group_runs=1"* ]]
+  # The group has to have been a zombie one, or the reading above is about nothing.
+  [[ "$output" == *"] is [Z"* ]]
+}
+
 @test "pid_runs matches a live pid and a whole command-line word" {
   run bash -c '
     source "$DUX_ROOT/bin/dux-env"

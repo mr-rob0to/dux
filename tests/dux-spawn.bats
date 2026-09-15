@@ -17,7 +17,26 @@ setup() {
   export FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1
   printf 'report all clear\nstatus working: starting\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
   export DUX_SESSION_PID=$$
+  # Spawn refuses to open a tab in a directory Claude Code has not been told to
+  # trust, so every test that expects a start needs a trusted one, and the fake
+  # harness has to carry the name the adapter looks for.
+  trust_suite_root proj other
+  harness_shim
+  export DUX_SPAWN_START_SECS=20
   dux-lock acquire >/dev/null
+}
+
+# The trusted fixture is shared (helpers/setup). This file also needs the two
+# other readings: some other path trusted, and a file that trusts nothing.
+trust_home() {  # [$1 path to trust]
+  CLAUDE_CONFIG_DIR="$DUX_HOME/claude-config"; export CLAUDE_CONFIG_DIR
+  mkdir -p "$CLAUDE_CONFIG_DIR"
+  if [ -n "${1:-}" ]; then
+    jq -n --arg p "$1" '{ projects: { ($p): { hasTrustDialogAccepted: true } } }' \
+      > "$CLAUDE_CONFIG_DIR/.claude.json"
+  else
+    echo '{"projects":{}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
+  fi
 }
 
 wait_for() {  # $1 file, $2 grep pattern, $3 seconds
@@ -123,8 +142,13 @@ wait_result() {  # $1 id
   [[ "$output" == "finding: a container for $id already exists at herdr:w1:p9"* ]]
   [ "$(grep -c '^tab create' "$FAKE_HERDR_LOG")" -eq 1 ]
   [ "$(grep -c '^pane run' "$FAKE_HERDR_LOG")" -eq 1 ]
-  # And once the container is gone the same task spawns, with no file to delete.
+  # And once the container is gone the same task spawns. The first run's own
+  # references go with it, the way teardown and recovery clear them: a wrapper
+  # refuses a second run that still has the first one's, and that refusal is
+  # about the run, not about the container this test is asking after.
   dux-backend close herdr:w1:p9
+  rm -rf "$DUX_HOME/state/$id".run "$DUX_HOME/state/$id".pgid \
+    "$DUX_HOME/state/$id".result-context "$DUX_HOME/state/$id".handoffs
   run dux-spawn "$id"
   [ "$status" -eq 0 ]
 }
@@ -186,9 +210,10 @@ wait_result() {  # $1 id
 
 @test "an open that fails with the container alive refuses to discard the worktree" {
   id="$(fixture_task proj scout)"
-  # herdr types into a live shell: pane run can fail after the command went out,
-  # and here the cleanup close is refused too, so the pane outlives the failure.
-  export FAKE_HERDR_RUN_FAIL=1 FAKE_HERDR_CLOSE_FAIL=1
+  # herdr opens the tab and then waits for its shell prompt; a pane that never
+  # draws one fails the open, and here the cleanup close is refused too, so the
+  # pane outlives the failure.
+  export FAKE_HERDR_NO_PROMPT=1 FAKE_HERDR_CLOSE_FAIL=1
   run dux-spawn "$id"
   [ "$status" -eq 2 ]
   [[ "$output" == *"finding: backend open failed for $id but a container for it is alive at herdr:w1:p9"* ]]
@@ -233,7 +258,17 @@ wait_result() {  # $1 id
   [ "$(dux-ledger get "$id" endpoint)" = herdr:w1:p9 ]
   grep -qxF -- "- Worktree: $wt" "$DUX_HOME/data/tasks/$id/brief.md"
   grep -qF "tab create --workspace w1 --cwd $wt --label dux-$id --no-focus" "$FAKE_HERDR_LOG"
-  grep -qxF "pane run w1:p9 $DUX_ROOT/bin/dux-worker-wrap $id" "$FAKE_HERDR_LOG"
+  # The pane runs the launcher the wrapper staged, and the wrapper itself is a
+  # process of Dux's own, not the pane's.
+  # Quoted: the pane's shell reads this line, and a DUX_HOME with a space in it
+  # would otherwise arrive as a command and an argument.
+  grep -qE "^pane run w1:p9 '$DUX_HOME/state/channels/$id\\.[A-Za-z0-9]+/launch'$" "$FAKE_HERDR_LOG"
+  [ "$(grep -c "dux-worker-wrap" "$FAKE_HERDR_LOG" || true)" -eq 0 ]
+  # Alive after spawn returned, and in a process group of its own: a wrapper
+  # sharing Dux's group would take every signal the operator sends Dux.
+  wpid="$(cat "$DUX_HOME/state/$id.pid")"
+  pid_runs "$wpid" "dux-worker-wrap $id"
+  [ "$(ps -o pgid= -p "$wpid" | tr -d " ")" != "$(ps -o pgid= -p $$ | tr -d " ")" ]
   wait_result "$id"
   grep -q '^claude ' "$FAKE_WORKER_LOG"
   [ ! -s "$FAKE_GH_LOG" ]
@@ -318,6 +353,138 @@ codex_refused() {  # asserts the last `run` refused and started nothing for $id
   [ "$(dux-ledger get "$id" endpoint)" = herdr:w1:p9 ]
 }
 
+# ---- the wrapper starts outside the tab ------------------------------------
+# It is Dux's own process now, not the pane's, so spawn has to watch it start
+# and say which of the two ways it failed when it did not.
+
+@test "a wrapper that exits before its run record leaves nothing behind" {
+  id="$(fixture_task proj scout)"
+  # The pidfile first, because the real wrapper writes it before it opens its
+  # run record: what spawn has to read is a pidfile naming a pid that is gone,
+  # not the absence of one.
+  r="$(root_with_stub dux-worker-wrap '#!/bin/sh
+echo $$ > "$DUX_HOME/state/$1.pid"
+echo "finding: no." >&2
+exit 2')"
+  run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the wrapper for $id did not start; see $DUX_HOME/state/$id.wrap.log"* ]]
+  # What the wrapper printed is in its log, and only there.
+  grep -qF 'finding: no.' "$DUX_HOME/state/$id.wrap.log"
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ ! -e "$DUX_HOME/state/$id.endpoint" ]
+  [ "$(dux-ledger get "$id" endpoint)" = - ]
+  [ -z "$(dux-backend find "$id")" ]
+  [ ! -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
+  grep -qxF -- '- Worktree: <set by dux-spawn>' "$DUX_HOME/data/tasks/$id/brief.md"
+  # And the task spawns again with nothing to clear by hand.
+  rm -f "$DUX_HOME/state/$id.pid"
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  wait_result "$id"
+}
+
+# The other half of that ending: a wrapper spawn cannot stop.
+@test "a wrapper that will not stop keeps the tab, the endpoint and the worktree" {
+  id="$(fixture_task proj scout)"
+  # It ignores the signal and never writes a pidfile, so spawn has nothing that
+  # says it stopped. Undoing under it would close the tab it is about to run in
+  # and discard the worktree it is about to work in.
+  r="$(root_with_stub dux-worker-wrap '#!/bin/sh
+trap "" TERM
+echo $$ > "$DUX_HOME/state/stubborn.pid"
+sleep 60')"
+  run env DUX_ROOT="$r" DUX_SPAWN_START_SECS=1 "$r/bin/dux-spawn" "$id"
+  stub="$(cat "$DUX_HOME/state/stubborn.pid" 2>/dev/null)"
+  [ -n "$stub" ] && kill -9 "$stub" 2>/dev/null
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the wrapper for $id did not start and pid "*" will not stop; stop it, then run dux-recover $id"* ]]
+  # Every reference spawn made is still there, for recovery to read.
+  [ "$(cat "$DUX_HOME/state/$id.endpoint")" = herdr:w1:p9 ]
+  [ "$(dux-ledger get "$id" endpoint)" = herdr:w1:p9 ]
+  [ -n "$(dux-backend find "$id")" ]
+  [ -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
+  grep -qxF -- "- Worktree: $DUX_HOME/proj/.worktrees/dux-$id" "$DUX_HOME/data/tasks/$id/brief.md"
+  [ "$(dux-ledger get "$id" state)" = queued ]
+}
+
+# A refusal made after the wrapper opened its run record is a proved result, so
+# spawn touches nothing: the handoff is the watcher's to apply, and the worktree
+# and the tab are what recovery reads. The stub stands in for a wrapper that got
+# that far, because the real one writes its pidfile before its run record, and
+# spawn reads a live pidfile as a start whatever happens next.
+@test "a wrapper that refuses after its run record keeps the worktree and the tab" {
+  id="$(fixture_task proj scout)"
+  r="$(root_with_stub dux-worker-wrap "#!/bin/sh
+d=\"\$DUX_HOME/state/\$1.handoffs/1\"
+mkdir -p \"\$d\"
+echo run1 > \"\$d/run\"
+echo 'failed: wrapper: no worker settings' > \"\$d/status\"
+echo failed > \"\$d/event\"
+exit 2")"
+  run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the wrapper for $id refused before the harness started; see $DUX_HOME/state/$id.wrap.log"* ]]
+  # Not running: the handoff is what the watcher turns into failed.
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/event")" = failed ]
+  # Kept: both are evidence, and recovery is what clears them.
+  [ -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
+  [ "$(cat "$DUX_HOME/state/$id.endpoint")" = herdr:w1:p9 ]
+  [ -n "$(dux-backend find "$id")" ]
+  grep -qxF -- "- Worktree: $DUX_HOME/proj/.worktrees/dux-$id" "$DUX_HOME/data/tasks/$id/brief.md"
+}
+
+# The real wrapper's own early refusal, to show the two endings are told apart by
+# the handoff and not by which wrapper ran. Its settings are checked before it
+# writes its pidfile, so this one leaves no handoff and spawn undoes.
+@test "the real wrapper refusing before its run record is undone, not left half open" {
+  id="$(fixture_task proj scout)"
+  rm -f "$DUX_HOME/data/tasks/$id/worker-settings.json"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the wrapper for $id did not start; see $DUX_HOME/state/$id.wrap.log"* ]]
+  grep -qF "no worker settings for $id" "$DUX_HOME/state/$id.wrap.log"
+  [ ! -d "$DUX_HOME/state/$id.handoffs" ]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ ! -e "$DUX_HOME/state/$id.endpoint" ]
+  [ -z "$(dux-backend find "$id")" ]
+  [ ! -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
+}
+
+@test "a worktree Claude Code does not trust is refused before any tab opens" {
+  id="$(fixture_task proj scout)"
+  trust_home
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: $DUX_HOME/proj is not trusted by Claude Code; open a session in it once and answer \"Yes, I trust this folder\"" ]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
+  [ "$(grep -c '^tab create' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
+  grep -qxF -- '- Worktree: <set by dux-spawn>' "$DUX_HOME/data/tasks/$id/brief.md"
+  # A config file that is not there, and one that does not parse, read the same.
+  rm -f "$CLAUDE_CONFIG_DIR/.claude.json"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == *"is not trusted by Claude Code"* ]]
+  printf 'not json' > "$CLAUDE_CONFIG_DIR/.claude.json"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == *"is not trusted by Claude Code"* ]]
+  # A trusted folder above the repository is not the repository. Measured on
+  # Claude Code 2.1.271, 2026-09-15: a fresh repository under a trusted parent
+  # still raises the dialog, so a spawn that took the parent for an answer
+  # would leave the worker sitting at it.
+  trust_home "$DUX_HOME"
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [[ "$output" == *"is not trusted by Claude Code"* ]]
+  [ "$(grep -c '^tab create' "$FAKE_HERDR_LOG" || true)" -eq 0 ]
+  # Trusting the repository is enough: the worktree is one of its worktrees, and
+  # Claude Code resolves a worktree to the repository it was made from.
+  trust_home "$DUX_HOME/proj"
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  wait_result "$id"
+}
+
 # ---- one Dux-managed worker at a time --------------------------------------
 # Several long workers on one subscription is the waste this refuses. It is a
 # refusal and not a queue: the operator reruns the same spawn once the active
@@ -330,20 +497,6 @@ live_wrapper_for() {  # $1 id; prints the pid
   local p; p="$(stand_in "dux-worker-wrap $1")"
   echo "$p" > "$DUX_HOME/state/$1.pid"
   echo "$p"
-}
-
-# A Dux root of real file copies, never symlinks, with one script replaced. The
-# copies matter: dux-spawn calls its siblings by absolute path under $DUX_ROOT,
-# and writing into a directory of links to the checkout edits the checkout.
-root_with_stub() {  # $1 script name, $2 body; prints the root
-  local r="$DUX_HOME/root-$1"
-  mkdir -p "$r"
-  cp -R "$DUX_ROOT/bin" "$r/bin"
-  ln -s "$DUX_ROOT/templates" "$r/templates"
-  rm -f "$r/bin/$1"
-  printf '%s\n' "$2" > "$r/bin/$1"
-  chmod +x "$r/bin/$1"
-  echo "$r"
 }
 
 @test "a live worker on another task refuses the start and creates nothing" {
@@ -391,6 +544,30 @@ root_with_stub() {  # $1 script name, $2 body; prints the root
   [ "$output" = "finding: cannot tell whether a worker for $a is alive: $DUX_HOME/state/$a.pid does not say; $b remains queued" ]
   [ "$(dux-ledger get "$b" state)" = queued ]
   [ ! -d "$DUX_HOME/proj/.worktrees" ]
+}
+
+# The harness outlives its wrapper now: an operator who kills the wrapper leaves
+# a live session in a tab and a pidfile that reads gone. The group file is the
+# signal for that, and it is read the same fail-closed way the pidfile is.
+@test "another task's live harness group refuses the start, and an unreadable one blocks it" {
+  a="$(fixture_task proj scout)"
+  b="$(fixture_task proj ship)"
+  # This test's own process group: a group that certainly answers kill -0.
+  ps -o pgid= -p $$ | tr -d ' ' > "$DUX_HOME/state/$a.pgid"
+  run dux-spawn "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: another Dux worker is active: $a; $b remains queued" ]
+  [ "$(dux-ledger get "$b" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+  printf 'x\n' > "$DUX_HOME/state/$a.pgid"
+  run dux-spawn "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: cannot tell whether a worker for $a is alive: $DUX_HOME/state/$a.pgid does not say; $b remains queued" ]
+  # A group that is gone stops refusing, the way a dead pidfile does.
+  rm -f "$DUX_HOME/state/$a.pgid"
+  run dux-spawn "$b"
+  [ "$status" -eq 0 ]
+  wait_result "$b"
 }
 
 @test "a container for a task Dux believes is running blocks the start" {

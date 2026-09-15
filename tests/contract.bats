@@ -20,6 +20,24 @@ load helpers/setup
   [ "${lines[6]}" = "## Project Constitution" ]
 }
 
+# The worker's tab holds a live Claude Code session the operator reads and types
+# to. Dux reads the status outbox and nothing else, so no Dux script may read
+# what a pane has drawn. `dux-backend tail` was the one verb that did and it is
+# gone; these are the two multiplexer commands that could bring it back. A grep
+# at one point in time is an observation, and this is what makes it a rule every
+# branch is held to.
+@test "no Dux script reads a pane's contents" {
+  local d hits
+  for d in bin skills; do
+    hits="$(grep -rn -e 'pane read' -e 'capture-pane' "$DUX_ROOT/$d" || true)"
+    if [ -n "$hits" ]; then
+      echo "a pane reader in $d/, which may not read a worker's tab:"
+      echo "$hits"
+      return 1
+    fi
+  done
+}
+
 @test "ARCHITECTURE.md exists and names the two flows" {
   grep -q -i 'dispatch' "$DUX_ROOT/docs/ARCHITECTURE.md"
   grep -q -i 'wake' "$DUX_ROOT/docs/ARCHITECTURE.md"
@@ -98,6 +116,12 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   [[ "$p6" == *'trusted to act with the operator account'* ]]
   [[ "$p6" == *'untrusted application data'* ]]
   [[ "$p6" == *'not an authentication boundary'* ]]
+  # The worker's tab is a path for worker text that Dux does not mediate at all,
+  # so the rule about operator-facing text has to say so rather than claim every
+  # path runs through recovery. The pane-reader test below is its other half:
+  # this one keeps the prose true, that one keeps the code true.
+  [[ "$p6" == *"worker's own tab is the operator's screen"* ]]
+  [[ "$p6" == *'neither reads it nor relays it'* ]]
   grep -qE '^\*\*Version\*\*: 2\.[0-9]+\.[0-9]+ ' "$DUX_ROOT/docs/constitution.md"
 }
 

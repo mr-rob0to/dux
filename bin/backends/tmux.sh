@@ -38,18 +38,69 @@ _absent_or_finding() {  # $1 what was being checked, $2 error text, $3 exit code
 _win() { local ep="$1"; echo "${ep##*:}"; }          # window id (@N)
 _ses() { local ep="${1#tmux:}"; echo "${ep%%:*}"; }  # session name
 
-backend_open() {  # id cwd cmd
-  # Create the window first and turn remain-on-exit on before the command runs,
-  # otherwise a command that exits quickly takes the window with it.
-  local id="$1" cwd="$2" cmd="$3" ses wid
+backend_open() {  # id cwd; opens the tab as a shell at its prompt
+  # Create the window first and turn remain-on-exit on before anything runs in
+  # it, otherwise a command that exits quickly takes the window with it.
+  local id="$1" cwd="$2" ses wid
   ses="$(_session)"
   wid="$(_tmux new-window -d -t "$ses" -n "dux-$id" -c "$cwd" -P -F '#{window_id}')" \
     || finding "tmux could not open a window for $id"
   _tmux set-option -w -t "$wid" remain-on-exit on >/dev/null \
     || finding "tmux could not set remain-on-exit on $wid for $id"
-  _tmux respawn-pane -k -t "$wid" -c "$cwd" "$cmd" >/dev/null \
-    || finding "tmux could not start the command in $wid for $id"
   echo "tmux:$ses:$wid"
+}
+
+# The command line is handed over with "exec", so that the pane's own pid is the
+# command's and not a shell sitting above it waiting. tmux reads the line with
+# the pane's shell, which is the operator's login shell or whatever
+# default-shell names, and shells disagree: measured 2026-09-15, bash and macOS
+# /bin/sh replace themselves with a single -c command while Linux's /bin/sh
+# (dash) forks and waits. Without the handover the pid `pid` reports on Linux is
+# "sh", the wrapper never finds the harness it just started, and every start
+# times out. A command line is still a command line: "exec" applies to the first
+# command in it, which is all any caller here sends.
+backend_run() {  # endpoint cwd cmd; replaces the pane's shell with cmd
+  local wid; wid="$(_win "$1")"
+  _tmux respawn-pane -k -t "$wid" -c "$2" "exec $3" >/dev/null \
+    || finding "tmux could not start the command in $wid"
+}
+
+# The pane's foreground process, when its command name is <name>. Measured on
+# tmux 3.6a: respawn-pane starts the command in a session of its own, so its
+# process group equals its pid, and `sh -c 'exec ...'` keeps the pid while the
+# command name becomes the exec'd program's.
+#
+# The name comes from ps, not from #{pane_current_command}. Measured 2026-09-14
+# with a real Claude Code 2.1.270 in a pane on macOS: tmux reported the pane's
+# command as [2.1.270] while ps -o comm= read [claude]. tmux reads the kernel's
+# short process name, which Claude Code sets to its version; ps reads argv[0],
+# which stays claude. Matching the tmux field would have meant the wrapper never
+# finding the harness it had just started, on every real run. ps is also where
+# the Herdr adapter's argv0 comes from, so both adapters now answer the same
+# question from the same place. Nothing the suite can start sets the two apart,
+# so this one is held by that measurement and by the milestone's own run, not by
+# a test. macOS pads the field and can print a path, hence the trim.
+#
+# #{pane_dead} is read first and on its own. Under remain-on-exit a dead pane
+# keeps the pid of the process that exited, which the system is free to hand to
+# something else, and #{pane_current_command} reverts to the pane's shell:
+# measured, a dead pane reported [1] [32628] [sh] [] for a sleep that had gone.
+backend_pid() {  # endpoint name; prints "<pid> <pgid> <cwd>", 1 when it is not there
+  local wid name out rest dead pid cmd cwd pgid
+  wid="$(_win "$1")"; name="$2"
+  out="$(_tmux list-panes -t "$wid" -F '#{pane_dead} #{pane_pid} #{pane_current_path}' 2>/dev/null)" \
+    || finding "tmux could not read the pane of $wid"
+  rest="$(printf '%s\n' "$out" | take_line)"
+  [ -n "$rest" ] || finding "tmux listed no pane for $wid"
+  dead="${rest%% *}"; rest="${rest#* }"
+  [ "$dead" = 0 ] || return 1
+  pid="${rest%% *}"; cwd="${rest#* }"
+  case "$pid" in ''|*[!0-9]*) return 1 ;; esac
+  cmd="$(ps -o comm= -p "$pid" 2>/dev/null | sed 's/^ *//; s/ *$//')"
+  [ "${cmd##*/}" = "$name" ] || return 1
+  pgid="$(ps -o pgid= -p "$pid" 2>/dev/null | tr -d ' ')"
+  case "$pgid" in ''|*[!0-9]*) return 1 ;; esac
+  printf '%s %s %s\n' "$pid" "$pgid" "$cwd"
 }
 
 backend_exists() {  # endpoint: 0 present, 1 gone, finding when tmux did not answer
@@ -94,11 +145,6 @@ backend_find() {  # id: prints the endpoint of the window named dux-<id>, nothin
   printf 'tmux:%s\n' "$out"
 }
 
-backend_tail() {  # endpoint n
-  local wid; wid="$(_win "$1")"
-  _tmux capture-pane -p -t "$wid" -S "-$2" 2>/dev/null | sed '/^$/d' | tail -n "$2"
-}
-
 backend_close() {  # endpoint. Closes only on a positive "not focused" reading.
   local wid state active attached; wid="$(_win "$1")"
   backend_exists "$1" || finding "tmux window $wid not found; nothing to close"
@@ -113,5 +159,6 @@ backend_notify() {  # title body
   _tmux display-message "$1: $2" 2>/dev/null || true
 }
 
-backend_report() { :; }  # id state message: tmux has no agent state to mirror (spec section 9)
-backend_title()  { :; }  # title
+# The window name is what backend_find matches, so tmux has no separate title
+# to set; the endpoint is taken and ignored so both adapters read the same.
+backend_title() { :; }  # endpoint text

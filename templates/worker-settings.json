@@ -14,5 +14,27 @@
       "Bash(gh api*-X*DELETE*)",
       "Bash(gh api*--method*DELETE*)"
     ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "touch '__CHANNEL__/beat'"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "touch '__CHANNEL__/beat'"
+          }
+        ]
+      }
+    ]
   }
 }

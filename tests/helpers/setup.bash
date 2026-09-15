@@ -75,6 +75,65 @@ setup() {
   : > "$FAKE_GH_LOG"
 }
 
+# A Dux root of real file copies, never symlinks, with one script replaced. The
+# copies matter: the scripts call their siblings by absolute path under
+# $DUX_ROOT, and writing into a directory of links to the checkout edits the
+# checkout.
+root_with_stub() {  # $1 script name, $2 body; prints the root
+  # Built from nothing every time: a second call with the same name would
+  # otherwise copy bin inside the first copy and, worse, follow the templates
+  # link and make one inside the real templates directory.
+  local r="$DUX_HOME/root-$1"
+  rm -rf "$r"
+  mkdir -p "$r"
+  cp -R "$DUX_ROOT/bin" "$r/bin"
+  ln -s "$DUX_ROOT/templates" "$r/templates"
+  rm -f "$r/bin/$1"
+  printf '%s\n' "$2" > "$r/bin/$1"
+  chmod +x "$r/bin/$1"
+  echo "$r"
+}
+
+# Claude Code records the folders the operator has trusted, and dux-spawn will
+# not open a tab for a project that is not there. Trust is per repository, so
+# the fixture names the projects themselves and never the suite root above
+# them: a trusted parent does not trust a repository inside it, and a fixture
+# that trusted the root would pass a spawn the real thing would leave sitting
+# at the dialog. The file lives under a CLAUDE_CONFIG_DIR of the suite's own,
+# so the operator's real one is neither read nor written.
+trust_suite_root() {  # [project names]; default proj
+  local n
+  CLAUDE_CONFIG_DIR="$DUX_HOME/claude-config"; export CLAUDE_CONFIG_DIR
+  mkdir -p "$CLAUDE_CONFIG_DIR"
+  echo '{"projects":{}}' > "$CLAUDE_CONFIG_DIR/.claude.json"
+  [ "$#" -gt 0 ] || set -- proj
+  for n in "$@"; do trust_path "$DUX_HOME/$n"; done
+}
+
+trust_path() {  # $1 a path; adds one trusted entry to the suite's own config
+  local f="$CLAUDE_CONFIG_DIR/.claude.json"
+  jq --arg p "$1" '.projects[$p] = { hasTrustDialogAccepted: true }' "$f" > "$f.tmp" \
+    && mv "$f.tmp" "$f"
+}
+
+# A fake harness whose process really is called claude, for any test where the
+# wrapper has to find it through the multiplexer. `dux-backend pid` reads the
+# name from ps, and ps reports a shebang script's interpreter on macOS and the
+# script's own name on Linux. A script called claude whose interpreter is a link
+# called claude reads "claude" on both, so no production code has to learn about
+# the test environment. Measured 2026-09-14: ps -o comm= gives <dir>/i/claude on
+# macOS and claude on Linux. Puts the copy first on PATH.
+harness_shim() {
+  mkdir -p "$DUX_HOME/hbin/i"
+  ln -sf "$(command -v bash)" "$DUX_HOME/hbin/i/claude"
+  {
+    printf '#!%s\n' "$DUX_HOME/hbin/i/claude"
+    tail -n +2 "$DUX_ROOT/tests/fakes/claude"
+  } > "$DUX_HOME/hbin/claude"
+  chmod 755 "$DUX_HOME/hbin/claude"
+  case "$PATH" in "$DUX_HOME/hbin:"*) ;; *) PATH="$DUX_HOME/hbin:$PATH"; export PATH ;; esac
+}
+
 wait_for_workers() {  # $1 seconds; returns 1 if a worker is still alive after that
   local deadline="$1" i=0 pidfile pid live
   while :; do

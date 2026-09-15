@@ -26,7 +26,7 @@ state="$("$ledger" get "$id" state)" || exit $?
 [ "$state" = queued ] || finding "task $id is $state, not queued"
 project="$("$ledger" get "$id" project)" || exit $?
 source_key="$("$ledger" get "$id" source)" || exit $?
-"$DUX_ROOT/bin/dux-project" get "$project" path >/dev/null || exit $?
+project_path="$("$DUX_ROOT/bin/dux-project" get "$project" path)" || exit $?
 [ -s "$brief" ] || finding "no brief for $id; run dux-brief first"
 # Any worktree line will do: a spawn killed after the line was filled must not need
 # the operator to put the placeholder back, and the line is not what keeps a second
@@ -83,7 +83,7 @@ alive_at="$("$backend" find "$id")" || exit $?
 # worker is at work, a pane it can see is evidence and a stuck run blocks the
 # next start by design -- the refusal names it, and existing recovery clears it.
 another_worker() {  # prints "<why> <id>" for a task whose worker may be alive
-  local other opid wpid state at ids
+  local other opid opgid wpid g state at ids
   # The roster is read here, on its own line, and not as a command substitution
   # in the loop's here-document: a here-document throws the substitution's exit
   # status away, so a ledger that could not enumerate would read as an empty
@@ -99,6 +99,20 @@ another_worker() {  # prints "<why> <id>" for a task whose worker may be alive
       case "$wpid" in
         ''|*[!0-9]*) printf 'pidfile %s' "$other"; return 0 ;;
         *) if pid_runs "$wpid" "dux-worker-wrap $other"; then printf 'live %s' "$other"; return 0; fi ;;
+      esac
+    fi
+    # The harness's own group, which outlives its wrapper. A worker sits in a
+    # live session now, so a wrapper killed while the session is still at its
+    # prompt leaves a pidfile that reads gone and a tab full of agent. Reading
+    # only the pidfile would let a second worker start beside it. The pgid file
+    # is written once the group is known and cleared at teardown, and its
+    # unreadable forms fail closed exactly as the pidfile's do.
+    opgid="$DUX_STATE/$other.pgid"
+    if [ -e "$opgid" ] || [ -L "$opgid" ]; then
+      g="$(cat "$opgid" 2>/dev/null)" || { printf 'pgidfile %s' "$other"; return 0; }
+      case "$g" in
+        ''|*[!0-9]*) printf 'pgidfile %s' "$other"; return 0 ;;
+        *) if kill -0 -- "-$g" 2>/dev/null; then printf 'live %s' "$other"; return 0; fi ;;
       esac
     fi
     # Fail closed, the same way the pidfile does. A ledger or a backend that
@@ -127,6 +141,9 @@ if busy="$(another_worker)"; then
     roster)  finding "cannot tell whether another Dux worker is alive: the ledger could not list the tasks; $id remains queued" ;;
     live)    finding "another Dux worker is active: $other; $id remains queued" ;;
     pidfile) finding "cannot tell whether a worker for $other is alive: $DUX_STATE/$other.pid does not say; $id remains queued" ;;
+    # Its own wording because it is its own file: an operator told to look at
+    # the pidfile would find a perfectly good one and no fault to fix.
+    pgidfile) finding "cannot tell whether a worker for $other is alive: $DUX_STATE/$other.pgid does not say; $id remains queued" ;;
     ledger)  finding "cannot tell whether a worker for $other is alive: the ledger did not answer; $id remains queued" ;;
     backend) finding "cannot tell whether a worker for $other is alive: the backend did not answer; $id remains queued" ;;
   esac
@@ -149,22 +166,112 @@ undo() {  # after a failed open. The brief line goes back either way, so no retr
   "$worktree" discard "$id" >/dev/null 2>&1 || log "worktree $wt left in place; run dux-worktree discard $id by hand"
 }
 
+# After the tab is open there is more to put back: the pane spawn opened, the
+# endpoint file, and the ledger field. `undo` alone would leave a tab holding a
+# shell and an endpoint pointing at it, and the next spawn refuses on both.
+undo_open() {
+  if [ -n "${ep:-}" ]; then
+    "$backend" close "$ep" >/dev/null 2>&1 || log "could not close $ep; close it by hand before spawning $id again"
+  fi
+  rm -f "$epfile" || log "could not remove $epfile"
+  "$ledger" set "$id" endpoint - || log "could not clear the endpoint of $id in the ledger"
+  undo
+}
+
 if ! set_worktree_line "- Worktree: $wt"; then
   "$worktree" discard "$id" >/dev/null 2>&1 || true
   finding "cannot fill the worktree line in $brief"
 fi
-# Both backends hand this string to a shell, so it is composed as shell words.
-wrapcmd="$(printf '%q %q' "$DUX_ROOT/bin/dux-worker-wrap" "$id")"
-ep="$("$backend" open "$id" "$wt" "$wrapcmd")" || { rc=$?; undo; exit $rc; }
+# An interactive claude in a directory it has not seen asks whether to trust the
+# folder, and the cursor sits on "No, exit". Print mode never asked. A worker
+# left at that dialog would pass discovery, never touch its beat file, and hold
+# the one-worker slot until the stale wake twenty minutes later, on every
+# unattended run. So the answer is read before the tab opens, out of the
+# operator's own file, and never written: Claude Code rewrites that file from
+# every live session, so a Dux write would race the operator's.
+#
+# The question is asked about the project, not about the worktree. Measured on
+# Claude Code 2.1.271, 2026-09-15: a directory inside a git repository is
+# trusted as that repository, and a linked worktree resolves to the repository
+# it was made from, so a worktree of a trusted repository starts with no dialog
+# wherever it sits, even outside the repository's own directory. A trusted
+# ancestor counts for a plain directory and not for a repository: a fresh
+# repository under a trusted parent still asks. So an ancestor walk would pass a
+# project whose worker then sits at the dialog, which is the one thing this
+# check exists to prevent.
+trusted_project() {  # $1 the project's own path; 0 when Claude Code trusts it
+  local conf p
+  conf="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json"
+  [ -s "$conf" ] || return 1
+  # Claude Code records the path the kernel agrees on, so ask with that one.
+  p="$(cd "$1" 2>/dev/null && pwd -P)" || return 1
+  [ -n "$p" ] || return 1
+  jq -e --arg p "$p" '.projects[$p].hasTrustDialogAccepted == true' "$conf" >/dev/null 2>&1
+}
+if ! trusted_project "$project_path"; then
+  undo
+  finding "$project_path is not trusted by Claude Code; open a session in it once and answer \"Yes, I trust this folder\""
+fi
 
-echo "$ep" > "$epfile" || finding "cannot write $epfile; the worker is running at $ep"
-"$ledger" set "$id" endpoint "$ep" || exit $?
-# From queued, and only from queued. The open above starts the worker, and a
-# worker that refuses at once leaves a proved terminal handoff the watcher can
-# apply before this line runs. Writing running whatever the ledger holds would
-# put a finished task back to running for good, and reading the state first
-# would leave the same window open; the ledger compares and sets under its own
-# lock instead, and a refusal is a finding naming the state that won.
+# The tab opens as a shell at its prompt and holds the harness, not the wrapper.
+ep="$("$backend" open "$id" "$wt")" || { rc=$?; undo; exit $rc; }
+
+echo "$ep" > "$epfile" || { undo_open; finding "cannot write $epfile"; }
+"$ledger" set "$id" endpoint "$ep" || { rc=$?; undo_open; exit "$rc"; }
+
+# The wrapper supervises from outside the tab, so spawn starts it here: its own
+# process group under set -m so a signal to Dux does not reach it, nohup so a
+# closed terminal does not, stdin from /dev/null, its two streams appended to a
+# log of Dux's own lines, and the task worktree as its directory. The subshell
+# prints $! because a wrapper spawn cannot name is one it cannot stop.
+wraplog="$DUX_STATE/$id.wrap.log"
+seq_before="$(handoff_next_seq "$id")"
+wpid="$(cd "$wt" && { set -m; nohup "$DUX_ROOT/bin/dux-worker-wrap" "$id" < /dev/null >> "$wraplog" 2>&1 & echo $!; })" \
+  || { undo_open; finding "cannot start the wrapper for $id; see $wraplog"; }
+case "$wpid" in ''|*[!0-9]*) undo_open; finding "the wrapper for $id did not report a pid; see $wraplog" ;; esac
+
+# Three endings, first one wins: the wrapper writes its pidfile and is alive, so
+# the task is running; the wrapper is gone, so it refused; or the window runs
+# out with neither, which is a wrapper that is stuck before its pidfile and is
+# stopped rather than left behind.
+waited=0; live=0
+while [ "$waited" -lt "${DUX_SPAWN_START_SECS:-10}" ]; do
+  if pid_runs "$(cat "$pidfile" 2>/dev/null)" "dux-worker-wrap $id"; then live=1; break; fi
+  kill -0 "$wpid" 2>/dev/null || break
+  waited=$((waited + 1)); sleep 1
+done
+if [ "$live" = 0 ] && kill -0 "$wpid" 2>/dev/null; then
+  kill -TERM "$wpid" 2>/dev/null || true
+  waited=0
+  while [ "$waited" -lt 10 ] && kill -0 "$wpid" 2>/dev/null; do waited=$((waited + 1)); sleep 1; done
+fi
+if [ "$live" = 0 ]; then
+  # A refusal made after the wrapper opened its run record leaves a failed
+  # handoff, which the watcher applies to a queued task. Touching anything here
+  # would race that, and the worktree is what recovery reads. A refusal before
+  # the run record leaves nothing at all, so spawn puts the task back as a
+  # failed open is put back, and closes the tab it opened.
+  if [ "$(handoff_next_seq "$id")" != "$seq_before" ]; then
+    finding "the wrapper for $id refused before the harness started; see $wraplog"
+  fi
+  # A wrapper still there after the signal and the wait is one undo cannot run
+  # under: it is about to open the tab spawn would close and work in the
+  # worktree spawn would discard, and nothing here can tell it to stop. So the
+  # tab, the endpoint and the worktree stay where they are and the pid is named,
+  # the same answer undo gives when a container is alive.
+  if kill -0 "$wpid" 2>/dev/null; then
+    finding "the wrapper for $id did not start and pid $wpid will not stop; stop it, then run dux-recover $id"
+  fi
+  undo_open
+  finding "the wrapper for $id did not start; see $wraplog"
+fi
+
+# From queued, and only from queued. The wrapper is running by now, and one that
+# refuses leaves a proved terminal handoff the watcher can apply before this
+# line runs. Writing running whatever the ledger holds would put a finished task
+# back to running for good, and reading the state first would leave the same
+# window open; the ledger compares and sets under its own lock instead, and a
+# refusal is a finding naming the state that won.
 "$ledger" set-if "$id" state queued running || exit $?
 case "$source_key" in
   gh:*)

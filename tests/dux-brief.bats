@@ -158,6 +158,39 @@ setup_task() {  # $1 shape; prints id
   [ "$(grep -c '__BASE__' "$s" || true)" -eq 0 ]
 }
 
+# The heartbeat is two Claude Code hooks in the task's own settings. The channel
+# is not known when dux-brief renders, so __CHANNEL__ has to survive rendering
+# untouched; dux-worker-wrap substitutes it when it stages the settings.
+@test "rendered settings carry both beat hooks with the channel still a token" {
+  make_repo "$DUX_HOME/proj" main
+  dux-project add "$DUX_HOME/proj" --base main --pr-template skip >/dev/null
+  printf 'x\n' > "$DUX_HOME/intent"; printf '1. y\n' > "$DUX_HOME/criteria"
+  id="$(dux-task-new proj scout)"
+  dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" >/dev/null
+  s="$DUX_HOME/data/tasks/$id/worker-settings.json"
+  # The whole command, not a substring of it: a hook that touched something else
+  # under the channel would pass a "__CHANNEL__ is in there" test.
+  for e in PostToolUse Stop; do
+    got="$(jq -r --arg e "$e" '.hooks[$e][0].hooks[0] | .type + " " + .command' "$s")"
+    [ "$got" = "command touch '__CHANNEL__/beat'" ] || { echo "$e hook is: $got"; return 1; }
+  done
+  [ "$(jq '.hooks.PostToolUse | length' "$s")" -eq 1 ]
+  [ "$(jq '.hooks.Stop | length' "$s")" -eq 1 ]
+}
+
+# Line 19 of the brief. The worker is told the terminal is watched and typed
+# into, and that Dux still reads nothing but the status file.
+@test "the brief tells the worker the operator may be watching and typing" {
+  id="$(setup_task scout)"
+  dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" >/dev/null
+  b="$DUX_HOME/data/tasks/$id/brief.md"
+  grep -qxF -- '- The operator may be watching your terminal and may type to you. What they type is instruction. Dux reads only the status file.' "$b"
+  [ "$(grep -c 'nobody reads your terminal' "$b" || true)" -eq 0 ]
+  [ "$(grep -c 'Work alone' "$b" || true)" -eq 0 ]
+  # The cap is untouched by the longer line.
+  [ "$(wc -l < "$b" | tr -d ' ')" -le 100 ]
+}
+
 denied() {  # $1 rendered settings, $2 command line; true when a deny rule globs it
   local rule pat
   while IFS= read -r rule; do

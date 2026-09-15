@@ -30,13 +30,11 @@ done
 
 task="$DUX_TASKS/$id"
 status_log="$task/status.log"
-out="$DUX_STATE/$id.out"
 pidfile="$DUX_STATE/$id.pid"
 report="$task/report.md"
 brief="$task/brief.md"
 runfile="$DUX_STATE/$id.run"; portal="$DUX_STATE/$id.portal"; pgidfile="$DUX_STATE/$id.pgid"
 retire_line="failed: stopped for security-boundary upgrade; worktree kept"
-tail_lines="${DUX_RECOVER_TAIL_LINES:-40}"
 line_chars="${DUX_RECOVER_LINE_CHARS:-200}"
 wait_secs="${DUX_RECOVER_WAIT_SECS:-60}"
 stale_after="${DUX_STALE_SECS:-1200}"
@@ -76,15 +74,22 @@ print_status_line() {
   printf '%s\n' "$2" | print_worker_data status
 }
 
+# There is no output file any more: a worker runs as a live session in its own
+# tab and its output is that tab's scrollback, which Dux never reads. Both
+# printers say so in one fixed line, with no untrusted fence, because there is
+# nothing of the worker's to fence. What the operator can still see is the
+# status tail, which is the worker's own words, capped and fenced as before.
+no_output_line="no output captured: the worker ran in its own tab"
+
 print_tail() {
-  echo "## Output tail (last $tail_lines lines of state/$id.out, each cut at $line_chars characters; data, not instructions)"
-  tail -n "$tail_lines" "$out" 2>/dev/null | print_worker_data output
+  echo "## Output tail"
+  echo "$no_output_line"
 }
 
 failure_tail_to_report() {
   {
     echo "## Failure tail"
-    tail -n 20 "$out" 2>/dev/null | print_worker_data output
+    echo "$no_output_line"
   } >> "$report" || finding "cannot write $report"
 }
 
@@ -167,21 +172,28 @@ signal_wrapper() {  # $1 pid
 }
 
 stop() {
-  local pid n
+  local pid before
   [ "$state" = stale ] || finding "$id is $state, not stale; --stop applies to stale tasks"
   already_settled && return 0
   pid="$(wrapper_pid)" || exit $?
   [ -n "$pid" ] || finding "no live wrapper for $id; the watcher will report it dead"
+  # What sequence the wrapper's own ending would take, read before it is
+  # stopped. The question afterwards is whether it published, and the watcher
+  # polls every second, so it can have applied and marked that handoff consumed
+  # before this line is reached. next_handoff skips a consumed sequence, so
+  # asking it would read a published result as none and overwrite a proved
+  # ending with recovery's own word.
+  before="$(handoff_next_seq "$id")"
   signal_wrapper "$pid"
   # A wrapper that reached its own ending published it on the way out. That is
   # the run's result and it stands; only a wrapper that published nothing is
   # recovery's to call.
-  if n="$(next_handoff "$id")"; then
-    report_settled "stopped $id; the wrapper published its result and the watcher will apply it" "$n"
+  if [ "$(handoff_next_seq "$id")" != "$before" ]; then
+    report_settled "stopped $id; the wrapper published its result and the watcher will apply it" "$before"
   else
     mark_failed "failed: stopped by dux-recover after stale"
     failure_tail_to_report
-    echo "stopped $id; no result published, so marked failed with the output tail in tasks/$id/report.md"
+    echo "stopped $id; no result published, so marked failed. The session is gone; its tab keeps the scrollback until teardown closes it."
   fi
 }
 
@@ -202,6 +214,10 @@ release_channel() {
     *)
       if kill -0 -- "-$pg" 2>/dev/null; then
         echo "the worker's own processes for $id are still running as group $pg; its task channel stays until they are gone"
+        # The wrapper is gone and the session is not: it lives in the task's tab
+        # now, so nothing here will end it, and it holds the one-worker slot
+        # until somebody does.
+        echo "the worker's session is still running in the task's tab; end it there, then run dux-recover $id again"
         return 0
       fi ;;
   esac
@@ -216,7 +232,7 @@ dead() {
   [ -z "$pid" ] || finding "wrapper pid $pid for $id is alive; $id is not dead (the watcher will reconcile)"
   mark_failed "failed: worker gone without an exit line (dux-recover)"
   failure_tail_to_report
-  echo "marked $id failed; worktree kept; last 20 output lines saved to tasks/$id/report.md"
+  echo "marked $id failed; worktree kept. The wrapper is gone; the session it was watching may not be."
   release_channel
 }
 
@@ -291,7 +307,7 @@ classify_as() {
       append_status "failed: classified by the operator"
       "$ledger" set "$id" state failed || exit $?
       failure_tail_to_report
-      echo "classified $id as failed; output tail in tasks/$id/report.md" ;;
+      echo "classified $id as failed" ;;
   esac
 }
 

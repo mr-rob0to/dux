@@ -8,13 +8,48 @@
 
 **Where this stands**
 - Drafted 2026-09-14 by a Dux plan worker. One independent design review by a fresh
-  session the same day: fourteen findings, all taken, recorded at the bottom. Awaiting
-  the operator.
+  session the same day: fourteen findings, all taken, recorded at the bottom.
 - **Supersedes pull request #41**, which is not merged and should be closed, not
   reviewed. The operator's two changes: the live session is the default for every
   worker, and the harness is the tab's own process found by pid, not a child the wrapper
-  forks. Nothing is implemented.
+  forks.
+- Tasks 1 to 5 landed 2026-09-14. The milestone acceptance run followed on 2026-09-15
+  and holds; it is recorded under "Milestone acceptance", with the three defects it
+  found and their fixes. Next is `/ship`.
 - Merges as one ship PR of five tasks.
+
+**Divergences from the approved plan**
+- Task 4 also changes `bin/dux-recover`'s `stop()`, which the plan gave to Task 5. Once
+  a stopped wrapper publishes `ended` rather than `failed`, the existing `next_handoff`
+  read became wrong: it skips a sequence the watcher has already consumed, so a stop
+  raced by the watcher overwrote a proved ending with recovery's own `failed`. The stop
+  now compares `handoff_next_seq` before and after, which sees a published result
+  whether or not it has been applied. Two lines; it is the same behaviour the comment
+  above it already claimed.
+- Task 4's trust check asks about the project, not the worktree and not an ancestor. The
+  plan and the spec said the worktree path or one of its ancestors, from a measurement
+  that a directory under a trusted path starts without the dialog. The milestone
+  acceptance run found the gap: a fresh repository under the trusted
+  `~/Documents/dev/projects` raised the dialog anyway, the check had passed it, and the
+  worker sat there holding the slot. Five probes on Claude Code 2.1.271 settled it, and
+  they are in spec section 5.2: what Claude Code trusts is the repository. A directory is
+  trusted as the repository it is in, a linked worktree resolves to the repository it was
+  made from (proved at `/tmp`, outside every trusted path), and an ancestor counts only
+  where no repository sits between. So the check asks about the project path alone, which
+  is the path the registry already holds and the one the finding already named.
+- Two defaults and one flag moved after the milestone acceptance run, all measured
+  against the real Herdr and the real Claude Code on 2026-09-15. `DUX_WRAP_START_SECS`
+  goes from 30 to 120: a real start took 40s on a quiet machine, and the first Herdr
+  acceptance run refused a session that was on its way. `herdr pane report-metadata`
+  needs `--source`, which the adapter did not pass, so every worker tab went untitled and
+  the wrapper logged "title not set on this backend"; the fake now refuses the call
+  without it, as the real CLI does.
+- Task 4's "refused before the harness started" case is proved with a stub wrapper, not
+  with the real one and its settings file removed as the plan's acceptance says. The
+  real wrapper writes its pidfile (`:84`) before it opens its run record (`:204`), so
+  every refusal it can make with the settings missing happens before there is a handoff
+  to leave; spawn reads that as "did not start". Both endings are tested, one with the
+  stub and one with the real wrapper.
 
 **Estimated diff:** ~1,400 added lines across 5 tasks. Under the cap of 2,500 lines or 12
 tasks (constitution principle 1). Task 3 is the large one, ~400, most of it the wrapper's
@@ -52,20 +87,24 @@ Only what the spec does not carry.
 - **`dux-backend pid` output** is one line, three words: `<pid> <pgid> <cwd>`. Exit 0 with
   the line, exit 1 with nothing when no foreground process named `<name>` is there yet or
   the tmux pane is dead, exit 2 with a finding when the multiplexer did not answer.
-- **The trust check** reads `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` with `jq` and
-  walks from the worktree path to `/`, looking for
-  `.projects[<path>].hasTrustDialogAccepted == true`. Tests point `HOME` at a fixture.
-  Missing file, bad JSON and no match are the one finding in spec section 5.2.
+- **The trust check** reads `${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json` with `jq` and asks
+  one question about one path, the project's own:
+  `.projects[<project path>].hasTrustDialogAccepted == true`. Tests point
+  `CLAUDE_CONFIG_DIR` at a fixture. Missing file, bad JSON and no match are the one
+  finding in spec section 5.2. The ancestor walk the plan first described is gone; the
+  divergence at the top of this file has the measurement that removed it.
 - **Spawn's wait** ends on the first of: the pidfile names a live wrapper; the wrapper's
   pid is gone; `DUX_SPAWN_START_SECS` elapses. The two refusal wordings are in spec
   section 5.1; a handoff directory for the id is what tells them apart.
 - **The wrapper's start window.** `pid` is polled once a second for `DUX_WRAP_START_SECS`
-  (default 30). The refusal wording: `the harness for <id> did not appear in its pane
-  within 30s`. Spawn's own window, `DUX_SPAWN_START_SECS` (default 10), is for the wrapper
-  pid, not the harness.
-- **Task 4's tests need a trusted `HOME`.** Every spawn test that expects a start points
-  `HOME` at a fixture whose `.claude.json` trusts the suite's temporary root; the
-  refusal test uses one that trusts nothing.
+  (default 120; the plan said 30, and the divergence at the top of this file has the
+  measurement that moved it). The refusal wording: `the harness for <id> did not appear in
+  its pane within <n>s`. Spawn's own window, `DUX_SPAWN_START_SECS` (default 10), is for
+  the wrapper pid, not the harness.
+- **Task 4's tests need a trusted project.** Every spawn test that expects a start points
+  `CLAUDE_CONFIG_DIR` at a fixture whose `.claude.json` trusts the test project's own
+  path; the refusal test uses one that trusts nothing, and one that trusts only the
+  folder above the repository.
 - **Tests that drive the wrapper directly** open a real tmux window under the suite's
   socket directory, write `state/<id>.endpoint`, and set the fake's variables with
   `tmux set-environment` on that session; the wrapper is then run from the worktree as
@@ -98,23 +137,23 @@ are unknown to `dux-backend`, and no file in `bin/` or `skills/` names `pane rea
 
 **Steps**
 
-- [ ] `bin/backends/tmux.sh`: split `open`; add `backend_run`, `backend_pid`; `title`
+- [x] `bin/backends/tmux.sh`: split `open`; add `backend_run`, `backend_pid`; `title`
       stays a no-op with the endpoint argument.
-- [ ] `bin/backends/herdr.sh`: split `open`; add `backend_run`, `backend_pid` reading the
+- [x] `bin/backends/herdr.sh`: split `open`; add `backend_run`, `backend_pid` reading the
       four fields through `jq`; `backend_title` by endpoint; remove `backend_report`,
       `_own_pane`.
-- [ ] `bin/dux-backend`: the verbs, their argument counts, the usage line.
-- [ ] `tests/fakes/herdr`: `pane run` starts the command in its own process group and
+- [x] `bin/dux-backend`: the verbs, their argument counts, the usage line.
+- [x] `tests/fakes/herdr`: `pane run` starts the command in its own process group and
       records the pid; `pane process-info` answers in the real shape, with `argv0` and
       `cwd` read from `ps` and `lsof` for the recorded pid, never from a constant.
-- [ ] `tests/contract.bats`: the pane-reader rule, and the `tail` tests removed from
+- [x] `tests/contract.bats`: the pane-reader rule, and the `tail` tests removed from
       `tests/backend-adapter.bats`.
-- [ ] `tests/backend-adapter.bats`: the acceptance cases for both adapters.
-- [ ] Break-verify: make `backend_pid` skip the name comparison. Expected: the `nothing`
+- [x] `tests/backend-adapter.bats`: the acceptance cases for both adapters.
+- [x] Break-verify: make `backend_pid` skip the name comparison. Expected: the `nothing`
       case fails on both adapters, a pid is printed. Restore. Paste both.
-- [ ] Break-verify: add a `capture-pane` call to a skill file. Expected: the contract
+- [x] Break-verify: add a `capture-pane` call to a skill file. Expected: the contract
       test fails naming the file. Restore. Paste.
-- [ ] `make check` green.
+- [x] `make check` green.
 
 ## Task 2: the launcher, the beat hooks, the brief line
 
@@ -138,20 +177,20 @@ watching your terminal" and not "nobody reads your terminal", under 100 lines.
 
 **Steps**
 
-- [ ] Measure once against a real `claude`, interactive, in a tmux pane: a session
+- [x] Measure once against a real `claude`, interactive, in a tmux pane: a session
       started with `--settings` holding the two hooks touches the beat file after one
       tool call and again at `Stop`. Record the result in the commit body. If it does
       not, stop and report; do not pick a fallback.
-- [ ] `bin/workers/claude.sh`: `worker_launcher`; `worker_cmd`; `worker_process_name`;
+- [x] `bin/workers/claude.sh`: `worker_launcher`; `worker_cmd`; `worker_process_name`;
       drop `worker_run`.
-- [ ] `templates/worker-settings.json`: the hooks. `templates/brief.md`: line 19.
-- [ ] `tests/fakes/claude`: `touch`.
-- [ ] `tests/worker-adapter.bats`: the launcher cases. `tests/dux-brief.bats`: the hooks
+- [x] `templates/worker-settings.json`: the hooks. `templates/brief.md`: line 19.
+- [x] `tests/fakes/claude`: `touch`.
+- [x] `tests/worker-adapter.bats`: the launcher cases. `tests/dux-brief.bats`: the hooks
       and the brief line.
-- [ ] Break-verify: drop the scrub loop from the launcher. Expected: the environment case
+- [x] Break-verify: drop the scrub loop from the launcher. Expected: the environment case
       fails, `DUX_HOME` is present. Restore. Paste.
-- [ ] Break-verify: drop the `PATH` strip. Expected: the `PATH` case fails. Restore. Paste.
-- [ ] `make check` green.
+- [x] Break-verify: drop the `PATH` strip. Expected: the `PATH` case fails. Restore. Paste.
+- [x] `make check` green.
 
 ## Task 3: the wrapper supervises a process it did not fork
 
@@ -178,20 +217,20 @@ refusal with `DUX_WRAP_START_SECS=2`.
 
 **Steps**
 
-- [ ] Re-measure on Linux first (`ubuntu:24.04`, `bats git tmux jq`): `pane_pid`,
+- [x] Re-measure on Linux first (`ubuntu:24.04`, `bats git tmux jq`): `pane_pid`,
       `set-environment` reaching a respawned pane, a group stop from outside. Record the
       result in the commit body. If any differs, stop and report; do not pick a fallback.
-- [ ] `bin/dux-worker-wrap`: the launch section (`:353-378`) and the loop (`:380-406`)
+- [x] `bin/dux-worker-wrap`: the launch section (`:353-378`) and the loop (`:380-406`)
       rewritten as the interface says; the settings substitution; the judgement wording.
-- [ ] `tests/dux-worker-wrap.bats`: `prepare` opens the window and writes the endpoint;
+- [x] `tests/dux-worker-wrap.bats`: `prepare` opens the window and writes the endpoint;
       the fake's variables through `set-environment`; the cases above.
-- [ ] Break-verify the end: remove the exit-on-terminal condition. Expected: the `sleep
+- [x] Break-verify the end: remove the exit-on-terminal condition. Expected: the `sleep
       600` case exceeds its bound. Restore. Paste.
-- [ ] Break-verify the beat: read the wrong mtime. Expected: the touch case fails, no
+- [x] Break-verify the beat: read the wrong mtime. Expected: the touch case fails, no
       heartbeat. Restore. Paste.
-- [ ] Break-verify the discovery: accept any foreground process. Expected: the `sh -c`
+- [x] Break-verify the discovery: accept any foreground process. Expected: the `sh -c`
       case fails, no refusal. Restore. Paste.
-- [ ] `make check` green.
+- [x] `make check` green.
 
 ## Task 4: spawn starts the wrapper outside the tab
 
@@ -223,21 +262,21 @@ refusal `pidfile <other>`.
 
 **Steps**
 
-- [ ] `bin/dux-spawn`: the trust check; the open; the start with its pid; the wait; the
+- [x] `bin/dux-spawn`: the trust check; the open; the start with its pid; the wait; the
       two endings; the pgid read in `another_worker`.
-- [ ] `tests/dux-spawn.bats`: the six cases. `tests/e2e-dispatch.bats`,
+- [x] `tests/dux-spawn.bats`: the six cases. `tests/e2e-dispatch.bats`,
       `tests/e2e-supervise.bats`: `.out` assertions replaced by the handoff; `HOME`
       trusting the suite root.
-- [ ] Break-verify: make the wait accept a pidfile naming a dead pid. Expected: the
+- [x] Break-verify: make the wait accept a pidfile naming a dead pid. Expected: the
       fake-wrapper case fails, the task is `running`. Restore. Paste.
-- [ ] Break-verify: make the wait undo whether or not a handoff exists. Expected: the
+- [x] Break-verify: make the wait undo whether or not a handoff exists. Expected: the
       real-wrapper case fails, the worktree is gone. Restore. Paste.
-- [ ] Break-verify: make the trust check return 0 on a missing key. Expected: the
+- [x] Break-verify: make the trust check return 0 on a missing key. Expected: the
       untrusted case fails, a tab opens. Restore. Paste.
-- [ ] Break-verify: skip the pgid read in `another_worker`. Expected: the `live <other>`
+- [x] Break-verify: skip the pgid read in `another_worker`. Expected: the `live <other>`
       case fails, spawn proceeds. Restore. Paste.
-- [ ] `skills/dux-dispatch/SKILL.md`: the tab, and the tab in the "never read" rule.
-- [ ] `make check` green.
+- [x] `skills/dux-dispatch/SKILL.md`: the tab, and the tab in the "never read" rule.
+- [x] `make check` green.
 
 ## Task 5: recovery, teardown, the constitution, the component map
 
@@ -263,17 +302,23 @@ constitution names no `.out` file and `AGENTS.md` names the new version.
 
 **Steps**
 
-- [ ] `bin/dux-recover`: the two tails; the `dead()` wording.
-- [ ] `tests/dux-recover.bats`: the fixtures that wrote `.out` removed; the two cases.
-- [ ] Break-verify: make `print_tail` read `state/<id>.out` again with a fixture present.
+- [x] `bin/dux-recover`: the two tails; the `dead()` wording.
+- [x] `tests/dux-recover.bats`: the fixtures that wrote `.out` removed; the two cases.
+- [x] Break-verify: make `print_tail` read `state/<id>.out` again with a fixture present.
       Expected: the stale case fails, a fence appears. Restore. Paste.
-- [ ] `bin/dux-teardown`: the log in the removal list. `tests/dux-teardown.bats`: the
+- [x] `bin/dux-teardown`: the log in the removal list. `tests/dux-teardown.bats`: the
       case.
-- [ ] Break-verify: drop the log from the removal list. Expected: the teardown case
+- [x] Break-verify: drop the log from the removal list. Expected: the teardown case
       fails, the file remains. Restore. Paste.
-- [ ] The two skills, `docs/ARCHITECTURE.md`, `docs/constitution.md` and `AGENTS.md` as
+- [x] The two skills, `docs/ARCHITECTURE.md`, `docs/constitution.md` and `AGENTS.md` as
       the interface says.
-- [ ] `make check` green, `bin/dux-doctor` passing, then `/ship`.
+- [x] `make check` green, `bin/dux-doctor` passing, then `/ship`. Two standing reads:
+      `lint-identifiers` fails on this machine on `main` as well, on `fitfights_api` in
+      plans and specs from September 3rd to 9th that this branch does not touch, and CI
+      skips that target; `dux-doctor` fails only its registry check in a worktree,
+      because `data/` is per-home state and this one has no projects, and it passed in
+      the acceptance run's own home. Everything else is green: 25 unit suites, all
+      eight matrix jobs, shellcheck and the pipe lint.
 
 ## Milestone acceptance
 
@@ -287,6 +332,41 @@ constitution names no `.out` file and `AGENTS.md` names the new version.
   third run yields `ended` within one poll and frees the one-worker guard.
 - The constitution's gates: shellcheck and bash 3.2 clean, identifier lint clean,
   `ARCHITECTURE.md` in the same PR, `/ship` the only gate.
+
+**The run, 2026-09-15.** Four real scout tasks against a scratch repository, under a
+`DUX_HOME` of its own so nothing touched the operator's fleet, with the real Claude Code
+and the real multiplexers.
+
+- **tmux.** The tab came up on the Claude Code screen with no trust dialog. The beat
+  file's mtime moved while the session worked. The worker's own terminal line ended the
+  run: handoff `done | done: report`, `report.md` "3 shell scripts under bin/",
+  `done:` in `state/events.log`, and the watcher applying it, ledger `done`. One gap
+  against the line above: `data/backlog.md` itself was not read, and the scratch home is
+  gone, so the ledger is the evidence there.
+- **Herdr.** Same start, and `herdr tab list` showed the task's tab. A line typed into
+  the tab by hand was acted on by the session: the report came back with the word the
+  line asked for and nothing else. Then the terminal line, `done`, and the tab stayed
+  open with its scrollback. Read "Herdr lists the agent" above as the tab list, not the
+  agent list: the design reports no agent state to Herdr at all (spec section 5.4), so
+  nothing registers the worker as an agent, and a test asserts that.
+- **Closing the tab.** A third run's tab closed by hand: the watcher's next poll wrote
+  `ended`, and the one-worker guard let the next spawn through.
+- **`--stop`.** A fourth run left to go stale: `dux-recover <id>` printed the status tail
+  and the fixed output line with no fence of the worker's, and `--stop` left `ended` for
+  the watcher, which applied it.
+- **What the run could not see.** That whole run was on macOS, and Ubuntu CI then found
+  two things macOS cannot reach: tmux hands a command line to the pane's shell and only
+  bash and macOS `/bin/sh` replace themselves with it, and `kill -0` answers on Linux for
+  a process that has exited and not been waited on. Both are fixed in this branch, with
+  the measurements in `bin/backends/tmux.sh` and `bin/dux-env`. The reading for next time
+  is that one operating system is not the matrix: the suites that would have caught both
+  never ran on Linux, because that job stops at the first failure.
+
+Three defects the run found, all fixed in the same branch: the trust check passed a
+repository under a trusted parent, the harness start window was too short for a real
+start, and the Herdr title call was missing `--source`. The first and the third changed
+an assertion and were broken and seen to fail; the second is a default with no assertion
+of its own. The divergences at the top of this file carry the measurements.
 
 ## Risks
 

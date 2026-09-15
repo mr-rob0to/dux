@@ -20,4 +20,5 @@ description: Show the fleet digest. Use when the operator asks what is running, 
    nothing there until its result is proved, so a task still counted as running
    is running.
 
-Never edit `data/backlog.md`. Never read `state/<id>.out`.
+Never edit `data/backlog.md`. Never read the worker's tab, by any means: no
+pane capture, no scrollback, no screenshot.

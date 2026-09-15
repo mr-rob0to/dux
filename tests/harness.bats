@@ -44,6 +44,31 @@ load helpers/setup
   grep -qx "pane=w1:p9" "$FAKE_HERDR_OUTPUT"
 }
 
+# The real pane reports the process that is running in it. The fake has to report
+# the same thing, and the pid it records is a shell's until that shell replaces
+# itself with the command, which is a thing the shells disagree about: measured
+# 2026-09-15, bash and macOS /bin/sh replace themselves with a single -c command
+# and Linux's /bin/sh (dash) forks and waits. A fake that reports "sh" is a fake
+# that no name check can ever match, which on Linux is every test that starts a
+# real wrapper.
+@test "fake herdr process-info names the command pane run started, not a shell" {
+  export FAKE_HERDR_RUN=1
+  mkdir -p "$DUX_HOME/cwd"
+  herdr tab create --workspace w1 --cwd "$DUX_HOME/cwd" --label dux-x --no-focus >/dev/null
+  herdr pane run w1:p9 "sleep 60" >/dev/null
+  argv0() {
+    herdr pane process-info --pane w1:p9 \
+      | jq -r '.result.process_info.foreground_processes[0].argv0 // empty'
+  }
+  # Read again on every poll: the pane has a process only once the shell has got
+  # as far as starting one.
+  names_sleep() { [ "$(argv0)" = sleep ]; }
+  wait_until 15 names_sleep
+  [ "$(argv0)" = sleep ]
+  pid="$(herdr pane process-info --pane w1:p9 | jq -r '.result.process_info.foreground_processes[0].pid')"
+  kill -TERM "$pid"
+}
+
 @test "use_tmux_tmpdir builds its own directory and refuses one it did not build" {
   DUX_TEST_TMUX_TMPDIR="$DUX_HOME/tmux.own"
   use_tmux_tmpdir

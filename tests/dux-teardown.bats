@@ -13,14 +13,29 @@ setup() {
   : > "$FAKE_HERDR_LOG"; : > "$FAKE_HERDR_OUTPUT"; : > "$FAKE_WORKER_LOG"; : > "$FAKE_GH_LOG"
   export DUX_BACKEND=herdr HERDR_WORKSPACE_ID=w1
   export DUX_SESSION_PID=$$
+  trust_suite_root
   dux-lock acquire >/dev/null
 }
 
-# A spawned task whose worker never ran (FAKE_HERDR_RUN unset), so the test
-# settles the task itself.
+# Spawn starts a wrapper of its own now, and waits for it to say it is alive, so
+# a task cannot be spawned without one. These tests are about teardown and build
+# their own run records and handoffs, so the wrapper is a stub that says it
+# started and nothing else, and it is reaped straight away. What is left is the
+# old precondition exactly: a tab, a worktree, a running task, and a pidfile
+# naming a pid that is gone.
+quiet_spawn() {  # $1 id
+  local r
+  r="$(root_with_stub dux-worker-wrap '#!/bin/sh
+echo $$ > "$DUX_HOME/state/$1.pid"
+sleep 300')"
+  env DUX_ROOT="$r" "$r/bin/dux-spawn" "$1" >/dev/null
+  reap "$(cat "$DUX_HOME/state/$1.pid")" || true
+}
+
+# A spawned task whose worker never ran, so the test settles the task itself.
 spawned() {  # $1 shape; sets $id and $wt
   id="$(fixture_task proj "$1")"
-  dux-spawn "$id" >/dev/null
+  quiet_spawn "$id"
   wt="$DUX_HOME/proj/.worktrees/dux-$id"
   : > "$FAKE_HERDR_LOG"
 }
@@ -38,7 +53,7 @@ spawned_issue() {  # $1 shape, $2 source key; sets $id and $wt
   else
     dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" --issue-file "$task/issue.md" >/dev/null
   fi
-  dux-spawn "$id" >/dev/null
+  quiet_spawn "$id"
   wt="$DUX_HOME/proj/.worktrees/dux-$id"
   : > "$FAKE_HERDR_LOG"; : > "$FAKE_GH_LOG"
 }
@@ -110,9 +125,12 @@ settled() {  # $1 state, [$2 pr]
   printf '%s\n' "$ch" > "$DUX_HOME/state/$id.portal"
   printf '999999\n' > "$DUX_HOME/state/$id.pgid"
   handoff "$id" "done: report" done; : > "$DUX_HOME/state/$id.handoffs/1/consumed"
+  # The wrapper's own log is one of them: dux-spawn's start refusals point the
+  # operator at it, so it lives exactly as long as the task does.
+  printf 'dux: worker for %s ended\n' "$id" > "$DUX_HOME/state/$id.wrap.log"
   run dux-teardown "$id"
   [ "$status" -eq 0 ]
-  for f in handoffs run result-context ship-receipt portal pgid; do
+  for f in handoffs run result-context ship-receipt portal pgid wrap.log; do
     [ ! -e "$DUX_HOME/state/$id.$f" ] || { echo "state/$id.$f survived teardown"; false; }
   done
   [ ! -e "$ch" ]

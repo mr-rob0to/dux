@@ -183,7 +183,12 @@ design separates the two:
     and clear the endpoint file and ledger field, and prints `the wrapper for <id> did
     not start; see state/<id>.wrap.log`. Either way the task is not `running`.
   - the window ends with the wrapper alive and no pidfile: spawn sends it `TERM`, waits
-    for it to go, and takes one of the two branches above by whether a handoff exists.
+    up to ten seconds for it to go, and takes one of the two branches above by whether a
+    handoff exists. A wrapper still alive after that wait takes neither: undo would close
+    the tab it is about to run in and discard the worktree it is about to work in, and
+    nothing here can tell it to stop. So spawn leaves every reference where it is and
+    prints `the wrapper for <id> did not start and pid <pid> will not stop; stop it, then
+    run dux-recover <id>`, the same answer `undo` gives for a live container (`:147`).
   A fast refusal is already why `set-if` compares from `queued` (`:162-167`); the wait
   keeps that reasoning and adds the pid.
 
@@ -204,8 +209,13 @@ carries this run's paths baked in, so no environment has to reach the pane's she
 2. `PATH` with Dux's own `bin` directory removed, the directory baked in as a literal
    (the wrapper cannot know the pane shell's `PATH`, and `strip_dux_bin` needs
    `dux-env`, which the launcher must not source);
-3. `export DUX_STATUS_LOG=<outbox> DUX_REPORT=<outbox>`, and `DUX_SHIP_RECORD` for a
-   ship task;
+3. `export DUX_STATUS_LOG=<outbox> DUX_REPORT=<outbox>`, `DUX_SHIP_RECORD` for a
+   ship task, and `CLAUDE_CONFIG_DIR` when Dux itself has one. That last is the one
+   `CLAUDE_` name that survives the scrub, and it survives because spawn read the trust
+   record out of it: scrubbed and not put back, the worker would answer the trust
+   question from a different file than the one that cleared it, and sit at the dialog
+   5.2 exists to keep it away from. The value is Dux's own, read where the launcher is
+   written, so a pane carrying another session's does not win;
 4. `exec claude --model <m> --effort <e> --dangerously-skip-permissions --settings
    <staged settings> <claude_flags> "$(cat <staged brief>)"`. No `-p`, no
    `--output-format`, no `--verbose`: the brief is the opening prompt of an ordinary
@@ -217,21 +227,37 @@ carries this run's paths baked in, so no environment has to reach the pane's she
 the pane's shell (`herdr pane run`, `bin/backends/herdr.sh:29`, moved out of `open`);
 tmux replaces the pane's shell with it (`respawn-pane -k -c <cwd>`,
 `bin/backends/tmux.sh:50`, likewise moved). `open` keeps everything else it does today:
-the tab, its label, the wait for a prompt, the fail-closed close.
+the tab, its label, the wait for a prompt, the fail-closed close. What `run` takes is a
+command line and a shell reads it on both backends, so the caller quotes: the wrapper
+passes `'<launcher>'`, because a `DUX_HOME` with a space in it would otherwise reach the
+shell as a command and an argument. `worker_launcher` has already refused a path holding
+a single quote, so nothing can close the one the wrapper opens. tmux hands the line to
+the pane's shell whenever it cannot read it as plain words, and the shells disagree about
+a single `-c` command: bash and macOS `/bin/sh` replace themselves with it, Linux's
+`/bin/sh` forks and waits. A shell left waiting is the pane's process, so `pid` would
+answer `sh` and the wrapper would never find the harness it had just started, which is why
+the tmux adapter prefixes `exec`.
 
 **The trust dialog.** An interactive `claude` in a directory it has not seen asks whether
 to trust the folder before it reads its prompt, and the cursor sits on "No, exit". Print
-mode skips the question (`claude --help`, under `-p`); a live session does not. Measured
-2026-09-14 on Claude Code 2.1.270, in a tmux pane: a fresh directory outside any trusted
-path shows the dialog; a directory under a path the operator has trusted starts without
-it. Trust is recorded per path as `projects.<path>.hasTrustDialogAccepted` in the
-operator's own `~/.claude.json` (under `CLAUDE_CONFIG_DIR` when the orchestrator's
-environment sets it), and a worktree under a trusted repository inherits it. A worker
+mode skips the question (`claude --help`, under `-p`); a live session does not. Trust is
+recorded per path as `projects.<path>.hasTrustDialogAccepted` in the operator's own
+`~/.claude.json` (under `CLAUDE_CONFIG_DIR` when the orchestrator's environment sets it).
+Measured 2026-09-15 on Claude Code 2.1.271, in tmux panes, five directories: a plain
+directory under a trusted path starts without the dialog, at one level down and at two; a
+git repository under that same trusted path shows it; a directory inside an untrusted
+repository shows it; and a linked worktree of a trusted repository starts without it even
+when the worktree sits outside the repository's own directory, in `/tmp`. So the unit
+Claude Code trusts is the repository, not the directory and not the ancestor: a directory
+in a repository is trusted as that repository, a worktree resolves to the repository it
+was made from, and an ancestor counts only where there is no repository between. A worker
 sitting at that dialog would pass discovery (a `claude` pid in the right directory),
 never move the beat, and hold the slot until the stale wake, on every unattended run.
-So `dux-spawn` checks before it opens the tab: the worktree path or one of its ancestors
-must be trusted in that file, read through `jq` and never written. Otherwise the finding
-is `<repo> is not trusted by Claude Code; open a session in it once and answer "Yes, I
+So `dux-spawn` checks before it opens the tab: the project's own path, the one the
+registry holds, must be trusted in that file, read through `jq` and never written. Not
+the worktree, which is new on every task and has never been seen; not an ancestor, which
+would pass a repository whose worker then sits at the dialog. Otherwise the finding is
+`<repo> is not trusted by Claude Code; open a session in it once and answer "Yes, I
 trust this folder"`, and the task stays `queued`. A file that is missing or does not
 parse is the same finding. Rejected: writing the trust entry from Dux, because Claude
 Code rewrites that file from every live session and a Dux write races the operator's
@@ -257,10 +283,18 @@ where an install that shows another name would change. Measured 2026-09-14:
   under `remain-on-exit` keeps a stale `pane_pid` that the system can recycle, so the
   adapter reads `#{pane_dead}` first and exits 1 on it outright.
 
-The wrapper polls `pid` every second for up to `DUX_WRAP_START_SECS` (default 30) until it
+The wrapper polls `pid` every second for up to `DUX_WRAP_START_SECS` (default 120) until it
 answers with the adapter's name and the worktree as `cwd`; anything else at the end of that window
 is a refusal, `the harness for <id> did not appear in its pane`, published as `failed`
-like every wrapper refusal. It then writes the group to `state/<id>.pgid`, the file that
+like every wrapper refusal. Both refusals in this window end with `if a session is running
+there, end it in the tab before starting another task`, because this is the one refusal that
+can leave one running: the launcher has already gone to the pane, and a harness the wrapper
+never named leaves no `state/<id>.pgid`, so nothing holds the one-worker slot for it. The
+operator reads that sentence with the `failed` wake, in front of the tab it names. A marker
+written before `run` and cleared on discovery would hold the slot without asking them, and
+is the shape to reach for if this is ever seen; it is a fifth reference for teardown and
+recovery to own, which is why it is not built here.
+It then writes the group to `state/<id>.pgid`, the file that
 already holds the harness's group today (`:374`) and that teardown
 (`bin/dux-teardown:97-104`) and recovery (`bin/dux-recover:193-210`) already read.
 
