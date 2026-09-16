@@ -69,6 +69,10 @@ bin/
                            review, and escalation the other way needs no permission.
                            A ship brief naming no plan and no task range skips the checkbox
                            proof and nothing else
+  dux-round                feedback on a delivered pull request: refuses unless the task is
+                           done, its session still parked in its tab and its pull request
+                           open, then writes tasks/<id>/round-<n>.md for the parked wrapper;
+                           eight rounds at most
   dux-teardown             remove the worktree, close the container, mark done or failed;
                            --abandon lets go of a task that never started
   dux-watch                classify task events, record them, and raise local toasts
@@ -97,6 +101,7 @@ templates/
   PULL_REQUEST_TEMPLATE.md the template dux-project installs, with consent, into a
                            project that has none
   brief.md                 the brief skeleton dux-brief renders
+  round.md                 the round file dux-round renders
   worker-settings.json     Claude deny rules, __BASE__ rendered per task
   worker-mcp.json          the empty MCP config every Claude worker is held to
 tests/fixtures/

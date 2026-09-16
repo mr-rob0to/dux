@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 15 are done; milestones 3 and 4 are not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 16 are done; milestones 3 and 4 are not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -562,8 +562,26 @@ Three new tests; twelve breaks, each failing on its own:
 **Files:** `bin/dux-round`, `templates/round.md`, `tests/dux-round.bats`.  
 **Acceptance:** Feedback stays with its owner and the ninth feedback round is refused.
 
-- [ ] Implement same-owner feedback and duplicate-request protection.
-- [ ] Test and break-verify ownership, duplicate, and round-limit protections.
+- [x] Implement same-owner feedback and duplicate-request protection.
+- [x] Test and break-verify ownership, duplicate, and round-limit protections.
+
+**Landed with this task.** `dux-round <id> --file <path>` runs PR #46's checks in its order and
+writes nothing until all pass: the wrapper named by `state/<id>.pid` running, a marker `parked`
+accepts, a live group, the channel and the tab. Then the ledger moves `done` to `running`, the
+acknowledgement is cleared, and `.round-<n>.tmp` is renamed onto `round-<n>.md` for the parked
+wrapper, so a second request finds the task `running`. A failed rename puts back `done` and its
+acknowledgement. Changes from PR #46's text: a branch behind its base gets a merge line in the
+round file instead of a refusal, as amended, and the group check is `group_runs`, as in Task 15.
+The fake `gh` answers `pr view` with JSON unless `-q` picks one field. Fourteen tests, one a real
+parked wrapper delivering a second `done`. Nineteen breaks, each failing on its own:
+
+- Pidfile read dropped (PR #46's named break): line 146, not-parked wording instead.
+- Ancestry always passing (PR #46's other named break, as amended): merge line, line 243.
+- Marker, group, channel, tab checks dropped: lines 122, 142, 126, 133.
+- Head, base, `MERGED` read as open: lines 175, 177, 171.
+- `running` accepted: line 224. Pending handoff ignored: line 100. Nine rounds: line 108.
+- Renamed first, acknowledgement kept: lines 201, 202. No put-back: line 234.
+- Fleet check, fence check, 41 lines, scout let through: lines 155, 93, 185, 79.
 
 ## Task 17: Prove each delivered round
 

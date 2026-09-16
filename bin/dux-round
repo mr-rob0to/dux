@@ -1,0 +1,154 @@
+#!/usr/bin/env bash
+# Feedback on a delivered pull request, for the session that delivered it.
+# See docs/specs/2026-09-15-feedback-rounds-on-a-delivered-pr.md section 4.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+# bash 5.2+ expands & in ${var//pat/rep}; a url, a branch and a base are literal here.
+shopt -u patsub_replacement 2>/dev/null || true
+usage="usage: dux-round <id> --file <path>"
+id="${1:-}"; [ -n "$id" ] || die "$usage"
+valid_task_id "$id"
+shift
+file=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --file) [ $# -ge 2 ] || die "$usage"; file="$2"; shift 2 ;;
+    *) die "$usage" ;;
+  esac
+done
+
+task="$DUX_TASKS/$id"; branch="dux/$id"
+ledger="$DUX_ROOT/bin/dux-ledger"; backend="$DUX_ROOT/bin/dux-backend"
+
+# Every check comes before anything is written. dux-round starts nothing and
+# types nothing: the wrapper that has kept the session since dispatch does both.
+"$DUX_ROOT/bin/dux-lock" mine || finding "the Dux lock is not held by this session; refusing to send feedback"
+state="$("$ledger" get "$id" state)" || exit $?
+shape="$("$ledger" get "$id" shape)" || exit $?
+pr="$("$ledger" get "$id" pr)" || exit $?
+[ "$state" = "done" ] || finding "task $id is $state, not done; feedback goes to a delivered pull request"
+case "$shape" in
+  plan|ship) ;;
+  scout) finding "a scout has no pull request to change; dispatch a new scout" ;;
+  *) finding "task $id has shape $shape; only a plan or a ship has a pull request" ;;
+esac
+[ "$pr" != - ] || finding "task $id has no pull request on record"
+
+# The operator's own words, trusted exactly as an intent file is.
+[ -n "$file" ] || finding "--file is required"
+{ [ -f "$file" ] && [ -s "$file" ]; } || finding "--file $file is missing or empty"
+if grep -qE '</?untrusted-' "$file"; then finding "--file must not contain an untrusted fence"; fi
+
+# A round writes the run records over. A handoff still waiting behind them could
+# never be read again, and the gap would hide every later one for this task.
+if seq="$(next_handoff "$id")"; then
+  finding "$id has an unapplied result at sequence $seq; let the watcher finish before sending feedback"
+fi
+
+n=1
+for f in "$task"/round-*.md; do
+  if [ -e "$f" ]; then n=$((n + 1)); fi
+done
+[ "$n" -le 8 ] \
+  || finding "eight rounds already on $id; the pull request is not converging: tear it down and dispatch a sharper task"
+
+# Something there to receive it. The parked wrapper is what reads the round file,
+# so without it a round would be written and never taken up. The wrapper looks
+# at the group again before it types, for a session ended after this.
+gone() { finding "the session for $id is no longer in its tab ($1); tear the task down and dispatch a fresh task"; }
+pid_runs "$(cat "$DUX_STATE/$id.pid" 2>/dev/null)" "dux-worker-wrap $id" || gone "no wrapper is running for it"
+parked "$id" || gone "its wrapper is not parked"
+group_runs "$(cat "$DUX_STATE/$id.pgid" 2>/dev/null)" || gone "its process group has ended"
+[ -d "$(cat "$DUX_STATE/$id.portal" 2>/dev/null)" ] || gone "its task channel is gone"
+ep="$(cat "$DUX_STATE/$id.endpoint" 2>/dev/null)"
+[ -n "$ep" ] || gone "no tab is recorded"
+"$backend" exists "$ep"; rc=$?
+case "$rc" in
+  0) ;;
+  1) gone "its tab is closed" ;;
+  *) exit "$rc" ;;
+esac
+
+# One Dux-managed worker at a time, the check dux-spawn makes. This task's own
+# parked session is not another worker.
+if busy="$(fleet_busy "$id")"; then
+  other="${busy#* }"
+  case "${busy%% *}" in
+    roster)   finding "cannot tell whether another Dux worker is alive: the ledger could not list the tasks; feedback for $id was not sent" ;;
+    live)     finding "another Dux worker is active: $other; feedback for $id was not sent" ;;
+    pidfile)  finding "cannot tell whether a worker for $other is alive: $DUX_STATE/$other.pid does not say; feedback for $id was not sent" ;;
+    pgidfile) finding "cannot tell whether a worker for $other is alive: $DUX_STATE/$other.pgid does not say; feedback for $id was not sent" ;;
+    ledger)   finding "cannot tell whether a worker for $other is alive: the ledger did not answer; feedback for $id was not sent" ;;
+    backend)  finding "cannot tell whether a worker for $other is alive: the backend did not answer; feedback for $id was not sent" ;;
+  esac
+fi
+
+project="$("$ledger" get "$id" project)" || exit $?
+repo="$("$DUX_ROOT/bin/dux-project" get "$project" path)" || exit $?
+base="$("$DUX_ROOT/bin/dux-project" get "$project" base)" || exit $?
+"$DUX_ROOT/bin/dux-worktree" path "$id" >/dev/null || exit $?
+git -C "$repo" fetch --quiet origin "$base" || finding "cannot fetch origin/$base in $repo"
+# A branch the base has moved past is not refused. The round's own worker merges
+# the base in, because a delivered branch has been reviewed and is never rewritten.
+git -C "$repo" merge-base --is-ancestor "refs/remotes/origin/$base" "refs/heads/$branch"; rc=$?
+case "$rc" in
+  0) behind="" ;;
+  1) behind=yes ;;
+  *) finding "cannot tell whether $branch holds origin/$base in $repo" ;;
+esac
+
+view="$(gh pr view "$pr" --json state,headRefName,baseRefName 2>/dev/null)" \
+  || finding "gh could not read pull request $pr"
+pr_state="$(printf '%s' "$view" | jq -r '.state // ""' 2>/dev/null)"
+pr_head="$(printf '%s' "$view" | jq -r '.headRefName // ""' 2>/dev/null)"
+pr_base="$(printf '%s' "$view" | jq -r '.baseRefName // ""' 2>/dev/null)"
+case "$pr_state" in
+  OPEN) ;;
+  MERGED) finding "pull request $pr is already merged; tear $id down" ;;
+  CLOSED) finding "pull request $pr is closed; reopen it or tear $id down" ;;
+  *) finding "gh did not say whether pull request $pr is open" ;;
+esac
+[ "$pr_head" = "$branch" ] || finding "pull request $pr is from $(cap_line "$pr_head"), not $branch"
+[ "$pr_base" = "$base" ] || finding "pull request $pr targets $(cap_line "$pr_base"), not $base"
+
+fill() {  # $1 template line with inline tokens
+  local l="$1" t
+  t='{{N}}'; l="${l//$t/$n}"; t='{{ID}}'; l="${l//$t/$id}"; t='{{PR}}'; l="${l//$t/$pr}"
+  t='{{BRANCH}}'; l="${l//$t/$branch}"; t='{{BASE}}'; l="${l//$t/$base}"
+  printf '%s\n' "$l"
+}
+render() {
+  local line when_behind='{{BEHIND}}'
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      '{{FEEDBACK}}') cat "$file" ;;
+      "$when_behind"*) if [ -n "$behind" ]; then fill "${line#"$when_behind"}"; fi ;;
+      *) fill "$line" ;;
+    esac
+  done < "$DUX_ROOT/templates/round.md"
+}
+rendered="$(render)" || finding "cannot render templates/round.md for $id"
+k="$(printf '%s\n' "$rendered" | wc -l | tr -d ' ')"
+[ "$k" -le 40 ] || finding "round $n is $k lines; the limit is 40: shorten the feedback"
+
+tmp="$task/.round-$n.tmp"
+printf '%s\n' "$rendered" > "$tmp" || { rm -f "$tmp"; finding "cannot write $tmp"; }
+# The ledger moves first, so the task is running before a round exists to be
+# proved, and the next done wakes Dux instead of reading as the last one again.
+acked="$("$ledger" get "$id" acked)" || { rc=$?; rm -f "$tmp"; exit "$rc"; }
+"$ledger" set-if "$id" state "done" running || { rc=$?; rm -f "$tmp"; exit "$rc"; }
+put_back() {  # $1 what failed
+  rm -f "$tmp"
+  if "$ledger" set-if "$id" state running "done" >/dev/null \
+    && { [ "$acked" != "done" ] || "$ledger" ack "$id" "done" >/dev/null; }; then
+    finding "$1; $id is done again and round $n was not sent"
+  fi
+  finding "$1, and $id could not be put back to done; round $n was not sent"
+}
+"$ledger" unack "$id" >/dev/null || put_back "cannot clear the acknowledgement of $id"
+# The rename is what the parked wrapper is waiting for, so it is the last step.
+# Within one directory it is atomic: the wrapper never reads half a file.
+mv "$tmp" "$task/round-$n.md" || put_back "cannot arm round $n for $id"
+echo "round $n sent to $id"

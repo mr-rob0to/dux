@@ -41,6 +41,12 @@ case "$1 ${2:-}" in
     esac ;;
   "pr view")
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr view failed" >&2; exit 1; fi
-    echo "${FAKE_GH_PR_STATE:-OPEN}" ;;
+    # A caller that picks the state out with -q gets the state. One that asks for
+    # the JSON gets the three fields dux-round reads.
+    case " $* " in
+      *" -q "*|*" --jq "*) echo "${FAKE_GH_PR_STATE:-OPEN}" ;;
+      *) jq -nc --arg s "${FAKE_GH_PR_STATE:-OPEN}" --arg h "${FAKE_GH_PR_HEAD:-}" --arg b "${FAKE_GH_PR_BASE:-main}" \
+           '{state: $s, headRefName: $h, baseRefName: $b}' ;;
+    esac ;;
   *) echo "fake gh: unhandled: $*" >&2; exit 2 ;;
 esac
