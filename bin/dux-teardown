@@ -140,7 +140,8 @@ rm -rf "$DUX_STATE/$id.handoffs"
 # nothing the worker wrote, and dux-spawn's two start refusals point the
 # operator at it, so it is only useful while the task exists.
 rm -f "$DUX_STATE/$id.run" "$DUX_STATE/$id.result-context" "$DUX_STATE/$id.ship-receipt" \
-  "$DUX_STATE/$id.ship-receipt.delivered" "$DUX_STATE/$id.parked" "$DUX_STATE/$id.wrap.log"
+  "$DUX_STATE/$id.ship-receipt.delivered" "$DUX_STATE/$id.ship-receipt.unfinished" \
+  "$DUX_STATE/$id.parked" "$DUX_STATE/$id.wrap.log"
 # A wrapper that reached its own ending cleared its task channel on the way out,
 # and dead recovery clears one a crashed wrapper left as soon as the worker's own
 # process group has gone. Neither ran here, so teardown is the last owner. The

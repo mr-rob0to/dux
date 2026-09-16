@@ -328,7 +328,7 @@ settled() {  # $1 state, [$2 pr]
   wait_until 10 pid_runs "$p" "dux-worker-wrap $id"
   echo "$p" > "$DUX_HOME/state/$id.pid"; echo "$g" > "$DUX_HOME/state/$id.pgid"
   printf 'run=r00\nwrapper=%s\npgid=%s\n' "$p" "$g" > "$DUX_HOME/state/$id.parked"
-  : > "$DUX_HOME/state/$id.ship-receipt.delivered"
+  : > "$DUX_HOME/state/$id.ship-receipt.delivered"; : > "$DUX_HOME/state/$id.ship-receipt.unfinished"
   echo scratch > "$wt/scratch"
   run dux-teardown "$id"
   refute pid_runs "$p" "dux-worker-wrap $id"
@@ -341,6 +341,7 @@ settled() {  # $1 state, [$2 pr]
   [ "$status" -eq 0 ]
   [ ! -d "$wt" ]
   [ ! -e "$DUX_HOME/state/$id.parked" ]; [ ! -e "$DUX_HOME/state/$id.ship-receipt.delivered" ]
+  [ ! -e "$DUX_HOME/state/$id.ship-receipt.unfinished" ]
 }
 
 # Every script that builds a path from a task id checks it in the same place.

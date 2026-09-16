@@ -412,8 +412,9 @@ echo "$pgid" > "$pgidfile" \
 [ "$signalled" = 0 ] || kill -TERM -- "-$pgid" 2>/dev/null || true
 
 # ---- the turn ending ------------------------------------------------------
-# A plan or ship run that proposes a pull request may park: its session stays in
-# the tab, idle, for feedback. What says its turn is over is the Stop hook, which
+# A plan or ship run that proposes a pull request, asks a question or reports a
+# blocker may park: its session stays in the tab, idle, for feedback or an
+# answer. What says its turn is over is the Stop hook, which
 # touches <channel>/stopped when a turn ends and at no other time, and only a
 # touch newer than the terminal line counts, since an earlier turn's Stop says
 # nothing about this one. The wait running out proves nothing, so that run ends
@@ -460,27 +461,35 @@ prove_done() {
 }
 
 # ---- parked ---------------------------------------------------------------
-# A proved pull request whose turn has ended stays in its tab for feedback. The
-# marker is what tells the one-worker guard this session is idle: it names this
-# run, this wrapper and this group, and nothing else writes it. The receipt
-# stays where the watcher checks it until the watcher has applied this run's
-# handoff, and only then is it kept under its delivered name. Feedback is the
-# next round's file, and it is taken up only after that too: a round writes the
-# run records again, and a handoff still waiting behind them could never be read.
-# The wait logs nothing per pass, because a task can sit parked for days.
+# A proved pull request whose turn has ended stays in its tab for feedback, and
+# a question or a blocker for its answer. The marker is what tells the
+# one-worker guard this session is idle: it names this run, this wrapper and
+# this group, and nothing else writes it. The receipt stays where the watcher
+# checks it until the watcher has applied this run's handoff, and only then is
+# it kept under another name: delivered for a pull request, unfinished for a
+# gate a question or a blocker stopped part-way, so the answer's run records a
+# receipt of its own. The round is the next round's file, and it is taken up
+# only after that too: a round writes the run records again, and a handoff still
+# waiting behind them could never be read. The wait logs nothing per pass,
+# because a task can sit parked for days.
 park() {  # returns 0 once a round has started, 1 with a result still to publish
   local seq consumed parked="$DUX_STATE/$id.parked" receipt="$DUX_STATE/$id.ship-receipt" passes=0 archived=""
-  local next="$task/round-$((round + 1)).md"
+  local next="$task/round-$((round + 1)).md" kept=delivered
   seq="$(publish_handoff "$id" "$run" "$result_line" "$result_event")" || return 1
   consumed="$(handoff_home "$id")/$seq/consumed"
   { printf 'run=%s\nwrapper=%s\npgid=%s\n' "$run" "$$" "$pgid" > "$parked.tmp" && mv "$parked.tmp" "$parked"; } \
     || log "cannot write state/$id.parked; the session for $id stays, but counts as working"
-  log "worker for $id parked in its tab; feedback goes through dux-round"
+  if [ "$result_event" = "done" ]; then
+    log "worker for $id parked in its tab; feedback goes through dux-round"
+  else
+    kept=unfinished
+    log "worker for $id parked in its tab at $result_event; an answer goes through dux-round"
+  fi
   while [ "$signalled" = 0 ]; do
     if [ -z "$archived" ] && [ -e "$consumed" ]; then
       archived=yes
-      [ ! -f "$receipt" ] || [ -L "$receipt" ] || mv "$receipt" "$receipt.delivered" \
-        || log "cannot keep the delivered receipt for $id"
+      [ ! -f "$receipt" ] || [ -L "$receipt" ] || mv "$receipt" "$receipt.$kept" \
+        || log "cannot keep the $kept receipt for $id"
     fi
     if [ -n "$archived" ] && [ -f "$next" ]; then
       # The session is no longer idle from here, whatever happens next.
@@ -568,7 +577,8 @@ while :; do
 
   stopped=""
   case "$shape:$terminal" in
-    plan:done:\ PR\ ?*|ship:done:\ PR\ ?*) [ -n "$violation" ] || wait_for_stop ;;
+    plan:done:\ PR\ ?*|ship:done:\ PR\ ?*|plan:needs-decision:\ ?*|ship:needs-decision:\ ?*|plan:blocked:\ ?*|ship:blocked:\ ?*)
+      [ -n "$violation" ] || wait_for_stop ;;
   esac
 
   # A run the wrapper ended itself has to be stopped, or an interactive session
@@ -636,7 +646,11 @@ while :; do
   fi
 
   if [ -n "$stopped" ]; then
-    if [ "$result_event" = "done" ] && park; then continue; fi
+    # A proved pull request, a question or a blocker. A done the proof turned
+    # into ended has nothing to wait for.
+    case "$result_event" in
+      done|needs-decision|blocked) if park; then continue; fi ;;
+    esac
     # Not parked, so it is stopped like any other ending before the result goes out.
     trap - INT TERM
     stop_pgid "$pgid" \

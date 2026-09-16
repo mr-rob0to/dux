@@ -1172,3 +1172,86 @@ run_in() { sed -n 's/^run=//p' "$1"; }
   sleep 2
   [ "$(typed)" -eq 0 ]; [ ! -e "$s/$id.handoffs/2" ]
 }
+
+# A ship run that stops at a question or a blocker part-way through its gate:
+# its work committed, its first phase recorded against this run, its waiting
+# line, and then the end of its turn.
+waiting() {  # $1 needs-decision|blocked; sets $id and $wt
+  id="$(fixture_task proj ship github combined)"
+  export FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1 DUX_HEARTBEAT_SECS=1
+  export FAKE_GH_PR_LIST_FILE="$DUX_HOME/state/pr.json" FAKE_GH_PR_CHECKS='[{"name":"build","state":"SUCCESS"}]'
+  harness_shim; pane_env
+  tmux -L dux-wrap set-environment -t duxwrap FAKE_GH_PR_LIST_FILE "$FAKE_GH_PR_LIST_FILE"
+  tmux -L dux-wrap set-environment -t duxwrap FAKE_GH_PR_CHECKS "$FAKE_GH_PR_CHECKS"
+  wt="$(dux-worktree create "$id")"; open_tab
+  cat > "$FAKE_WORKER_SCRIPT" <<SCRIPT
+run mkdir -p docs && printf '# Plan\n\n## Task 1: one\n- [x] one done\n\n## Task 2: two\n- [x] two done\n' > docs/plan.md
+run printf 'implementation\n' > src.txt
+run git add -A && git commit -q -m work
+run "\$DUX_SHIP_RECORD" checks combined
+status $1: which name should the flag have?
+sleep 0.2
+touch stopped
+idle
+SCRIPT
+}
+
+@test "a question or a blocker parks once its turn ends, and its answer runs in the same session once the stop is applied" {
+  export DUX_WRAP_PARK_MAX_PASSES=300
+  for at in needs-decision blocked; do
+    waiting "$at"
+    round_script
+    s="$DUX_HOME/state"; err="$s/$id.wrap.err"; : > "$FAKE_WORKER_LOG"
+    bash -c 'cd "$1" && exec dux-worker-wrap "$2"' _ "$wt" "$id" 2> "$err" 3>&- & wp=$!
+    wait_until 90 parks 1 || { cat "$err"; kill "$wp"; return 1; }
+    first="$(run_in "$s/$id.run")"; g="$(cat "$s/$id.pgid")"
+    [ "$(tail -n 1 "$err")" = "dux: worker for $id parked in its tab at $at; an answer goes through dux-round" ]
+    [ "$(cat "$s/$id.parked")" = "$(printf 'run=%s\nwrapper=%s\npgid=%s' "$first" "$wp" "$g")" ]
+    [ "$(handoff_event)" = "$at" ]; [ "$(handoff_status)" = "$at: which name should the flag have?" ]
+    # An answer that arrives before the stop is applied waits for it, and the
+    # half-run gate's receipt stays where it is until then.
+    printf 'the answer\n' > "$DUX_HOME/data/tasks/$id/round-1.md"
+    sleep 3
+    [ "$(typed)" -eq 0 ]; [ -e "$s/$id.parked" ]
+    [ "$(run_in "$s/$id.ship-receipt")" = "$first" ]
+    dux-watch --once
+    [ "$(dux-ledger get "$id" state)" = "$at" ]
+    # Applied: the answer is the next run of the same session, its gate records
+    # a receipt of its own, and its proved pull request parks it again.
+    wait_until 60 parks 2 || { cat "$err"; kill "$wp"; return 1; }
+    [ "$(run_in "$s/$id.ship-receipt.unfinished")" = "$first" ]
+    [ "$(handoff_run 2)" = "${first}r1" ]
+    [ "$(handoff_status 2)" = "done: PR https://github.com/acme/proj/pull/7" ]
+    [ "$(run_in "$s/$id.ship-receipt")" = "${first}r1" ]
+    [ "$(typed)" -eq 1 ]; [ "$(cat "$s/$id.pid")" = "$wp" ]; group_runs "$g"
+    kill -TERM "$wp"; wait "$wp" || true
+    refute group_runs "$g"; [ ! -e "$s/$id.parked" ]
+  done
+}
+
+@test "a waiting line is not parked on no Stop or an earlier turn's, and a failure never waits to park" {
+  export DUX_WRAP_IDLE_SECS=2 DUX_WRAP_PARK_MAX_PASSES=2
+  prepare ship
+  s="$DUX_HOME/state"
+  printf 'status blocked: no access to the staging database\nidle\n' > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"dux: worker for $id did not stop within 2s of its terminal status; it is not parked"* ]]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "dux: worker for $id ended; result: blocked: no access to the staging database" ]
+  [ "$(handoff_event)" = blocked ]; [ ! -e "$s/$id.parked" ]
+  refute group_runs "$(cat "$s/$id.pgid")"
+  id="$(fixture_task proj ship)"; reprepare
+  printf 'touch stopped\nsleep 1\nstatus needs-decision: A or B?\nidle\n' > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "dux: worker for $id ended; result: needs-decision: A or B?" ]
+  [ ! -e "$s/$id.parked" ]; refute group_runs "$(cat "$s/$id.pgid")"
+  id="$(fixture_task proj ship)"; reprepare
+  # No Stop follows, so a wrapper that waited for one would say so.
+  printf 'status failed: the migration cannot run twice\nidle\n' > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 0 ]
+  [ "$output" = "dux: worker for $id ended; result: failed: the migration cannot run twice" ]
+  [ "$(handoff_event)" = failed ]; [ ! -e "$s/$id.parked" ]
+  refute group_runs "$(cat "$s/$id.pgid")"
+}

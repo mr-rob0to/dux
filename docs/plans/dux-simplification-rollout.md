@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: task 20 has landed. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 and 21 have landed. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -27,7 +27,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 259 after task 20 | Not recorded |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 462 after task 21 | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -769,8 +769,34 @@ failing on its own:
 **Files:** `bin/dux-worker-wrap`, `bin/dux-recover`, related tests.  
 **Acceptance:** Supported questions and recoverable blockers preserve a live positively parked owner; failed or dead sessions use recovery.
 
-- [ ] Extend waiting-state continuation through PR #46.
-- [ ] Break-verify unsafe activation and mistaken-idle protections.
+- [x] Extend waiting-state continuation through PR #46.
+- [x] Break-verify unsafe activation and mistaken-idle protections.
+
+**Landed with this task.** A plan or ship run whose terminal line is `needs-decision:` or
+`blocked:` now waits for its Stop the way a proved pull request does, and parks. The marker, the
+one-worker exemption and teardown's stop work as they do for `done`, and the log says `parked in
+its tab at <state>; an answer goes through dux-round`. A failure never waits. A wait that runs
+out parks nothing, and neither does a Stop from an earlier turn. The answer round is taken up only
+after the watcher has applied the stop, as feedback is. A gate that the question stopped part-way
+keeps its receipt as `ship-receipt.unfinished` once the stop is applied, so the answer's run
+records a receipt of its own; teardown removes that file. `dux-recover` names
+`dux-round --purpose answer` for a waiting task still parked in its tab, and `--retry` for one
+that is not. A retry now ends a live wrapper first, and refuses, writing nothing, while the
+session's group still runs. Four new tests and one extended; eleven breaks, each failing on its
+own:
+
+- A wait that ran out taken as a stop (wrapper test line 1240). A Stop from before the line taken
+  as this turn's (1247). A failure waiting to park (1254). A done the proof ended parking (1026).
+- A question never waiting for its Stop (1206). The answer taken up before the stop was applied
+  (1215). The stopped gate's receipt left in place, so the answer's gate was refused with `the
+  /ship receipt for this task belongs to another run` (1221).
+- `dux-recover` not seeing the parked session (recover test line 505). A retry leaving the parked
+  wrapper running (524). A retry going ahead while the session's group ran (523: exit 2, but not
+  this refusal).
+- Teardown leaving the unfinished receipt (teardown test line 344).
+
+Two older timing tests, a scout's rewritten outbox and `--stop` on a real wrapper, failed once
+with four test files running at once and passed alone; neither parks.
 
 ## Task 22: Add integrated task phases
 

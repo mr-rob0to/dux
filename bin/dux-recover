@@ -312,7 +312,7 @@ classify_as() {
 }
 
 retry() {
-  local new intent criteria plan tasks risk new_intent source_key rc
+  local new intent criteria plan tasks risk new_intent source_key rc pid pg
   need_state --retry "failed, blocked, or needs-decision" failed blocked needs-decision
   [ ! -e "$task/retry" ] || finding "$id was already retried as $(cat "$task/retry"); a further attempt is the operator's call through dux-dispatch"
   if [ "$state" = failed ] && [ -e "$task/retried-from" ]; then
@@ -323,6 +323,13 @@ retry() {
   intent="$task/intent.md"; criteria="$task/criteria.md"
   { [ -s "$intent" ] && [ -s "$criteria" ]; } || finding "no intent.md and criteria.md in tasks/$id; write the retry brief through dux-dispatch"
   source_key="$("$ledger" get "$id" source)" || exit $?
+  # A question or a blocker can still hold its session, parked in its tab for an
+  # answer. A retry is a new session, so the old one is ended first, and nothing
+  # is written while any of it still runs.
+  pid="$(wrapper_pid)" || exit $?
+  [ -z "$pid" ] || signal_wrapper "$pid"
+  pg="$(cat "$pgidfile" 2>/dev/null)"
+  if group_runs "$pg"; then finding "the session for $id is still running as group $pg; end it in its tab, then rerun"; fi
   new="$("$DUX_ROOT/bin/dux-task-new" "$project" "$shape" --source "$source_key")" || exit $?
   new_intent="$DUX_TASKS/$new/intent.md"
   {
@@ -385,7 +392,13 @@ case "$action" in
         echo "next: dux-recover $id --retry [--answer-file <f>] once, or dispatch a scout" ;;
       blocked|needs-decision)
         print_status_tail
-        echo "next: after the operator answers, dux-recover $id --retry --answer-file <f>" ;;
+        # A session parked in its tab takes the answer itself. One that is not
+        # has no session left to answer, so the answer goes to a fresh task.
+        if parked "$id"; then
+          echo "next: after the operator answers, dux-round $id --purpose answer --file <f>"
+        else
+          echo "next: after the operator answers, dux-recover $id --retry --answer-file <f>"
+        fi ;;
       *) finding "nothing to recover for $id (state $state)" ;;
     esac ;;
   extend) extend ;;
