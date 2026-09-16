@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 and 21 have landed. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 22 have landed. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -27,7 +27,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 462 after task 21 | Not recorded |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 721 after task 22 | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -805,8 +805,34 @@ with four test files running at once and passed alone; neither parks.
 **Interface:** `ship` retains its shape and carries `planning|implementation` phase metadata.  
 **Acceptance:** Only explicitly declared planning-phase work may start without a plan; it pauses for approval.
 
-- [ ] Add phase metadata and planning briefs with Opus ownership throughout.
-- [ ] Break-verify unauthorized implementation and plan-only worktree promotion protections.
+- [x] Add phase metadata and planning briefs with Opus ownership throughout.
+- [x] Break-verify unauthorized implementation and plan-only worktree promotion protections.
+
+**Landed with this task.** `dux-brief --phase planning` briefs ship work to plan first. Such a
+brief names no plan, refuses `--plan`, `--tasks` and `--risk bounded`, and takes no other phase.
+Plan and scout briefs refuse `--phase`, and complex work with no plan now needs it. The phase is
+stored beside the brief at mode 600, and the brief carries `- Phase: planning`, three plan-first
+rules and its own definition of done. Every brief now says to stop and wait at the prompt after
+`blocked` or `needs-decision`. The wrapper reads the phase at the start of every run and records it
+in the run context. It refuses a phase on a plan or scout task, a phase file or brief line without
+the other, an unknown phase, a first run already at implementation, and planning work on the
+bounded model. A done while planning ends the run unproved, even one the repository and GitHub
+would prove. Two brief tests added and two changed, four wrapper tests added; twenty breaks, each
+failing on its own:
+
+- A complex brief with no plan and no phase accepted (brief test line 364). A phase other than
+  planning (388), a planning brief with a plan pair (384) or on bounded risk (386), and `--phase`
+  on a plan or scout brief (395), each accepted.
+- The phase file at mode 644 (368), or never moved into place (368). The phase line (371), the
+  plan-first rules (373) and the planning done line (376) not rendered. The old exit rule put back
+  (206).
+- A done while planning proved: the pull request was proved and the session parked (wrapper test
+  line 1287). A round not reading the phase again (1308). The context not recording it (1286,
+  1302).
+- A phase on a plan task not refused: the wrapper stopped on an unset variable and recorded nothing
+  (1323). A phase file on work not briefed to plan first (1334), an unknown phase (1351), a first
+  run at implementation (1355) and planning on the bounded model (1359), each starting the worker.
+  A missing phase file refused only as an unknown phase (1348).
 
 ## Task 23: Record committed-plan approval
 

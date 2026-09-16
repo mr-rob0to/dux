@@ -92,6 +92,32 @@ if [ "$shape" = ship ]; then
     esac
   fi
 fi
+# Integrated work plans first and builds once its plan is approved, in this one
+# worktree and on the complex model throughout. dux-brief declares it in the
+# brief and stores the phase beside it, and only an approval round moves the
+# phase on, so each run reads it again. Either half without the other is
+# refused, and so is a phase on a plan or scout task: its worktree never becomes
+# one that builds.
+phase=""
+read_phase() {
+  local briefed
+  briefed="$(sed -n 's/^- Phase: //p' "$brief" | take_line)"
+  phase=""
+  if [ -f "$task/phase" ]; then phase="$(tr -d '[:space:]' < "$task/phase")"; fi
+  if [ -z "$briefed" ] && [ ! -e "$task/phase" ]; then return 0; fi
+  [ "$shape" = ship ] \
+    || refuse "$id is a $shape task; only ship work has a phase, and its worktree never becomes one that builds"
+  [ -n "$briefed" ] || refuse "$id was not briefed to plan first, so it cannot carry a phase"
+  [ -f "$task/phase" ] || refuse "$id was briefed to plan first and its phase file is gone"
+  case "$phase" in
+    planning|implementation) ;;
+    *) refuse "phase for $id must be planning or implementation, not '$(cap_line "$phase")'" ;;
+  esac
+  [ "$risk" = complex ] || refuse "$id plans first, so it runs on the complex model, not $risk"
+}
+read_phase
+[ "$phase" != implementation ] \
+  || refuse "$id has not been approved to build; implementation starts only when an approval round names its plan"
 spec="$(tr ' ' '\n' < "$models" | sed -n "s/^$key=//p" | take_line)"
 case "$spec" in *:*) ;; *) refuse "model entry for $key in $models must be <model>:<effort>, got '${spec:-nothing}'" ;; esac
 model="${spec%%:*}"; effort="${spec#*:}"
@@ -220,6 +246,7 @@ write_run_records() {
     echo "worktree=$worktree_path"
     echo "plan=$(sed -n 's/^- Plan: //p' "$brief" | take_line)"
     echo "tasks=$(sed -n 's/^- Tasks: //p' "$brief" | take_line)"
+    echo "phase=$phase"
     echo "round=$round"; echo "since=$since"
   } > "$context" || refuse "cannot write $context"
   context_id="$(git hash-object --stdin < "$context" 2>/dev/null)" \
@@ -438,6 +465,13 @@ wait_for_stop() {
 # only ever moves the task away from done, so its line stands.
 prove_done() {
   local proof reason prc err="$channel/result.err"
+  # Work briefed to plan first delivers nothing before its plan is approved,
+  # whatever the repository and GitHub would say for it.
+  if [ "$phase" = planning ]; then
+    result_line="$(cap_line "ended: the result was not proved: $id is still planning; nothing is delivered before its plan is approved")"
+    result_event=ended
+    return 0
+  fi
   set -- verify "$id" "$run"
   [ "$report_size" -le "$report_base" ] || set -- "$@" --report "$report_outbox"
   proof="$("$DUX_ROOT/bin/dux-result" "$@" 2>"$err")"; prc=$?
@@ -524,6 +558,8 @@ park() {  # returns 0 once a round has started, 1 with a result still to publish
 # line and report are not read a second time, anything written while parked
 # belongs to no run, and each run gets the whole of both caps.
 start_round() {  # $1 the round file
+  # Before the records move on, so a refusal still names the run they record.
+  read_phase
   round=$((round + 1)); run="${channel##*.}r$round"
   write_run_records
   if [ -n "$ship_record" ]; then

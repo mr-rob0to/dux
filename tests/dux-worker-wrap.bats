@@ -939,11 +939,12 @@ EOF
 # A ship worker that really delivers: a commit, the pull request the fake forge
 # reports for it, every phase its gate owes through its own recorder, its done
 # line, a line after that, and then the end of its turn. legacy is a receipt from
-# before review modes, which owes both reviews.
-deliver() {  # $1 combined|separate|legacy, $2 pull request number; sets $id and $wt
+# before review modes, which owes both reviews. planning briefs the task to plan
+# first instead of naming a plan.
+deliver() {  # $1 combined|separate|legacy, $2 pull request number, [$3 planning]; sets $id and $wt
   local p phases="checks review security pr ci" r mode=""
   [ "$1" != combined ] || { phases="checks review pr ci"; mode=combined; }
-  id="$(fixture_task proj ship github "$mode")"
+  if [ "${3:-}" = planning ]; then id="$(briefed_to_plan "$mode")"; else id="$(fixture_task proj ship github "$mode")"; fi
   export FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1 DUX_HEARTBEAT_SECS=1
   export FAKE_GH_PR_LIST_FILE="$DUX_HOME/state/pr.json" FAKE_GH_PR_CHECKS='[{"name":"build","state":"SUCCESS"}]'
   harness_shim; pane_env
@@ -1254,4 +1255,108 @@ SCRIPT
   [ "$output" = "dux: worker for $id ended; result: failed: the migration cannot run twice" ]
   [ "$(handoff_event)" = failed ]; [ ! -e "$s/$id.parked" ]
   refute group_runs "$(cat "$s/$id.pgid")"
+}
+
+# ---- work briefed to plan first -------------------------------------------------
+
+# A ship task as dux-brief --phase planning leaves it: no plan named, and its phase
+# beside the brief. The project is registered through a task of its own first.
+briefed_to_plan() {  # [$1 combined]; prints the task id
+  local id t
+  dux-project list | grep -x proj >/dev/null || fixture_task proj ship github >/dev/null
+  id="$(dux-task-new proj ship)"; t="$DUX_HOME/data/tasks/$id"
+  printf 'Do the thing the operator asked for.\n' > "$t/intent.md"
+  printf '1. The thing is done.\n' > "$t/criteria.md"
+  if [ "${1:-}" = combined ]; then
+    dux-brief "$id" --intent-file "$t/intent.md" --criteria-file "$t/criteria.md" --phase planning \
+      --review combined --review-reason 'touches none of the sensitive categories' >/dev/null
+  else
+    dux-brief "$id" --intent-file "$t/intent.md" --criteria-file "$t/criteria.md" --phase planning >/dev/null
+  fi
+  echo "$id"
+}
+
+@test "work briefed to plan first runs on the complex model, and a pull request it delivers before approval ends it" {
+  export DUX_WRAP_PARK_MAX_PASSES=2
+  # Everything a proved delivery needs is there, so only the phase stands in the way.
+  deliver separate 7 planning
+  run wrap
+  [ "$status" -eq 0 ]
+  grep -q -- "--model claude-opus-5 --effort max" "$FAKE_WORKER_LOG"
+  grep -qx phase=planning "$DUX_HOME/state/$id.result-context"
+  [ "$(handoff_event)" = ended ]
+  [ "$(handoff_status)" = "ended: the result was not proved: $id is still planning; nothing is delivered before its plan is approved" ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "dux: worker for $id ended; result: $(handoff_status)" ]
+}
+
+@test "a question while planning parks, and the round after its phase moves on runs and is proved as implementation" {
+  export DUX_WRAP_PARK_MAX_PASSES=300
+  deliver combined 7 planning
+  round_script
+  s="$DUX_HOME/state"; err="$s/$id.wrap.err"; t="$DUX_HOME/data/tasks/$id"
+  printf 'run printf "plan\\n" > src.txt && git add -A && git commit -q -m plan\nstatus needs-decision: approve tasks 1-2 of docs/plan.md\nsleep 0.2\ntouch stopped\nidle\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  bash -c 'cd "$1" && exec dux-worker-wrap "$2"' _ "$wt" "$id" 2> "$err" 3>&- & wp=$!
+  wait_until 90 parks 1 || { cat "$err"; kill "$wp"; return 1; }
+  first="$(run_in "$s/$id.run")"
+  grep -qx phase=planning "$s/$id.result-context"
+  [ "$(handoff_status)" = "needs-decision: approve tasks 1-2 of docs/plan.md" ]
+  dux-watch --once
+  # What an approval round leaves behind it: the phase moved on, then the round.
+  printf 'implementation\n' > "$t/phase"
+  printf 'approved\n' > "$t/round-1.md"
+  wait_until 60 parks 2 || { cat "$err"; kill "$wp"; return 1; }
+  [ "$(run_in "$s/$id.result-context")" = "${first}r1" ]
+  grep -qx phase=implementation "$s/$id.result-context"
+  [ "$(handoff_run 2)" = "${first}r1" ]
+  [ "$(handoff_status 2)" = "done: PR https://github.com/acme/proj/pull/7" ]
+  kill -TERM "$wp"; wait "$wp" || true
+}
+
+@test "a phase on a plan or scout task, or on ship work not briefed to plan first, is refused before the worker starts" {
+  prepare plan
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  # Everything a planning task has, given to a plan task's worktree.
+  printf -- '- Phase: planning\n' >> "$DUX_HOME/data/tasks/$id/brief.md"
+  printf 'planning\n' > "$DUX_HOME/data/tasks/$id/phase"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $id is a plan task; only ship work has a phase, and its worktree never becomes one that builds"* ]]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/status.log")" = "failed: wrapper: $id is a plan task; only ship work has a phase, and its worktree never becomes one that builds" ]
+  id="$(fixture_task proj scout)"; reprepare
+  printf 'planning\n' > "$DUX_HOME/data/tasks/$id/phase"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $id is a scout task; only ship work has a phase, and its worktree never becomes one that builds"* ]]
+  id="$(fixture_task proj ship)"; reprepare
+  printf 'planning\n' > "$DUX_HOME/data/tasks/$id/phase"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $id was not briefed to plan first, so it cannot carry a phase"* ]]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/status.log")" = "failed: wrapper: $id was not briefed to plan first, so it cannot carry a phase" ]
+  [ ! -s "$FAKE_WORKER_LOG" ]
+}
+
+@test "work briefed to plan first starts only at planning, from its own phase file, on the complex model" {
+  prepare ship
+  id="$(briefed_to_plan)"; reprepare
+  t="$DUX_HOME/data/tasks/$id"
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  mv "$t/phase" "$t/phase.kept"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $id was briefed to plan first and its phase file is gone"* ]]
+  printf 'building\n' > "$t/phase"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: phase for $id must be planning or implementation, not 'building'"* ]]
+  printf 'implementation\n' > "$t/phase"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $id has not been approved to build; implementation starts only when an approval round names its plan"* ]]
+  mv "$t/phase.kept" "$t/phase"; printf 'bounded\n' > "$t/risk"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: $id plans first, so it runs on the complex model, not bounded"* ]]
+  [ ! -s "$FAKE_WORKER_LOG" ]
 }

@@ -33,7 +33,6 @@ setup_task() {  # $1 shape; prints id
   [ "$(grep -c "$DUX_HOME/data/tasks/$id/report.md" "$b" || true)" -eq 0 ]
   grep -qF 'done: report' "$b"
   grep -qF 'waiting on <what> <url>' "$b"
-  grep -qF 'exit' "$b"
   [ "$(grep -c 'Plan:' "$b" || true)" -eq 0 ]
 }
 
@@ -203,6 +202,9 @@ setup_task() {  # $1 shape; prints id
   [ "$(grep -c 'Work alone' "$b" || true)" -eq 0 ]
   # A delivered session parks in its tab for feedback, so it waits rather than leaves.
   grep -qxF -- '- Write one terminal line per round (done, failed, blocked, needs-decision) and then stop. After `done: PR <url>`, wait at your prompt and do nothing until a prompt from Dux names a round file: anything done before that is unsupervised and will not be proved.' "$b"
+  # So does a question or a blocker, for its answer.
+  grep -qxF -- '- After writing `blocked` or `needs-decision`, stop and wait at your prompt. The answer comes as a round file, or Dux ends the session and sends it as a new task.' "$b"
+  [ "$(grep -c 'An answer arrives as a new task' "$b" || true)" -eq 0 ]
   # The cap is untouched by the longer line.
   [ "$(wc -l < "$b" | tr -d ' ')" -le 100 ]
 }
@@ -351,6 +353,48 @@ SH
   grep -qF 'The change described above implemented' "$b"
   grep -qF 'done: PR <url>' "$b"
   grep -qxF -- '- Risk: bounded' "$b"
+}
+
+# ---- integrated work: plan first, then build, in one session ----------------
+
+@test "only a ship brief declared to plan first starts complex work without a plan, and it stores its phase" {
+  id="$(setup_task ship)"
+  t="$DUX_HOME/data/tasks/$id"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --risk complex
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: a ship brief with no plan needs --risk bounded; complex work needs a plan, or --phase planning to write one first" ]
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --phase planning
+  [ "$status" -eq 0 ]
+  [ "$(cat "$t/phase")" = planning ]; [ "$(ls -l "$t/phase" | cut -c1-10)" = "-rw-------" ]
+  [ "$(cat "$t/risk")" = complex ]
+  b="$t/brief.md"
+  grep -qxF -- '- Phase: planning' "$b"; grep -qxF -- '- Risk: complex' "$b"
+  [ "$(grep -c '^- Plan: \|^- Tasks: ' "$b" || true)" -eq 0 ]
+  grep -qxF -- "- Plan first. Write the plan for this intent under docs/plans/ in the worktree, with a \`## Task <n>:\` heading and checkboxes for each task and a three-line **Where this stands** block, and commit it on dux/$id. Implement nothing and open no pull request before it is approved." "$b"
+  grep -qxF -- '- Then append `needs-decision: approve tasks <range> of <plan path> at <commit>` and wait at your prompt. Only a round file that approves that plan, range and commit starts implementation; an answer does not.' "$b"
+  grep -qxF -- '- Once approved, only box ticks and the three lines under **Where this stands** may change in the plan. Any other change to it needs `needs-decision:` and a renewed approval.' "$b"
+  grep -qxF -- 'The plan committed on dux/'"$id"' and its approval asked for; once a round file approves it, the approved tasks implemented, /ship run, CI green; then append `done: PR <url>` and wait at your prompt.' "$b"
+  [ "$(wc -l < "$b" | tr -d ' ')" -le 100 ]
+}
+
+@test "--phase planning is for ship work alone, never with a plan pair or bounded risk, and implementation is never declared" {
+  id="$(setup_task ship)"
+  t="$DUX_HOME/data/tasks/$id"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --phase planning --plan docs/p.md --tasks 1-2
+  [ "$status" -eq 2 ]; [ "$output" = "finding: a planning-phase brief writes its own plan; --plan and --tasks come with its approval" ]
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --phase planning --risk bounded
+  [ "$status" -eq 2 ]; [ "$output" = "finding: a planning-phase brief is complex work; it cannot run as --risk bounded" ]
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --phase implementation --plan docs/p.md --tasks 1-2
+  [ "$status" -eq 2 ]; [ "$output" = "finding: --phase must be planning; implementation starts only when an approval round names the plan" ]
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --phase
+  [ "$status" -eq 1 ]; [[ "$output" == "dux: usage: dux-brief "* ]]
+  [ ! -e "$t/phase" ]; [ ! -e "$t/brief.md" ]; [ ! -e "$t/risk" ]
+  for shape in plan scout; do
+    id="$(dux-task-new proj "$shape")"; t="$DUX_HOME/data/tasks/$id"
+    run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" --phase planning
+    [ "$status" -eq 2 ]; [ "$output" = "finding: --phase is for ship briefs only; a $shape task's worktree never becomes one that builds" ]
+    [ ! -e "$t/phase" ]; [ ! -e "$t/brief.md" ]
+  done
 }
 
 @test "an unknown risk word is a finding and nothing is written" {
