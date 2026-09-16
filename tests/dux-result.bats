@@ -22,6 +22,7 @@ write_run() {  # $1 shape
     echo "worktree=$wt"
     if [ "$1" = ship ]; then echo "plan=$ctx_plan"; echo "tasks=$ctx_tasks"
     else echo "plan="; echo "tasks="; fi
+    [ -z "${ctx_round:-}" ] || { echo "round=$ctx_round"; echo "since=$ctx_since"; }
   } > "$ctx"
   {
     echo "version=1"; echo "id=$id"; echo "run=$runid"; echo "wrapper=$$"
@@ -1091,6 +1092,64 @@ template_plan() {  # the shipped template, with its boxes ticked
   commit_file src/main.sh "echo hi"
   pr_at_head; green_checks
   for phase in checks review security pr ci; do dux-result record-ship "$id" "$runid" "$phase"; done
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 0 ]
+  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
+}
+
+# ---- a feedback round --------------------------------------------------------
+# A round is a run of its own on a branch the operator has already read. It adds
+# commits or none; it never replaces the ones that were reviewed.
+
+round_run() { ctx_round=1; ctx_since="$2"; runid=a1b2c3d4r1; write_run "$1"; }  # $1 shape, $2 since
+
+@test "a round proves only on its own receipt, recorded at its final commit" {
+  prepare ship
+  ship_plan x
+  commit_file src/main.sh "echo hi"
+  round_run ship "$(git -C "$wt" rev-parse HEAD)"
+  receipt_v2 separate checks review security pr ci
+  commit_file src/main.sh "echo feedback"
+  pr_at_head; green_checks
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [ "$output" = "dux: the /ship receipt for this task was recorded against another commit" ]
+  runid=a1b2c3d4 receipt_v2 separate checks review security pr ci
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [ "$output" = "dux: the /ship receipt for this task belongs to another run" ]
+  receipt_v2 separate checks review security pr ci
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 0 ]
+  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
+}
+
+@test "a round that adds nothing proves, and one that rewrote reviewed history does not" {
+  prepare plan
+  plan_docs
+  round_run plan "$(git -C "$wt" rev-parse HEAD)"
+  pr_at_head
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 0 ]
+  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
+  git -C "$wt" commit -q --amend -m "rewritten"
+  pr_at_head
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [ "$output" = "dux: the round rewrote history the operator already reviewed on dux/$id" ]
+}
+
+@test "a round's start commit must be a commit id; a first run's is recorded, not judged" {
+  prepare ship
+  ship_plan x
+  commit_file src/main.sh "echo hi"
+  pr_at_head; green_checks
+  round_run ship not-a-commit
+  receipt_v2 separate checks review security pr ci
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: the result context for $id records round 1 without the commit it started from" ]
+  ctx_round=0; write_run ship
   run dux-result verify "$id" "$runid"
   [ "$status" -eq 0 ]
   [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]

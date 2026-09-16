@@ -245,7 +245,7 @@ EOF
   [ "$(dux-ledger get "$id" state)" = done ]
   [ "$(dux-ledger get "$id" pr)" = "https://github.com/acme/proj/pull/7" ]
   run dux-notify "$id"
-  [ "$output" = "Review and merge: https://github.com/acme/proj/pull/7 (proj ship)" ]
+  [ "$output" = "Review, then merge or send feedback: https://github.com/acme/proj/pull/7 (proj ship)" ]
 }
 
 # The other gate, end to end. A combined review is four phases, and every hop

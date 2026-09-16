@@ -65,6 +65,19 @@ backend_run() {  # endpoint cwd cmd; replaces the pane's shell with cmd
     || finding "tmux could not start the command in $wid"
 }
 
+# One line typed into the pane, then Enter, the way an operator at the keyboard
+# submits a prompt. -l sends the text as characters and never as a key name, and
+# Enter is its own call because a literal send cannot carry a key. Measured
+# 2026-09-16 against a live Claude Code 2.1.273 session in a tmux 3.6a pane: the
+# line arrived at the session's prompt and the turn it started ran. The session's
+# Stop hook fired once, when that turn ended, and not during a 20-second tool
+# call inside it, which is what makes Stop the evidence that a session is idle.
+backend_prompt() {  # endpoint text
+  local wid; wid="$(_win "$1")"
+  { _tmux send-keys -t "$wid" -l -- "$2" && _tmux send-keys -t "$wid" Enter; } >/dev/null 2>&1 \
+    || finding "tmux could not type into $1"
+}
+
 # The pane's foreground process, when its command name is <name>. Measured on
 # tmux 3.6a: respawn-pane starts the command in a session of its own, so its
 # process group equals its pid, and `sh -c 'exec ...'` keeps the pid while the

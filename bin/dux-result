@@ -137,6 +137,18 @@ require_clean_worktree() {
   [ -z "$dirty" ] || reject "the worktree for this task has uncommitted changes"
 }
 
+# A feedback round may add commits to what the operator reviewed, or none, and
+# never replace them. A first run's since is recorded and not judged.
+check_round() {
+  local round since
+  round="$(kv round "$context")"; since="$(kv since "$context")"
+  case "$round" in ''|0) return 0 ;; esac
+  printf '%s\n' "$since" | LC_ALL=C grep -xE '[0-9a-f]{40}' >/dev/null \
+    || finding "the result context for $id records round $round without the commit it started from"
+  dgit merge-base --is-ancestor "$since" "refs/heads/$branch" 2>/dev/null \
+    || no_result "the round rewrote history the operator already reviewed on $branch"
+}
+
 # ---- what the branch changed ---------------------------------------------
 # Read from Git, not from GitHub's file list: the head oid is already pinned to
 # this branch tip, so the local diff is the pull request's diff and it costs no
@@ -480,6 +492,7 @@ case "$cmd" in
         [ -z "$report" ] || finding "--report is evidence for a scout task only"
         require_clean_worktree
         find_pr
+        check_round
         read_changes
         if [ "$shape" = plan ]; then check_plan_shape; else check_ship_shape; fi
         printf 'done: PR %s\n' "$pr_url" ;;

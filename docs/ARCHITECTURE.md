@@ -59,7 +59,7 @@ bin/
                            other task
   dux-worker-wrap          runs beside the tab, not inside it: task channel, launcher,
                            the harness's own process group, proposal rules, heartbeat,
-                           terminal state
+                           terminal state; parks a proved delivery and runs its rounds
   dux-result               record-ship files the phases the branch's review mode owes, in
                            order, into a versioned receipt that names the mode; verify proves
                            a plan, ship, or scout result from the registry, Git, and GitHub.
@@ -69,6 +69,10 @@ bin/
                            review, and escalation the other way needs no permission.
                            A ship brief naming no plan and no task range skips the checkbox
                            proof and nothing else
+  dux-round                feedback on a delivered pull request: refuses unless the task is
+                           done, its session still parked in its tab and its pull request
+                           open, then writes tasks/<id>/round-<n>.md for the parked wrapper;
+                           eight rounds at most
   dux-teardown             remove the worktree, close the container, mark done or failed;
                            --abandon lets go of a task that never started
   dux-watch                classify task events, record them, and raise local toasts
@@ -76,7 +80,8 @@ bin/
   dux-notify               format one action-first phone notification line
   dux-recover              inspect or recover stale, dead, ended, and failed tasks;
                            retire one from before the security-boundary upgrade
-  dux-backend              selects a backend once and dispatches to its adapter
+  dux-backend              selects a backend once and dispatches to its adapter; prompt
+                           types one line into a task's tab, which is how a round starts
   backends/tmux.sh         window per task, remain-on-exit; endpoint tmux:<session>:<window_id>
   backends/herdr.sh        tab per task in the Dux workspace; endpoint herdr:<pane_id>
   workers/claude.sh        worker harness adapter: worker_cmd, worker_run, worker_effort_ok;
@@ -97,6 +102,7 @@ templates/
   PULL_REQUEST_TEMPLATE.md the template dux-project installs, with consent, into a
                            project that has none
   brief.md                 the brief skeleton dux-brief renders
+  round.md                 the round file dux-round renders
   worker-settings.json     Claude deny rules, __BASE__ rendered per task
   worker-mcp.json          the empty MCP config every Claude worker is held to
 tests/fixtures/
@@ -315,7 +321,27 @@ the tab and catches a worker in a server whose socket vanished.
    first; a session that ends with no terminal proposal gets
    `ended: the session ended without a terminal status`, because a process the
    wrapper did not fork leaves no exit status to read.
+
+   A `plan` or `ship` run whose `done` is proved parks instead of ending, once
+   the harness's `Stop` hook has touched `<channel>/stopped` after the terminal
+   line. The wait for that is `DUX_WRAP_IDLE_SECS` (60 seconds), and running out
+   proves nothing: the run ends as any other does. A parked wrapper publishes
+   the handoff, writes `state/<id>.parked` naming the run, itself and the group,
+   and waits with the session idle at its prompt. Spawn and `dux-round` count a
+   parked session as idle only while all three still hold. `dux-round <id>
+   --file <path>` takes a `done` task whose pull request is open, moves the
+   ledger to `running`, and renames `tasks/<id>/round-<n>.md` into place. The
+   wrapper takes it up only after the watcher has consumed the parked run's
+   handoff. It removes the marker, stages the file in the channel at mode 400,
+   and types `Read <channel>/round-<n>.md and follow it.` into the tab through
+   `dux-backend prompt`: the one line Dux ever writes there. The round is a new
+   run, `<nonce>r<n>`, with its own run record and result context carrying
+   `round` and `since`, and it ends as this step describes, parked again or not.
+   The watcher counts the newest round file as activity, so a round is not
+   stale for the days its task sat parked.
 7. `dux-teardown <id>` (the ledger says terminal, worktree clean, branch pushed)
+   ends a parked session first, the wrapper with `TERM` and then the harness's
+   group, so the tab closes with nothing waiting in it. It then
    removes the worktree, closes the container, clears the run's retained
    references, and reports the ledger's own state and PR url. For a `done` task
    from an issue whose PR is in that issue's repository, it posts one comment,
@@ -413,6 +439,14 @@ whole handoff or none of it.
   watcher retries it on the next pass.
 - A terminal-looking status line with no handoff behind it proves nothing and is
   ignored by the watcher, the digest and teardown alike.
+- A parked run's handoff is published before the session is left idle, and its
+  receipt stays at `state/<id>.ship-receipt`, where the watcher checks it, until
+  that handoff is consumed. Only then does the wrapper keep it as
+  `state/<id>.ship-receipt.delivered`, and only then will it take up a round,
+  because a round writes the run records again. Each round is proved on its own:
+  its run, its receipt, its final commit, and a branch that still holds the
+  commit the round started from. A round that rewrote what the operator
+  reviewed is `ended`, never `done`.
 - Sequences are retained for the whole run. `dux-teardown` is their lifecycle
   owner, and clears them with `state/<id>.run`, `state/<id>.result-context`,
   `state/<id>.ship-receipt`, `state/<id>.wrap.log`, `state/<id>.portal`,
@@ -526,6 +560,7 @@ text, not about a hostile program.
 | `dead` | Mark failed and keep the worktree; the session the wrapper was watching may still be running in the task's tab. |
 | `ended` | Run the same proof the wrapper would have run and publish what it proves into the next sequence; otherwise ask the operator, whose only classification is `failed`. |
 | `failed` | Show the saved failure and offer one retry or a scout. |
+| `done` | Nothing to recover. A pull request goes out as `Review, then merge or send feedback: <url>`; feedback is a round through `dux-round`, and a round that ends `failed` or `ended` leaves the pull request open and takes no further round. |
 | from before the upgrade | `--retire-legacy` stops the old wrapper and publishes one retirement handoff; the branch and worktree are kept for one retry or a teardown. |
 | `blocked`, `needs-decision` | Relay the meaning of fenced status data; append the operator answer to one fresh retry. |
 

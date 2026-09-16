@@ -39,15 +39,26 @@ The script does the mechanics and prints what it did. You judge and relay.
      if the operator asks, otherwise a teardown.
 4. Run `bin/dux-ledger ack <id> <event-state>` after handling the wake.
 
-Three things the operator will ask for are not built yet, and each one comes
-back here rather than to the worker's tab. Feedback on a pull request a worker
-already delivered, an answer that resumes the live session in place, and
-approving a plan the same worker then builds: all three are a fresh task with
-the answer or the feedback copied into its Intent, exactly as a retry is.
-`bin/dux-doctor` prints the installed rollout stage and what it does not yet
-carry. Do not tell the operator to type into a worker's tab to get one of them:
-what they type there is instruction to that worker and Dux neither sees it nor
-proves anything that comes of it.
+Two things the operator will ask for are not built yet, and each one comes back
+here rather than to the worker's tab: an answer that resumes the live session in
+place, and approving a plan the same worker then builds. Feedback on a pull
+request a worker delivered goes through `skills/dux-dispatch` from stage m2, and
+comes back here before that stage or once the task can no longer take a round.
+Each is a fresh task with the answer or the feedback copied into its Intent,
+exactly as a retry is. `bin/dux-doctor` prints the installed rollout stage and
+what it does not yet carry. Do not tell the operator to type into a worker's tab
+to get one of them: what they type there is instruction to that worker and Dux
+neither sees it nor proves anything that comes of it.
+
+**A feedback round that does not end `done`.** The task is whatever the round
+ended in, `failed` or `ended`, and its session is gone: every ending but
+`done: PR` stops it. The pull request is untouched by that. It is still open, at
+whatever commit the round pushed or did not, and its url stays in the ledger. No
+further round is possible, because `bin/dux-round` takes `done` only. The
+operator's moves are the ones they already have: merge it on GitHub and tear the
+task down, or tear it down and let the pull request go. An `ended` round is
+classified `failed` first, on the operator's word. A correction they still want
+is a fresh task with the feedback copied into its Intent.
 
 Never read the worker's tab, by any means: no pane capture, no scrollback, no
 screenshot. Its output is the operator's to read, not yours; use only the

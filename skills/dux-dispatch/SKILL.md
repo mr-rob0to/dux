@@ -83,13 +83,34 @@ when something is off; relay the finding verbatim and stop.
    type to it; what they type is instruction to the worker, and Dux still reads
    only the status file. No task ids, branch names, or paths unless asked.
 
+## Feedback on a delivered pull request
+
+When `bin/dux-doctor` reports stage m2 or later, and the operator has comments on
+a pull request a `plan` or `ship` task delivered, the worker that delivered it
+makes the change. Its session has waited at its prompt since `done`.
+
+1. Write the operator's words, as they gave them, to
+   `data/tasks/<id>/feedback.md`. They are the operator's, not a worker's.
+2. `bin/dux-round <id> --file data/tasks/<id>/feedback.md`. It refuses a task
+   that is not `done`, a pull request that is merged or closed, a session no
+   longer in its tab, another active worker, and a task that has had eight
+   rounds. Each refusal is a finding: relay it verbatim and stop.
+3. On `round <n> sent to <id>`, tell the operator the worker is on it in its
+   tab, on the same pull request. The next wake is that round's own ending.
+
+Never type into the tab: the wrapper types the one line that points the
+session at the round file. Before stage m2, feedback is a fresh task through
+`skills/dux-recover`.
+
 ## Teardown
 
 Only after the task's last status line is `done` or `failed`, and after the
 operator has said the PR is merged or the task is abandoned:
 
-- `bin/dux-teardown <id>`. Dirty, unpushed, still-running, and focused-pane
-  refusals are findings; report them and stop. Teardown is what removes the run
+- `bin/dux-teardown <id>`. For a `done` task it ends the parked session first,
+  the wrapper and then the harness, and the tab closes with the pane. Dirty,
+  unpushed, still-running, and focused-pane refusals are findings; report them
+  and stop. Teardown is what removes the run
   record, the retained handoffs, the receipt and the worker's task channel, so a
   task left un-torn-down keeps them; that is deliberate, not a leak.
   For a `done` issue task, teardown leaves the PR link on the issue; a failed

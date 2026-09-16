@@ -78,6 +78,17 @@ src="$("$ledger" get "$id" source)" || exit $?
 ep_before="$("$ledger" get "$id" endpoint)" || exit $?
 is_terminal "$lstate" || finding "task $id is not terminal (ledger: $lstate)"
 final="$lstate"
+# A task parked after its proved delivery is the one done task with something
+# still running: its wrapper, waiting for a round, and its session, idle in the
+# tab. Both are ended here, the wrapper first so it cannot take up a round that
+# arrives while this runs, then the group. Anything that outlives its stop is
+# still the refusal below, and so is anything short of a marker that holds.
+if [ "$final" = "done" ] && parked "$id"; then
+  wpid="$(cat "$pidfile")"; pg="$(cat "$pgidfile")"
+  kill -TERM "$wpid" 2>/dev/null
+  i=0; while kill -0 "$wpid" 2>/dev/null && [ "$i" -lt 100 ]; do i=$((i + 1)); sleep 0.2; done
+  stop_pgid "$pg" || true
+fi
 # Read the same file as strictly as dux-spawn does, or the two disagree about the
 # same worker. No pidfile is the only reading that means no worker: one that
 # cannot be read and one that does not hold a pid are both "could not tell", and
@@ -99,7 +110,9 @@ if [ -e "$pgidfile" ] || [ -L "$pgidfile" ]; then
     || finding "cannot read $pgidfile; cannot tell whether the worker's own processes for $id are gone"
   case "$pg" in
     ''|*[!0-9]*) finding "$pgidfile does not hold a process group ('$(cap_line "$pg")'); cannot tell whether the worker's own processes for $id are gone" ;;
-    *) if kill -0 -- "-$pg" 2>/dev/null; then finding "the worker's own processes for $id are still running as group $pg"; fi ;;
+    # Not kill -0, which answers for a group of zombies too, and a group this
+    # teardown has just stopped can be one until its parent reaps it.
+    *) if group_runs "$pg"; then finding "the worker's own processes for $id are still running as group $pg"; fi ;;
   esac
 fi
 
@@ -127,7 +140,7 @@ rm -rf "$DUX_STATE/$id.handoffs"
 # nothing the worker wrote, and dux-spawn's two start refusals point the
 # operator at it, so it is only useful while the task exists.
 rm -f "$DUX_STATE/$id.run" "$DUX_STATE/$id.result-context" "$DUX_STATE/$id.ship-receipt" \
-  "$DUX_STATE/$id.wrap.log"
+  "$DUX_STATE/$id.ship-receipt.delivered" "$DUX_STATE/$id.parked" "$DUX_STATE/$id.wrap.log"
 # A wrapper that reached its own ending cleared its task channel on the way out,
 # and dead recovery clears one a crashed wrapper left as soon as the worker's own
 # process group has gone. Neither ran here, so teardown is the last owner. The

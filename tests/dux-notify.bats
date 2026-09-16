@@ -9,11 +9,11 @@ setup_task() {  # $1 id, $2 shape, $3 state, [$4 pr]
 }
 status_is() { printf '%s\n' "$2" >> "$DUX_HOME/data/tasks/$1/status.log"; }
 
-@test "done with a PR leads with review and merge" {
+@test "done with a PR leads with review, then merge or feedback" {
   setup_task t1 ship done https://example.invalid/pr/7
   run --separate-stderr dux-notify t1
   [ "$status" -eq 0 ]; [ -z "$stderr" ]
-  [ "$output" = "Review and merge: https://example.invalid/pr/7 (api ship)" ]
+  [ "$output" = "Review, then merge or send feedback: https://example.invalid/pr/7 (api ship)" ]
 }
 
 @test "a PR only the worker claims is not put in front of the operator" {
@@ -59,7 +59,7 @@ status_is() { printf '%s\n' "$2" >> "$DUX_HOME/data/tasks/$1/status.log"; }
 @test "lines stop at 200 characters" {
   setup_task t1 ship done "https://example.invalid/pr/$(printf 'x%.0s' $(seq 1 300))"
   run dux-notify t1
-  [ "${#output}" -eq 200 ]; [[ "$output" == "Review and merge: https://example.invalid/pr/xxxx"* ]]
+  [ "${#output}" -eq 200 ]; [[ "$output" == "Review, then merge or send feedback: https://example.invalid/pr/xxxx"* ]]
   [[ "$output" == *"..." ]]
 }
 
@@ -67,7 +67,7 @@ status_is() { printf '%s\n' "$2" >> "$DUX_HOME/data/tasks/$1/status.log"; }
   setup_task t1 ship done https://example.invalid/pr/7
   run dux-notify t1 --toast
   [ "$status" -eq 0 ]
-  grep -qF 'notification show Dux --body Review and merge: https://example.invalid/pr/7 (api ship)' "$FAKE_HERDR_LOG"
+  grep -qF 'notification show Dux --body Review, then merge or send feedback: https://example.invalid/pr/7 (api ship)' "$FAKE_HERDR_LOG"
   : > "$FAKE_HERDR_LOG"
   dux-notify t1 >/dev/null
   [ ! -s "$FAKE_HERDR_LOG" ]

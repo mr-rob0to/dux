@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1 is implemented, tasks 1 to 10, and delivered as pull request #51; milestones 2 to 4 are not started and no task in them is claimed.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, is delivered through `/ship` and waits on the operator's merge and then R2; milestones 3 and 4 are not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -26,7 +26,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 | Milestone | Task range | Estimated added lines | Actual added lines | Delivery evidence |
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
-| M2: Amended PR #46 | 11–19 | 1,750–2,450 | Not recorded | Not recorded |
+| M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | Task 19's pull request |
 | M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | Not recorded | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
@@ -363,8 +363,31 @@ because neither exists before then.
 **Files:** `bin/dux-backend`, `bin/backends/herdr.sh`, `bin/backends/tmux.sh`, existing backend tests.  
 **Acceptance:** Live prompt, Stop hook, parking, and timeout behavior are qualified on both supported backends.
 
-- [ ] Implement PR #46's prompt support and record real backend qualification.
-- [ ] Test and break-verify important delivery and failure protections.
+- [x] Implement PR #46's prompt support and record real backend qualification.
+- [x] Test and break-verify important delivery and failure protections.
+
+**Landed with this task.** `dux-backend prompt <endpoint> <text>` types one line and submits
+it: `send-keys -l` then Enter on tmux, `herdr pane run` on Herdr. Measured 2026-09-16 on this
+machine against a live Claude Code 2.1.273 session, once in a tmux 3.6a pane and once in a
+Herdr 0.8.2 pane, with the same script: both deliveries reached the session's prompt and were
+submitted, so Herdr needs no `send-text` fallback and the milestone is not tmux-only. On both,
+the `Stop` hook fired once per turn, at the end of it, and had not fired ten seconds into a
+twenty-second tool call. Parking and the idle timeout are behaviour Tasks 13 and 15 add; the
+live rehearsal in Task 19 qualifies them.
+
+Three tests in `tests/backend-adapter.bats`, run under both backends, and four breaks, each
+failing where it should:
+
+- Dropping the tmux Enter: the delivery test failed with "the reader in the pane never received
+  a line".
+- Swallowing a failed tmux send, and separately a failed Herdr send: the failure test failed on
+  its exit status each time, because the send reported success.
+- Dropping `own_endpoint` from the `prompt` case: the ownership test failed on its finding text.
+
+The Herdr fake now types into the process it started when that process is still alive in the
+same pane, appending the line to a file it names to that process as `FAKE_HERDR_INPUT`. The
+suites that start processes through it (`harness`, `dux-spawn`, `dux-recover`, `dux-result`,
+`dux-worker-wrap` and both Herdr end-to-end files) pass unchanged.
 
 ## Task 12: Move PR #46's shared helpers
 
@@ -372,8 +395,23 @@ because neither exists before then.
 **Files:** `bin/dux-env` and the existing callers and tests named by PR #46.  
 **Acceptance:** The two existing helpers have one shared owner and preserve behavior.
 
-- [ ] Move the two helpers according to PR #46.
-- [ ] Compare declaration counts and run affected tests; record required break evidence.
+- [x] Move the two helpers according to PR #46.
+- [x] Compare declaration counts and run affected tests; record required break evidence.
+
+**Landed with this task.** `dux-spawn`'s `another_worker` is `fleet_busy <id>` in `bin/dux-env`,
+and the wrapper's `stop_group` is `stop_pgid <pgid>` there too. Counted before and after: the
+fleet block is 75 lines both times, its comments included, and the stop is 22. The fleet check
+changed only its name and one `local` line, which now takes the id and the two script paths it
+used to find in the caller. The stop changed only in taking the group as an argument, and its
+"ignored TERM" log line no longer names the task, since the log it goes to is the task's own.
+Spawn keeps all six refusal wordings, and the wrapper's `group_alive` went with the stop, which
+was its only caller. Three direct tests in `tests/dux-env.bats`.
+
+Break: `fleet_busy` skipping the group file made spawn's "another task's live harness group
+refuses the start, and an unreadable one blocks it" fail at its first status check, because the
+start went ahead beside a live group. The three direct tests were each broken on their own: the
+pidfile never read as live, the group never read as live, and `stop_pgid` calling a survivor
+stopped. Each failed at its own status check.
 
 ## Task 13: Park delivered workers without losing receipts
 
@@ -381,8 +419,41 @@ because neither exists before then.
 **Files:** `bin/dux-worker-wrap`, `bin/dux-watch`, `templates/worker-settings.json`, `tests/dux-worker-wrap.bats`, `tests/dux-watch.bats`.  
 **Acceptance:** Positive Stop-only parking never removes evidence before watcher consumption.
 
-- [ ] Add run-bound parking and retain each receipt through durable handoff application.
-- [ ] Test delayed combined, separate, and legacy consumption and break-verify premature-removal protections.
+- [x] Add run-bound parking and retain each receipt through durable handoff application.
+- [x] Test delayed combined, separate, and legacy consumption and break-verify premature-removal protections.
+
+**Landed with this task.** A plan or ship run whose terminal line is `done: PR <url>` now waits
+up to `DUX_WRAP_IDLE_SECS` (60) for `<channel>/stopped`, which a second `Stop` hook in the
+settings template touches and nothing else does. Only a touch newer than the status outbox
+counts, so a Stop from an earlier turn proves nothing. Running out of time is a log line and
+the run ends as it always did. With the Stop seen and the result proved `done`, the wrapper
+publishes, writes `state/<id>.parked` (run, wrapper pid, group) in one move, logs the park
+line once, and waits silently. Once the watcher marks that handoff `consumed`, which it does
+only after applying the state and the pull request, the receipt becomes
+`state/<id>.ship-receipt.delivered`. A signal ends the wait: the marker goes, the group is
+stopped and the channel cleared. Any other result after a Stop stops the group first and
+ends as before, and a refusal now stops the group too.
+
+Lines after the terminal line are held rather than refused on sight, and every ending except a
+park still fails on them, through one check before the result. The result context gains
+`round=0` and `since=<branch tip at run start>`. No change was needed in `bin/dux-watch`, so
+delayed consumption is tested through the real watcher in `tests/dux-worker-wrap.bats`, and
+`tests/dux-watch.bats` is unchanged. PR #46's `tests/harness` is `tests/fakes/claude`, which
+gains an `idle` verb: it waits for a typed line and can then replay a round script. PR #46
+expected a teardown test and the end-to-end teardown step to need skipping. Neither does,
+because no fake touches `stopped` unless a script says so.
+
+Four new tests and one extended; eight breaks, each failing on its own:
+
+- Renaming the receipt at park time: the parking test failed at "receipt still in place" (line 983).
+- Parking without publishing, PR #46's named break: the same test failed at "watcher applies done".
+- A Stop from before the done line counting: the no-Stop test failed at its "did not stop" line.
+- A timed-out wait parking: the same test failed at its exit status.
+- Parking an unproved result: the proof test failed at its last output line.
+- A refusal leaving the group: the refusal test failed at "group is gone".
+- Dropping the late-line check: both the existing second-terminal test and the no-Stop test
+  failed at their exit status.
+- The `stopped` touch also on `PostToolUse`: the channel test failed at its hook count.
 
 ## Task 14: Apply parking consistently to admission and teardown
 
@@ -390,8 +461,46 @@ because neither exists before then.
 **Files:** `bin/dux-env`, `bin/dux-spawn`, `bin/dux-teardown`, related tests.  
 **Acceptance:** A positively parked wrapper and process group do not block solely because they remain alive; uncertain state still blocks.
 
-- [ ] Apply the shared admission rule and preserve dirty or unpushed work on teardown refusal.
-- [ ] Break-verify PID, process-group, uncertainty, and cleanup protections separately.
+- [x] Apply the shared admission rule and preserve dirty or unpushed work on teardown refusal.
+- [x] Break-verify PID, process-group, uncertainty, and cleanup protections separately.
+
+**Landed with this task.** `bin/dux-env` gains `parked <id>`. A marker counts only while all
+three of its names still hold: its run is the task's current run, its group is the one
+`state/<id>.pgid` names, and its wrapper is the pid `state/<id>.pid` names and is still running.
+`fleet_busy`, which `dux-spawn` already calls, then skips that task's pidfile and pgid file and
+nothing else. Its ledger state and its pane still count, so a parked task whose result the
+watcher has not applied still blocks. `bin/dux-spawn` needed no change.
+
+`dux-teardown` on a `done` task whose marker holds stops the wrapper with TERM, waits up to 20
+seconds for it, then stops the group. The existing checks run after that, so a survivor, a
+dirty worktree or an unpushed branch is still a refusal with the work left on disk. Anything
+short of a marker that holds is judged as before. Teardown also removes
+`state/<id>.ship-receipt.delivered` and `state/<id>.parked`. Its group check now uses
+`group_runs` instead of `kill -0`: on Linux a group teardown has just stopped can be nothing but
+zombies for a while, and `kill -0` answers for those. macOS drops a zombie from its group, so
+that break was verified in Docker.
+
+PR #46's acceptance that a round file dropped in during teardown is never acted on needs rounds,
+so it is tested with Task 15. Running one teardown test alone on macOS takes about five minutes,
+because an existing fixture leaves a `sleep 300` holding bats' output open.
+
+Three new tests; thirteen breaks, each failing on its own:
+
+- PID exemption dropped: the fleet test failed at "a parked task goes through" (dux-env line 264),
+  and the spawn test at its start after `done` (dux-spawn line 591).
+- Group exemption dropped: the same two assertions.
+- Exemption in every ledger state, PR #46's named break: the spawn test failed at "refuses while
+  running" (line 587).
+- Marker run, wrapper, group and wrapper liveness each unchecked: the fleet test failed at its
+  stale-run, other-wrapper, other-group and wrapper-gone cases (lines 266, 267, 268, 271).
+- Group stopped before the wrapper, PR #46's named break: the teardown test failed at "group
+  still alive when the wrapper stopped" (line 335).
+- Wrapper not stopped, group not stopped, delivered receipt kept: the teardown test failed at
+  lines 334, 336 and 343.
+- Teardown stopping a done task's processes without a marker: the existing live-pid refusal test
+  failed because its worker had been killed (line 207).
+- `kill -0` back in the group check: green on macOS; on Linux the teardown test failed at
+  "uncommitted changes" (line 337) and passed unbroken.
 
 ## Task 15: Activate rounds in place
 
@@ -399,8 +508,53 @@ because neither exists before then.
 **Files:** `bin/dux-worker-wrap`, `bin/dux-env`, `tests/dux-worker-wrap.bats`.  
 **Acceptance:** Every activation gets fresh identity; parking clears before prompting; pending handoffs prevent reuse.
 
-- [ ] Implement the existing wrapper round design.
-- [ ] Break-verify duplicate activation and pending-handoff protections.
+- [x] Implement the existing wrapper round design.
+- [x] Break-verify duplicate activation and pending-handoff protections.
+
+**Landed with this task.** The wrapper's supervision is now one loop, and a round goes back to
+its top. A parked wrapper takes up only `data/tasks/<id>/round-<n>.md` for the next `n`, and
+only after the watcher has consumed the parked run's handoff. So a result still waiting holds
+the round back, and no round file runs twice. Taking it up removes the marker first, so the
+session stops counting as idle, then checks that the group it holds still runs. A group that has
+gone publishes `failed: the session for <id> was ended in its tab before round <n> could run`.
+Otherwise the round becomes a run of its own, `<channel nonce>r<n>`, and all of this happens
+before its line is typed:
+
+- `state/<id>.run` and the result context are written again, with `round=<n>` and
+  `since=<branch tip>`.
+- The ship recorder is rewritten for the new run: `chmod 600`, write, `chmod 500`.
+- Both outboxes are read from where they end, and both caps are measured from there. Nothing
+  written while parked is judged or kept, and earlier rounds never push a small round over a cap.
+- The round file is staged in the channel at mode 400, and
+  `Read <channel>/round-<n>.md and follow it.` goes through `dux-backend prompt`.
+
+Two changes from PR #46's text. The group check is `group_runs`, not `kill -0`, for the zombie
+reason Task 14 found. And a run hands `dux-result` a report only when that run wrote one, so an
+earlier run's report is never evidence for a later one. `bin/dux-env` needed no change.
+
+Task 14's promised teardown test is here. A parked session whose result has been applied is torn
+down, and teardown still refuses the unpushed branch. A round file written after that types
+nothing and publishes nothing.
+
+Three new tests; twelve breaks, each failing on its own:
+
+- Group check dropped, PR #46's named break: the ended-in-its-tab test failed at its handoff
+  status (line 1144).
+- Status outbox left where the parked run stopped reading, PR #46's other named break: the round
+  test failed waiting for the second park (line 1089). The wrapper logged "proposed a status line
+  over 200 bytes", read from what was written while parked. PR #46 expected the second-terminal
+  violation; this test's parked lines hit the line cap first.
+- Status outbox read from its start: failed at "the round's working line relayed once"
+  (line 1113), because the parked run's terminal line was read again and hid the round's.
+- Round taken before its result was consumed: failed at "nothing typed yet" (line 1085).
+- Marker kept while the round runs: failed at "the round began not parked" (line 1110).
+- Always `round-1.md`: failed at "typed once" (line 1100), because round 1 ran twice.
+- Cap measured over the whole outbox: second park (line 1089), "wrote more than 65536 bytes".
+- Report base not moved: second park (line 1089), "--report is evidence for a scout task only".
+- Report copied from its start: failed at "no report kept" (line 1111).
+- Run id not renewed: failed at the second handoff's run (line 1091).
+- Recorder not rewritten: second park (line 1089), "no /ship receipt for this task".
+- Teardown's parked branch disabled: the teardown test failed at "wrapper stopped" (line 1165).
 
 ## Task 16: Deliver the existing round command
 
@@ -408,8 +562,26 @@ because neither exists before then.
 **Files:** `bin/dux-round`, `templates/round.md`, `tests/dux-round.bats`.  
 **Acceptance:** Feedback stays with its owner and the ninth feedback round is refused.
 
-- [ ] Implement same-owner feedback and duplicate-request protection.
-- [ ] Test and break-verify ownership, duplicate, and round-limit protections.
+- [x] Implement same-owner feedback and duplicate-request protection.
+- [x] Test and break-verify ownership, duplicate, and round-limit protections.
+
+**Landed with this task.** `dux-round <id> --file <path>` runs PR #46's checks in its order and
+writes nothing until all pass: the wrapper named by `state/<id>.pid` running, a marker `parked`
+accepts, a live group, the channel and the tab. Then the ledger moves `done` to `running`, the
+acknowledgement is cleared, and `.round-<n>.tmp` is renamed onto `round-<n>.md` for the parked
+wrapper, so a second request finds the task `running`. A failed rename puts back `done` and its
+acknowledgement. Changes from PR #46's text: a branch behind its base gets a merge line in the
+round file instead of a refusal, as amended, and the group check is `group_runs`, as in Task 15.
+The fake `gh` answers `pr view` with JSON unless `-q` picks one field. Fourteen tests, one a real
+parked wrapper delivering a second `done`. Nineteen breaks, each failing on its own:
+
+- Pidfile read dropped (PR #46's named break): line 146, not-parked wording instead.
+- Ancestry always passing (PR #46's other named break, as amended): merge line, line 243.
+- Marker, group, channel, tab checks dropped: lines 122, 142, 126, 133.
+- Head, base, `MERGED` read as open: lines 175, 177, 171.
+- `running` accepted: line 224. Pending handoff ignored: line 100. Nine rounds: line 108.
+- Renamed first, acknowledgement kept: lines 201, 202. No put-back: line 234.
+- Fleet check, fence check, 41 lines, scout let through: lines 155, 93, 185, 79.
 
 ## Task 17: Prove each delivered round
 
@@ -417,8 +589,24 @@ because neither exists before then.
 **Files:** `bin/dux-result`, `bin/dux-watch`, `bin/dux-worker-wrap`, related tests.  
 **Acceptance:** Each round proves its own run and final commit; consumed handoffs are not applied twice.
 
-- [ ] Integrate mode-aware fresh proof and receipt retention with the watcher.
-- [ ] Break-verify stale-run, stale-commit, and duplicate-consumption protections.
+- [x] Integrate mode-aware fresh proof and receipt retention with the watcher.
+- [x] Break-verify stale-run, stale-commit, and duplicate-consumption protections.
+
+**Landed with this task.** `dux-result verify` reads `round` and `since` from the result context
+before `read_changes`, for plan and ship: round absent or `0` is unchanged, otherwise `since` must
+be forty hex characters (a finding) and an ancestor of the branch, or the result is ended with
+`the round rewrote history the operator already reviewed on <branch>`. A round's receipt answers
+to its own run and final commit under the mode rules M1 installed, so no new receipt code. The
+watcher counts the newest `round-<n>.md` as activity: a task parked for days went stale the
+moment `dux-round` moved it to running. The wrapper needed no change; it has written `round` and
+`since` since Task 15. Five tests; eight breaks, each failing on its own:
+
+- Ancestry inverted (PR #46's named break): the no-commit round refused (line 1133). Ancestry
+  dropped: the rewritten branch proved (line 1138).
+- `since` shape unchecked, and round `0` judged: lines 1150 and 1154.
+- Stale run and stale commit accepted for a round: lines 1119 and 1115.
+- `next_handoff` ignoring `consumed`: the first run's done applied again over the round's
+  `running` (watch line 523). Round files not counted: the fresh round went stale (line 138).
 
 ## Task 18: Update the same PR through shipping
 
@@ -426,9 +614,26 @@ because neither exists before then.
 **Files:** `skills/ship/SKILL.md`, related gate tests and evidence.  
 **Acceptance:** Feedback completes `/ship` against the existing PR, with current classification, review, receipt, and CI.
 
-- [ ] Implement existing-PR updates and history-preserving feedback base merging.
-- [ ] Exercise a real feedback round through the same PR and CI; retain this task in M2.
-- [ ] Break-verify: break the guard that keeps a round on its own PR, and the one that stops a feedback base repair from rewriting reviewed history, run, confirm two distinct failures, restore, paste both.
+- [x] Implement existing-PR updates and history-preserving feedback base merging.
+- [x] Exercise a real feedback round through the same PR and CI; retain this task in M2.
+- [x] Break-verify: break the guard that keeps a round on its own PR, and the one that stops a feedback base repair from rewriting reviewed history, run, confirm two distinct failures, restore, paste both.
+
+**Landed with this task.** Step 8's "Opening it" looks up the open pull request for the branch into
+`$BASE` with PR #46's exact `gh pr list` line, edits its body without `--title` when there is one,
+and creates one otherwise; the docs-only paragraph names the same lookup. Step 2 says a Dux
+feedback round never rebases: it merges `origin/$BASE` in with an ordinary merge and stops at
+`needs-decision` for a conflict, and the stop table carries both rows. Two contract pins.
+
+Run on 2026-09-16 against a private throwaway repository with CI, the skill's own push and opening
+blocks, copied verbatim: the first pass opened pull request 1 (CI run 35132095382 green), a second
+commit on the same branch edited pull request 1 with its title kept and two commits (run
+35132141898 green), and no second pull request existed. Breaks, each failing on its own: the
+lookup without `--head` (contract line 473; live, round 2's body landed on pull request 2), the
+edit with `--title` (line 474), a round allowed to rebase (line 479), the round file allowing a
+rebase (line 480), and the push without its ancestor test (live, a rewritten branch
+force-replaced reviewed commit `0f0fc0a`; intact, it stopped with the finding and exit 2). The
+live worker round is Task 19's rehearsal: pull request 4 took a feedback round through the
+installed `/ship`, CI green on both heads.
 
 ## Task 19: Activate feedback and complete the rehearsal
 
@@ -436,9 +641,93 @@ because neither exists before then.
 **Files:** `AGENTS.md`, `docs/constitution.md`, feedback policy skills, `bin/dux-notify`, `templates/brief.md`, PR #46 documents, `docs/ARCHITECTURE.md`, `README.md`, this plan.  
 **Acceptance:** M2 acceptance below is proved; questions and approval remain unavailable. This milestone changes receipt and handoff integrity, so it receives separate reviews.
 
-- [ ] Amend the constitution from M1's resulting version under its governance rule.
-- [ ] Complete the previously failed timeout rehearsal through actual PR and CI proof and deliver through `/ship`.
-- [ ] Record actual size and delivery evidence; after operator merge, record and install R2 before external M2 application.
+- [x] Amend the constitution from M1's resulting version under its governance rule.
+- [x] Complete the previously failed timeout rehearsal through actual PR and CI proof and deliver through `/ship`.
+- [x] Record actual size and delivery evidence; after operator merge, record and install R2 before external M2 application.
+
+**Landed with this task.** The operator now hears `Review, then merge or send feedback: <url>`
+for a delivered pull request. `AGENTS.md`, `skills/dux-dispatch` and `skills/dux-recover` say
+what feedback does from stage m2: the operator's words go to `data/tasks/<id>/feedback.md`,
+`bin/dux-round` sends them, nobody types into the tab, and a round that ends `failed` or
+`ended` leaves the pull request open with no further round. The brief tells a worker to write
+one terminal line per round and then wait at its prompt. `docs/ARCHITECTURE.md` carries
+`prompt`, parking, the round, receipt retention until the watcher consumes the handoff, and
+teardown of a parked session. Answers and approval are still not built, and the pins that say
+so still hold. The constitution goes to 4.0.0, a MAJOR amendment: principle 1 narrowed so a
+feedback round merges its base in and never rewrites reviewed commits, and principle 6 now
+names the one line Dux types into a tab. `bin/dux-doctor` now says this checkout implements
+m2, as its own comment asks the milestone that lands a stage to do; the default in
+`templates/config/policy-stage` stays m1 until the operator installs this revision.
+
+Eleven breaks, one at a time, each failing at its own assertion: the dispatch skill's feedback
+section dropped (PR #46's named break, contract line 732), its teardown sentence (736), the
+lifecycle arrow (729), the `dux-round` command in `AGENTS.md` (730), the old wake line (107),
+principle 6's clause (126), version 3.0.0 (129), `AGENTS.md` citing v3.0.0 (715), the old
+notification (notify lines 16, 62, 70), the old terminal rule (brief line 205), and stage m1
+(doctor lines 101, 119).
+
+**The live rehearsal**, on 2026-09-16, ran this branch's scripts against a scratch Dux home at
+stage m2, a private throwaway repository with CI, a tmux server of its own and Claude Code
+2.1.273. Each task was a bounded ship task on Sonnet with a combined review.
+
+- Run 1 delivered pull request 3 with CI green, but the worker copied `/ship`'s blocks by hand
+  and left out every `$DUX_SHIP_RECORD` line. The proof refused it: `ended: the result was not
+  proved: no /ship receipt for this task; the gate did not run under Dux`. It was classified
+  failed and torn down, and the pull request closed. Recovery's answer is a fresh task with
+  the reason in its intent, and run 2 is that task.
+- Run 2 recorded all four combined phases and opened pull request 4, CI green. The proof
+  said `done`, the `Stop` hook fired inside the 60-second idle wait, and the wrapper parked:
+  the marker named run `zh6ywBnj`, wrapper 61083 and group 61300. The receipt moved to its
+  delivered name only after the watcher had consumed handoff 1.
+- `bin/dux-round` with a one-line feedback printed `round 1 sent`, and the ledger read
+  `running`. The same wrapper took it up as run `zh6ywBnjr1` with `round=1` and `since` at the
+  delivered head `69217dd`. The same session committed `cc31717` on top, ran `/ship` again
+  (review, push behind the ancestor test, `gh pr edit`), and CI passed on the new head. A second
+  `done` came six minutes after the round was sent, and the session parked again.
+- `ps` after the round showed wrapper 61083 and group 61300, the same processes 22 minutes
+  on. Pull request 4 held two commits with `69217dd` an ancestor of the pushed head, and no
+  second pull request existed. Handoffs 1 and 2 were each consumed once, each naming its own
+  run.
+- `bin/dux-teardown` ended the parked wrapper and then the group, removed the worktree and
+  every state file for the task, and closed the tab, in three seconds. The ledger kept `done`
+  and pull request 4's url.
+- Run 3 set the idle wait to 1 second to force the timeout, and parked anyway: the `Stop` hook
+  wrote its file 0.906 seconds after the terminal line. Its worker had typed the reviewer
+  command without the skill's stdin redirect, and the reviewer waited for input until the
+  rehearsal driver ended it 16 minutes on. The worker then ran the command as the skill writes
+  it, the review came back clean, and pull request 5 went green. Teardown ended the parked
+  session and closed the tab.
+- Run 4 set the wait to 0 and took the timeout branch live. The wrapper logged `did not stop
+  within 0s of its terminal status; it is not parked`, stopped the session, and still
+  published the proved `done: PR` for pull request 6, CI green. It left no parked marker and
+  no group file, and the receipt kept the name the watcher checks. `bin/dux-round` then refused
+  with `the session for <id> is no longer in its tab (no wrapper is running for it)`, exit 2,
+  wrote no round file and left the ledger at `done`.
+
+Limits of that evidence. The round's `/ship` was the installed skill from `main`, because a
+personal skill shadows a project one; that skill already edits the pull request on a later
+push. This branch's edit-or-create lookup was proved in Task 18, by running the skill's own
+blocks against the same repository. Each worker ran `/ship` by copying its blocks, and two left
+a line out, as runs 1 and 3 show; the intents of runs 2 to 4 named what to keep. Each teardown
+had the branch's upstream set by hand first, because `/ship` pushes without one and teardown
+refuses a branch with none; that refusal predates this milestone. Dirty and unpushed teardown
+refusals are proved by `tests/dux-teardown.bats`, not live.
+
+Checks: `make check-branch`, so `lint-shell`, `lint-pipes`, the unit files and the eight matrix
+jobs under bash 5 and again under bash 3.2 on macOS, and the suite on Ubuntu 24.04 as a non-root
+user, are green apart from three failures `main` shares. The bash 3.2 pass first found that
+`tests/dux-round.bats` did not parse there, and the gate fixed it. `lint-identifiers` fails on
+this machine for the reason Task 10 records. On Ubuntu under a parallel run, two process tests
+fail now and then: the TERM test in `tests/dux-worker-wrap.bats`, and one tmux `pid` wait in
+`tests/backend-adapter.bats`. Both also fail on `main` in the same container under the same
+load, and this branch's copies passed the same repeats.
+
+Size: 1,976 added lines against the milestone's estimate of 1,750 to 2,450 and PR
+#46's own ~1,625, under the 2,500 cap.
+
+Delivered through `/ship` with the separate reviews this milestone owes, as the pull request
+that carries this note. The merged commit id and the installed-revision evidence go in the R2
+row after the operator merges.
 
 ## Task 20: Extend round purposes
 

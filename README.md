@@ -162,8 +162,12 @@ And any time, in any repo, with no Dux involved:
 3. The worker works. Dux sees state changes, not output.
 4. It finishes, gets stuck, or asks a question. You get one line.
 5. Dux checks the branch, the PR and CI before agreeing it is done.
-6. You review and merge. Dux tears the worktree down, refusing if anything there
-   is uncommitted or unpushed.
+6. You review, then merge or send feedback. Feedback goes to the same worker,
+   still waiting in its tab, and comes back as new commits on the same PR, checked
+   again before it counts. This needs `policy-stage` at `m2`; before that, feedback
+   is a fresh task.
+7. After you merge, Dux tears the worktree down and ends the waiting session,
+   refusing if anything there is uncommitted or unpushed.
 
 <details>
 <summary><strong>Why this shape — the four problems it is built around</strong></summary>

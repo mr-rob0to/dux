@@ -77,6 +77,129 @@ group_runs() {  # $1 pgid; 0 while the group holds a process that is not a zombi
   printf '%s\n' "$states" | awk '$0 !~ /^Z/ { alive = 1 } END { exit !alive }'
 }
 
+stop_pgid() {  # $1 pgid; TERM, then KILL; returns 1 if anything is still there
+  local i limit signals
+  # Tests only: nothing a test can start survives KILL, so without this the
+  # branch that refuses a survivor could never be seen to fail.
+  signals="${DUX_WRAP_STOP_SIGNALS:-on}"
+  group_runs "$1" || return 0
+  limit=$(( ${DUX_WRAP_STOP_GRACE_SECS:-10} * 5 ))
+  if [ "$signals" = on ]; then kill -TERM -- "-$1" 2>/dev/null || true; fi
+  i=0
+  while [ "$i" -lt "$limit" ]; do
+    group_runs "$1" || return 0
+    i=$((i + 1)); sleep 0.2
+  done
+  log "worker group $1 ignored TERM; killing it"
+  if [ "$signals" = on ]; then kill -KILL -- "-$1" 2>/dev/null || true; fi
+  i=0
+  while [ "$i" -lt 25 ]; do
+    group_runs "$1" || return 0
+    i=$((i + 1)); sleep 0.2
+  done
+  return 1
+}
+
+# A session parked after its proved delivery sits idle at its prompt, which is
+# not a worker at work. The wrapper writes state/<id>.parked only once that run's
+# turn has ended, naming the run, itself and the session's group, and it counts
+# only while all three still hold: the run is the task's current run, the
+# wrapper is the pid state/<id>.pid names and it is still running, and the group
+# is the one state/<id>.pgid names. Anything unreadable or out of step is not
+# parked, and whatever else is still running is judged as it always was.
+parked() {  # $1 id
+  local m="$DUX_STATE/$1.parked" run wrapper group
+  run="$(sed -n 's/^run=//p' "$m" 2>/dev/null)"
+  wrapper="$(sed -n 's/^wrapper=//p' "$m" 2>/dev/null)"
+  group="$(sed -n 's/^pgid=//p' "$m" 2>/dev/null)"
+  [ -n "$run" ] || return 1
+  [ "$run" = "$(sed -n 's/^run=//p' "$DUX_STATE/$1.run" 2>/dev/null)" ] || return 1
+  case "$group" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$group" = "$(cat "$DUX_STATE/$1.pgid" 2>/dev/null)" ] || return 1
+  [ "$wrapper" = "$(cat "$DUX_STATE/$1.pid" 2>/dev/null)" ] && pid_runs "$wrapper" "dux-worker-wrap $1"
+}
+
+# One Dux-managed worker at a time. Several long workers spend one subscription
+# between them, and the cheapest fix that actually works is to start the second
+# one later. This is a refusal and not a queue: no scheduler, no reservation, no
+# timer, no automatic start, and nothing to go wrong while nobody is watching.
+# The operator runs the same command again once the active task has stopped.
+#
+# Two signals, the ones Dux already keeps, read for every other registered task.
+#
+# The pidfile, for any task at all: the wrapper writes it and teardown clears
+# it, so a file naming a live process is the strongest evidence there is. It is
+# matched against the command line as well, the way dux-recover matches it,
+# because a pid the system handed to something else entirely would otherwise
+# stop the whole fleet rather than one task. A file that cannot be read, or that
+# holds something that is not a pid, blocks: Dux cannot prove the slot is free,
+# and guessing free is the one answer that puts two agents on one account.
+#
+# The container, only for a task Dux still records as running or stale. Both
+# backends keep the pane after the command in it exits, so a finished task that
+# has not been torn down still has one; reading that as a live worker would
+# refuse every spawn until the operator tidied up. Where Dux does believe a
+# worker is at work, a pane it can see is evidence and a stuck run blocks the
+# next start by design -- the refusal names it, and existing recovery clears it.
+#
+# A parked session is exempt from both signals, and only while its marker holds.
+# Its ledger reading still counts, so one whose result the watcher has not yet
+# applied still reads running, and its pane still blocks.
+fleet_busy() {  # $1 id; prints "<why> <other>" for a task whose worker may be alive, else returns 1
+  local id="$1" ledger="$DUX_ROOT/bin/dux-ledger" backend="$DUX_ROOT/bin/dux-backend" other opid opgid wpid g state at ids idle
+  # The roster is read here, on its own line, and not as a command substitution
+  # in the loop's here-document: a here-document throws the substitution's exit
+  # status away, so a ledger that could not enumerate would read as an empty
+  # fleet and let the start straight through. Same rule as below, one step
+  # earlier.
+  if ! ids="$("$ledger" list 2>/dev/null)"; then printf 'roster -'; return 0; fi
+  while IFS= read -r other; do
+    [ -n "$other" ] || continue
+    [ "$other" = "$id" ] && continue
+    opid="$DUX_STATE/$other.pid"
+    idle=""; if parked "$other"; then idle=yes; fi
+    if [ -z "$idle" ] && { [ -e "$opid" ] || [ -L "$opid" ]; }; then
+      wpid="$(cat "$opid" 2>/dev/null)" || { printf 'pidfile %s' "$other"; return 0; }
+      case "$wpid" in
+        ''|*[!0-9]*) printf 'pidfile %s' "$other"; return 0 ;;
+        *) if pid_runs "$wpid" "dux-worker-wrap $other"; then printf 'live %s' "$other"; return 0; fi ;;
+      esac
+    fi
+    # The harness's own group, which outlives its wrapper. A worker sits in a
+    # live session now, so a wrapper killed while the session is still at its
+    # prompt leaves a pidfile that reads gone and a tab full of agent. Reading
+    # only the pidfile would let a second worker start beside it. The pgid file
+    # is written once the group is known and cleared at teardown, and its
+    # unreadable forms fail closed exactly as the pidfile's do.
+    opgid="$DUX_STATE/$other.pgid"
+    if [ -z "$idle" ] && { [ -e "$opgid" ] || [ -L "$opgid" ]; }; then
+      g="$(cat "$opgid" 2>/dev/null)" || { printf 'pgidfile %s' "$other"; return 0; }
+      case "$g" in
+        ''|*[!0-9]*) printf 'pgidfile %s' "$other"; return 0 ;;
+        *) if kill -0 -- "-$g" 2>/dev/null; then printf 'live %s' "$other"; return 0; fi ;;
+      esac
+    fi
+    # Fail closed, the same way the pidfile does. A ledger or a backend that
+    # will not answer about another task is "could not tell", not "free", and
+    # answering "free" on no evidence is what puts two agents on one account.
+    # The refusal names which of the two went quiet, because they are fixed
+    # differently: one is the backlog, the other is the container runner.
+    if ! state="$("$ledger" get "$other" state 2>/dev/null)"; then
+      printf 'ledger %s' "$other"; return 0
+    fi
+    case "$state" in
+      running|stale)
+        if ! at="$("$backend" find "$other" 2>/dev/null)"; then
+          printf 'backend %s' "$other"; return 0
+        fi
+        [ -z "$at" ] || { printf 'live %s' "$other"; return 0; } ;;
+    esac
+  done <<EOF
+$ids
+EOF
+  return 1
+}
+
 # The one place a task id is accepted, so every script that builds a path from one
 # reaches the same answer. "." and ".." would resolve $DUX_TASKS/$id to a parent.
 valid_task_id() {  # $1 id; a finding when it is not one

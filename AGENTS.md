@@ -62,7 +62,8 @@ prints the count.
 
 ## Task lifecycle
 
-queued -> running -> (stale)* -> needs-decision | blocked | done | failed | dead | ended
+queued -> running -> (stale)* -> needs-decision | blocked | done | failed | dead | ended,
+and done -> running on a feedback round
 
 - Shapes: `plan` (Fable, docs-only PR), `ship` (implements and runs `/ship`),
   `scout` (report only).
@@ -82,10 +83,15 @@ queued -> running -> (stale)* -> needs-decision | blocked | done | failed | dead
   repository, and work in another repository is its own task, run after this
   one. While a worker is active the next task stays queued, and you dispatch it
   once capacity is proved free; never hand that back to the operator.
-- Feedback on a delivered pull request, answering a question in the live
-  session, and approving a plan in place are not built yet. Each is a fresh task
-  through `skills/dux-recover`. `bin/dux-doctor` prints the installed stage and
-  what it does not yet carry.
+- Feedback on a pull request a task delivered goes to the same worker once
+  `bin/dux-doctor` reports stage m2: write the operator's words to
+  `data/tasks/<id>/feedback.md` and run
+  `bin/dux-round <id> --file data/tasks/<id>/feedback.md`, as
+  `skills/dux-dispatch` says. Never type into the worker's tab.
+- Answering a question in the live session and approving a plan in place are
+  not built yet. Each is a fresh task through `skills/dux-recover`, as feedback
+  is before stage m2. `bin/dux-doctor` prints the installed stage and what it
+  does not yet carry.
 - Worker status protocol, proposed into the task channel:
   `working: ...`, `needs-decision: ...`, `blocked: ...`, `done: PR <url> | report`,
   `failed: ...`. Only `working:` lines reach `data/tasks/<id>/status.log` from
@@ -99,7 +105,8 @@ queued -> running -> (stale)* -> needs-decision | blocked | done | failed | dead
   the line is a duplicate; stop. Otherwise keep worker text behind its boundary:
   - `done`, `failed`: run `bin/dux-notify <id>`. Send its one line with
     PushNotification only for `done` with a PR and for `failed`. Tell the
-    operator in plain words.
+    operator in plain words. For `done` with a PR that line is
+    `Review, then merge or send feedback: <url>`.
   - `needs-decision`: push the `bin/dux-notify <id>` line, then use
     `skills/dux-recover` for the question itself. The notification says a
     decision is waiting; only recovery may show you what it is.
@@ -132,7 +139,7 @@ queued -> running -> (stale)* -> needs-decision | blocked | done | failed | dead
 
 ## Project Constitution
 
-Engineering standards for this project live in `docs/constitution.md` (v3.0.0).
+Engineering standards for this project live in `docs/constitution.md` (v4.0.0).
 Read it before planning or implementing changes; all work must comply.
 Key gates: TDD, with every important protection break-verified at the task that
 added it and never deferred to the ship gate, bash 3.2 and shellcheck clean, no
