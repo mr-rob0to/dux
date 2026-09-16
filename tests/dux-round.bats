@@ -202,7 +202,9 @@ refused() {  # $1 the finding, [$2 last to allow what Git printed before it]
   [ "$(sed -n 2p "$DUX_HOME/at-rename")" = - ]
   [ "$(dux-ledger get "$id" state)" = running ]; [ "$(dux-ledger get "$id" acked)" = - ]
   [ "$(find "$t" -name '.round-*')" = "" ]
-  expected="$(cat <<EOF
+  # Written to a file, not read through $(cat <<EOF): bash 3.2 reads an
+  # apostrophe in a here-document inside $(...) as an open quote.
+  cat > "$DUX_HOME/expected.md" <<EOF
 ## Round 1 for task $id: feedback on pull request $pr
 
 The operator has read pull request $pr and sends the feedback below. This is the same task, under the same brief, on the same branch, dux/$id. Never work on main.
@@ -216,8 +218,7 @@ The operator has read pull request $pr and sends the feedback below. This is the
 Rename the flag to --since.
 Keep {{BASE}} and the old name working.
 EOF
-)"
-  [ "$(cat "$t/round-1.md")" = "$expected" ]
+  [ "$(cat "$t/round-1.md")" = "$(cat "$DUX_HOME/expected.md")" ]
   # Asking again is refused: the task is running, and the round is not written twice.
   run dux-round "$id" --file "$feedback"
   [ "$status" -eq 2 ]
