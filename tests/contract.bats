@@ -537,3 +537,66 @@ EOF
   grep -qF 'force-with-lease' "$t"
   grep -qF 'ls-remote' "$t"
 }
+
+# ---- the review classification ---------------------------------------------
+# The gate is prose, so what can be tested is that the prose says the things the
+# rest of the milestone enforces. Each assertion below has a script behind it
+# that refuses when the prose is not followed.
+
+@test "the ship skill classifies the review before it opens the gate" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  classify="$(grep -n '^## Step 0.5' "$ship" | head -n 1 | cut -d: -f1)"
+  [ -n "$classify" ] || { echo "no classification step"; return 1; }
+  # The gate is opened inside that step, because open records the mode.
+  opened="$(grep -nF '"$SHIP_GUARD" open' "$ship" | head -n 1 | cut -d: -f1)"
+  [ "$opened" -gt "$classify" ] || { echo "the gate opens before the classification"; return 1; }
+  reviewed="$(grep -n '^## Step 6\.' "$ship" | head -n 1 | cut -d: -f1)"
+  [ "$opened" -lt "$reviewed" ] || { echo "the gate opens after the review"; return 1; }
+}
+
+@test "the ship skill names every sensitive category that forces separate reviews" {
+  step="$(unwrapped '/^## Step 0.5/,/^## Step 1\./p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  for word in Auth permissions Secrets migrations "Data integrity" Concurrency ordering; do
+    [[ "$step" == *"$word"* ]] || { echo "the classification step never names: $word"; return 1; }
+  done
+}
+
+@test "the ship skill reads the whole branch and escalates only upward" {
+  step="$(unwrapped '/^## Step 0.5/,/^## Step 1\./p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$step" == *'whole-branch diff'* ]]
+  [[ "$step" == *'Escalation only'* ]]
+  [[ "$step" == *'never turns a `separate` brief into a combined gate'* ]] \
+    || [[ "$step" == *'nothing here turns a `separate` brief into a combined gate'* ]]
+  # Uncertainty on either side is the careful answer, not a stop.
+  [[ "$step" == *'`unknown` on either side means separate'* ]]
+}
+
+@test "the ship skill says operational Markdown is not the docs-only exception" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'Operational instructions are not prose'* ]]
+  [[ "$ship" == *'skills, templates'* ]]
+}
+
+@test "ship-env owns the rule that turns a claim and a diff into a mode" {
+  env="$DUX_ROOT/skills/ship/ship-env"
+  [ -x "$env" ]
+  [ "$("$env" review-mode combined no)" = combined ]
+  [ "$("$env" review-mode combined yes)" = separate ]
+  [ "$("$env" review-mode unknown unknown)" = separate ]
+  [ "$("$env" review-mode separate no)" = separate ]
+  grep -qF '"$SHIP_ENV" review-mode' "$DUX_ROOT/skills/ship/SKILL.md"
+}
+
+@test "the pull request template asks which review mode ran" {
+  for t in "$DUX_ROOT/.github/PULL_REQUEST_TEMPLATE.md" "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md"; do
+    grep -qF 'Mode: combined | separate' "$t" || { echo "no mode line in $t"; return 1; }
+  done
+  # The bundled copy the gate falls back to is the one the repo ships.
+  diff -q "$DUX_ROOT/.github/PULL_REQUEST_TEMPLATE.md" "$DUX_ROOT/templates/PULL_REQUEST_TEMPLATE.md"
+}
+
+@test "the ship skill drops the Critical-only re-review exception" {
+  ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$ship" == *'Every fix commit gets a review that covers the changed code'* ]]
+  [[ "$ship" != *'no re-review unless a Critical was fixed'* ]]
+}

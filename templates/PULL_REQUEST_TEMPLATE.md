@@ -13,8 +13,10 @@ Suggested file order. What needs thought, what is mechanical.
 - Break-verification: which guard was broken, the failure it printed
 
 ## Reviews
-- Codex (model): N findings, fixed / logged
-- Security: areas clean, findings
+- Mode: combined | separate, and the one-line reason. Say if a sensitive category escalated it.
+- Correctness (reviewer and model): N findings, fixed / logged
+- Security: in a combined gate, the areas the one review checked and found clean; in a separate
+  gate, the audit's own findings and clean areas
 <details><summary>Full findings</summary>
 
 </details>

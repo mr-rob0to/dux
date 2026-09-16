@@ -14,10 +14,11 @@ everywhere: the base check, the review, and the PR target.
 
 Do not merge anything yourself.
 
-**This gate is the only place the reviews run.** Step 6 is the PR's one code review and step 7 is
-its security pass. Neither is run by hand before or after invoking this skill — a review run outside
-the gate either duplicates step 6 or, worse, becomes the excuse to skip the gate and lose step 7
-with it.
+**This gate is the only place the reviews run.** Step 6 is the PR's code review. Step 7 is its
+security pass, and whether there is one depends on the classification step 0.5 makes: a combined
+review covers correctness and security together, a separate one runs both passes. Neither is run by
+hand before or after invoking this skill — a review run outside the gate either duplicates step 6
+or, worse, becomes the excuse to skip the gate and lose the classification with it.
 
 **Docs-only changes skip the gate entirely.** If every file the branch touches is prose that nothing
 reads but a human — `.md`, comments, design mockups — stop here, open or update the PR, and say the
@@ -82,8 +83,9 @@ SHIP_ENV="$(dirname "$SHIP_GUARD")/ship-env"
   echo "finding: no runnable ship-env beside $SHIP_GUARD; the gate cannot read its reviewers" >&2
   exit 2
 }
-"$SHIP_GUARD" open
 ```
+
+The gate is opened in step 0.5, once the review mode is known, because `open` records the mode.
 
 **A `SHIP_GUARD` that is set but not runnable is a stop, not a fall-through.**
 A typo in the override, or a copy left behind before the install became a
@@ -99,6 +101,60 @@ two directories above itself. Its values come from `config/<key>`, falling back
 to the bundled `templates/config/<key>`, so the gate runs from a fresh clone
 before anyone has run the installer. A skill copied somewhere that is not a Dux
 checkout stops here rather than guessing.
+
+## Step 0.5. Classify the review
+
+Decide, before anything else runs, whether this branch gets **one combined review** or
+**separate correctness and security reviews**. Record the answer and the reason in the guard file,
+where the attestation and Dux's completion proof both read it.
+
+Two inputs, and neither one alone decides it.
+
+**What the brief claimed.** If a Dux brief is open, its Project section carries
+`- Review: combined|separate` and `- Review reason: <text>`. That is the classification Dux made
+when it dispatched the task. With no brief this is a standalone ship: make the classification here
+instead, from the planning rules, and say `unknown` if you cannot establish one.
+
+**What the branch actually changes.** Read the whole-branch diff against `$BASE` — every file, not
+the summary — and answer whether it touches any of these:
+
+- Authentication, authorization, or permissions
+- Secrets, credentials, or signing material
+- Schema migrations or backfills
+- Data integrity: anything that can corrupt, lose, or silently rewrite stored data
+- Concurrency, locking, or ordering between processes
+- Cross-repository or cross-system ordering, including deploy ordering
+
+```bash
+git diff --stat "origin/$BASE...HEAD"
+git diff "origin/$BASE...HEAD"
+```
+
+Then let `ship-env` combine the two. It is the one place the rule lives, so there is a single
+answer rather than a paragraph to obey:
+
+```bash
+CLAIM=combined     # or separate, or unknown when you cannot establish one
+SENSITIVE=no       # or yes, or unknown when you cannot tell from the diff
+MODE="$("$SHIP_ENV" review-mode "$CLAIM" "$SENSITIVE")"
+REASON="..."       # one line: what you read and why it lands where it does
+"$SHIP_GUARD" open "$MODE" "$REASON"
+```
+
+**Escalation only.** A sensitive change runs separate reviews however the brief classified it. The
+reverse never happens: nothing here turns a `separate` brief into a combined gate, and the guard
+would refuse the receipt anyway. `unknown` on either side means separate.
+
+**The exception is whole-branch, not per-file.** Combined applies only after the whole-branch diff
+has been read and found clear. One sensitive file in an otherwise ordinary branch makes the whole
+branch separate.
+
+**Operational instructions are not prose.** `AGENTS.md`, `CLAUDE.md`, skills, templates, and any
+configuration an agent or a tool consumes run the gate like code. Only files nothing but a human
+reads qualify for the docs-only skip above.
+
+Say in the pull request which mode ran and why. A gate that ran one reviewer without saying so
+reads exactly like one whose security pass failed to run.
 
 ## Step 1. Sync the base ref
 
@@ -183,15 +239,24 @@ A fresh reviewer that did not plan or implement the change. Never merge without 
 "$SHIP_GUARD" check checks
 ```
 
-**This is the PR's one code review.** Not one of several: no per-task reviews, no separate
-whole-branch review on top of it, and no re-review unless a Critical was fixed. If a review was
-already run by hand before this skill was invoked, that was the mistake — do not run a second one
-here; carry the first one's findings forward, note in the PR that it ran outside the gate, and go
-on to step 7, which is the pass a manual review does not cover. **Carry it forward only if `HEAD`
+**In a combined gate this is the whole review.** It covers correctness, regressions, tests,
+compatibility *and* the security concerns the diff raises, and there is no step 7 after it. Add the
+security coverage list from step 7 to the prompt below, and require the reviewer to say which of
+those areas it checked and found clean. In a separate gate this is the correctness half and step 7
+is the other.
+
+**Either way it is the PR's one correctness review.** Not one of several: no per-task reviews and no
+separate whole-branch review on top of it. If a review was already run by hand before this skill was
+invoked, that was the mistake — do not run a second one here; carry the first one's findings
+forward, note in the PR that it ran outside the gate, and go on. **Carry it forward only if `HEAD`
 has not moved since it ran.** Recording this phase claims the reviewer saw the commit going out, and
 a review of an earlier commit cannot make that claim. Name the commit that reviewer read and compare
 it to `git rev-parse HEAD`. If they differ, or if you cannot say which commit it read, the gate runs
 its own review here and the manual one counts for nothing.
+
+A carried-forward manual review does not cover a combined gate: a manual correctness read is not a
+security pass, and in a combined gate there is no later step that supplies one. Run the gate's own
+review here whenever the mode is combined.
 
 The reviewer is not named here. It is a command line the gate reads from its own
 install, so a stranger who cloned Dux gets a working reviewer and the operator
@@ -241,11 +306,15 @@ a reviewer that found nothing, and the second reading is the one that ships bugs
 
 Then:
 
-- **Verify every finding yourself** before acting on it. Reviewers are often right
-  and sometimes confidently wrong.
+- **Verify every finding yourself** before acting on it, against the code and a reachable failure
+  or attack path. Reviewers are often right and sometimes confidently wrong.
+- **Verified Critical or High findings block delivery**, including ones a reviewer labels
+  Important. Fix lower findings or defer them explicitly in the body with a reason.
 - Where a proposed fix is really a design decision, surface it to the user. Do not decide.
-- After material fixes, re-review **scoped to the new commits only**, so round two
-  does not re-litigate round one.
+- **Every fix commit gets a review that covers the changed code**, scoped to the new commits, so
+  round two does not re-litigate round one. There is no Critical-only exception: the guard already
+  proves which commit each phase saw, and a fix that no reviewer read is a commit going out unread
+  whatever its severity was.
 
 **Fixing anything is a fix pass.** Run `"$SHIP_GUARD" fix-pass`, make the fix,
 then record every phase again from step 4 onward: the checks, this review, and
@@ -266,11 +335,18 @@ the same dodge**: `open` clears every phase and zeroes the count, and it belongs
 only to a fresh gate after a revert, never to getting past a refusal.
 
 ```bash
-[ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD review
+[ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD review "$MODE"
 "$SHIP_GUARD" record review
 ```
 
-## Step 7. Security review (REQUIRED)
+`$DUX_SHIP_RECORD` takes the mode on its first call only, which is step 4's `checks`; passing it
+again here is harmless and keeps the two calls reading the same. Dux refuses a combined mode for a
+task it classified separate, so an escalation always goes through and a downgrade never does.
+
+**In a combined gate, skip step 7 and go to step 8.** There is no security phase to record and the
+guard refuses one.
+
+## Step 7. Security review (REQUIRED in a separate gate)
 
 Separate pass, separate reviewer. The correctness review in step 6 is not a
 security review and does not substitute for one, and a clean step 6 is not a
@@ -280,12 +356,15 @@ reason to skip this.
 "$SHIP_GUARD" check review
 ```
 
-Run this on **every** ship, not only when the diff "looks security-relevant".
-Auth bugs arrive inside ordinary refactors, and deciding case by case is itself
-the failure mode: the judgment call "this one doesn't need it" is the one that
-gets made wrong. There is no per-release alternative that replaces it — a
-release-time pass over the accumulated diff is *in addition to* these, not
+Run this whenever step 0.5 landed on `separate`, which is every branch touching a named sensitive
+category, every branch whose classification could not be established, and every branch a brief
+classified separate. Inside that set there is no further case-by-case judgment: "this migration
+doesn't really need it" is the call that gets made wrong. There is no per-release alternative that
+replaces it — a release-time pass over the accumulated diff is *in addition to* these, not
 instead of them.
+
+A combined gate does not skip this coverage, it moves it: the list below goes into step 6's prompt
+and that reviewer reports against it.
 
 The security reviewer comes from the same place as the correctness one:
 
@@ -344,11 +423,12 @@ have to guess:
 header, or a header with neither a finding nor the sentinel under it, is a stop.
 
 **A security fix is a fix pass like any other.** `"$SHIP_GUARD" fix-pass`
-clears the checks, the code review and this audit together, and all three are
-recorded again before the push. The code review is not spared: a fix answering
-a security finding is new code, so the code reviewer re-runs scoped to the fix
-commits, exactly as it would for any other Critical. Recording `security` again
-asserts the audit re-ran over those commits.
+clears this gate's phases together, and every one of them is recorded again
+before the push. The code review is not spared: a fix answering a security
+finding is new code, so the code reviewer re-runs scoped to the fix commits.
+Recording `security` again asserts the audit re-ran over those commits. A fix
+pass never changes the mode: a fix answers a review, it does not reclassify the
+branch.
 
 ```bash
 [ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD security
@@ -395,7 +475,7 @@ exact commit going out. `push-ok` is the last thing before every push, this one
 and any later one.
 
 ```bash
-"$SHIP_GUARD" check security
+[ "$MODE" = combined ] || "$SHIP_GUARD" check security
 "$SHIP_GUARD" push-ok
 ```
 
@@ -459,10 +539,15 @@ which template was filled**, or that the bundled one stood in. Implying GitHub
 would have picked the same one is a guess.
 
 Fill the template's own sections. Between them the body must carry: summary of
-the change, test evidence (actual command output, not "tests pass"), the
-correctness-review and security-review findings with how each was resolved, an
-explicit note when an audit came back clean, and anything deliberately deferred.
-**Verbose material goes inside `<details>`** so the body stays readable.
+the change, test evidence (actual command output, not "tests pass"), **which
+review mode ran and the reason for it**, the review findings with how each was
+resolved, an explicit note when a review came back clean, and anything
+deliberately deferred. **Verbose material goes inside `<details>`** so the body
+stays readable.
+
+**Name the mode in words, not only in the attestation.** A combined gate ran one reviewer, and a
+reader who cannot see that stated reads two steps and assumes a security pass happened. Say which
+mode, why, and — in a combined gate — that the one review covered the security areas too.
 
 If the brief's Project section carries an `- Issue: <owner>/<repo>#<n>` line, the
 body ends with `Closes #<n>` on its own line, the last line of prose. Take the
@@ -585,7 +670,9 @@ recorder verifies the pull request and its checks before it accepts this one.
 | Tests, lint, or typecheck red after a genuine fix attempt | Shipping red is not shipping |
 | Reviewer raised a design question, not a bug | That call is the user's |
 | Critical or High security finding | Must be fixed and re-audited before the PR opens |
-| Security review could not be run | An unaudited PR is not shipped |
+| Security review could not be run in a separate gate | An unaudited PR is not shipped |
+| The review mode could not be established | Separate is the answer, not a reason to stop, but a gate that cannot say why is |
+| A sensitive category found after a combined gate opened | Open a fresh gate on separate; a combined receipt cannot satisfy it |
 | A fix would need to touch shared or unrelated code paths | Scope expansion needs approval first |
 | Anything irreversible or production-facing | Needs explicit go-ahead |
 | Guard helper cannot be resolved | An unguarded run is the failure the guard exists to remove |
@@ -612,8 +699,11 @@ recorder verifies the pull request and its checks before it accepts this one.
 - "The reviewer flagged it, so I'll just fix it." (Verify first.)
 - "push-ok said to record it again, so I'll record it again." (That is a fix pass.)
 - "The reviewer came back empty, so there is nothing to fix." (No header, no review.)
-- "The correctness review covered security too."
-- "This diff doesn't touch auth, so a security pass is overkill."
+- "The correctness review covered security too." (Only if the gate is combined and it was told to.)
+- "This diff doesn't touch auth, so a security pass is overkill." (Read the whole branch before saying that.)
+- "Only one file in the branch touches permissions, the rest is ordinary."
+- "The brief said combined, so it is combined." (The diff decides too, and it can only escalate.)
+- "I could not tell whether it was sensitive, so I went with combined."
 - "I'll open the PR now and file the Critical as a follow-up issue."
 - "It's a small change, the full suite is overkill."
 - "I'll do the doc update as a follow-up PR."
@@ -623,6 +713,13 @@ All of these mean: go back and do the step properly.
 
 ## Tool notes
 
+- **`ship-env review-mode <claim> <sensitive>` is where the classification rule lives.** It is not
+  a classifier: the gate supplies what the brief claimed and what it read in the whole-branch diff,
+  and this returns `combined` only for a `combined` claim over a `no` verdict. Every other pair,
+  including both kinds of `unknown`, is `separate`.
+- **The mode is recorded by `ship-guard open <mode> <reason>`**, which is why the gate is opened in
+  step 0.5 and not step 0. It travels from there into `push-ok`, the attestation and Dux's
+  completion proof, so all four agree on what ran.
 - **Both reviewers come from `ship-env`**, which reads `config/reviewer` and
   `config/security-reviewer` in the Dux checkout the skill was installed from and falls back to
   the bundled `templates/config/` copies. Neither is named in this file, so changing the
