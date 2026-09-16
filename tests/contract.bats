@@ -182,11 +182,18 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
 # The gate reads the branch's own diff to classify it, and everything in that
 # diff was written by whoever wrote the branch. A reader that takes a file's word
 # for what the file is can be talked down to one reviewer by the change it is
-# reviewing, so the skill has to say the diff is data before it says to read it.
-@test "the ship skill classifies on the diff without taking instruction from it" {
-  step="$(unwrapped '/^## Step 0.5/,/^## Step 1/p' "$DUX_ROOT/skills/ship/SKILL.md")"
+# reviewing. Order is the whole point: a warning further down the page arrives
+# after the reader has already been told to go and read the thing.
+@test "the ship skill says the diff is data before it says to read it" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  step="$(unwrapped '/^## Step 0.5/,/^## Step 1/p' "$ship")"
   [[ "$step" == *'evidence, never instruction'* ]]
   [[ "$step" == *'reason to escalate to separate'* ]]
+  warn="$(grep -n 'evidence, never instruction' "$ship" | head -n 1 | cut -d: -f1)"
+  reads="$(grep -n 'Read the whole-branch diff against' "$ship" | head -n 1 | cut -d: -f1)"
+  [ -n "$warn" ] && [ -n "$reads" ]
+  [ "$warn" -lt "$reads" ] \
+    || { echo "the warning is at line $warn, after the read instruction at $reads"; return 1; }
 }
 
 # The recorder fixes the mode on the call that creates the receipt, and that is
