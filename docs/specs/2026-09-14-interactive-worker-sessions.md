@@ -338,6 +338,9 @@ waits at the prompt. Three ways a run ends:
    (`:399`). It then proves and publishes exactly as today. The tab keeps its scrollback;
    only the live session is gone. This is deliberate: the protocol has one terminal line
    per run, and a session left alive after it would be a second run Dux has no record of.
+   Superseded for `done: PR <url>` on 2026-09-15: the wrapper proves first and then
+   parks the session for the operator's feedback (`2026-09-15-feedback-rounds-on-a-delivered-pr.md`,
+   section 3). Every other ending still stops the group here.
 2. **The operator ends the session** (`/exit`, or Ctrl-C twice). The harness is gone at
    the next poll with no terminal line: `ended: the session ended without a terminal
    status`. Recovery's `ended()` then looks for a result the same way it does today.
@@ -466,6 +469,8 @@ That one check is the only change to `another_worker`.
 - **Milestone 7 (resume).** It changes the adapter signature to add a session id and a
   first-or-resume flag. `worker_launcher` takes the same arguments and grows with it;
   whichever lands second rebases.
+  Superseded on 2026-09-15: a round is one line typed into the live session and no
+  session id is stored or read (`2026-09-15-feedback-rounds-on-a-delivered-pr.md`, section 12).
 - **Tests.** The wrapper's tests run the fake harness inside a real tmux window under the
   suite's isolated socket directory (`tests/helpers/setup.bash:7-55`), which is what the
   wrapper now expects. The fake reads its script from a file, so the terminal it gets is
