@@ -21,14 +21,21 @@
   worktree, gate and pull request (#45).
 - Merges as one ship PR of nine tasks. When it merges, a worker with an open pull request
   waits in its tab; `bin/dux-round <id> --file <f>` sends the operator's feedback into it.
+- **Amended 2026-09-15** by the [Dux simplification amendment](../specs/2026-09-15-dux-simplification-rollout.md),
+  section 6.1, and delivered as milestone 2 of the
+  [rollout plan](dux-simplification-rollout.md), tasks 11 to 19. All nine tasks below are
+  retained, none moves to a follow-up, and this file keeps its own historical evidence:
+  the review findings, the decisions and every box already ticked stand as written.
 
 **Estimated diff:** ~1,625 added lines across 9 tasks, re-cut down from ~1,900. The cap
 is 2,500 lines or 12 tasks (constitution principle 1). Sizing procedure: roadmap, "How a
 milestone is sized". Per task, from this repository's density (the wrapper's bats file is
 43 tests, spawn's 32): Task 1 ~120, Task 2 ~55 net, Task 3 ~300, Task 4 ~170, Task 5
-~220, Task 6 ~300, Task 7 ~100, Task 8 ~60, Task 9 ~300. Stop rule: if the running total passes 2,200 before Task
-8, Task 8 moves to a follow-up and this header says so; until then a round's `/ship`
-stops at `gh pr create` and the milestone is not usable, so Task 8 is not optional.
+~220, Task 6 ~300, Task 7 ~100, Task 8 ~60, Task 9 ~300. **Amended:** Task 8 does not
+move to a follow-up. A round's `/ship` stops at `gh pr create` without it, so same-PR
+updating is required support and cannot be deferred to meet a size limit. If the running
+total passes 2,200 before Task 8, reduce incidental scope or obtain a revised split that
+keeps all nine tasks together; do not drop Task 8.
 
 **First, before Task 1 is written:** measure `herdr pane run` against a live Claude Code
 session in a pane, not a shell (spec section 5, "Herdr, not measured"). Everything from
@@ -133,9 +140,11 @@ in `tests/dux-env.bats`.
 **Interface:** spec section 3. A third hook in the settings template touches
 `__CHANNEL__/stopped` on `Stop` only; `DUX_WRAP_IDLE_SECS` (default 60) bounds the wait
 for that file. When the published line is `done: PR <url>` the wrapper does not exit. It
-skips `stop_pgid` and `cleanup_channel`, renames `state/<id>.ship-receipt` to
-`state/<id>.ship-receipt.delivered`, logs `worker for <id> parked in its tab; feedback
-goes through dux-round` once, and then polls once a second for
+skips `stop_pgid` and `cleanup_channel`, **writes the run-bound parked marker only after
+this run's `Stop` event and leaves `state/<id>.ship-receipt` where the watcher validates
+it until that run's handoff is consumed** (amended; spec section 3), logs
+`worker for <id> parked in its tab; feedback goes through dux-round` once, and then polls
+once a second for
 `data/tasks/<id>/round-<n>.md`, `n` one above its own count of rounds run. The poll
 writes nothing to the log per pass. This task stops at the wait: the loop body is Task 5,
 so here the loop returns and the wrapper exits 0 once the pass budget in the test-only
@@ -174,9 +183,10 @@ appears and at the bound when it does not, and the proof runs in both cases.
 **Files:** `bin/dux-env` (`fleet_busy`), `bin/dux-spawn`, `bin/dux-teardown`,
 `tests/dux-spawn.bats`, `tests/dux-teardown.bats`, `tests/e2e-supervise.bats`.
 
-**Interface:** spec sections 7 and 8. `fleet_busy` reads the other task's ledger state
-before its pgid file and skips the pgid signal when that state is `done`; every other
-reading is unchanged, and an unreadable ledger still refuses. `dux-teardown` on a `done`
+**Interface:** spec sections 7 and 8. **Amended:** `fleet_busy` exempts the other task on
+its run-bound parked marker, not on a ledger state of `done`, and the exemption covers the
+wrapper pid and the pgid together. Every other reading is unchanged; an unreadable ledger,
+an unreadable marker and a marker naming another run all still refuse. `dux-teardown` on a `done`
 task ends two processes in order: the parked wrapper named by `state/<id>.pid`, with
 `TERM`, then the harness group through `stop_pgid`. The wrapper goes first so it cannot
 pick up a round file that arrives mid-teardown. Either one surviving is the existing
@@ -278,7 +288,9 @@ refusal; a ninth round is refused with the file count at eight.
 
 **Files:** `bin/dux-result`, `tests/dux-result.bats`.
 
-**Interface:** spec section 6. `verify` reads `round` and `since` from the result
+**Interface:** spec section 6, **as amended**: a round's receipt carries its own review
+mode and the phases that mode requires, not a fixed five, and a combined receipt never
+satisfies a task classified separate. `verify` reads `round` and `since` from the result
 context. `round` absent or `0`: unchanged. Otherwise `since` must be forty hex
 characters (a finding, it is Dux's own file) and an ancestor of `refs/heads/<branch>`
 (else `the round rewrote history the operator already reviewed on <branch>`, exit 1).
@@ -340,8 +352,10 @@ section 7). `ARCHITECTURE.md`: `dux-round` and `prompt` in the component list, t
 in the dispatch flow, the parked ending in "The terminal handoff" (its pinned sentences
 kept), and `done` in the wake table. Constitution principle 6: after "neither reads it
 nor relays it", one clause: the one thing Dux writes there is a fixed line per round
-naming a file it rendered; version 2.0.9, Last Amended today, with a paragraph in the
-governance history like 2.0.8's.
+naming a file it rendered. **Amended:** the version is not prescribed here. Bump whatever
+version milestone 1 of the rollout left, by the governance rule in force when this lands,
+with Last Amended set to that day and a paragraph in the governance history like the
+previous entry's. Do not write or restore 2.0.9 because this file once named it.
 
 **Acceptance:** `tests/contract.bats` pins the new `AGENTS.md` wake wording and the
 `dux-dispatch` feedback section; every existing pin still holds; `AGENTS.md` is under
