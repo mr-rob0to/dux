@@ -179,6 +179,15 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   done
 }
 
+# The recorder fixes the mode on the call that creates the receipt, and that is
+# the checks call. A skill that stopped passing it there would open every
+# receipt as separate, and each combined gate would deliver four phases against
+# a receipt that wants five: correct reviews, unprovable result.
+@test "the ship skill opens the receipt with the mode it classified" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  grep -qF '$DUX_SHIP_RECORD checks "$MODE"' "$ship"
+}
+
 @test "the ship skill leaves the last phase for the recorder to settle" {
   ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
   [[ "$ship" == *'green and non-empty'* ]]

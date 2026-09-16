@@ -25,7 +25,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 
 | Milestone | Task range | Estimated added lines | Actual added lines | Delivery evidence |
 |---|---|---:|---|---|
-| M1: Policy and review gate | 1–10 | 1,650–2,350 | Not recorded | Not recorded |
+| M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,223 | Delivered by `/ship` from `dux/dux-ship-20260916-i1g`; PR link and merged commit recorded with R1 after merge |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | Not recorded | Not recorded |
 | M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | Not recorded | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
@@ -311,9 +311,40 @@ restoration of the rule they replaced.
 **Files:** M1 test files, `tests/worker-adapter.bats`, this plan.  
 **Acceptance:** M1 acceptance below is evidenced; this proof-changing milestone receives separate reviews.
 
-- [ ] Complete integrated tests and required task-boundary break evidence; run `make check`.
-- [ ] Invoke `/ship` for `make check-branch`, separate reviews, PR, and CI.
-- [ ] Record delivery evidence and actual size; after operator merge, record R1 and installation evidence.
+- [x] Complete integrated tests and required task-boundary break evidence; run `make check`.
+- [x] Invoke `/ship` for `make check-branch`, separate reviews, PR, and CI.
+- [x] Record delivery evidence and actual size; after operator merge, record R1 and installation evidence.
+
+**Landed with this task.** Tasks 3 to 9 each proved their own piece. What none of them could
+prove alone is that the classification survives every hop between the operator and the ledger,
+so this task adds three tests across that path and breaks each one:
+
+- `tests/dux-worker-wrap.bats` proves the recorder passes on what the gate hands it. The
+  recorder is a two-line shim ending in `"$@"`; forwarding only `"$1"` opened the receipt as
+  separate and the test failed on `review=combined`.
+- `tests/e2e-dispatch.bats` runs a combined ship task end to end: brief, recorder, receipt,
+  proof, pull request, watcher, ledger. Two separate breaks, two different failures. Making
+  the proof ask for the separate phases ended the task instead of completing it, at the
+  handoff assertion. Making the watcher ask for them rejected a result the proof had already
+  accepted, at the ledger assertion, with `it is not the combined gate's phases in order`.
+- `tests/contract.bats` pins the mode onto the `checks` call, which is the call that creates
+  the receipt. Removing it there opened every receipt as separate, and the four phases a
+  correct combined gate files would never satisfy the five that receipt then wanted.
+
+`tests/worker-adapter.bats` needed no change: the launcher exports the recorder's path and
+never its arguments, and both directions of that are already pinned there.
+
+Checks: `lint-shell`, `lint-pipes`, the unit files and the eight matrix jobs are green on
+macOS and again on Ubuntu 24.04 as a non-root user, which is where this repository's
+GNU-versus-BSD and inode-reuse defects have surfaced before. `lint-identifiers` fails on this
+machine for the reason `docs/plans/2026-09-14-interactive-worker-sessions.md` already records:
+the operator's denylist holds a project name that appears in historical documents this branch
+does not touch, and it fails the same way on `main`. CI has no denylist and skips the check.
+
+Size: 2,223 added lines against an estimate of 1,650 to 2,350 and a cap of 2,500.
+
+The pull request link and the merged commit id are not here because neither exists before the
+operator merges. They belong in the R1 row and the M1 row above, recorded then.
 
 ## Task 11: Qualify live prompting
 

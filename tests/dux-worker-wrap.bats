@@ -42,8 +42,8 @@ open_tab() {  # [$1 backend]
 }
 
 # A task with a brief, rendered settings, a worktree, and the tab its worker runs in.
-prepare() {  # $1 shape; sets $id and $wt
-  id="$(fixture_task proj "$1")"
+prepare() {  # $1 shape, [$2 combined]; sets $id and $wt
+  id="$(fixture_task proj "$1" '' "${2:-}")"
   wt="$(dux-worktree create "$id")"
   export FAKE_WORKER_SCRIPT="$DUX_HOME/state/script"
   export DUX_WRAP_POLL_SECS=1 DUX_HEARTBEAT_SECS=1
@@ -629,6 +629,24 @@ EOF
   # One phase is not five and no pull request answers for this branch, so the
   # ship this worker called done ends rather than completing.
   [ "$(handoff_event)" = ended ]
+}
+
+# The classification lives in the brief, and the receipt is the only place the
+# proof can read it from. Between them sits a two-line shim: if it forwards the
+# phase and drops what follows, every receipt opens as separate, and a combined
+# gate that did exactly the reviews it owed then files four phases against a
+# receipt that wants five.
+@test "the recorder carries the gate's classification through to the receipt" {
+  prepare ship combined
+  printf 'run "$DUX_SHIP_RECORD" checks combined\nrun "$DUX_SHIP_RECORD" review combined\nrun "$DUX_SHIP_RECORD" pr\nstatus done: PR https://example.invalid/pr/1\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  wrap
+  r="$DUX_HOME/state/$id.ship-receipt"
+  grep -qx 'version=2' "$r"
+  grep -qx 'review=combined' "$r"
+  # pr straight after review is the proof the mode arrived: a receipt that had
+  # defaulted to separate wants security in that place and refuses this one.
+  [ "$(sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$r" | tr '\n' ' ')" = "checks review pr " ]
 }
 
 @test "a push to the base branch from inside the worker is refused by the worktree's hook" {
