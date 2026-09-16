@@ -282,9 +282,28 @@ combined gate. Break-verified, six breaks, six distinct failures, pasted in the 
 **Files:** `AGENTS.md`, `docs/constitution.md`, policy skills listed above, `docs/plans/TEMPLATE.md`, `docs/ARCHITECTURE.md`, `README.md`, affected existing specs, `docs/plans/2026-09-10-dux-m7-resume-any-worker.md`, `docs/plans/2026-09-10-dux-m8-plan-ready-and-implement.md`, `docs/plans/2026-09-10-dux-m9-plan-page-and-rule.md`, `tests/contract.bats`, this plan.  
 **Acceptance:** M1 instructions agree; unsupported feedback, answers, and approval retain recovery instructions. `AGENTS.md` stays inside its tested 150-line cap.
 
-- [ ] Make the next major constitution amendment and align the plan template's inherited testing/review instructions.
-- [ ] Update current behavior and supersession notices without marking historical work complete. The superseded M7-M9 records are the three plan files named above, not specs.
-- [ ] `AGENTS.md` is 130 lines against a 150-line cap `tests/contract.bats` enforces, and Tasks 19 and 29 add to it too. Point at the skills rather than restating routing, review and testing rules, and say in the PR what the file gained and lost.
+- [x] Make the next major constitution amendment and align the plan template's inherited testing/review instructions.
+- [x] Update current behavior and supersession notices without marking historical work complete. The superseded M7-M9 records are the three plan files named above, not specs.
+- [x] `AGENTS.md` is 130 lines against a 150-line cap `tests/contract.bats` enforces, and Tasks 19 and 29 add to it too. Point at the skills rather than restating routing, review and testing rules, and say in the PR what the file gained and lost.
+
+**Landed with this task.** Constitution 3.0.0, MAJOR because it redefines two principles:
+principle 3 narrows break-verification from every new test to every important protection
+and says which failures count, and principle 9 replaces two reviews on every branch with
+a classified mode and replaces the Critical-only re-review with a review on every fix
+commit. Principle 1 gains the delegation and session-boundary rules rather than losing
+any. The governance note says what the change costs, so the tradeoff is weighable rather
+than buried.
+
+`AGENTS.md` went from 130 lines to 141, inside the 150-line cap. It gained review
+classification at dispatch, repository routing with the queue held by Dux, and a line
+naming what this stage does not carry yet. It lost the copy of the dispatch skill's
+six-line plan test, which is now a pointer.
+
+The three M7-M9 plans carry a supersession notice and are otherwise untouched: no box
+moved in either direction, which is what keeps them a record. Ten contract tests pin the
+new policy across the constitution, `AGENTS.md`, the two skills that carry it, the plan
+template and the three superseded plans; four of them were confirmed against a deliberate
+restoration of the rule they replaced.
 
 ## Task 10: Verify and deliver M1
 

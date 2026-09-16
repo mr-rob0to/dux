@@ -5,6 +5,11 @@ description: Register a repository with Dux so tasks can be dispatched to it. Us
 
 # dux-project
 
+What this registry records is what Dux routes on: a goal is matched to a
+registered project from these facts, and the operator is asked only when two of
+them read equally well. A project registered with a vague name or the wrong base
+is a routing mistake later, so get both right here.
+
 ## Register
 
 1. Confirm the absolute path exists and is a git clone with an `origin` remote.

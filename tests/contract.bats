@@ -111,7 +111,7 @@ load helpers/setup
 # line so a reflow never turns a rule that is present into a red test.
 unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
 
-@test "the constitution declares the trusted-local-worker boundary at version 2" {
+@test "the constitution declares the trusted-local-worker boundary at version 3" {
   p6="$(unwrapped '/^### 6\./,/^### 7\./p' "$DUX_ROOT/docs/constitution.md")"
   [[ "$p6" == *'trusted to act with the operator account'* ]]
   [[ "$p6" == *'untrusted application data'* ]]
@@ -122,7 +122,9 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   # this one keeps the prose true, that one keeps the code true.
   [[ "$p6" == *"worker's own tab is the operator's screen"* ]]
   [[ "$p6" == *'neither reads it nor relays it'* ]]
-  grep -qE '^\*\*Version\*\*: 2\.[0-9]+\.[0-9]+ ' "$DUX_ROOT/docs/constitution.md"
+  # Pinned to the major on purpose: the next MAJOR amendment has to come back
+  # here and read principle 6 again before it can change this line.
+  grep -qE '^\*\*Version\*\*: 3\.[0-9]+\.[0-9]+ ' "$DUX_ROOT/docs/constitution.md"
 }
 
 # The constitution named one denylist file and put the account name in it, while
@@ -599,4 +601,120 @@ EOF
   ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
   [[ "$ship" == *'Every fix commit gets a review that covers the changed code'* ]]
   [[ "$ship" != *'no re-review unless a Critical was fixed'* ]]
+}
+
+# A plan file's banner is a blockquote, so the marker has to go before the
+# wrapping does or every rule in it reads with a stray "> " in the middle.
+unquoted() { sed 's/^> //' "$1" | tr '\n' ' ' | tr -s ' '; }
+
+# ---- what milestone 1 of the simplification rollout put in the documents ---
+# These pin the policy, not its wording: each one reads a normalized line and
+# looks for the rule it has to find there. The failure mode they exist for is a
+# later edit that quietly restores a rule this milestone removed, in one
+# document while the other four still say the new thing.
+
+@test "the constitution's review principle owes a mode, not two reviews every time" {
+  p9="$(unwrapped '/^### 9\./,/^## Quality Gates/p' "$DUX_ROOT/docs/constitution.md")"
+  [[ "$p9" == *'the reviews the branch owes'* ]]
+  [[ "$p9" == *'classified before the gate opens'* ]]
+  [[ "$p9" == *'one combined review whose prompt covers both'* ]]
+  # Every way of not knowing is the careful answer, and nothing spells combined
+  # by omission.
+  [[ "$p9" == *'missing, unreadable, or uncertain means separate'* ]]
+  [[ "$p9" == *'no way of saying nothing that means combined'* ]]
+  [[ "$p9" == *'says which mode ran and why'* ]]
+  # The exception this milestone removed, in the place that used to carry it.
+  [[ "$p9" == *'Every fix commit gets a review that covers the changed code'* ]]
+  [[ "$p9" != *'Only a fixed Critical earns a re-review'* ]]
+}
+
+@test "the constitution names every category that forces a separate security pass" {
+  p9="$(unwrapped '/^### 9\./,/^## Quality Gates/p' "$DUX_ROOT/docs/constitution.md")"
+  for word in authentication permissions secrets migrations "data integrity" concurrency "cross-system ordering"; do
+    [[ "$p9" == *"$word"* ]] || { echo "principle 9 never names: $word"; return 1; }
+  done
+}
+
+@test "the constitution owes break-verification per protection, and says which ones" {
+  p3="$(unwrapped '/^### 3\./,/^### 4\./p' "$DUX_ROOT/docs/constitution.md")"
+  [[ "$p3" == *'Every important protection a change adds'* ]]
+  [[ "$p3" == *'Distinct protections need distinct observed failures'* ]]
+  [[ "$p3" == *'break that leaves the test green is a finding'* ]]
+  # Narrowing it is only safe if the narrow half is spelled out.
+  for word in validation "authentication" "loses or corrupts data" money concurrency cleanup "security defect"; do
+    [[ "$p3" == *"$word"* ]] || { echo "principle 3 never names: $word"; return 1; }
+  done
+  [[ "$p3" == *'happy-path behavior get normal test-first evidence and no deliberate break'* ]]
+  # And the timing it did not narrow.
+  [[ "$p3" == *'at the task boundary, not at the ship gate'* ]]
+  gates="$(unwrapped '/^## Quality Gates/,/^## Governance/p' "$DUX_ROOT/docs/constitution.md")"
+  [[ "$gates" == *'Every important protection the milestone added was break-verified at the task that added it'* ]]
+}
+
+@test "the amendment that redefined two principles is recorded as a major one" {
+  gov="$(unwrapped '/^## Governance/,$p' "$DUX_ROOT/docs/constitution.md")"
+  [[ "$gov" == *'Version 3.0.0 redefines two principles'* ]]
+  [[ "$gov" == *'Principle 3 narrowed'* ]]
+  [[ "$gov" == *'Principle 9 redefined'* ]]
+  # A MAJOR that does not say what it costs is a MAJOR nobody can weigh.
+  [[ "$gov" == *'fewer independent reviews may lose findings'* ]]
+}
+
+@test "AGENTS.md classifies the review at dispatch and never downgrades it" {
+  life="$(unwrapped '/^## Task lifecycle/,/^## Talking to the operator/p' "$DUX_ROOT/AGENTS.md")"
+  [[ "$life" == *'--review separate'* ]]
+  [[ "$life" == *'--review combined --review-reason'* ]]
+  [[ "$life" == *'Say nothing and it is separate'* ]]
+  [[ "$life" == *'escalates on what it finds in the diff but never downgrades'* ]]
+  [[ "$life" == *'concurrency or cross-system ordering'* ]]
+  # And it points at the skill for the plan test rather than keeping a copy.
+  [[ "$life" == *'`skills/dux-dispatch` holds the six-line test'* ]]
+  grep -q 'v3.0.0' "$DUX_ROOT/AGENTS.md"
+}
+
+@test "AGENTS.md routes to a repository itself and keeps the queue" {
+  life="$(unwrapped '/^## Task lifecycle/,/^## Talking to the operator/p' "$DUX_ROOT/AGENTS.md")"
+  [[ "$life" == *'Pick the repository from `data/projects.md`'* ]]
+  [[ "$life" == *'ask only when it is genuinely ambiguous'* ]]
+  [[ "$life" == *'never hand that back to the operator'* ]]
+}
+
+@test "what this stage does not carry is named, and points at recovery" {
+  life="$(unwrapped '/^## Task lifecycle/,/^## Talking to the operator/p' "$DUX_ROOT/AGENTS.md")"
+  [[ "$life" == *'are not built yet'* ]]
+  [[ "$life" == *'fresh task through `skills/dux-recover`'* ]]
+  rec="$(unwrapped '1,$p' "$DUX_ROOT/skills/dux-recover/SKILL.md")"
+  [[ "$rec" == *'not built yet'* ]]
+  [[ "$rec" == *'a fresh task with the answer or the feedback copied into its Intent'* ]]
+  [[ "$rec" == *'Do not tell the operator to type into a worker'* ]]
+}
+
+@test "the dispatch skill classifies before it briefs, and the brief takes the pair" {
+  ski="$DUX_ROOT/skills/dux-dispatch/SKILL.md"
+  classify="$(grep -n 'Classify the reviews before briefing' "$ski" | head -n 1 | cut -d: -f1)"
+  brief="$(grep -nF 'bin/dux-brief <id> --intent-file' "$ski" | head -n 1 | cut -d: -f1)"
+  [ -n "$classify" ] || { echo "the dispatch skill never classifies"; return 1; }
+  [ "$classify" -lt "$brief" ] || { echo "it classifies after it briefs"; return 1; }
+  grep -qF -- '--review combined|separate --review-reason <text>' "$ski"
+  grep -qF 'Never let the worker classify its own branch down' "$ski"
+}
+
+@test "the plan template inherits the modes and the narrowed break rule" {
+  t="$(unquoted "$DUX_ROOT/docs/plans/TEMPLATE.md")"
+  [[ "$t" == *'`/ship` owns the reviews the branch owes and decides how many that is'* ]]
+  [[ "$t" == *'every important protection it added has been broken and seen to fail'* ]]
+  [[ "$t" != *"branch's one review and its security pass"* ]]
+}
+
+@test "the superseded milestones keep their record and say they are superseded" {
+  for f in m7-resume-any-worker m8-plan-ready-and-implement m9-plan-page-and-rule; do
+    p="$DUX_ROOT/docs/plans/2026-09-10-dux-$f.md"
+    t="$(unquoted "$p")"
+    [[ "$t" == *'Superseded 2026-09-15'* ]] || { echo "no notice in $f"; return 1; }
+    [[ "$t" == *'do not revive it'* ]] || { echo "$f does not say not to revive it"; return 1; }
+    # The record itself is untouched: a notice that ticks or unticks a box is
+    # rewriting history rather than marking it superseded.
+    [[ "$t" == *'nothing here is being marked finished or unfinished'* ]] \
+      || { echo "$f does not leave its boxes alone"; return 1; }
+  done
 }

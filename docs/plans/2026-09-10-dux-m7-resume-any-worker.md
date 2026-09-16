@@ -4,8 +4,14 @@
 > lands and keep the "where this stands" block current: the plan file is the state of
 > the milestone, not the conversation. Break-verify at the task boundary, before the
 > next task starts. Do not run a code review of your own work: `/ship` owns the
-> branch's one review and its security pass (constitution principle 9), and a review
-> outside the gate is how the gate gets skipped.
+> reviews the branch owes and decides how many that is (constitution principle 9),
+> and a review outside the gate is how the gate gets skipped.
+
+> **Superseded 2026-09-15.** `docs/specs/2026-09-15-dux-simplification-rollout.md`
+> section 11 replaces this milestone: do not revive it, its page generator, or a
+> separate plan-to-implementation framework. What is written below is the record of
+> what was designed and, where boxes are ticked, of what was built. It is left exactly
+> as it was; nothing here is being marked finished or unfinished by this notice.
 
 **Where this stands**
 - Drafted 2026-09-10, design-reviewed twice (both records at the bottom), awaiting the
