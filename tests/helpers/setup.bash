@@ -288,11 +288,21 @@ handoff() {  # $1 id, $2 status line, $3 event, [$4 run]
   ( DUX_STATE="$DUX_HOME/state"; publish_handoff "$1" "${4:-r00}" "$2" "$3" ) > /dev/null
 }
 
-# The five /ship phases a ship result needs behind it.
-fake_receipt() {  # $1 id, $2 run
+# The /ship phases a ship result needs behind it: the phases that review mode
+# owes, at a commit id shaped the way Git writes one. Called with no mode it
+# writes the receipt a Dux from before review modes wrote, which owed all five.
+fake_receipt() {  # $1 id, $2 run, [$3 combined|separate]
   local r="$DUX_HOME/state/$1.ship-receipt" p
-  { echo "version=1"; echo "id=$1"; echo "run=$2"; echo "branch=dux/$1"; } > "$r"
-  for p in checks review security pr ci; do
-    printf 'phase=%s sha=deadbeef at=2026-09-05T00:00:00Z\n' "$p" >> "$r"
+  local sha=0123456789abcdef0123456789abcdef01234567
+  local phases="checks review security pr ci"
+  if [ -n "${3:-}" ]; then
+    { echo "version=2"; echo "id=$1"; echo "run=$2"; echo "branch=dux/$1"
+      echo "review=$3"; } > "$r"
+    [ "$3" != combined ] || phases="checks review pr ci"
+  else
+    { echo "version=1"; echo "id=$1"; echo "run=$2"; echo "branch=dux/$1"; } > "$r"
+  fi
+  for p in $phases; do
+    printf 'phase=%s sha=%s at=2026-09-05T00:00:00Z\n' "$p" "$sha" >> "$r"
   done
 }

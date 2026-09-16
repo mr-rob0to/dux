@@ -240,8 +240,18 @@ five breaks, five distinct failures, pasted in the commit; `dux-result.bats` 72 
 **Files:** `bin/dux-watch`, `tests/dux-watch.bats`.  
 **Acceptance:** Watcher and completion proof agree on version, mode, identity, commit, and phases.
 
-- [ ] Accept valid combined, separate, and legacy handoffs and reject mismatches.
-- [ ] Break-verify important handoff protections; retain the receipt-lifetime contract for M2.
+- [x] Accept valid combined, separate, and legacy handoffs and reject mismatches.
+- [x] Break-verify important handoff protections; retain the receipt-lifetime contract for M2.
+
+**Landed with this task.** `receipt_complete()` asks the five questions completion proof
+asks: version, identity, mode against the task's classification, that mode's phases in
+order, and that the ci phase names a commit. It says which one failed, so the refusal
+names the fact rather than the file. It deliberately does not read the branch tip again:
+by the time a handoff is consumed an ordinary later commit has usually moved it, and
+asking again would strand a delivery that was already proved. The receipt-lifetime
+contract M2 needs is pinned by a test: consuming a handoff leaves the receipt at its path,
+byte for byte, with no `.delivered` beside it. Break-verified, six breaks, six distinct
+failures, pasted in the commit; `dux-watch.bats` 48 green.
 
 ## Task 8: Check migration and policy availability
 

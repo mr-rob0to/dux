@@ -107,15 +107,69 @@ context_field() {  # $1 id, $2 key
   sed -n "s/^$2=//p" "$f" | take_line
 }
 
-receipt_complete() {  # $1 id; the five /ship phases, in order, and nothing else
-  local f="$DUX_STATE/$1.ship-receipt"
-  { [ ! -L "$f" ] && [ -f "$f" ]; } || return 1
-  [ "$(sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$f" | tr '\n' ' ')" = "checks review security pr ci " ]
+file_field() {  # $1 file, $2 key
+  sed -n "s/^$2=//p" "$1" | take_line
+}
+
+# How this task was classified when it was briefed, read the way dux-result
+# reads it: anything that is not the word combined is separate, because both of
+# those answers ask for more review and neither can let a gate do less.
+task_review_mode() {  # $1 id
+  local f="$DUX_TASKS/$1/review" m=""
+  if [ ! -L "$f" ] && [ -f "$f" ]; then m="$(file_field "$f" mode | tr -d '[:space:]')"; fi
+  case "$m" in combined) printf 'combined\n' ;; *) printf 'separate\n' ;; esac
+}
+
+# The same questions dux-result asked before it would call this delivery
+# proved: which version wrote the receipt, whose task and run and branch it is,
+# which reviews the gate owed, that those are the phases it recorded in order,
+# and that the last one names a commit. Prints why not, and returns 1. A
+# handoff is the only thing that moves a task to done, so a receipt read more
+# loosely here than at the proof would be a second and weaker gate behind the
+# first one.
+#
+# What it does not do is read the branch tip again. dux-result compared the ci
+# phase against the tip at the moment it proved the result. By the time a
+# handoff is consumed an ordinary later commit has often moved that tip, and
+# asking again here would refuse a delivery that was already proved and leave
+# the task stranded with nothing wrong with it.
+receipt_complete() {  # $1 id
+  local f m want got sha v
+  f="$DUX_STATE/$1.ship-receipt"
+  { [ ! -L "$f" ] && [ -f "$f" ]; } \
+    || { echo "there is none at state/$1.ship-receipt"; return 1; }
+  [ "$(file_field "$f" id)" = "$1" ] || { echo "it names another task"; return 1; }
+  [ "$(file_field "$f" run)" = "$(run_of "$1")" ] || { echo "it belongs to another run"; return 1; }
+  [ "$(file_field "$f" branch)" = "$(context_field "$1" branch)" ] \
+    || { echo "it names another branch"; return 1; }
+  # Version 1 predates review modes and owed both reviews, so it keeps the
+  # requirement it was written under whatever the task was classified as later.
+  v="$(file_field "$f" version)"
+  case "$v" in
+    1) m=separate ;;
+    2) m="$(file_field "$f" review)" ;;
+    *) echo "its version is '$v', which this watcher cannot read"; return 1 ;;
+  esac
+  case "$m" in
+    separate) want="checks review security pr ci " ;;
+    combined)
+      [ "$(task_review_mode "$1")" = combined ] \
+        || { echo "it claims one combined review, and this task was classified separate"; return 1; }
+      want="checks review pr ci " ;;
+    *) echo "it names no review mode"; return 1 ;;
+  esac
+  got="$(sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$f" | tr '\n' ' ')"
+  [ "$got" = "$want" ] \
+    || { echo "it is not the $m gate's phases in order ($want): ${got:-none recorded}"; return 1; }
+  # Not which commit, only that there is one: the tip has usually moved by now.
+  sha="$(sed -n 's/^phase=ci sha=\([0-9a-f]*\).*/\1/p' "$f" | take_line)"
+  [ "${#sha}" -eq 40 ] || { echo "its ci phase names no commit"; return 1; }
+  return 0
 }
 
 # Prints "<event> <status line>", or reject:<why>. Nothing is written here.
 read_handoff() {  # $1 id, $2 sequence
-  local d f run want status event repo
+  local d f run want status event repo why
   d="$DUX_STATE/$1.handoffs/$2"
   for f in run status event; do
     { [ ! -L "$d/$f" ] && [ -f "$d/$f" ]; } || { echo "reject:handoff $2 has no $f file"; return 0; }
@@ -158,8 +212,9 @@ read_handoff() {  # $1 id, $2 sequence
           "$repo"/pull/*) ;;
           *) echo "reject:handoff $2 names a pull request outside $repo"; return 0 ;;
         esac
-        if [ "$(context_field "$1" shape)" = ship ] && ! receipt_complete "$1"; then
-          echo "reject:no complete /ship receipt behind the result for $1"; return 0
+        if [ "$(context_field "$1" shape)" = ship ]; then
+          why="$(receipt_complete "$1")" \
+            || { echo "reject:no complete /ship receipt behind the result for $1: $why"; return 0; }
         fi ;;
       *) echo "reject:handoff $2 completes $1, which recorded no shape"; return 0 ;;
     esac
