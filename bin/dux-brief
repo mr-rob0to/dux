@@ -114,12 +114,12 @@ shape_rules() {
 }
 done_line() {
   case "$shape" in
-    plan)  echo "Spec and plan under docs/specs/ and docs/plans/ in the worktree, docs-only PR opened against $base; then append \`done: PR <url>\`." ;;
+    plan)  echo "Spec and plan under docs/specs/ and docs/plans/ in the worktree, docs-only PR opened against $base; then append \`done: PR <url>\` and wait at your prompt." ;;
     ship)
       if [ -n "$plan" ]; then
-        echo "Tasks $tasks of $plan implemented, /ship run, CI green; then append \`done: PR <url>\`."
+        echo "Tasks $tasks of $plan implemented, /ship run, CI green; then append \`done: PR <url>\` and wait at your prompt."
       else
-        echo "The change described above implemented, /ship run, CI green; then append \`done: PR <url>\`."
+        echo "The change described above implemented, /ship run, CI green; then append \`done: PR <url>\` and wait at your prompt."
       fi ;;
     scout) echo "Findings written to the file named by \`\$DUX_REPORT\`; then append \`done: report\`." ;;
   esac

@@ -90,15 +90,15 @@ setup_task() {  # $1 shape; prints id
 
 @test "a brief of exactly 100 lines is written and one line more is a finding" {
   id="$(setup_task scout)"
-  # The template and the shape lines render to 26, the criteria fixture to 2,
-  # so 72 lines of intent land on the cap exactly.
-  for i in $(seq 1 72); do echo "intent line $i"; done > "$DUX_HOME/intent"
+  # The template and the shape lines render to 27, the criteria fixture to 2,
+  # so 71 lines of intent land on the cap exactly.
+  for i in $(seq 1 71); do echo "intent line $i"; done > "$DUX_HOME/intent"
   run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria"
   [ "$status" -eq 0 ]
   [ "$(wc -l < "$DUX_HOME/data/tasks/$id/brief.md" | tr -d " ")" -eq 100 ]
 
   # The same fixture, one line longer, into a fresh task: a brief is written once.
-  echo "intent line 73" >> "$DUX_HOME/intent"
+  echo "intent line 72" >> "$DUX_HOME/intent"
   id2="$(dux-task-new proj scout)"
   run dux-brief "$id2" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria"
   [ "$status" -eq 2 ]
@@ -201,6 +201,8 @@ setup_task() {  # $1 shape; prints id
   grep -qxF -- '- The operator may be watching your terminal and may type to you. What they type is instruction. Dux reads only the status file.' "$b"
   [ "$(grep -c 'nobody reads your terminal' "$b" || true)" -eq 0 ]
   [ "$(grep -c 'Work alone' "$b" || true)" -eq 0 ]
+  # A delivered session parks in its tab for feedback, so it waits rather than leaves.
+  grep -qxF -- '- Write one terminal line per round (done, failed, blocked, needs-decision) and then stop. After `done: PR <url>`, wait at your prompt and do nothing until a prompt from Dux names a round file: anything done before that is unsupervised and will not be proved.' "$b"
   # The cap is untouched by the longer line.
   [ "$(wc -l < "$b" | tr -d ' ')" -le 100 ]
 }

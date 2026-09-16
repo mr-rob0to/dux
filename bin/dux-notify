@@ -27,7 +27,7 @@ pr="$("$ledger" get "$id" pr)" || exit $?
 # reads the worker's own account through dux-recover, which fences it as data.
 case "$state" in
   done)
-    if [ "$pr" != - ]; then line="Review and merge: $pr ($project $shape)"
+    if [ "$pr" != - ]; then line="Review, then merge or send feedback: $pr ($project $shape)"
     else line="Read the report: $project $shape finished ($id)"; fi ;;
   needs-decision) line="Decide: $project $shape is waiting on an answer ($id)" ;;
   blocked) line="Unblock: $project $shape is blocked ($id)" ;;

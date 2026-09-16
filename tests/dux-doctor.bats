@@ -98,7 +98,7 @@ own_checkout() {
   printf 'm3\n' > "$DUX_HOME/config/policy-stage"
   PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
   [ "$status" -eq 1 ]
-  [[ "$output" == *"FAIL policy stage: config says m3 and this checkout implements m1"* ]]
+  [[ "$output" == *"FAIL policy stage: config says m3 and this checkout implements m2"* ]]
   # And nothing is reported as available on the strength of a value like that.
   [[ "$output" != *"policy: m3"* ]]
   printf 'whenever\n' > "$DUX_HOME/config/policy-stage"
@@ -113,4 +113,9 @@ own_checkout() {
   PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
   [ "$status" -eq 0 ]
   [[ "$output" == *"ok policy stage m1"* ]]
+  # This checkout carries feedback rounds, so a stage that says so is accepted.
+  printf 'm2\n' > "$DUX_HOME/config/policy-stage"
+  PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"policy: m2; unavailable: same-session answers and approval, dispatch waiting on a predecessor, usage reporting;"* ]]
 }

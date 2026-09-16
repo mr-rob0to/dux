@@ -15,6 +15,10 @@ All changes MUST follow trunk-based development on `main`.
 - Branches MUST be cut from freshly fetched `origin/main` and rebased on it before review and
   merge. Pushes over an existing remote branch use `--force-with-lease` anchored to the fetched
   SHA, never bare `--force`.
+- A Dux feedback round is the one exception. Its pull request is open and the operator has read
+  the commits in it, so the round adds commits and MUST NOT rebase, amend, squash or force-push.
+  When `origin/main` has moved, the round brings it in with an ordinary merge, and a conflict
+  whose resolution is a choice stops for the operator.
 - All commits MUST follow Conventional Commits (`<type>(<scope>): <subject>`): types `feat`,
   `fix`, `docs`, `test`, `refactor`, `chore`, `ci`; imperative subject, lowercase, no trailing
   period, at most 50 characters. Commits MUST be atomic.
@@ -164,8 +168,9 @@ The local worker is trusted with the operator's own authority. Everything it say
   atomic handoff that the watcher consumes.
 - Text Dux writes for the operator is fixed by state. Worker text Dux relays reaches the
   operator only through recovery, cleaned, capped, and fenced as data. The worker's own tab
-  is the operator's screen, not Dux's: Dux neither reads it nor relays it, and what it shows
-  is the worker's, which is why nothing the operator reads there is evidence of anything.
+  is the operator's screen, not Dux's: Dux neither reads it nor relays it, and the one thing
+  Dux writes there is a fixed line per round naming a file it rendered. What the tab shows is
+  the worker's, which is why nothing the operator reads there is evidence of anything.
 - Prompt rules are never the guard. Workers get a settings file with deny rules and a
   `pre-push` hook refusing the base branch; both are break-verified under bypass mode before
   anything relies on them.
@@ -258,7 +263,29 @@ that edits this file, bumps the version, and updates Last Amended: MAJOR for a r
 removed principle, MINOR for a new principle, PATCH for a clarification. A plan that must
 deviate from a principle says so in its header and names the principle.
 
-**Version**: 3.0.0 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-15
+**Version**: 4.0.0 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-16
+
+Version 4.0.0 narrows a rule in principle 1, which is what makes it MAJOR, and clarifies one in
+principle 6.
+
+Principle 1 narrowed. Every branch used to be rebased on `origin/main` before review and merge.
+A Dux feedback round is now the exception: the pull request it updates is open and the operator
+has read the commits in it, so the round adds commits and never rewrites them. When
+`origin/main` has moved, the round merges it in with an ordinary merge, and a conflict whose
+resolution is a choice stops for the operator. `dux-result` refuses a round whose branch no
+longer holds the commit the round started from, and `/ship` refuses to push one. Every other
+branch still rebases.
+
+Principle 6 clarified. The worker's tab was a screen Dux neither reads nor writes. A feedback
+round now has the wrapper type one fixed line into it, naming the round file Dux rendered, and
+the principle says so. Dux still never reads the tab, and nothing it shows is evidence: each
+round is proved on its own, from its own run, receipt and final commit.
+
+The design this amends is `docs/specs/2026-09-15-feedback-rounds-on-a-delivered-pr.md`, as
+amended by `docs/specs/2026-09-15-dux-simplification-rollout.md` sections 3.1, 6.1 and 6.2.
+What it costs: a branch that took a round carries merge commits a rebased branch would not, so
+its history is less linear, and the pull request's commits stay exactly as the operator read
+them rather than tidy.
 
 Version 3.0.0 redefines two principles, which is what makes it MAJOR rather than a
 clarification of either.

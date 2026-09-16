@@ -15,6 +15,10 @@ of everything else: the long-lived wrapper, live-tab feedback, `bin/dux-round`,
 `templates/round.md`, same-owner feedback, fresh run identity and completion proof per
 round, same-PR `/ship` updates, eight feedback rounds, and safe teardown.
 
+**Implemented 2026-09-16** as milestone 2 of the
+[rollout plan](../plans/dux-simplification-rollout.md), tasks 11 to 19, which holds the
+evidence for each task. It is used once `config/policy-stage` names `m2`.
+
 ## 1. What the operator gets
 
 A worker that has opened its pull request no longer ends. It waits at its prompt, in its

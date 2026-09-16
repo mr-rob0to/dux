@@ -26,6 +26,8 @@
   [rollout plan](dux-simplification-rollout.md), tasks 11 to 19. All nine tasks below are
   retained, none moves to a follow-up, and this file keeps its own historical evidence:
   the review findings, the decisions and every box already ticked stand as written.
+- **Implemented 2026-09-16** as that milestone. Its evidence, break-verification and
+  actual size are recorded against tasks 11 to 19 in the rollout plan, not here.
 
 **Estimated diff:** ~1,625 added lines across 9 tasks, re-cut down from ~1,900. The cap
 is 2,500 lines or 12 tasks (constitution principle 1). Sizing procedure: roadmap, "How a

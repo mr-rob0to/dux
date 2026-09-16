@@ -104,6 +104,7 @@ load helpers/setup
   [[ "$wake" == *'only recovery may show you what it is'* ]]
   [[ "$wake" == *'`blocked`, `stale`, `dead`, `ended`: use `skills/dux-recover`'* ]]
   [[ "$wake" == *'PushNotification only for `done` with a PR and for `failed`'* ]]
+  [[ "$wake" == *'`Review, then merge or send feedback: <url>`'* ]]
   [[ "$wake" != *'status.log'* ]]
 }
 
@@ -111,7 +112,7 @@ load helpers/setup
 # line so a reflow never turns a rule that is present into a red test.
 unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
 
-@test "the constitution declares the trusted-local-worker boundary at version 3" {
+@test "the constitution declares the trusted-local-worker boundary at version 4" {
   p6="$(unwrapped '/^### 6\./,/^### 7\./p' "$DUX_ROOT/docs/constitution.md")"
   [[ "$p6" == *'trusted to act with the operator account'* ]]
   [[ "$p6" == *'untrusted application data'* ]]
@@ -122,9 +123,10 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
   # this one keeps the prose true, that one keeps the code true.
   [[ "$p6" == *"worker's own tab is the operator's screen"* ]]
   [[ "$p6" == *'neither reads it nor relays it'* ]]
+  [[ "$p6" == *'the one thing Dux writes there is a fixed line per round naming a file it rendered'* ]]
   # Pinned to the major on purpose: the next MAJOR amendment has to come back
   # here and read principle 6 again before it can change this line.
-  grep -qE '^\*\*Version\*\*: 3\.[0-9]+\.[0-9]+ ' "$DUX_ROOT/docs/constitution.md"
+  grep -qE '^\*\*Version\*\*: 4\.[0-9]+\.[0-9]+ ' "$DUX_ROOT/docs/constitution.md"
 }
 
 # The constitution named one denylist file and put the account name in it, while
@@ -710,7 +712,7 @@ unquoted() { sed 's/^> //' "$1" | tr '\n' ' ' | tr -s ' '; }
   [[ "$life" == *'concurrency or cross-system ordering'* ]]
   # And it points at the skill for the plan test rather than keeping a copy.
   [[ "$life" == *'`skills/dux-dispatch` holds the six-line test'* ]]
-  grep -q 'v3.0.0' "$DUX_ROOT/AGENTS.md"
+  grep -q 'v4.0.0' "$DUX_ROOT/AGENTS.md"
 }
 
 @test "AGENTS.md routes to a repository itself and keeps the queue" {
@@ -718,6 +720,20 @@ unquoted() { sed 's/^> //' "$1" | tr '\n' ' ' | tr -s ' '; }
   [[ "$life" == *'Pick the repository from `data/projects.md`'* ]]
   [[ "$life" == *'ask only when it is genuinely ambiguous'* ]]
   [[ "$life" == *'never hand that back to the operator'* ]]
+}
+
+# Feedback goes to the session that delivered the pull request, through the
+# one script that checks it is still there, and never by typing into its tab.
+@test "feedback on a delivered pull request goes through dux-round" {
+  life="$(unwrapped '/^## Task lifecycle/,/^## Talking to the operator/p' "$DUX_ROOT/AGENTS.md")"
+  [[ "$life" == *'done -> running on a feedback round'* ]]
+  [[ "$life" == *'`bin/dux-round <id> --file data/tasks/<id>/feedback.md`'* ]]
+  fb="$(unwrapped '/^## Feedback on a delivered pull request/,/^## Teardown/p' "$DUX_ROOT/skills/dux-dispatch/SKILL.md")"
+  [[ "$fb" == *'data/tasks/<id>/feedback.md'* ]]
+  [[ "$fb" == *'bin/dux-round <id> --file data/tasks/<id>/feedback.md'* ]]
+  [[ "$fb" == *'Never type into the tab'* ]]
+  teardown="$(unwrapped '/^## Teardown/,/^## Never/p' "$DUX_ROOT/skills/dux-dispatch/SKILL.md")"
+  [[ "$teardown" == *'ends the parked session'* ]]
 }
 
 @test "what this stage does not carry is named, and points at recovery" {
