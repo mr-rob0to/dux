@@ -84,11 +84,15 @@ liveness() {  # $1 id
   case "$evidence" in unknown:*) echo "note:${evidence#unknown:}" ;; esac
 }
 
-last_activity() {  # $1 id; newer of the status log and wrapper pidfile
-  local a b
-  a="$(mtime_epoch "$DUX_TASKS/$1/status.log" 2>/dev/null || echo 0)"
-  b="$(mtime_epoch "$DUX_STATE/$1.pid" 2>/dev/null || echo 0)"
-  if [ "$a" -ge "$b" ]; then echo "$a"; else echo "$b"; fi
+# A round file counts: a session can sit parked for days before dux-round moves
+# it back to running, and its first status line comes only after the round starts.
+last_activity() {  # $1 id; newest of the status log, wrapper pidfile and round files
+  local f t newest=0
+  for f in "$DUX_TASKS/$1/status.log" "$DUX_STATE/$1.pid" "$DUX_TASKS/$1"/round-*.md; do
+    t="$(mtime_epoch "$f" 2>/dev/null || echo 0)"
+    [ "$t" -le "$newest" ] || newest="$t"
+  done
+  echo "$newest"
 }
 
 # ---- terminal handoffs ---------------------------------------------------

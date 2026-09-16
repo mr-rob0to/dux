@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 16 are done; milestones 3 and 4 are not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 17 are done; milestones 3 and 4 are not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -589,8 +589,24 @@ parked wrapper delivering a second `done`. Nineteen breaks, each failing on its 
 **Files:** `bin/dux-result`, `bin/dux-watch`, `bin/dux-worker-wrap`, related tests.  
 **Acceptance:** Each round proves its own run and final commit; consumed handoffs are not applied twice.
 
-- [ ] Integrate mode-aware fresh proof and receipt retention with the watcher.
-- [ ] Break-verify stale-run, stale-commit, and duplicate-consumption protections.
+- [x] Integrate mode-aware fresh proof and receipt retention with the watcher.
+- [x] Break-verify stale-run, stale-commit, and duplicate-consumption protections.
+
+**Landed with this task.** `dux-result verify` reads `round` and `since` from the result context
+before `read_changes`, for plan and ship: round absent or `0` is unchanged, otherwise `since` must
+be forty hex characters (a finding) and an ancestor of the branch, or the result is ended with
+`the round rewrote history the operator already reviewed on <branch>`. A round's receipt answers
+to its own run and final commit under the mode rules M1 installed, so no new receipt code. The
+watcher counts the newest `round-<n>.md` as activity: a task parked for days went stale the
+moment `dux-round` moved it to running. The wrapper needed no change; it has written `round` and
+`since` since Task 15. Five tests; eight breaks, each failing on its own:
+
+- Ancestry inverted (PR #46's named break): the no-commit round refused (line 1133). Ancestry
+  dropped: the rewritten branch proved (line 1138).
+- `since` shape unchecked, and round `0` judged: lines 1150 and 1154.
+- Stale run and stale commit accepted for a round: lines 1119 and 1115.
+- `next_handoff` ignoring `consumed`: the first run's done applied again over the round's
+  `running` (watch line 523). Round files not counted: the fresh round went stale (line 138).
 
 ## Task 18: Update the same PR through shipping
 

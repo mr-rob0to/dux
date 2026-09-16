@@ -130,6 +130,17 @@ start_loop() { DUX_WATCH_INTERVAL_SECS="${1:-1}" dux-watch >> "$watchlog" 2>&1 3
   [ "$(events_count)" -eq 0 ]; [ "$(dux-ledger get t1 state)" = running ]
 }
 
+@test "a round just sent keeps a long-parked task fresh, and only while it is new" {
+  running_task t1; age_out t1
+  : > "$DUX_HOME/data/tasks/t1/round-1.md"
+  run --separate-stderr dux-watch --once
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "$(events_count)" -eq 0 ]; [ "$(dux-ledger get t1 state)" = running ]
+  touch -t 202001010000 "$DUX_HOME/data/tasks/t1/round-1.md"
+  dux-watch --once
+  [ "$(dux-ledger get t1 state)" = stale ]
+}
+
 @test "a stopped wrapper is dead even while the container remains" {
   running_task t1; status_is t1 "working: on it"
   kill -9 "$(cat "$DUX_HOME/state/t1.pid")"; worker_gone t1
@@ -499,6 +510,22 @@ start_loop() { DUX_WATCH_INTERVAL_SECS="${1:-1}" dux-watch >> "$watchlog" 2>&1 3
   [ "$(dux-ledger get t2 state)" = done ]
   [ "$(dux-ledger get t2 pr)" = "https://github.com/acme/proj/pull/8" ]
   [ -e "$d2/consumed" ]
+}
+
+@test "a consumed handoff is never applied again, and a round's lands behind it once" {
+  running_task t1 plan; status_is t1 "working: on it"
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  dux-watch --once
+  # dux-round has moved the task back to running, and the wrapper has not yet
+  # written the round's run, so the consumed handoff still names the recorded run.
+  dux-ledger set t1 state running
+  dux-watch --once
+  [ "$(dux-ledger get t1 state)" = running ]
+  fake_run t1 r00r1 plan
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done r00r1
+  dux-watch --once; dux-watch --once
+  [ "$(events_count)" -eq 2 ]; [ "$(dux-ledger get t1 state)" = done ]
+  [ "$(grep -c '^done: ' "$DUX_HOME/data/tasks/t1/status.log")" -eq 2 ]
 }
 
 @test "a handoff left unconsumed after the ledger moved is still finished" {
