@@ -21,8 +21,8 @@ hand before or after invoking this skill — a review run outside the gate eithe
 or, worse, becomes the excuse to skip the gate and lose the classification with it.
 
 **Docs-only changes skip the gate entirely.** If every file the branch touches is prose that nothing
-reads but a human — `.md`, comments, design mockups — stop here, open or update the PR, and say the
-gate was skipped as docs-only. It is *not* docs-only the moment it touches anything the build, the
+reads but a human — `.md`, comments, design mockups — stop here, open the PR or edit the one step 8's
+lookup finds, and say the gate was skipped as docs-only. It is *not* docs-only the moment it touches anything the build, the
 tests, or CI consume: a manifest, a workflow, a Makefile, a build config, a script, a generated
 contract such as `contracts/openapi.json`. When in doubt, run the gate.
 
@@ -180,6 +180,12 @@ git merge-base --is-ancestor "origin/$BASE" HEAD && echo OK || echo NOT-BASED-ON
 Not based on `$BASE`? **Stop and report.** Say which branch it actually forked from
 (`git merge-base --fork-point` or the first shared commit with each candidate).
 Offer a rebase; do not perform it unattended.
+
+**A Dux feedback round never rebases.** Its pull request is open and the operator has read the
+commits in it; a round adds to them. When the round file says `origin/$BASE` has moved past the
+branch, merge it in with an ordinary merge, `git merge "origin/$BASE"`, and stop at `needs-decision`
+for a conflict whose resolution is the operator's choice. A rebased branch would not push anyway:
+step 8's ancestor test refuses a branch that no longer holds the reviewed head.
 
 ## Step 3. Working tree
 
@@ -592,9 +598,18 @@ the first match reads the gate as closed over code it never covered.
 one the operator gave for this ship, else the subject of the branch's first
 commit after `$BASE`.
 
+`gh pr create` refuses a branch that already has an open pull request, and a feedback round ships
+exactly that. So look it up first: edit its body, keeping the title the operator has seen, and open
+one only when there is none.
+
 ```bash
 TITLE="${SHIP_TITLE:-$(git log --format=%s "origin/$BASE..HEAD" | tail -n 1)}"
-gh pr create --base "$BASE" --title "$TITLE" --body-file "$BODY"
+PR_NUMBER="$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '.[0].number // empty')"
+if [ -n "$PR_NUMBER" ]; then
+  gh pr edit "$PR_NUMBER" --body-file "$BODY"
+else
+  gh pr create --base "$BASE" --title "$TITLE" --body-file "$BODY"
+fi
 ```
 
 **Every later push rebuilds the body and edits the pull request**, step 9's
@@ -673,7 +688,8 @@ recorder verifies the pull request and its checks before it accepts this one.
 |---|---|
 | Base-branch signals disagree | Everything downstream runs against the wrong tree |
 | Base branch cannot be determined | Guessing invalidates the diff, the review, and the PR |
-| Branch not based on the resolved base | Same |
+| Branch not based on the resolved base, outside a feedback round's merge | Same |
+| A feedback round's base merge needs a conflict decided | The operator decides; the reviewed commits stay as they are |
 | Tests, lint, or typecheck red after a genuine fix attempt | Shipping red is not shipping |
 | Reviewer raised a design question, not a bug | That call is the user's |
 | Critical or High security finding | Must be fixed and re-audited before the PR opens |

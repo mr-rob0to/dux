@@ -465,6 +465,21 @@ EOF
   [[ "$flat" != *'git push --force '* ]]
 }
 
+# gh pr create refuses a branch that already has an open pull request, which is
+# exactly what a feedback round ships. The lookup is what keeps the round on its
+# own pull request, and the edit keeps the title the operator has already seen.
+@test "step 8 edits the branch's open pull request and opens one only when there is none" {
+  ship="$DUX_ROOT/skills/ship/SKILL.md"
+  grep -qxF 'PR_NUMBER="$(gh pr list --head "$BRANCH" --base "$BASE" --state open --json number --jq '"'"'.[0].number // empty'"'"')"' "$ship"
+  [ "$(grep -E '^ *gh pr edit "\$PR_NUMBER"' "$ship")" = '  gh pr edit "$PR_NUMBER" --body-file "$BODY"' ]
+}
+
+@test "a feedback round merges its base in and never rewrites what was reviewed" {
+  two="$(unwrapped '/^## Step 2\./,/^## Step 3\./p' "$DUX_ROOT/skills/ship/SKILL.md")"
+  [[ "$two" == *'A Dux feedback round never rebases'*'`git merge "origin/$BASE"`'* ]]
+  grep -qF 'Never rebase, amend a pushed commit, squash or force-push' "$DUX_ROOT/templates/round.md"
+}
+
 @test "the stop table names the two ways a push can be wrong" {
   table="$(unwrapped '/^## Stop and report/,/^## Red flags/p' "$DUX_ROOT/skills/ship/SKILL.md")"
   [[ "$table" == *'The remote branch holds commits this branch does not'* ]]
@@ -478,7 +493,7 @@ EOF
   # The prose explains why it is gone, so the assertion is on the command line
   # rather than on the step's text: a flat search for the flag matches the
   # sentence that retires it, and would pass with the old command still there.
-  create="$(grep -n '^gh pr create' "$DUX_ROOT/skills/ship/SKILL.md")"
+  create="$(grep -nE '^ *gh pr create' "$DUX_ROOT/skills/ship/SKILL.md")"
   [ -n "$create" ] || { echo "step 8 never opens the pull request"; return 1; }
   [[ "$create" != *'--fill'* ]] || { echo "gh pr create still uses --fill: $create"; return 1; }
   [[ "$create" == *'--title'* ]]

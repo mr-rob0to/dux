@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 17 are done; milestones 3 and 4 are not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 17 are done, and task 18 waits only on the live round; milestones 3 and 4 are not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -614,9 +614,25 @@ moment `dux-round` moved it to running. The wrapper needed no change; it has wri
 **Files:** `skills/ship/SKILL.md`, related gate tests and evidence.  
 **Acceptance:** Feedback completes `/ship` against the existing PR, with current classification, review, receipt, and CI.
 
-- [ ] Implement existing-PR updates and history-preserving feedback base merging.
+- [x] Implement existing-PR updates and history-preserving feedback base merging.
 - [ ] Exercise a real feedback round through the same PR and CI; retain this task in M2.
-- [ ] Break-verify: break the guard that keeps a round on its own PR, and the one that stops a feedback base repair from rewriting reviewed history, run, confirm two distinct failures, restore, paste both.
+- [x] Break-verify: break the guard that keeps a round on its own PR, and the one that stops a feedback base repair from rewriting reviewed history, run, confirm two distinct failures, restore, paste both.
+
+**Landed with this task.** Step 8's "Opening it" looks up the open pull request for the branch into
+`$BASE` with PR #46's exact `gh pr list` line, edits its body without `--title` when there is one,
+and creates one otherwise; the docs-only paragraph names the same lookup. Step 2 says a Dux
+feedback round never rebases: it merges `origin/$BASE` in with an ordinary merge and stops at
+`needs-decision` for a conflict, and the stop table carries both rows. Two contract pins.
+
+Run on 2026-09-16 against a private throwaway repository with CI, the skill's own push and opening
+blocks, copied verbatim: the first pass opened pull request 1 (CI run 35132095382 green), a second
+commit on the same branch edited pull request 1 with its title kept and two commits (run
+35132141898 green), and no second pull request existed. Breaks, each failing on its own: the
+lookup without `--head` (contract line 473; live, round 2's body landed on pull request 2), the
+edit with `--title` (line 474), a round allowed to rebase (line 479), the round file allowing a
+rebase (line 480), and the push without its ancestor test (live, a rewritten branch
+force-replaced reviewed commit `0f0fc0a`; intact, it stopped with the finding and exit 2). The
+live worker round, which ticks the second box, is Task 19's rehearsal.
 
 ## Task 19: Activate feedback and complete the rehearsal
 
