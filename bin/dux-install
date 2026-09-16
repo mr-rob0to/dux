@@ -8,14 +8,52 @@ yes=0; [ "${1:-}" = "--yes" ] && yes=1
 target="${DUX_SKILLS_DIR:-$HOME/.claude/skills}"
 mkdir -p "$target" 2>/dev/null || finding "cannot create $target"
 
+# The other place the same skill can live. /ship already looks for its guard
+# under ~/.agents/skills, so a host can be loading a skill from there while this
+# installer keeps one in the Claude directory up to date, and nothing says which
+# one a session actually read. Nothing below writes to it: the shared file is
+# the operator's, and silently unlinking one is how a host loses a skill it was
+# relying on. It is reported, and the operator chooses.
+shared="${DUX_SHARED_SKILLS_DIR:-$HOME/.agents/skills}"
+
+# Counted with a glob rather than ls or find: the count is for a human reading
+# one line, and neither an odd filename nor the difference between two finds is
+# worth a subprocess here.
+what_is() {  # $1 path; what the operator is about to lose sight of
+  local e n=0
+  if [ -L "$1" ]; then printf 'a link to %s' "$(readlink "$1")"; return 0; fi
+  if [ ! -d "$1" ]; then printf 'a file'; return 0; fi
+  for e in "$1"/* "$1"/.[!.]*; do
+    { [ -e "$e" ] || [ -L "$e" ]; } && n=$((n + 1))
+  done
+  if [ "$n" -eq 1 ]; then printf 'a directory of 1 entry'; else printf 'a directory of %s entries' "$n"; fi
+}
+
+# Two copies of one skill, in the two places a host reads skills from. Said
+# once per skill, after the Claude one is in place, so the line names what is
+# actually there rather than what was there before this run.
+report_conflict() {  # $1 skill name
+  local o="$shared/$1"
+  [ "$shared" != "$target" ] || return 0
+  { [ -e "$o" ] || [ -L "$o" ]; } || return 0
+  if [ -L "$o" ] && [ "$(readlink "$o")" = "$DUX_ROOT/skills/$1" ]; then
+    log "ok $1 is also linked from $o"
+    return 0
+  fi
+  log "conflict: $o is $(what_is "$o") and $target/$1 is this checkout; a session that loads the shared one runs different instructions, and this installer will not touch it"
+}
+
 for d in "$DUX_ROOT"/skills/*/; do
   [ -d "$d" ] || continue
   n="$(basename "$d")"; dst="$target/$n"; src="$DUX_ROOT/skills/$n"
   if [ -L "$dst" ]; then
-    [ "$(readlink "$dst")" = "$src" ] && { log "ok $n"; continue; }
+    [ "$(readlink "$dst")" = "$src" ] && { log "ok $n"; report_conflict "$n"; continue; }
     [ "$yes" = 1 ] || finding "$dst is a symlink to $(readlink "$dst"), not this repo; rerun with --yes to replace it"
     rm -f "$dst"
   elif [ -e "$dst" ]; then
+    # What is there, said before anything moves. Without it the operator agrees
+    # to "--yes" and finds out afterwards what it replaced.
+    log "$dst is $(what_is "$dst"); replacing it moves it to $dst.bak and links $src in its place"
     [ "$yes" = 1 ] || finding "$dst exists and is not a symlink; rerun with --yes to move it to $n.bak"
     if [ -e "$dst.bak" ] || [ -L "$dst.bak" ]; then finding "$dst.bak already exists; move it away before rerunning"; fi
     mv "$dst" "$dst.bak" 2>/dev/null || finding "cannot move $dst to $dst.bak"
@@ -23,6 +61,7 @@ for d in "$DUX_ROOT"/skills/*/; do
   fi
   ln -s "$src" "$dst" 2>/dev/null || finding "cannot link $dst"
   log "linked $n"
+  report_conflict "$n"
 done
 
 # A model file is a list of <key>=<model>:<effort> words, and new keys arrive

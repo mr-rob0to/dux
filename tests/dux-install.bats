@@ -16,6 +16,9 @@ setup() {
   ln -s "$REPO_ROOT/templates" "$DUX_HOME/root/templates"
   DUX_ROOT="$DUX_HOME/root"; export DUX_ROOT
   export DUX_SKILLS_DIR="$DUX_HOME/skills-target"; mkdir -p "$DUX_SKILLS_DIR"
+  # The other place a host reads skills from. Pointed somewhere throwaway so no
+  # test ever reads, reports on, or is affected by the operator's real one.
+  export DUX_SHARED_SKILLS_DIR="$DUX_HOME/shared-skills"
   export PATH="$REPO_ROOT/tests/fakes:$REPO_ROOT/bin:$PATH"
 }
 
@@ -64,6 +67,53 @@ setup() {
   echo mine > "$DUX_HOME/config/reviewer"
   dux-install
   [ "$(cat "$DUX_HOME/config/reviewer")" = mine ]
+}
+
+# ---- upgrading an install that is already there ---------------------------
+
+@test "install seeds the rollout stage and never edits one already written" {
+  dux-install
+  cmp -s "$DUX_ROOT/templates/config/policy-stage" "$DUX_HOME/config/policy-stage"
+  # An operator who has recorded and installed a later revision says so here,
+  # and a later install must not quietly put them back a stage.
+  printf 'm2\n' > "$DUX_HOME/config/policy-stage"
+  dux-install
+  [ "$(cat "$DUX_HOME/config/policy-stage")" = m2 ]
+}
+
+@test "install says what a real directory holds before it proposes replacing it" {
+  mkdir -p "$DUX_SKILLS_DIR/ship/inner"
+  echo old > "$DUX_SKILLS_DIR/ship/SKILL.md"; echo more > "$DUX_SKILLS_DIR/ship/.hidden"
+  run dux-install
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"$DUX_SKILLS_DIR/ship is a directory of 3 entries; replacing it moves it to $DUX_SKILLS_DIR/ship.bak"* ]]
+  [ -f "$DUX_SKILLS_DIR/ship/SKILL.md" ]
+  # And the same line before the move actually happens, not after it.
+  run dux-install --yes
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"is a directory of 3 entries; replacing it"* ]]
+  [ "$(cat "$DUX_SKILLS_DIR/ship.bak/SKILL.md")" = old ]
+}
+
+@test "install reports a conflicting shared copy and does not touch it" {
+  mkdir -p "$DUX_SHARED_SKILLS_DIR/ship"
+  echo theirs > "$DUX_SHARED_SKILLS_DIR/ship/SKILL.md"
+  run dux-install
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"conflict: $DUX_SHARED_SKILLS_DIR/ship is a directory of 1 entry"* ]]
+  [[ "$output" == *"will not touch it"* ]]
+  [ "$(cat "$DUX_SHARED_SKILLS_DIR/ship/SKILL.md")" = theirs ]
+  [ -L "$DUX_SKILLS_DIR/ship" ]
+}
+
+@test "a shared link into this checkout is agreement, not a conflict" {
+  mkdir -p "$DUX_SHARED_SKILLS_DIR"
+  ln -s "$DUX_ROOT/skills/ship" "$DUX_SHARED_SKILLS_DIR/ship"
+  run dux-install
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ok ship is also linked from $DUX_SHARED_SKILLS_DIR/ship"* ]]
+  [[ "$output" != *"conflict: $DUX_SHARED_SKILLS_DIR/ship"* ]]
+  [ -L "$DUX_SHARED_SKILLS_DIR/ship" ]
 }
 
 @test "uninstall removes only symlinks into this repo" {

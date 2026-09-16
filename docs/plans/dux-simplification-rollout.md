@@ -259,8 +259,22 @@ failures, pasted in the commit; `dux-watch.bats` 48 green.
 **Files:** `bin/dux-install`, `bin/dux-doctor`, `templates/config/*`, `tests/dux-install.bats`, `tests/dux-doctor.bats`.  
 **Acceptance:** Installation preserves explicit choices and reports incompatible configurations, links, and unavailable policy stages.
 
-- [ ] Add upgrade, conflict, and activation-prerequisite checks.
-- [ ] Test conservative legacy behavior and break-verify important migration protections.
+- [x] Add upgrade, conflict, and activation-prerequisite checks.
+- [x] Test conservative legacy behavior and break-verify important migration protections.
+
+**Landed with this task.** A new `templates/config/policy-stage` holds the rollout stage
+this install may act on, seeded once and never edited afterwards. `dux-doctor` reads it,
+refuses a stage this checkout does not implement rather than treating the value as a
+switch, and prints what the stage leaves unavailable with the way through for each.
+Doctor also resolves both reviewers the way `/ship` resolves them, so a pinned command
+this host cannot run is reported before a gate runs instead of during one.
+
+`dux-install` says what a real directory holds before it proposes replacing it, and
+reports a conflicting copy of a skill in the shared skills directory without touching it:
+a shared file is the operator's, and unlinking one silently is how a host loses a skill it
+was relying on. The bundled reviewer comments now say what each reviewer does in a
+combined gate. Break-verified, six breaks, six distinct failures, pasted in the commit;
+`dux-install.bats` 28 green and `dux-doctor.bats` 10 green.
 
 ## Task 9: Activate only M1 repository policy
 
