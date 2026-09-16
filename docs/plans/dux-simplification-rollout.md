@@ -26,7 +26,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 | Milestone | Task range | Estimated added lines | Actual added lines | Delivery evidence |
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
-| M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,974 | Task 19's pull request |
+| M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | Task 19's pull request |
 | M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | Not recorded | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
@@ -713,15 +713,16 @@ had the branch's upstream set by hand first, because `/ship` pushes without one 
 refuses a branch with none; that refusal predates this milestone. Dirty and unpushed teardown
 refusals are proved by `tests/dux-teardown.bats`, not live.
 
-Checks: `lint-shell`, `lint-pipes`, the unit files and the eight matrix jobs are green on macOS
-and on Ubuntu 24.04 as a non-root user, apart from three failures `main` shares.
-`lint-identifiers` fails on this machine for the reason Task 10 records. On Ubuntu under a
-parallel run, two process tests fail now and then: the TERM test in
-`tests/dux-worker-wrap.bats`, and one tmux `pid` wait in `tests/backend-adapter.bats`.
-Both also fail on `main` in the same container under the same load, and this branch's copies
-passed the same repeats.
+Checks: `make check-branch`, so `lint-shell`, `lint-pipes`, the unit files and the eight matrix
+jobs under bash 5 and again under bash 3.2 on macOS, and the suite on Ubuntu 24.04 as a non-root
+user, are green apart from three failures `main` shares. The bash 3.2 pass first found that
+`tests/dux-round.bats` did not parse there, and the gate fixed it. `lint-identifiers` fails on
+this machine for the reason Task 10 records. On Ubuntu under a parallel run, two process tests
+fail now and then: the TERM test in `tests/dux-worker-wrap.bats`, and one tmux `pid` wait in
+`tests/backend-adapter.bats`. Both also fail on `main` in the same container under the same
+load, and this branch's copies passed the same repeats.
 
-Size: 1,974 added lines against the milestone's estimate of 1,750 to 2,450 and PR
+Size: 1,976 added lines against the milestone's estimate of 1,750 to 2,450 and PR
 #46's own ~1,625, under the 2,500 cap.
 
 Delivered through `/ship` with the separate reviews this milestone owes, as the pull request
