@@ -1,8 +1,8 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15; this record does not claim any implementation task is complete.
-- The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 retains feedback ownership.
+- Approved by the operator on 2026-09-15. Milestone 1 is implemented, tasks 1 to 10, and delivered as pull request #51; milestones 2 to 4 are not started and no task in them is claimed.
+- The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
 **Estimated diff:** 5,650–8,250 added lines across 36 tasks in four milestones. Each milestone remains limited to 12 tasks and 2,500 added lines. Estimates include code, tests, documentation, and patch artifacts.
@@ -25,7 +25,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 
 | Milestone | Task range | Estimated added lines | Actual added lines | Delivery evidence |
 |---|---|---:|---|---|
-| M1: Policy and review gate | 1–10 | 1,650–2,350 | Not recorded | Not recorded |
+| M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | Not recorded | Not recorded |
 | M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | Not recorded | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
@@ -133,9 +133,14 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Files:** Paired spec, this plan, and PR #46's `docs/specs/2026-09-15-feedback-rounds-on-a-delivered-pr.md` and `docs/plans/2026-09-15-feedback-rounds-on-a-delivered-pr.md`.  
 **Acceptance:** Planning precedence, examples, and all seven PR #46 amendments match the approved source.
 
-- [ ] Reconcile references without changing historical evidence or completed boxes.
-- [ ] Retain all nine PR #46 tasks and remove its Task 8 deferral and prescribed 2.0.9 version.
-- [ ] Those two files exist only on PR #46's branch. Amend them there, or start M1 after PR #46 merges; never recreate them under other names on this branch.
+- [x] Reconcile references without changing historical evidence or completed boxes.
+- [x] Retain all nine PR #46 tasks and remove its Task 8 deferral and prescribed 2.0.9 version.
+- [x] Those two files exist only on PR #46's branch. Amend them there, or start M1 after PR #46 merges; never recreate them under other names on this branch.
+
+**Done.** PR #46 merged before M1 started, so both files were amended in place on this
+branch, never recreated. All seven amendments from spec section 6.1 are marked
+**Amended** where the provision they change appears. Counted before and after: nine task
+headings, thirty-nine unchecked boxes, fourteen review-finding rows, all unchanged.
 
 ## Task 2: Prepare staged external policy artifacts
 
@@ -143,10 +148,25 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Files:** This plan, its five named patch files, `bin/dux-result`, `tests/dux-result.bats`.  
 **Acceptance:** Patches use actual local source text, contain activation requirements, and do not activate future runtime behavior. A plan-shaped result may carry `docs/plans/patches/*.patch`.
 
-- [ ] Prepare all five patches and the revision/application record.
-- [ ] Check every before-text anchor against the current external files; identify source-detail gaps explicitly.
-- [ ] `plan_entry_ok()` in `bin/dux-result` accepts only `docs/*.md` and top-level `docs/plans/*.html`, so it rejects the patch artifacts and no plan task can deliver them. Add `docs/plans/patches/*.patch`.
-- [ ] Break-verify: after widening the shape, break it so a path outside `docs/` or an executable mode passes, run, confirm the test fails, restore, paste the failure.
+- [x] Prepare all five patches and the revision/application record.
+- [x] Check every before-text anchor against the current external files; identify source-detail gaps explicitly.
+- [x] `plan_entry_ok()` in `bin/dux-result` accepts only `docs/*.md` and top-level `docs/plans/*.html`, so it rejects the patch artifacts and no plan task can deliver them. Add `docs/plans/patches/*.patch`.
+- [x] Break-verify: after widening the shape, break it so a path outside `docs/` or an executable mode passes, run, confirm the test fails, restore, paste the failure.
+
+**Anchor check, run against the live external files on 2026-09-15.** Every BEFORE block
+in `m1-global.patch` (11 of 11) and `m1-ship.patch` (13 of 13) is exact current text in
+`~/.codex/AGENTS.md` and `~/.agents/skills/ship/SKILL.md`. Three later-stage blocks do not
+match yet: one in `m2-global.patch` and two in `m3-global.patch`. Each of those three is
+text an earlier stage's patch introduces, which is the staged order working as designed,
+not drift. Nothing in M1 depends on them.
+
+**Source-detail gaps** stay marked in the artifacts themselves, one `INSUFFICIENT SOURCE
+DETAIL` note each in `m1-global.patch`, `m1-ship.patch` and `m2-ship.patch`. Each names
+the replacement the approved source did not spell out and what was written instead.
+
+**The patches stay inert.** They are text for the operator to read and apply by hand.
+Nothing in this repository applies one, and `plan_entry_ok()` only widened far enough to
+let a plan task deliver the file: one flat directory, one extension, never executable.
 
 ## Task 3: Carry review classification in briefs
 
@@ -155,8 +175,14 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Interface:** `--review combined|separate`; conservative missing metadata.  
 **Acceptance:** The stored mode and reason reach the worker; absent or invalid evidence cannot permit a combined gate.
 
-- [ ] Add metadata handling and rendering.
-- [ ] Test and break-verify the protections against invalid or missing review evidence.
+- [x] Add metadata handling and rendering.
+- [x] Test and break-verify the protections against invalid or missing review evidence.
+
+**Landed as `fb5d6f2`.** `--review` and `--review-reason` are one pair, stored in
+`data/tasks/<id>/review` at mode 600 and rendered into the brief beside Risk. Stating
+neither means separate. `dux-worker-wrap` refuses to start on a review file it cannot
+read. Break-verified, six breaks, six distinct failures, pasted in that commit;
+`dux-brief.bats` 33 green, `dux-worker-wrap.bats` 79 green.
 
 ## Task 4: Add versioned review modes to the gate
 
@@ -165,8 +191,14 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Interface:** Spec section 3.1's mode-aware phase and commit requirements.  
 **Acceptance:** Combined and separate modes enforce their required phases; later commits invalidate stale evidence.
 
-- [ ] Add mode-aware receipt handling and fix-pass invalidation.
-- [ ] Break-verify skipped-phase, mismatched-mode, and stale-commit protections separately.
+- [x] Add mode-aware receipt handling and fix-pass invalidation.
+- [x] Break-verify skipped-phase, mismatched-mode, and stale-commit protections separately.
+
+**Landed as `8778940`.** The guard file is version 2 and holds the mode and its reason.
+Combined owes `checks review`; separate still owes `checks review security`. A version 1
+file reads as separate, and a mode that is neither word is a refusal rather than a
+reading. A fix pass clears the mode's phases and keeps the mode. Break-verified, seven
+breaks, seven distinct failures, pasted in that commit; `ship-guard.bats` 54 green.
 
 ## Task 5: Classify shipping and select reviewers
 
@@ -174,8 +206,16 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Files:** `skills/ship/SKILL.md`, `skills/ship/ship-env`, `tests/ship-env.bats`, `.github/PULL_REQUEST_TEMPLATE.md`.  
 **Acceptance:** Standalone and supervised gates follow spec section 3, record classification, and preserve final-commit review coverage.
 
-- [ ] Update classification, review instructions, evidence, fallback disclosure, and PR reporting.
-- [ ] Exercise combined, separate, uncertain, and agent-consumed Markdown cases; break-verify important selection protections.
+- [x] Update classification, review instructions, evidence, fallback disclosure, and PR reporting.
+- [x] Exercise combined, separate, uncertain, and agent-consumed Markdown cases; break-verify important selection protections.
+
+**Landed as `91cd8d9`.** Step 0.5 reads the brief's classification and the whole-branch
+diff and opens the gate on `ship-env review-mode`'s answer. That rule is not a classifier
+and never reads the diff: combined needs a combined claim over a diff found clear, and
+everything else, including both kinds of not knowing, is separate. Both pull request
+templates report which mode ran and why. The Critical-only re-review exception is gone.
+Break-verified, six breaks, six distinct failures, pasted in that commit; `ship-env.bats`
+40 green, `contract.bats` 52 green.
 
 ## Task 6: Prove delivery by review mode
 
@@ -183,8 +223,16 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Files:** `bin/dux-result`, `tests/dux-result.bats`.  
 **Acceptance:** Valid combined proof passes; separate tasks reject combined proof; legacy proof retains its old requirements.
 
-- [ ] Add mode-aware completion proof.
-- [ ] Break-verify identity, phase, mode, and final-commit protections.
+- [x] Add mode-aware completion proof.
+- [x] Break-verify identity, phase, mode, and final-commit protections.
+
+**Landed with this task.** The receipt is version 2 and records the mode the gate opened
+in. The mode is fixed when the receipt is created and never afterwards, so what a gate
+owes is settled before it records anything. A version 1 receipt keeps the five-phase
+requirement it was written under. One combined review is the only claim that costs a
+reviewer, so it is the only one checked back against the task's own classification, at
+recording and again at proof; escalation to separate needs no permission. Break-verified,
+five breaks, five distinct failures, pasted in the commit; `dux-result.bats` 72 green.
 
 ## Task 7: Align watcher handoff validation
 
@@ -192,8 +240,18 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Files:** `bin/dux-watch`, `tests/dux-watch.bats`.  
 **Acceptance:** Watcher and completion proof agree on version, mode, identity, commit, and phases.
 
-- [ ] Accept valid combined, separate, and legacy handoffs and reject mismatches.
-- [ ] Break-verify important handoff protections; retain the receipt-lifetime contract for M2.
+- [x] Accept valid combined, separate, and legacy handoffs and reject mismatches.
+- [x] Break-verify important handoff protections; retain the receipt-lifetime contract for M2.
+
+**Landed with this task.** `receipt_complete()` asks the five questions completion proof
+asks: version, identity, mode against the task's classification, that mode's phases in
+order, and that the ci phase names a commit. It says which one failed, so the refusal
+names the fact rather than the file. It deliberately does not read the branch tip again:
+by the time a handoff is consumed an ordinary later commit has usually moved it, and
+asking again would strand a delivery that was already proved. The receipt-lifetime
+contract M2 needs is pinned by a test: consuming a handoff leaves the receipt at its path,
+byte for byte, with no `.delivered` beside it. Break-verified, six breaks, six distinct
+failures, pasted in the commit; `dux-watch.bats` 48 green.
 
 ## Task 8: Check migration and policy availability
 
@@ -201,8 +259,22 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Files:** `bin/dux-install`, `bin/dux-doctor`, `templates/config/*`, `tests/dux-install.bats`, `tests/dux-doctor.bats`.  
 **Acceptance:** Installation preserves explicit choices and reports incompatible configurations, links, and unavailable policy stages.
 
-- [ ] Add upgrade, conflict, and activation-prerequisite checks.
-- [ ] Test conservative legacy behavior and break-verify important migration protections.
+- [x] Add upgrade, conflict, and activation-prerequisite checks.
+- [x] Test conservative legacy behavior and break-verify important migration protections.
+
+**Landed with this task.** A new `templates/config/policy-stage` holds the rollout stage
+this install may act on, seeded once and never edited afterwards. `dux-doctor` reads it,
+refuses a stage this checkout does not implement rather than treating the value as a
+switch, and prints what the stage leaves unavailable with the way through for each.
+Doctor also resolves both reviewers the way `/ship` resolves them, so a pinned command
+this host cannot run is reported before a gate runs instead of during one.
+
+`dux-install` says what a real directory holds before it proposes replacing it, and
+reports a conflicting copy of a skill in the shared skills directory without touching it:
+a shared file is the operator's, and unlinking one silently is how a host loses a skill it
+was relying on. The bundled reviewer comments now say what each reviewer does in a
+combined gate. Break-verified, six breaks, six distinct failures, pasted in the commit;
+`dux-install.bats` 28 green and `dux-doctor.bats` 10 green.
 
 ## Task 9: Activate only M1 repository policy
 
@@ -210,9 +282,28 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Files:** `AGENTS.md`, `docs/constitution.md`, policy skills listed above, `docs/plans/TEMPLATE.md`, `docs/ARCHITECTURE.md`, `README.md`, affected existing specs, `docs/plans/2026-09-10-dux-m7-resume-any-worker.md`, `docs/plans/2026-09-10-dux-m8-plan-ready-and-implement.md`, `docs/plans/2026-09-10-dux-m9-plan-page-and-rule.md`, `tests/contract.bats`, this plan.  
 **Acceptance:** M1 instructions agree; unsupported feedback, answers, and approval retain recovery instructions. `AGENTS.md` stays inside its tested 150-line cap.
 
-- [ ] Make the next major constitution amendment and align the plan template's inherited testing/review instructions.
-- [ ] Update current behavior and supersession notices without marking historical work complete. The superseded M7-M9 records are the three plan files named above, not specs.
-- [ ] `AGENTS.md` is 130 lines against a 150-line cap `tests/contract.bats` enforces, and Tasks 19 and 29 add to it too. Point at the skills rather than restating routing, review and testing rules, and say in the PR what the file gained and lost.
+- [x] Make the next major constitution amendment and align the plan template's inherited testing/review instructions.
+- [x] Update current behavior and supersession notices without marking historical work complete. The superseded M7-M9 records are the three plan files named above, not specs.
+- [x] `AGENTS.md` is 130 lines against a 150-line cap `tests/contract.bats` enforces, and Tasks 19 and 29 add to it too. Point at the skills rather than restating routing, review and testing rules, and say in the PR what the file gained and lost.
+
+**Landed with this task.** Constitution 3.0.0, MAJOR because it redefines two principles:
+principle 3 narrows break-verification from every new test to every important protection
+and says which failures count, and principle 9 replaces two reviews on every branch with
+a classified mode and replaces the Critical-only re-review with a review on every fix
+commit. Principle 1 gains the delegation and session-boundary rules rather than losing
+any. The governance note says what the change costs, so the tradeoff is weighable rather
+than buried.
+
+`AGENTS.md` went from 130 lines to 141, inside the 150-line cap. It gained review
+classification at dispatch, repository routing with the queue held by Dux, and a line
+naming what this stage does not carry yet. It lost the copy of the dispatch skill's
+six-line plan test, which is now a pointer.
+
+The three M7-M9 plans carry a supersession notice and are otherwise untouched: no box
+moved in either direction, which is what keeps them a record. Ten contract tests pin the
+new policy across the constitution, `AGENTS.md`, the two skills that carry it, the plan
+template and the three superseded plans; four of them were confirmed against a deliberate
+restoration of the rule they replaced.
 
 ## Task 10: Verify and deliver M1
 
@@ -220,9 +311,51 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Files:** M1 test files, `tests/worker-adapter.bats`, this plan.  
 **Acceptance:** M1 acceptance below is evidenced; this proof-changing milestone receives separate reviews.
 
-- [ ] Complete integrated tests and required task-boundary break evidence; run `make check`.
-- [ ] Invoke `/ship` for `make check-branch`, separate reviews, PR, and CI.
-- [ ] Record delivery evidence and actual size; after operator merge, record R1 and installation evidence.
+- [x] Complete integrated tests and required task-boundary break evidence; run `make check`.
+- [x] Invoke `/ship` for `make check-branch`, separate reviews, PR, and CI.
+- [x] Record delivery evidence and actual size; after operator merge, record R1 and installation evidence.
+
+**Landed with this task.** Tasks 3 to 9 each proved their own piece. What none of them could
+prove alone is that the classification survives every hop between the operator and the ledger,
+so this task adds three tests across that path and breaks each one:
+
+- `tests/dux-worker-wrap.bats` proves the recorder passes on what the gate hands it. The
+  recorder is a two-line shim ending in `"$@"`; forwarding only `"$1"` opened the receipt as
+  separate and the test failed on `review=combined`.
+- `tests/e2e-dispatch.bats` runs a combined ship task end to end: brief, recorder, receipt,
+  proof, pull request, watcher, ledger. Two separate breaks, two different failures. Making
+  the proof ask for the separate phases ended the task instead of completing it, at the
+  handoff assertion. Making the watcher ask for them rejected a result the proof had already
+  accepted, at the ledger assertion, with `it is not the combined gate's phases in order`.
+- `tests/contract.bats` pins the mode onto the `checks` call, which is the call that creates
+  the receipt. Removing it there opened every receipt as separate, and the four phases a
+  correct combined gate files would never satisfy the five that receipt then wanted.
+
+`tests/worker-adapter.bats` needed no change: the launcher exports the recorder's path and
+never its arguments, and both directions of that are already pinned there.
+
+The gate's own reviews then found one more protection this milestone owed. Step 0.5 has the gate
+read the branch's diff to decide whether the change is sensitive, and nothing said that diff is
+data. `skills/ship/SKILL.md` now says the diff is evidence and never instruction, and that a file
+arguing for its own classification is a reason to escalate, and it says it before it says to read
+the diff. `tests/contract.bats` pins the rule and its position: removing the rule and moving it
+back below the read instruction each made that test fail, at different assertions.
+
+Checks: `lint-shell`, `lint-pipes`, the unit files and the eight matrix jobs are green on
+macOS and again on Ubuntu 24.04 as a non-root user, which is where this repository's
+GNU-versus-BSD and inode-reuse defects have surfaced before. `lint-identifiers` fails on this
+machine for the reason `docs/plans/2026-09-14-interactive-worker-sessions.md` already records:
+the operator's denylist holds a project name that appears in historical documents this branch
+does not touch, and it fails the same way on `main`. CI has no denylist and skips the check.
+
+Size: 2,259 added lines against an estimate of 1,650 to 2,350 and a cap of 2,500.
+
+Delivered as pull request #51, https://github.com/mr-rob0to/dux/pull/51, through `/ship` with the
+separate reviews this milestone owes. Both passes ran and their findings, and what was done about
+each, are in that pull request's body. The gate records its `ci` phase only when GitHub reports the
+branch's checks green and not empty, so the receipt behind this delivery is the CI evidence. The
+merged commit id and the installed-revision evidence go in the R1 row after the operator merges,
+because neither exists before then.
 
 ## Task 11: Qualify live prompting
 

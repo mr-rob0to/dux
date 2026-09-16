@@ -29,7 +29,11 @@ skills/
                            both reviewers default to auto, which picks the command from what
                            the host has, on every run and never written down, and stops the
                            gate when the host has nothing to run; a stated value is never
-                           probed. auto for the security pass is Codex Sol, read-only, the
+                           probed. review-mode is the rule that turns the brief's recorded
+                           classification and the gate's own read of the diff into combined
+                           or separate: it is not a classifier and never reads the diff,
+                           and every pair but a combined claim over a clear diff is
+                           separate. auto for the security pass is Codex Sol, read-only, the
                            only reviewer qualified against tests/fixtures/security-review;
                            no agent is chosen automatically and a host without codex stops.
                            pr-template delegates to bin/dux-project so the lookup has one
@@ -56,8 +60,13 @@ bin/
   dux-worker-wrap          runs beside the tab, not inside it: task channel, launcher,
                            the harness's own process group, proposal rules, heartbeat,
                            terminal state
-  dux-result               record-ship files the five /ship phases in order; verify proves a
-                           plan, ship, or scout result from the registry, Git, and GitHub.
+  dux-result               record-ship files the phases the branch's review mode owes, in
+                           order, into a versioned receipt that names the mode; verify proves
+                           a plan, ship, or scout result from the registry, Git, and GitHub.
+                           A combined gate owes checks, review, pr, ci; a separate one owes
+                           security as well; a receipt from before review modes keeps all
+                           five. A task classified separate cannot record or prove a combined
+                           review, and escalation the other way needs no permission.
                            A ship brief naming no plan and no task range skips the checkbox
                            proof and nothing else
   dux-teardown             remove the worktree, close the container, mark done or failed;
@@ -75,9 +84,14 @@ bin/
                            Bash,Read,Glob,Grep,Write,Edit, --strict-mcp-config with the
                            empty templates/worker-mcp.json, and --no-chrome
   workers/codex.sh         same adapter for Codex; tested, not dispatchable in milestone 2
-  dux-doctor               preflight: CLIs, gh auth, backend CLI, registry, lock
+  dux-doctor               preflight: CLIs, gh auth, backend CLI, both reviewers resolved the
+                           way the gate resolves them, the rollout stage and what it leaves
+                           unavailable, registry, lock
   dux-install              symlink bundled skills, seed config, add model keys an existing
-                           config/models* is missing, write identifier denylist (task 8)
+                           config/models* is missing, write identifier denylist (task 8).
+                           Says what a real directory holds before proposing to replace it,
+                           and reports a second copy of a skill in the shared skills
+                           directory without touching it
   dux-uninstall            remove only symlinks that point into this repo (task 8)
 templates/
   PULL_REQUEST_TEMPLATE.md the template dux-project installs, with consent, into a
@@ -91,10 +105,11 @@ tests/fixtures/
                            will choose it. Never executed; implementation evidence only
   hooks/pre-push           base-branch push guard, __BASE__ and __UPSTREAM__ rendered per task
   config/                  defaults dux-install copies into config/ (models, models-codex,
-                           worker-harness, backend, reviewer, security-reviewer)
+                           worker-harness, backend, reviewer, security-reviewer,
+                           policy-stage)
 data/         (gitignored) projects.md registry; backlog.md ledger with acked state;
                            tasks/<id>/{intent.md,criteria.md,brief.md,issue.md,status.log,
-                           report.md,worker-settings.json,risk,harness,hooks/,worktree.log,
+                           report.md,worker-settings.json,risk,review,harness,hooks/,worktree.log,
                            retry,retried-from}
 state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            <id>.endpoint; <id>.pid; <id>.pgid; <id>.wrap.log; events.log;
@@ -102,7 +117,7 @@ state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            channels/<id>.<run>/{status.outbox,report.outbox,brief.md,
                            worker-settings.json}
 config/       (gitignored) backend override, reviewer defaults, models, models-codex,
-                           worker-harness
+                           worker-harness, policy-stage
 tests/                     bats; fakes/{claude,codex,herdr,tmux,gh}; helpers/setup.bash;
                            harness/ship.md, the /ship gate recorded from a fresh clone
 ```

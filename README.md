@@ -52,9 +52,9 @@ dux   Plan task started. You'll get a docs-only PR to approve.
   cut from a freshly fetched base. Agents cannot corrupt each other.
 - **Nothing merges on a claim.** Dux checks the branch, the PR and CI before it
   agrees a task is finished, never because a worker said so.
-- **A pre-merge gate that ships with it.** `/ship` runs your project's checks, an
-  independent code review, a separate security pass, and CI — then opens the PR
-  and stops. It works in any repo, with or without Dux.
+- **A pre-merge gate that ships with it.** `/ship` runs your project's checks, the
+  reviews the branch owes, and CI — then opens the PR and stops. It works in any
+  repo, with or without Dux.
 - **GitHub issues as a queue.** Label an issue; it becomes a queued task, and the
   PR carries `Closes #n`.
 
@@ -196,9 +196,14 @@ repository whether or not Dux dispatched the work.
 2. Run the project's own checks — whatever CI runs.
 3. Self-audit what a diff reviewer cannot see: backwards compatibility, docs the
    repo keeps in sync, tests for the failure modes.
-4. **One independent code review**, by a reviewer that did not write the change
-   and is not told what it is for.
-5. **A separate security pass**, on every ship.
+4. **The reviews the branch owes**, run by a reviewer that did not write the
+   change and is not told what it is for. A branch that touches authentication,
+   permissions, secrets, migrations, data integrity, concurrency or cross-system
+   ordering gets a separate security pass as well as the code review; every other
+   branch gets one combined review whose prompt covers both. Anything the gate
+   cannot establish counts as needing both. The PR says which one ran and why.
+5. A fix pass clears the phases, and every fix commit gets a review that covers
+   the changed code.
 6. Open the PR, body filled from your repo's own template.
 7. Watch CI to green.
 
@@ -233,7 +238,8 @@ default and is never probed.
 | File | What it sets |
 |---|---|
 | `reviewer` | Code reviewer for the gate. `auto` picks from your machine |
-| `security-reviewer` | Security reviewer. `auto` picks from your machine |
+| `security-reviewer` | Security reviewer, for the branches that owe a separate pass. `auto` picks from your machine |
+| `policy-stage` | Which rollout stage this install may act on. `bin/dux-doctor` prints what it leaves unavailable |
 | `models` | Model and effort per task shape |
 | `worker-harness` | Which agent runs workers |
 | `backend` | `tmux` or `herdr`. Empty means detect |

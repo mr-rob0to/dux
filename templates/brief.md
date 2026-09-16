@@ -13,6 +13,7 @@
 - Worktree: <set by dux-spawn>
 {{PLAN_LINES}}
 {{RISK_LINE}}
+{{REVIEW_LINES}}
 {{ISSUE_LINE}}
 
 ## Rules

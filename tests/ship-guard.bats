@@ -30,9 +30,13 @@ full_gate() {
   [ -z "$stderr" ]
   f="$(state_file main)"
   [ -f "$f" ]
-  grep -qx 'version=1' "$f"
+  grep -qx 'version=2' "$f"
   grep -qx 'branch=main' "$f"
   grep -qx 'fix_passes=0' "$f"
+  # No mode stated is the careful mode, and the reason says so rather than
+  # leaving a reader to guess why the gate ran three phases.
+  grep -qx 'review_mode=separate' "$f"
+  grep -qx 'review_reason=no classification was recorded' "$f"
   # The state is untracked and invisible to the repository being shipped.
   [ -z "$(git status --porcelain)" ]
 }
@@ -230,7 +234,7 @@ full_gate() {
   guard open
   run guard fix-pass security
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: ship-guard open | record <phase> | check <phase> | fix-pass | attest | push-ok"* ]]
+  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | attest | push-ok"* ]]
 }
 
 @test "the fourth fix pass is refused" {
@@ -292,7 +296,7 @@ full_gate() {
   cd "$(new_repo main)"
   run guard verify
   [ "$status" -eq 2 ]
-  [[ "$output" == "finding: usage: ship-guard open | record <phase> | check <phase> | fix-pass | attest | push-ok"* ]]
+  [[ "$output" == "finding: usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | attest | push-ok"* ]]
 }
 
 @test "push-ok refuses a guard file counting more fix passes than the gate allows" {
@@ -563,4 +567,182 @@ full_gate() {
   run guard attest
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: no guard file for main; the gate was never opened"* ]]
+}
+
+# ---- review modes ----------------------------------------------------------
+# A combined gate is one reviewer instead of two, so everything below is about
+# the ways a gate could end up claiming that without having earned it.
+
+combined_gate() {
+  guard open combined "nothing sensitive in the diff" \
+    && guard record checks && guard record review
+}
+
+@test "open records the mode and reason it was given" {
+  cd "$(new_repo main)"
+  run --separate-stderr guard open combined "no auth, no migration, no money"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  f="$(state_file main)"
+  grep -qx 'review_mode=combined' "$f"
+  grep -qx 'review_reason=no auth, no migration, no money' "$f"
+}
+
+@test "an unknown review mode is refused, and nothing is opened" {
+  cd "$(new_repo main)"
+  run guard open quick "faster"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: unknown review mode 'quick' (combined, separate)"* ]]
+  [ ! -e "$(state_file main)" ]
+}
+
+@test "a mode with no reason is refused: a combined gate states why it is combined" {
+  cd "$(new_repo main)"
+  run guard open combined
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a review mode needs a reason"* ]]
+  [ ! -e "$(state_file main)" ]
+  run guard open separate "   "
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a review mode needs a reason"* ]]
+  [ ! -e "$(state_file main)" ]
+}
+
+@test "the reason is flattened to one line, so it cannot forge another key" {
+  cd "$(new_repo main)"
+  guard open combined "$(printf 'looks fine\nreview_mode=combined')"
+  f="$(state_file main)"
+  [ "$(grep -c '^review_mode=' "$f")" -eq 1 ]
+  [ "$(grep -c '^review_reason=' "$f")" -eq 1 ]
+  grep -qx 'review_reason=looks finereview_mode=combined' "$f"
+}
+
+@test "a combined gate has no security phase to record or check" {
+  cd "$(new_repo main)"
+  guard open combined "nothing sensitive"
+  guard record checks
+  guard record review
+  run guard record security
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: this gate is a combined review; it has no security phase"* ]]
+  run guard check security
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: this gate is a combined review; it has no security phase"* ]]
+}
+
+@test "a combined gate pushes on two phases; a separate one still needs three" {
+  cd "$(new_repo main)"
+  combined_gate
+  run guard push-ok
+  [ "$status" -eq 0 ]
+
+  d="$DUX_HOME/repo2"
+  git init -q -b other "$d"
+  git -C "$d" commit -q --allow-empty -m one
+  cd "$d"
+  guard open separate "touches auth"
+  guard record checks
+  guard record review
+  run guard push-ok
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: no security recorded for other; the gate did not run in order"* ]]
+}
+
+@test "a combined gate's attestation names its mode and carries two steps" {
+  cd "$(new_repo main)"
+  combined_gate
+  head_sha="$(git rev-parse HEAD)"
+  run guard attest
+  [ "$status" -eq 0 ]
+  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  run jq -e . <<< "$json"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r .review_mode <<< "$json")" = combined ]
+  [ "$(jq -r .review_reason <<< "$json")" = "nothing sensitive in the diff" ]
+  [ "$(jq -r '[.steps[].step] | join(",")' <<< "$json")" = "checks,review" ]
+  [ "$(jq -r '.steps[] | select(.step == "review") | .sha' <<< "$json")" = "$head_sha" ]
+}
+
+@test "a separate gate's attestation names its mode and still carries three steps" {
+  cd "$(new_repo main)"
+  full_gate
+  run guard attest
+  [ "$status" -eq 0 ]
+  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  [ "$(jq -r .review_mode <<< "$json")" = separate ]
+  [ "$(jq -r '[.steps[].step] | join(",")' <<< "$json")" = "checks,review,security" ]
+}
+
+@test "a reason holding a quote still leaves the attestation parseable" {
+  cd "$(new_repo main)"
+  guard open combined 'the "whole" branch is prose and one script'
+  guard record checks && guard record review
+  run guard attest
+  [ "$status" -eq 0 ]
+  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  run jq -e . <<< "$json"
+  [ "$status" -eq 0 ]
+}
+
+@test "a fix pass on a combined gate clears its two phases and reaches a push" {
+  cd "$(new_repo main)"
+  combined_gate
+  guard fix-pass
+  f="$(state_file main)"
+  refute grep -q '^checks=' "$f"
+  refute grep -q '^review=' "$f"
+  # The mode survives a fix pass: a fix does not reclassify the branch.
+  grep -qx 'review_mode=combined' "$f"
+  git commit -q --allow-empty -m "the fix"
+  guard record checks && guard record review
+  run guard push-ok
+  [ "$status" -eq 0 ]
+}
+
+@test "a guard file with a mode nothing can read is refused, not read as combined" {
+  cd "$(new_repo main)"
+  full_gate
+  f="$(state_file main)"
+  { grep -v '^review_mode=' "$f"; echo "review_mode=quick"; } > "$f.next" && mv "$f.next" "$f"
+  for args in "record checks" "check checks" "push-ok" "attest" "fix-pass"; do
+    # shellcheck disable=SC2086
+    run guard $args
+    [ "$status" -eq 2 ]
+    [[ "$output" == "finding: the guard file's review mode is not a mode: quick; open the gate again"* ]]
+  done
+}
+
+# A gate opened by the previous version of this file has no mode line at all.
+# Reading that as combined would retire a security pass that did run, so it
+# reads as what it was.
+@test "a guard file from before review modes is read as separate" {
+  cd "$(new_repo main)"
+  full_gate
+  f="$(state_file main)"
+  { grep -v '^review_mode=' "$f" | grep -v '^review_reason=' | sed 's/^version=2$/version=1/'; } \
+    > "$f.next" && mv "$f.next" "$f"
+  run guard push-ok
+  [ "$status" -eq 0 ]
+  run guard attest
+  [ "$status" -eq 0 ]
+  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  [ "$(jq -r .review_mode <<< "$json")" = separate ]
+  [ "$(jq -r '[.steps[].step] | join(",")' <<< "$json")" = "checks,review,security" ]
+}
+
+@test "a version this file does not know is refused rather than guessed at" {
+  cd "$(new_repo main)"
+  full_gate
+  f="$(state_file main)"
+  sed -i.bak 's/^version=2$/version=9/' "$f" && rm -f "$f.bak"
+  run guard push-ok
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the guard file's version is 9, which this gate cannot read; open the gate again"* ]]
+}
+
+@test "open takes at most a mode and a reason" {
+  cd "$(new_repo main)"
+  run guard open combined
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a review mode needs a reason"* ]]
 }

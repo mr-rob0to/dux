@@ -76,6 +76,19 @@ if [ "$shape" = ship ]; then
     *) refuse "risk for $id must be bounded or complex, not '$(cap_line "$risk")'" ;;
   esac
   key="$risk"
+  # The review mode travels to the worker in the brief, not through here. What
+  # this reads it for is to refuse early: a mode nothing can read fails at
+  # dux-result's gate instead, after a whole session has been spent. A task
+  # briefed before the file existed has none, and dux-result reads that as the
+  # old separate-review requirement, which is the careful reading and needs no
+  # refusal here.
+  if [ -f "$task/review" ]; then
+    review="$(sed -n 's/^mode=//p' "$task/review" | take_line | tr -d '[:space:]')"
+    case "$review" in
+      combined|separate) ;;
+      *) refuse "review mode for $id must be combined or separate, not '$(cap_line "$review")'" ;;
+    esac
+  fi
 fi
 spec="$(tr ' ' '\n' < "$models" | sed -n "s/^$key=//p" | take_line)"
 case "$spec" in *:*) ;; *) refuse "model entry for $key in $models must be <model>:<effort>, got '${spec:-nothing}'" ;; esac

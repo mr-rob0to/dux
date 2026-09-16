@@ -243,7 +243,7 @@ make_github_repo() {  # $1 project dir name under $DUX_HOME
   (cd "$d" && git add .gitignore && git commit -q -m "ignore worktrees" && git push -q origin main)
 }
 
-fixture_task() {  # $1 project name, $2 shape, [$3 github]; prints the task id. Needs Tasks 2 and 3.
+fixture_task() {  # $1 project name, $2 shape, [$3 github], [$4 combined]; prints the task id. Needs Tasks 2 and 3.
   # A second task in the same project reuses it; registering it twice is a finding.
   if ! dux-project list | grep -x "$1" >/dev/null; then
     if [ "${3:-}" = github ]; then make_github_repo "$1"; else make_repo "$DUX_HOME/$1" main; fi
@@ -254,7 +254,14 @@ fixture_task() {  # $1 project name, $2 shape, [$3 github]; prints the task id. 
   local task="$DUX_HOME/data/tasks/$id"
   printf 'Do the thing the operator asked for.\n' > "$task/intent.md"
   printf '1. The thing is done.\n' > "$task/criteria.md"
-  if [ "$2" = ship ]; then
+  # Only a ship carries a classification, and only the caller that asked for
+  # combined gets one: everything else is briefed the way an operator who said
+  # nothing about reviews is, which is separate.
+  local classify=""
+  [ "${4:-}" = combined ] && classify=yes
+  if [ "$2" = ship ] && [ -n "$classify" ]; then
+    dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" --plan docs/plan.md --tasks 1-2 --review combined --review-reason 'touches none of the sensitive categories' >/dev/null
+  elif [ "$2" = ship ]; then
     dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" --plan docs/plan.md --tasks 1-2 >/dev/null
   else
     dux-brief "$id" --intent-file "$task/intent.md" --criteria-file "$task/criteria.md" >/dev/null
@@ -288,11 +295,21 @@ handoff() {  # $1 id, $2 status line, $3 event, [$4 run]
   ( DUX_STATE="$DUX_HOME/state"; publish_handoff "$1" "${4:-r00}" "$2" "$3" ) > /dev/null
 }
 
-# The five /ship phases a ship result needs behind it.
-fake_receipt() {  # $1 id, $2 run
+# The /ship phases a ship result needs behind it: the phases that review mode
+# owes, at a commit id shaped the way Git writes one. Called with no mode it
+# writes the receipt a Dux from before review modes wrote, which owed all five.
+fake_receipt() {  # $1 id, $2 run, [$3 combined|separate]
   local r="$DUX_HOME/state/$1.ship-receipt" p
-  { echo "version=1"; echo "id=$1"; echo "run=$2"; echo "branch=dux/$1"; } > "$r"
-  for p in checks review security pr ci; do
-    printf 'phase=%s sha=deadbeef at=2026-09-05T00:00:00Z\n' "$p" >> "$r"
+  local sha=0123456789abcdef0123456789abcdef01234567
+  local phases="checks review security pr ci"
+  if [ -n "${3:-}" ]; then
+    { echo "version=2"; echo "id=$1"; echo "run=$2"; echo "branch=dux/$1"
+      echo "review=$3"; } > "$r"
+    [ "$3" != combined ] || phases="checks review pr ci"
+  else
+    { echo "version=1"; echo "id=$1"; echo "run=$2"; echo "branch=dux/$1"; } > "$r"
+  fi
+  for p in $phases; do
+    printf 'phase=%s sha=%s at=2026-09-05T00:00:00Z\n' "$p" "$sha" >> "$r"
   done
 }

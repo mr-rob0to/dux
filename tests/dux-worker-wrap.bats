@@ -42,8 +42,8 @@ open_tab() {  # [$1 backend]
 }
 
 # A task with a brief, rendered settings, a worktree, and the tab its worker runs in.
-prepare() {  # $1 shape; sets $id and $wt
-  id="$(fixture_task proj "$1")"
+prepare() {  # $1 shape, [$2 combined]; sets $id and $wt
+  id="$(fixture_task proj "$1" '' "${2:-}")"
   wt="$(dux-worktree create "$id")"
   export FAKE_WORKER_SCRIPT="$DUX_HOME/state/script"
   export DUX_WRAP_POLL_SECS=1 DUX_HEARTBEAT_SECS=1
@@ -631,6 +631,24 @@ EOF
   [ "$(handoff_event)" = ended ]
 }
 
+# The classification lives in the brief, and the receipt is the only place the
+# proof can read it from. Between them sits a two-line shim: if it forwards the
+# phase and drops what follows, every receipt opens as separate, and a combined
+# gate that did exactly the reviews it owed then files four phases against a
+# receipt that wants five.
+@test "the recorder carries the gate's classification through to the receipt" {
+  prepare ship combined
+  printf 'run "$DUX_SHIP_RECORD" checks combined\nrun "$DUX_SHIP_RECORD" review combined\nrun "$DUX_SHIP_RECORD" pr\nstatus done: PR https://example.invalid/pr/1\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  wrap
+  r="$DUX_HOME/state/$id.ship-receipt"
+  grep -qx 'version=2' "$r"
+  grep -qx 'review=combined' "$r"
+  # pr straight after review is the proof the mode arrived: a receipt that had
+  # defaulted to separate wants security in that place and refuses this one.
+  [ "$(sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$r" | tr '\n' ' ')" = "checks review pr " ]
+}
+
 @test "a push to the base branch from inside the worker is refused by the worktree's hook" {
   prepare scout
   before="$(git -C "$DUX_HOME/proj.origin" rev-parse main)"
@@ -878,4 +896,36 @@ EOF
   run dux-backend pid "$ep" sleep
   [ "$status" -eq 0 ]
   kill -TERM -- "-$(printf '%s' "$output" | cut -d' ' -f2)" 2>/dev/null || true
+}
+
+# ---- the review mode the brief recorded -------------------------------------
+# The wrapper does not choose the mode and does not pass it anywhere: the brief
+# carries it to the worker. What it does is refuse to start on a classification
+# nothing can read, because the alternative is a worker that spends a whole
+# session and then has its gate refused by dux-result for a file dux-brief wrote.
+
+@test "a review file that is not combined or separate is a refusal, not a guess" {
+  prepare ship
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'mode=quick\nreason=faster\n' > "$DUX_HOME/data/tasks/$id/review"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: review mode for $id must be combined or separate, not 'quick'"* ]]
+  [ ! -s "$FAKE_WORKER_LOG" ]
+}
+
+@test "a ship task from before the review file existed starts, and is separate" {
+  prepare ship
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  rm -f "$DUX_HOME/data/tasks/$id/review"
+  wrap
+  [ -s "$FAKE_WORKER_LOG" ]
+}
+
+@test "a combined review file starts the worker" {
+  prepare ship
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'mode=combined\nreason=nothing sensitive\n' > "$DUX_HOME/data/tasks/$id/review"
+  wrap
+  [ -s "$FAKE_WORKER_LOG" ]
 }

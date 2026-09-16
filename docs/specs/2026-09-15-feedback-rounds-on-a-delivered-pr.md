@@ -8,6 +8,13 @@ exiting and being started again per round, which removed a second wrapper proces
 whole family of checks that reattaching needed. Section 12 records that decision and what
 it replaced. Nothing here changes a running system until the plan's milestone merges.
 
+**Amended 2026-09-15** by [the Dux simplification amendment](2026-09-15-dux-simplification-rollout.md),
+section 6.1, which the operator approved the same day. Seven provisions below now read as
+that document settles them; each one says so where it appears. This design keeps ownership
+of everything else: the long-lived wrapper, live-tab feedback, `bin/dux-round`,
+`templates/round.md`, same-owner feedback, fresh run identity and completion proof per
+round, same-PR `/ship` updates, eight feedback rounds, and safe teardown.
+
 ## 1. What the operator gets
 
 A worker that has opened its pull request no longer ends. It waits at its prompt, in its
@@ -73,18 +80,37 @@ section 5.3, point 1). The order changes and the stop becomes conditional:
    so a moved `beat` means the worker ran a tool, which is the opposite of what this
    wait is asking. The wait running out is a log line, not a refusal: the proof runs
    either way, and the worker was told to stop after its terminal line.
+
+   **Amended:** the wait running out proves nothing about the session. It does not make
+   the worker idle, it does not park it, and it does not release the one-worker slot.
+   Only the `stopped` file appearing does, which is what section 8's positive parking
+   now requires.
 2. **Prove and publish**, exactly as today.
 3. **Park, for `done: PR <url>` only.** The wrapper does not exit. It leaves the group
-   running and the channel, `state/<id>.pgid` and `state/<id>.portal` in place, renames
-   `state/<id>.ship-receipt` to `state/<id>.ship-receipt.delivered` so the receipt that
-   proved this delivery is kept and a round starts with no receipt of its own
-   (section 5), logs `worker for <id> parked in its tab; feedback goes through dux-round`
+   running and the channel, `state/<id>.pgid` and `state/<id>.portal` in place, keeps
+   `state/<id>.ship-receipt` exactly where the watcher looks for it (amended: see the
+   note below), logs `worker for <id> parked in its tab; feedback goes through dux-round`
    once, and then waits: every second it looks for `data/tasks/<id>/round-<n>.md`, where
    `n` is one more than the number of rounds it has already run. When that file appears
    it runs the round in place (section 5) and, at the end of it, parks again. The wait is
    unbounded, silent and cheap: it logs nothing per pass, because a task can sit parked
    for days and `state/<id>.wrap.log` is never rotated. Every other ending, `done: report`
    included, stops the group, clears the channel and exits as today.
+
+**Amended: parking is positive, and it never removes the receipt.** Two changes from the
+rollout amendment's section 3.1 and 6.2 land on the step above.
+
+The wrapper writes a small run-bound parked marker only after it has observed this run's
+`Stop`-only event. Nothing else parks a task: not a timeout, not a published handoff, not
+a quiet tab. A marker that names another run is not this run's parking.
+
+The completed receipt stays readable at `state/<id>.ship-receipt`, the path
+`dux-watch` validates, until the watcher has validated and durably applied this run's
+handoff. Publication, a `Stop` event and parking do not establish consumption. Before
+consumption the wrapper must not rename the receipt to `.delivered`, delete it, or
+overwrite it for another run; a round cannot start while a handoff is pending. After
+consumption the wrapper may archive it as that run's `.delivered` evidence, and section
+5's round then starts with no receipt of its own exactly as written there.
 
 **The final import does not judge a parked session.** Today the group is stopped before
 `import_proposals final` runs, so "the worker kept writing after its terminal status" and
@@ -140,10 +166,16 @@ One command, run by Dux in the orchestrator session. Every check below is a find
    `dux-env` as `fleet_busy <id>` so both call one function, with the same refusal
    wording. A parked session does not count (section 8).
 7. Git, after `git fetch origin <base>`: `origin/<base>` must be an ancestor of
-   `refs/heads/dux/<id>`. Otherwise: `dux/<id> is behind <base>; /ship would stop: merge
-   or rebase it by hand, push, then send the round again`. The round would only end at
-   `/ship`'s base check, so it is refused before a worker spends anything. The worktree
-   must still be registered on the branch (`dux-worktree path`).
+   `refs/heads/dux/<id>`. Otherwise the round is refused before a worker spends
+   anything, because it would only end at `/ship`'s base check. The worktree must still
+   be registered on the branch (`dux-worktree path`).
+
+   **Amended:** the repair is not the operator's to do by hand. Dux assigns an ordinary
+   merge from the fetched base to the worker that owns this feedback round, on its own
+   branch, and that worker stops at `needs-decision` for any conflict whose resolution
+   is a consequential choice. The merge is a merge: a feedback round's history has
+   already been reviewed and attested, so it is never rebased, amended, squashed or
+   force-pushed.
 8. GitHub: `gh pr view <url> --json state,headRefName,baseRefName` on the ledger's url.
    `MERGED`: `pull request <url> is already merged; tear <id> down`. `CLOSED`: `pull
    request <url> is closed; reopen it or tear <id> down`. A head or base that is not
@@ -206,8 +238,11 @@ between one run and the next, in order:
   test on `run=` holds unchanged. A new run record and result context are written over
   `state/<id>.run` and `state/<id>.result-context`, whose contents belong to the run
   that parked and whose result the watcher has already applied. There is no receipt to
-  remove: parking renamed it to `state/<id>.ship-receipt.delivered` (section 3), which
-  `dux-result` never reads and `dux-teardown` removes with the rest.
+  remove: the delivered run's receipt was archived as
+  `state/<id>.ship-receipt.delivered` once the watcher consumed its handoff (section 3,
+  as amended), which `dux-result` never reads and `dux-teardown` removes with the rest.
+  A round claimed while that handoff is still pending is refused, so the archiving has
+  always happened by the time a round starts.
 - **The ship recorder is rewritten** with the new run id, at the path the worker's
   `DUX_SHIP_RECORD` already names. That file is mode 500, so the rewrite is `chmod 600`,
   write, `chmod 500`; a plain redirect onto it fails.
@@ -270,13 +305,22 @@ which is the right outcome; rejecting it would end the session and take the task
 `done` over an answer that was correct.
 
 Everything else stays: the pull request found by branch is the same one, exactly one
-and open; its head is the local tip; for a `ship` round the receipt is this run's, five
+and open; its head is the local tip; for a `ship` round the receipt is this run's, its
 phases in order, `ci` recorded against the tip; the whole branch is still the diff read
 against the base, so a ship result still needs an implementation file and a plan result
 still changes only documents.
 
+**Amended:** how many phases that is comes from the round's review mode, not from a
+fixed five. A combined round files `checks`, `review`, `pr`, `ci`; a separate round files
+`checks`, `review`, `security`, `pr`, `ci`. Each round rechecks its own classification
+against its own whole-branch diff and can only escalate: a round that adds a sensitive
+change runs separate reviews even when the task was classified combined, and a combined
+receipt never satisfies a task classified separate. What does not change is that every
+delivered round gets a fresh receipt for its own run, a whole-branch review, and proof
+against the final commit.
+
 For a `ship` round the receipt requirement is what forces `/ship` to run again: there is
-no other way to file five phases against the new tip. A `plan` round has no such force,
+no other way to file that round's phases against the new tip. A `plan` round has no such force,
 because `dux-result` asks a plan result only for a clean worktree, one open pull request
 at the tip and a documents-only diff. That is exactly how a plan task's first run is
 proved today, so a plan round is no weaker than what it continues, but section 9's cost
@@ -318,17 +362,28 @@ teardown so that nothing about the proved delivery is silently destroyed.
 
 `dux-spawn` refuses to start while any other task's worker might be alive, and reads
 `state/<other>.pgid` as one of its signals. A parked session's group is alive and idle:
-a session at its prompt spends no tokens, which is what the guard is for. So the guard
-skips the pgid signal for a task whose ledger state is `done`. Every other signal, and
-every unreadable file, refuses as today. `dux-round` runs the same guard, so a round
-cannot start beside a running task either: one worker works at a time; any number may
-wait. The one cost is the tab each parked session holds until its pull request merges.
+a session at its prompt spends no tokens, which is what the guard is for. `dux-round`
+runs the same guard, so a round cannot start beside a running task either: one worker
+works at a time; any number may wait. The one cost is the tab each parked session holds
+until its pull request merges.
 
-The exemption assumes a parked session is idle, and the brief invites the operator to
-type into a worker's tab, so an operator driving a parked session by hand is exempt from
-the guard that keeps two agents off one subscription. That is the operator's own choice,
-made in front of the tab, and it is a note rather than a defect. The `stopped` file from
-section 3 would let a later milestone check idleness rather than assume it.
+**Amended: the exemption is earned, not assumed, and it covers both signals.** The
+ledger reading `done` is no longer what exempts a task. The exemption comes from the
+run-bound parked marker of section 3, written only after that run's `Stop`-only event,
+and it then applies to the live wrapper pid and to the process group alike, because both
+belong to the one parked session. Spawn and round activation call one shared admission
+helper, so the rule is written once.
+
+Active or uncertain evidence still blocks: an unreadable file, a marker that names
+another run, a marker whose wrapper or group does not match, a timeout, or anything the
+helper cannot read is recovery, never an assumption of idleness. Claiming a round clears
+the exemption before the line is typed, and a pending handoff or a repeated request
+cannot start a second activation.
+
+The operator may still watch a tab, and typing into a parked tab by hand is outside the
+one-active-worker guarantee the helper enforces. Managed feedback goes through Dux. That
+is the operator's own choice, made in front of the tab, and it stays a note rather than a
+defect.
 
 ## 9. `/ship` updates a pull request it finds
 
@@ -344,8 +399,9 @@ skill already rebuilds the body and edits, so the rest of the gate is unchanged.
 The review scope is unchanged too: the reviewer reads the branch's whole diff against
 the base, the parked commits included. The gate attests the commit going out, and a
 pull request merges as a whole; a review of only the new commits would attest less than
-it records. For a ship round that is one full review and one security pass per round,
-which is the cost the second task paid and more. A plan round runs no gate, as a plan
+it records. **Amended:** what that costs per round is the round's review mode, one
+combined whole-branch review for ordinary work and a separate correctness and security
+pair for the sensitive categories the amendment names, not a security pass every time. A plan round runs no gate, as a plan
 task's first run runs none (section 6).
 
 `ship-guard`'s state file lives in the worktree's git directory under the branch name.
@@ -384,7 +440,10 @@ no recorded phases and a fix count of zero. Nothing to change.
 - `bin/dux-notify`, `templates/brief.md`, `AGENTS.md`, `skills/dux-dispatch/SKILL.md`,
   `skills/dux-recover/SKILL.md`, `skills/ship/SKILL.md`, `docs/ARCHITECTURE.md`,
   `docs/constitution.md` (principle 6, one clause: the one line Dux writes into the
-  tab; a PATCH, 2.0.9).
+  tab; a PATCH). **Amended:** the version is not prescribed here. Milestone 1 of the
+  rollout amends this constitution first, and this clause bumps whatever version that
+  leaves, by the governance rule in force when it lands. 2.0.9 is neither required nor
+  restored.
 - Pointers in `2026-09-03-dux-orchestrator-design.md` (5.4, 5.5, 5.6, 6.3, 9, 11, 17),
   in `2026-09-14-interactive-worker-sessions.md` (5.3, the milestone 7 note), and a
   status line in `2026-09-10-one-session-planning.md`.
@@ -461,16 +520,22 @@ no recorded phases and a fix count of zero. Nothing to change.
   neither is changed here.
 - A round that does not end `done` leaves the task `failed` or `ended` with its pull
   request open and mergeable, and no further round is possible on it (section 7).
-- A base branch that moves while a task is parked refuses the round until the operator
-  merges or rebases by hand. `/ship` refuses the same state for every task today; the
-  round only says so earlier.
+- A base branch that moves while a task is parked refuses the round until the base is
+  merged in. **Amended:** Dux assigns that merge to the owning feedback worker rather
+  than leaving it to the operator (section 4, step 7). `/ship` refuses the same state for
+  every task today; the round only says so earlier.
 - The idle wait reads a `Stop` hook's touch. A Claude Code release that stops firing it
-  costs sixty seconds per delivery and nothing else.
+  costs sixty seconds per delivery and, **as amended in section 3**, leaves the task
+  unparked: it is not exempt from the one-worker guard and it takes no round until the
+  operator recovers it. That is the conservative end of the trade and it is deliberate.
 - The proof of a parked task is of the moment it was made (section 3).
 - A round typed into a pane whose Claude Code is showing a dialog is lost in that
   dialog. Spawn refuses an untrusted repository for that reason today; no second
   dialog is known on a running session.
-- The one-worker exemption assumes a parked session is idle (section 8).
+- The one-worker exemption no longer assumes a parked session is idle: **as amended in
+  section 8** it is earned by that run's own `Stop` event and covers the wrapper pid and
+  the process group together. What remains outside it is an operator typing into a parked
+  tab by hand, which Dux does not see and does not claim to govern.
 - Herdr's own agent lifecycle (`agent prompt`, `agent wait`) is still not used: it
   needs an agent Herdr registered, tmux has nothing like it, and `pane run` sends the
   same keystrokes.

@@ -21,6 +21,15 @@ running_task() {  # $1 id, [$2 shape]
   fake_run "$1" r00 "${2:-scout}"
 }
 status_is() { printf '%s\n' "$2" >> "$DUX_HOME/data/tasks/$1/status.log"; }
+# What dux-brief leaves beside a ship task it classified. A task without one is
+# separate, which is what running_task builds.
+classify() { printf 'mode=%s\nreason=the test said so\n' "$2" > "$DUX_HOME/data/tasks/$1/review"; }
+# One key in a receipt rewritten, so a test changes one fact and nothing else.
+receipt_says() {  # $1 id, $2 key, $3 value
+  local r="$DUX_HOME/state/$1.ship-receipt"
+  awk -v k="$2" -v v="$3" '{ if ($0 ~ "^" k "=") print k "=" v; else print }' "$r" > "$r.x"
+  mv "$r.x" "$r"
+}
 seq_dir() { printf '%s' "$DUX_HOME/state/$1.handoffs/${2:-1}"; }
 age_out() { touch -t 202001010000 "$DUX_HOME/data/tasks/$1/status.log" "$DUX_HOME/state/$1.pid"; }
 events_count() { if [ -f "$events" ]; then wc -l < "$events" | tr -d ' '; else echo 0; fi; }
@@ -357,6 +366,111 @@ start_loop() { DUX_WATCH_INTERVAL_SECS="${1:-1}" dux-watch >> "$watchlog" 2>&1 3
   fake_receipt t1 r00
   dux-watch --once
   [ "$(events_count)" -eq 1 ]; [ "$(dux-ledger get t1 state)" = done ]
+}
+
+# The watcher asks the receipt the same questions dux-result asked before it
+# would call the delivery proved. A handoff is the only thing that moves a task
+# to done, so a receipt the watcher reads more loosely than the proof did is a
+# second, weaker gate behind the first one.
+
+@test "a combined receipt completes a ship the task was classified combined for" {
+  running_task t1 ship; classify t1 combined; status_is t1 "working: on it"
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  fake_receipt t1 r00 combined
+  dux-watch --once
+  [ "$(events_count)" -eq 1 ]; [ "$(dux-ledger get t1 state)" = done ]
+}
+
+@test "a combined receipt is not proof for a task classified separate" {
+  running_task t1 ship; status_is t1 "working: on it"
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  fake_receipt t1 r00 combined
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 0 ]; [ "$(dux-ledger get t1 state)" = running ]
+  [[ "$stderr" == *"it claims one combined review, and this task was classified separate"* ]]
+}
+
+@test "a receipt short of the phases its own mode owes is not proof" {
+  running_task t1 ship; classify t1 combined; status_is t1 "working: on it"
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  fake_receipt t1 r00 combined
+  grep -v '^phase=ci ' "$DUX_HOME/state/t1.ship-receipt" > "$DUX_HOME/x"
+  mv "$DUX_HOME/x" "$DUX_HOME/state/t1.ship-receipt"
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 0 ]
+  [[ "$stderr" == *"not the combined gate's phases in order"* ]]
+}
+
+@test "a receipt from before review modes still owes all five phases" {
+  running_task t1 ship; classify t1 combined; status_is t1 "working: on it"
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  fake_receipt t1 r00
+  grep -v '^phase=security ' "$DUX_HOME/state/t1.ship-receipt" > "$DUX_HOME/x"
+  mv "$DUX_HOME/x" "$DUX_HOME/state/t1.ship-receipt"
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 0 ]
+  [[ "$stderr" == *"not the separate gate's phases in order"* ]]
+  # And whole, it completes: a legacy receipt is read under the rule it was
+  # written under, never retired by a classification made after it.
+  fake_receipt t1 r00
+  dux-watch --once
+  [ "$(events_count)" -eq 1 ]; [ "$(dux-ledger get t1 state)" = done ]
+}
+
+@test "a receipt belonging to another task, run or branch is not proof" {
+  running_task t1 ship; status_is t1 "working: on it"
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  fake_receipt t1 r00; receipt_says t1 id t9
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 0 ]
+  [[ "$stderr" == *"it names another task"* ]]
+  fake_receipt t1 r00; receipt_says t1 run r99
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 0 ]
+  [[ "$stderr" == *"it belongs to another run"* ]]
+  fake_receipt t1 r00; receipt_says t1 branch dux/somebody-else
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 0 ]
+  [[ "$stderr" == *"it names another branch"* ]]
+}
+
+@test "a receipt version or review mode the watcher cannot read is not proof" {
+  running_task t1 ship; status_is t1 "working: on it"
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  fake_receipt t1 r00; receipt_says t1 version 3
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 0 ]
+  [[ "$stderr" == *"its version is '3', which this watcher cannot read"* ]]
+  fake_receipt t1 r00 separate; receipt_says t1 review maybe
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 0 ]
+  [[ "$stderr" == *"it names no review mode"* ]]
+}
+
+@test "a receipt whose last phase names no commit is not proof" {
+  running_task t1 ship; status_is t1 "working: on it"
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  fake_receipt t1 r00
+  awk '{ sub(/^phase=ci sha=[0-9a-f]*/, "phase=ci sha=deadbeef"); print }' \
+    "$DUX_HOME/state/t1.ship-receipt" > "$DUX_HOME/x"
+  mv "$DUX_HOME/x" "$DUX_HOME/state/t1.ship-receipt"
+  run --separate-stderr dux-watch --once
+  [ "$(events_count)" -eq 0 ]
+  [[ "$stderr" == *"its ci phase names no commit"* ]]
+}
+
+@test "consuming a handoff leaves the receipt where it was, byte for byte" {
+  # The receipt outlives the handoff on purpose. A feedback round reads it after
+  # the delivery it proved, so nothing here may move, rename or rewrite it.
+  running_task t1 ship; status_is t1 "working: on it"
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  fake_receipt t1 r00
+  before="$(git hash-object "$DUX_HOME/state/t1.ship-receipt")"
+  dux-watch --once
+  [ "$(dux-ledger get t1 state)" = done ]
+  [ -f "$DUX_HOME/state/t1.ship-receipt" ]
+  [ "$(git hash-object "$DUX_HOME/state/t1.ship-receipt")" = "$before" ]
+  [ ! -e "$DUX_HOME/state/t1.ship-receipt.delivered" ]
 }
 
 @test "a consumption interrupted at any step is replayed without duplicating anything" {

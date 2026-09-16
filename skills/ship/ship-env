@@ -16,7 +16,7 @@ set -u
 
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 
-usage="usage: ship-env reviewer | security-reviewer | pr-template <repo> | pr-template-fallback | --root"
+usage="usage: ship-env reviewer | security-reviewer | review-mode <claim> <sensitive> | pr-template <repo> | pr-template-fallback | --root"
 
 # pwd -P resolves dux-install's directory symlink, so the checkout is the one
 # the skill was installed from and not wherever the link sits.
@@ -172,6 +172,29 @@ pr_template() {  # $1 repo path
   [ "$out" = none ] || printf '%s\n' "$out"
 }
 
+# Whether this gate may run one reviewer instead of two. It is not a classifier
+# and does not look at the diff: the gate reads the brief's recorded mode and
+# reads the branch diff for the sensitive categories, and hands both in. What
+# lives here is the rule that combines them, in one place with one answer, so
+# there is something to break rather than a paragraph of prose to obey.
+#
+# Combined is the only answer that costs a reviewer, so it is the only answer
+# with a condition on it: the gate claimed combined and found nothing sensitive.
+# Every other pair, including both kinds of not knowing, is separate. That is
+# why `unknown` is a word here at all -- a gate that cannot establish a
+# classification has to be able to say so and still get an answer it can act on.
+review_mode() {  # $1 combined|separate|unknown, $2 yes|no|unknown
+  case "$1" in
+    combined | separate | unknown) ;;
+    *) finding "review-mode takes combined, separate or unknown, not '$1'" ;;
+  esac
+  case "$2" in
+    yes | no | unknown) ;;
+    *) finding "review-mode takes yes, no or unknown for the sensitive verdict, not '$2'" ;;
+  esac
+  if [ "$1" = combined ] && [ "$2" = no ]; then printf 'combined\n'; else printf 'separate\n'; fi
+}
+
 cmd="${1:-}"; shift || true
 case "$cmd" in
   '') finding "$usage" ;;
@@ -183,6 +206,9 @@ case "$cmd" in
     v="$(value "$cmd")" || exit 2
     ! agent_hijacked "$v" || finding "the repository being reviewed defines an agent called ${v#agent:}, so the gate cannot tell which definition it would dispatch; remove .claude/agents/${v#agent:}.md from the worktree, or name a command line in $root/config/$cmd"
     printf '%s\n' "$v" ;;
+  review-mode)
+    [ $# -eq 2 ] || finding "$usage"
+    review_mode "$1" "$2" ;;
   pr-template)
     [ $# -eq 1 ] || finding "$usage"
     pr_template "$1" ;;
@@ -191,6 +217,6 @@ case "$cmd" in
     [ -f "$root/templates/PULL_REQUEST_TEMPLATE.md" ] \
       || finding "no bundled pull request template at $root/templates/PULL_REQUEST_TEMPLATE.md"
     printf '%s\n' "$root/templates/PULL_REQUEST_TEMPLATE.md" ;;
-  *) finding "unknown key '$cmd' (reviewer, security-reviewer)" ;;
+  *) finding "unknown key '$cmd' (reviewer, security-reviewer, review-mode)" ;;
 esac
 exit 0

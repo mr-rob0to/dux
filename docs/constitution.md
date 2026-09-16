@@ -20,6 +20,14 @@ All changes MUST follow trunk-based development on `main`.
   period, at most 50 characters. Commits MUST be atomic.
 - A commit message describes the diff, not the intent. Every claim in it MUST be checkable
   against the diff.
+- One worker owns a deliverable and does the work itself. Required reviews are fresh
+  read-only sessions run through explicit commands. Bounded read-only research MAY be
+  delegated when it answers a stated question and saves more work than it costs; routine
+  reading and exploration MUST NOT be. Dux dispatches, supervises and reports, and never
+  implements a project change.
+- A routine test failure is fixed by the worker that wrote the code. A new deliverable, a
+  different repository, a substantial milestone, or a lost session gets a fresh worker and
+  its own worktree.
 
 Rationale: a single operator with several sessions needs history that reads as a sequence of
 reviewed milestones.
@@ -69,12 +77,20 @@ Testing is non-negotiable for scripts and for guards.
   script is written.
 - Every script under `bin/` MUST have a bats file. Every refusal path MUST have a test that
   reaches it.
-- A guard you have not seen fail is not a guard. Every new test is break-verified once: break
-  the guarded condition, run, confirm the failure, restore, and paste the failure output into
-  the commit body. One break per commit; N breaks need N distinct failures.
+- A guard you have not seen fail is not a guard. Every important protection a change adds
+  MUST be break-verified once: break the protected behavior, run, confirm the named test
+  failed, restore, and paste the failure output into the commit body. Distinct protections
+  need distinct observed failures. A break that leaves the test green is a finding: find out
+  why before the task is called done.
+- An important protection is one whose failure bypasses a validation, breaks authentication
+  or permissions, loses or corrupts data, gets money wrong, fails under concurrency, skips a
+  cleanup, opens a security defect, or brings back a bug this project has already had.
+  Ordinary formatting, layout, straightforward mapping and happy-path behavior get normal
+  test-first evidence and no deliberate break. Where one test covers both, the important half
+  is what gets broken.
 - Break-verification happens at the task boundary, not at the ship gate. A task is not done
-  until every assertion it added has been broken and seen to fail. The next task MUST NOT
-  start before that.
+  until every important protection it added has been broken and seen to fail. The next task
+  MUST NOT start before that.
 - A suite that is green on its first run is a reason to look harder, not a reason to move on.
   The usual cause is an assertion that never reached the code under test.
 - Fix commits outnumbering feature commits in a milestone is a stop signal: the tests were
@@ -202,12 +218,18 @@ Rationale: agents re-read documents every session; duplication is where drift st
 
 ### 9. Code Review
 
-- Every milestone PR goes through `/ship`: base verification, `make check-branch`, one independent
-  code review by Codex, one security pass, the PR, and green CI. No manual review outside the
-  gate; no second review.
+- Every milestone PR goes through `/ship`: base verification, `make check-branch`, the reviews
+  the branch owes, the PR, and green CI. No manual review outside the gate.
+- How many reviews a branch owes is classified before the gate opens. A branch that touches
+  authentication, permissions, secrets, migrations, data integrity, concurrency, or
+  cross-system ordering owes a separate security pass as well as the code review. Every other
+  branch owes one combined review whose prompt covers both. A classification that is missing,
+  unreadable, or uncertain means separate; there is no way of saying nothing that means
+  combined. The pull request says which mode ran and why.
 - Every finding is verified against the code before it is acted on. Critical and Important are
-  fixed; the rest are logged in the PR body. Only a fixed Critical earns a re-review, scoped to
-  the new commits.
+  fixed; the rest are logged in the PR body. Every fix commit gets a review that covers the
+  changed code, whatever severity prompted it: the gate proves which commit each review saw,
+  so a fix no reviewer read is a commit going out unread.
 - Design changes get one independent review from a fresh planning session before
   implementation, once.
 
@@ -219,8 +241,8 @@ A milestone is done when all of the following hold:
 
 - Every task checkbox in the milestone plan is ticked and the plan header says so.
 - `make check-branch` is green on a clean checkout: the suite, the lint, and the bash 3.2 pass.
-- Every new test was break-verified at the task that added it, not at the ship gate, and the
-  failure is in a commit body.
+- Every important protection the milestone added was break-verified at the task that added it,
+  not at the ship gate, and the failure is in a commit body.
 - The pull request reports the milestone's fix-to-feature commit ratio, the time spent fixing
   after the code was written, and the added-line count against the 2,500-line cap.
 - No task in the milestone plan exceeds about 60 lines, and the plan carries no script bodies
@@ -236,7 +258,37 @@ that edits this file, bumps the version, and updates Last Amended: MAJOR for a r
 removed principle, MINOR for a new principle, PATCH for a clarification. A plan that must
 deviate from a principle says so in its header and names the principle.
 
-**Version**: 2.0.8 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-14
+**Version**: 3.0.0 | **Ratified**: 2026-09-03 | **Last Amended**: 2026-09-15
+
+Version 3.0.0 redefines two principles, which is what makes it MAJOR rather than a
+clarification of either.
+
+Principle 3 narrowed. Break-verification used to be owed by every new test. It is now owed by
+every important protection, and the principle says which failures count: a bypassed
+validation, broken authentication or permissions, lost or corrupted data, money, concurrency,
+a skipped cleanup, a security defect, or a bug this project has already had once. Ordinary
+formatting, layout, mapping and happy-path assertions get normal test-first evidence and no
+deliberate break. The unit is a distinct protection, not an assertion count. Nothing about
+the timing moves: it still happens at the task that added the protection, never at the ship
+gate, and a break that leaves the test green is still a finding.
+
+Principle 9 redefined. It used to require a code review and a separate security pass on every
+branch, and to earn a re-review only for a fixed Critical. A branch now owes one combined
+review unless it touches authentication, permissions, secrets, migrations, data integrity,
+concurrency, or cross-system ordering, in which case it owes both. Every way of not knowing
+lands on separate, the gate records which mode ran against which commit, and the pull request
+says so. The Critical-only re-review exception goes with it: the gate proves which commit each
+review saw, so a fix no reviewer read is a commit going out unread whatever its severity was.
+
+Principle 1 gains two rules rather than losing any. One worker owns a deliverable and does the
+work itself, with reviews as fresh read-only sessions and no delegation of routine reading;
+and a routine test failure is fixed by the worker that wrote the code, which removes the
+blanket rule against debugging in the session that wrote it.
+
+The design this amends is `docs/specs/2026-09-15-dux-simplification-rollout.md`, sections 2
+to 6. What it costs is stated there and not hidden here: fewer independent reviews may lose
+findings a second reviewer would have made, and that tradeoff is subject to measurement and
+to rollback if a serious defect escapes a combined review.
 
 Version 2.0.8 says in principle 6 what 2.0.7 left unsaid. That rule read "worker text
 reaches the operator only through recovery, cleaned, capped, and fenced as data", and with

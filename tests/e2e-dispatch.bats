@@ -248,6 +248,42 @@ EOF
   [ "$output" = "Review and merge: https://github.com/acme/proj/pull/7 (proj ship)" ]
 }
 
+# The other gate, end to end. A combined review is four phases, and every hop
+# between the operator's classification and the ledger has to agree on that:
+# the brief records it, the recorder carries it, the receipt opens on it, the
+# proof asks for those four phases and no more, and the watcher accepts what
+# the proof accepted. One hop that forgets it strands a delivery that did
+# everything it was asked to.
+@test "a combined ship task completes on the four phases its gate owed" {
+  ready || skip
+  export FAKE_GH_PR_LIST_FILE="$DUX_HOME/state/pr.json"
+  export FAKE_GH_PR_CHECKS='[{"name":"build","state":"SUCCESS"}]'
+  worker_env
+  id="$(fixture_task proj ship github combined)"
+  cat > "$FAKE_WORKER_SCRIPT" <<EOF
+run mkdir -p docs && printf '# Plan\n\n## Task 1: one\n- [x] one done\n\n## Task 2: two\n- [x] two done\n' > docs/plan.md
+run printf 'implementation\n' > src.txt
+run git add -A && git commit -q -m work
+run "\$DUX_SHIP_RECORD" checks combined
+run "\$DUX_SHIP_RECORD" review combined
+run "\$DUX_SHIP_RECORD" pr
+run jq -nc --arg s "\$(git rev-parse HEAD)" --arg b "dux/$id" '[{number:8,url:"https://github.com/acme/proj/pull/8",isDraft:false,state:"OPEN",baseRefName:"main",headRefName:\$b,headRefOid:\$s,headRepository:{name:"proj"},headRepositoryOwner:{login:"acme"}}]' > "$DUX_HOME/state/pr.json"
+run "\$DUX_SHIP_RECORD" ci
+status done: PR https://example.invalid/pr/1
+EOF
+  dux-spawn "$id" >/dev/null
+  hand="$DUX_HOME/state/$id.handoffs"
+  wait_file "$hand/1/status" 60
+  [ "$(cat "$hand/1/status")" = "done: PR https://github.com/acme/proj/pull/8" ]
+  [ "$(cat "$hand/1/event")" = done ]
+  r="$DUX_HOME/state/$id.ship-receipt"
+  grep -qx 'review=combined' "$r"
+  [ "$(sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$r" | tr '\n' ' ')" = "checks review pr ci " ]
+  dux-watch --once
+  [ "$(dux-ledger get "$id" state)" = done ]
+  [ "$(dux-ledger get "$id" pr)" = "https://github.com/acme/proj/pull/8" ]
+}
+
 # A plan task delivers documents. One that changes anything else is not a plan
 # result, however green everything around it looks.
 @test "a plan task that changes an implementation file is not proved done" {

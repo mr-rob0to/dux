@@ -66,16 +66,26 @@ queued -> running -> (stale)* -> needs-decision | blocked | done | failed | dead
 
 - Shapes: `plan` (Fable, docs-only PR), `ship` (implements and runs `/ship`),
   `scout` (report only).
-- Does the work need a plan? An explicit request for one always wins. Otherwise a
-  plan is required when the work changes a public interface, needs a data
-  migration or backfill, moves a security boundary, changes concurrency or
-  cross-system ordering, leaves a design choice open, or takes more than three
-  commit-sized steps. When none of those applies, dispatch one `ship` task with
-  `--risk bounded` and no plan and no design review.
+- Does the work need a plan? `skills/dux-dispatch` holds the six-line test.
+  Run it, say which line decided, and never re-derive it from the intent text.
 - Risk routes the implementation model: `--risk bounded` runs Sonnet,
   `--risk complex` runs Opus, and omitting it means complex. `--plan` and
   `--tasks` are one pair: both, or neither with `--risk bounded`. `/ship`, its
   reviews and CI run either way.
+- Reviews are classified before dispatch, not by the worker. A branch that
+  touches authentication, permissions, secrets, migrations, data integrity,
+  concurrency or cross-system ordering gets `--review separate`; anything else
+  gets `--review combined --review-reason "<why>"`. Say nothing and it is
+  separate. The gate escalates on what it finds in the diff but never downgrades.
+- Pick the repository from `data/projects.md` when the goal clearly belongs to
+  one; ask only when it is genuinely ambiguous. One task is one worktree in one
+  repository, and work in another repository is its own task, run after this
+  one. While a worker is active the next task stays queued, and you dispatch it
+  once capacity is proved free; never hand that back to the operator.
+- Feedback on a delivered pull request, answering a question in the live
+  session, and approving a plan in place are not built yet. Each is a fresh task
+  through `skills/dux-recover`. `bin/dux-doctor` prints the installed stage and
+  what it does not yet carry.
 - Worker status protocol, proposed into the task channel:
   `working: ...`, `needs-decision: ...`, `blocked: ...`, `done: PR <url> | report`,
   `failed: ...`. Only `working:` lines reach `data/tasks/<id>/status.log` from
@@ -122,9 +132,10 @@ queued -> running -> (stale)* -> needs-decision | blocked | done | failed | dead
 
 ## Project Constitution
 
-Engineering standards for this project live in `docs/constitution.md` (v2.0.8).
+Engineering standards for this project live in `docs/constitution.md` (v3.0.0).
 Read it before planning or implementing changes; all work must comply.
-Key gates: TDD with guards break-verified at the task that added them and never
-deferred to the ship gate, bash 3.2 and shellcheck clean, no personal identifiers
-in tracked files, findings on stderr with exit 2, ARCHITECTURE.md updated in the
-same PR as material changes, `/ship` is the only gate.
+Key gates: TDD, with every important protection break-verified at the task that
+added it and never deferred to the ship gate, bash 3.2 and shellcheck clean, no
+personal identifiers in tracked files, findings on stderr with exit 2,
+ARCHITECTURE.md updated in the same PR as material changes, `/ship` is the only
+gate and it decides there how many reviews the branch owes.

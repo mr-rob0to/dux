@@ -20,6 +20,76 @@ case "$backend" in
   *)          fail "backend" "could not select a backend" ;;
 esac
 
+# ---- reviewers -----------------------------------------------------------
+# Resolved the way /ship resolves them, so a value that cannot run is reported
+# here rather than in the middle of a gate. `auto` is chosen from this host
+# every run and can only name something that is on PATH. A value the operator
+# wrote is never probed, which is exactly the one that goes stale when the
+# command is renamed, moved, or never installed on this machine.
+ship_env="$DUX_ROOT/skills/ship/ship-env"
+check_reviewer() {  # $1 key
+  local out cmd
+  if ! out="$("$ship_env" "$1" 2>&1)"; then fail "$1" "${out#finding: }"; return; fi
+  case "$out" in
+    agent:*) ok "$1 ($out)"; return ;;
+  esac
+  cmd="${out%% *}"
+  if command -v "$cmd" >/dev/null 2>&1; then ok "$1 ($cmd)"
+  else fail "$1" "$cmd is not on PATH; it is named in $DUX_ROOT/config/$1"
+  fi
+}
+if [ -x "$ship_env" ]; then
+  for k in reviewer security-reviewer; do check_reviewer "$k"; done
+else
+  fail reviewer "no $ship_env to resolve the reviewers with"
+fi
+
+# ---- rollout stage -------------------------------------------------------
+# Which stage of the simplification rollout this install may act on. The value
+# is a statement about what is installed, so a stage this checkout does not
+# implement is a failure: nothing here would carry the policy it names, and a
+# worker told to use a stage that is not there has no way to find that out.
+# The milestone that lands the next stage raises this line.
+STAGE_HERE=m1
+
+first_value() {  # $1 file; the first line that is neither blank nor a note
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '#'* | '') continue ;; esac
+    printf '%s\n' "$line"
+    return 0
+  done < "$1"
+  return 1
+}
+
+# What a stage leaves unavailable, said in the order the rollout adds it. Each
+# one has a way through that works today, which is the part the operator needs.
+unavailable_at() {  # $1 stage
+  local u=""
+  [ "${1#m}" -ge 2 ] || u="$u, delivered-PR feedback rounds"
+  [ "${1#m}" -ge 3 ] || u="$u, same-session answers and approval, dispatch waiting on a predecessor"
+  [ "${1#m}" -ge 4 ] || u="$u, usage reporting"
+  printf '%s' "${u#, }"
+}
+
+stage=""
+for f in "$DUX_CONFIG/policy-stage" "$DUX_ROOT/templates/config/policy-stage"; do
+  [ -f "$f" ] || continue
+  stage="$(first_value "$f")" || continue
+  break
+done
+case "$stage" in
+  m1 | m2 | m3 | m4)
+    if [ "${stage#m}" -gt "${STAGE_HERE#m}" ]; then
+      fail "policy stage" "config says $stage and this checkout implements $STAGE_HERE; record and install that revision before naming it"
+      stage=""
+    else
+      ok "policy stage $stage"
+    fi ;;
+  '') fail "policy stage" "no value in $DUX_CONFIG/policy-stage or $DUX_ROOT/templates/config/policy-stage" ;;
+  *)  fail "policy stage" "'$stage' is not a rollout stage (m1, m2, m3, m4)"; stage="" ;;
+esac
+
 reg="$DUX_DATA/projects.md"
 if [ -s "$reg" ] && grep -q '^- ' "$reg"; then ok "registry"; else fail "registry" "no projects in $reg; run dux-project add"; fi
 
@@ -37,4 +107,8 @@ esac
 
 echo "backend: ${backend:-none}"
 echo "lock: $lockst"
+if [ -n "$stage" ]; then
+  u="$(unavailable_at "$stage")"
+  echo "policy: $stage; unavailable: ${u:-nothing}${u:+; use existing recovery for those}"
+fi
 exit $rc

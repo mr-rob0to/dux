@@ -11,7 +11,14 @@ when something is off; relay the finding verbatim and stop.
 ## Before dispatching
 
 - The project must be registered (`bin/dux-project list`). If not, use `dux-project`.
+- Pick which registered project the goal belongs to from what the registry
+  records, and say which one you picked. Ask the operator only when two of them
+  would both be a reasonable reading. Work that spans two repositories is two
+  tasks, run one after the other, never one task in two worktrees.
 - `bin/dux-lock mine` must exit 0. If it does not, say Dux is read-only and stop.
+- One worker at a time, across every registered project. If one is active, say
+  the task is queued and dispatch it yourself once `bin/dux-status` shows the
+  capacity free. Do not hand capacity back to the operator to manage.
 
 ## Dispatch
 
@@ -44,7 +51,16 @@ when something is off; relay the finding verbatim and stop.
    never conversation history, never other tasks. A retry after `blocked` or
    `needs-decision` copies this file and appends the answer.
 4. Write numbered, testable acceptance criteria to `data/tasks/<id>/criteria.md`.
-5. `bin/dux-brief <id> --intent-file data/tasks/<id>/intent.md --criteria-file data/tasks/<id>/criteria.md [--plan <path> --tasks <a-b>] [--risk bounded|complex] [--issue-file <f>]`.
+5. Classify the reviews before briefing. A `ship` task whose work touches
+   authentication, permissions, secrets, a migration or backfill, data
+   integrity, concurrency, or cross-system ordering gets `--review separate`
+   with a reason naming the one that decided it. Anything else gets
+   `--review combined` with a reason naming what it does touch. Say nothing and
+   it is separate; there is no way of saying nothing that means combined. The
+   gate reads the branch's own diff and escalates on what it finds there, so a
+   combined classification that turns out to be wrong costs a reviewer, not a
+   missed pass. Never let the worker classify its own branch down.
+6. `bin/dux-brief <id> --intent-file data/tasks/<id>/intent.md --criteria-file data/tasks/<id>/criteria.md [--plan <path> --tasks <a-b>] [--risk bounded|complex] [--review combined|separate --review-reason <text>] [--issue-file <f>]`.
    A brief over 100 lines is a finding: shorten the intent, never split the
    goal into two tasks without saying so. For a `gh:` task,
    `--issue-file data/tasks/<id>/issue.md` is required.
@@ -53,16 +69,16 @@ when something is off; relay the finding verbatim and stop.
    `--tasks` go together or not at all, and leaving both out needs
    `--risk bounded`. Pass the risk the checklist in step 1 gave you; never
    re-derive it from the intent text.
-6. Read the brief's Intent and criteria back in two lines. Spawn unless the
+7. Read the brief's Intent and criteria back in two lines. Spawn unless the
    operator objects.
-7. `bin/dux-spawn <id>`, with the Bash tool timeout raised to 600000 ms: a `ship` spawn runs the project's own worktree setup (venv builds, generated projects) and can take minutes. If it is cut off anyway, run the same command again; a clean, untouched worktree is reused. Workers are Claude only this milestone; `--harness codex` is refused with a finding. That says nothing about Codex as the ship gate's reviewer.
+8. `bin/dux-spawn <id>`, with the Bash tool timeout raised to 600000 ms: a `ship` spawn runs the project's own worktree setup (venv builds, generated projects) and can take minutes. If it is cut off anyway, run the same command again; a clean, untouched worktree is reused. Workers are Claude only this milestone; `--harness codex` is refused with a finding. That says nothing about Codex as the ship gate's reviewer.
    The spawn opens a tab and the worker runs in it as a live session the
    operator can watch and type to. Two refusals are about that tab: a repository
    Claude Code has not been told to trust (the operator opens a session in it
    once and answers "Yes, I trust this folder", then the spawn goes through),
    and a wrapper that did not start, whose reason is in `state/<id>.wrap.log`.
    Relay either verbatim and stop.
-8. Report in plain words: the shape, the project, and what done looks like. Say
+9. Report in plain words: the shape, the project, and what done looks like. Say
    the worker is running in its own tab and that the operator may watch it or
    type to it; what they type is instruction to the worker, and Dux still reads
    only the status file. No task ids, branch names, or paths unless asked.

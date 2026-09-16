@@ -1,5 +1,10 @@
-# The reviewer /ship runs for step 6, the pull request's one code review. It is
-# a command line; the review prompt is appended to it as one argument.
+# The reviewer /ship runs for step 6, the pull request's code review. It is a
+# command line; the review prompt is appended to it as one argument.
+#
+# In a separate gate it reads for correctness and a second reviewer runs the
+# security pass. In a combined gate it is the only review the branch gets, and
+# the prompt it is given covers the security areas as well. The gate says which
+# mode it ran in, in the pull request body, either way.
 #
 # `auto` means the command is chosen when the gate runs, from what this host
 # has: codex when it is on PATH, otherwise Claude Code with Fable in plan mode,

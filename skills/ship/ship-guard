@@ -12,7 +12,7 @@ set -u
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 die()     { printf 'ship-guard: %s\n' "$*" >&2; exit 1; }
 
-usage="usage: ship-guard open | record <phase> | check <phase> | fix-pass | attest | push-ok"
+usage="usage: ship-guard open [combined|separate <reason>] | record <phase> | check <phase> | fix-pass | attest | push-ok"
 
 gitdir="$(git rev-parse --absolute-git-dir 2>/dev/null)" \
   || finding "/ship guard must run inside a git repository"
@@ -54,18 +54,64 @@ drop() {  # $1.. keys
 }
 
 # The file is untracked and anything running as this account can write it, so
-# what it says about itself is checked before it is believed.
+# what it says about itself is checked before it is believed. That now includes
+# the review mode, which is the one value in here that can make the gate do
+# less: a mode nothing can read is a refusal, never a reading of "combined".
+#
+# mode is set here, once, and every verb below reads that variable rather than
+# the file. One read means the value that is checked is the value that is used.
+mode=""
 require_file() {
+  local v
   { [ ! -L "$state" ] && [ -f "$state" ]; } \
     || finding "no guard file for $branch; the gate was never opened"
   [ "$(kv branch)" = "$branch" ] \
     || finding "the guard file names $(kv branch), not $branch; open the gate again"
+  v="$(kv version)"
+  case "$v" in
+    # A gate opened before this file knew about modes. It ran the three phases
+    # under the old rule, so it is read under the old rule. Reading it as
+    # combined would retire a security pass that actually happened.
+    1) mode=separate ;;
+    2)
+      mode="$(kv review_mode)"
+      case "$mode" in
+        combined | separate) ;;
+        *) finding "the guard file's review mode is not a mode: $mode; open the gate again" ;;
+      esac ;;
+    *) finding "the guard file's version is $v, which this gate cannot read; open the gate again" ;;
+  esac
 }
 
-valid_phase() {  # $1
+valid_mode() {  # $1
+  case "$1" in
+    combined | separate) ;;
+    *) finding "unknown review mode '$1' (combined, separate)" ;;
+  esac
+}
+
+# The phases this gate has to file, in order. A combined review covers
+# correctness and security together, so there is no second pass to record and
+# nothing may record one: an unperformed security phase written down as
+# completed is the single worst thing this file could hold.
+phases() {
+  case "$mode" in
+    combined) printf 'checks review' ;;
+    *)        printf 'checks review security' ;;
+  esac
+}
+
+valid_phase() {  # $1; the spelling, before any file has been read
   case "$1" in
     checks | review | security) ;;
     *) finding "unknown phase '$1' (checks, review, security)" ;;
+  esac
+}
+
+phase_in_mode() {  # $1; the phase this gate actually has, once mode is known
+  case " $(phases) " in
+    *" $1 "*) ;;
+    *) finding "this gate is a combined review; it has no security phase" ;;
   esac
 }
 
@@ -74,6 +120,13 @@ prev_phase() {  # $1 phase; prints the phase that must precede it, or nothing
     review) printf checks ;;
     security) printf review ;;
   esac
+}
+
+# The reason is free text from the caller and it is written into a key=value
+# file and into JSON. One line, so it cannot forge a second key; the JSON
+# escaping is done where it is printed.
+one_line() {  # $1 text
+  printf '%s' "$1" | LC_ALL=C tr -d '\000-\010\013-\037\177' | tr '\t' ' ' | tr -d '\n' | cut -c1-200
 }
 
 recorded_sha() {  # $1 phase; prints its commit, or refuses
@@ -118,10 +171,24 @@ require_clean() {
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
+  # open with no mode is the careful gate. That is not a convenience: a caller
+  # that cannot say which mode it is in has not classified the branch, and the
+  # gate that runs on no classification is the one with the security pass in it.
   open)
-    [ $# -eq 0 ] || finding "$usage"
+    case $# in
+      0) want=separate; reason="no classification was recorded" ;;
+      2) want="$1"; reason="$(one_line "$2")"
+         valid_mode "$want"
+         case "$reason" in
+           *[![:space:]]*) ;;
+           *) finding "a review mode needs a reason" ;;
+         esac ;;
+      1) finding "a review mode needs a reason" ;;
+      *) finding "$usage" ;;
+    esac
     mkdir -p "$gitdir/dux-ship" || die "cannot create $gitdir/dux-ship"
-    { echo "version=1"; echo "branch=$branch"; echo "fix_passes=0"; } > "$state" \
+    { echo "version=2"; echo "branch=$branch"; echo "fix_passes=0"
+      echo "review_mode=$want"; echo "review_reason=$reason"; } > "$state" \
       || die "cannot write $state"
     ;;
 
@@ -129,6 +196,7 @@ case "$cmd" in
     [ $# -eq 1 ] || finding "$usage"
     valid_phase "$1"
     require_file
+    phase_in_mode "$1"
     require_clean
     prev="$(prev_phase "$1")"
     if [ -n "$prev" ]; then
@@ -152,6 +220,7 @@ case "$cmd" in
     [ $# -eq 1 ] || finding "$usage"
     valid_phase "$1"
     require_file
+    phase_in_mode "$1"
     sha="$(recorded_sha "$1")" || exit $?
     require_descends "$1" "$sha"
     ;;
@@ -167,7 +236,12 @@ case "$cmd" in
     # is code, so the commit going out is code no reviewer has read yet. Keeping
     # the code review across a security fix left that round unable to push at
     # all, because push-ok wants every phase at the commit going out.
-    drop checks review security
+    #
+    # The mode is not among them. A fix answers a review; it does not reclassify
+    # the branch, and a gate that could drop back to combined between passes
+    # would be one fix pass away from retiring its own security phase.
+    # shellcheck disable=SC2046
+    drop $(phases)
     printf 'fix pass %s of 3\n' "$n"
     ;;
 
@@ -190,15 +264,23 @@ case "$cmd" in
     # write a plausible sha with no race at all, so this is not a defence. It is
     # the file doing what its own comment says it does.
     steps=""; sep=""
-    for phase in checks review security; do
+    for phase in $(phases); do
       sha="$(recorded_sha "$phase")" || exit $?
       [ "${#sha}" -eq 40 ] || finding "the $phase commit is not a commit id: $sha"
       case "$sha" in *[!0-9a-f]*) finding "the $phase commit is not a commit id: $sha" ;; esac
       steps="$steps$sep{\"step\":\"$phase\",\"status\":\"completed\",\"sha\":\"$sha\"}"
       sep=","
     done
-    printf '<!-- dux-attestation:v1 {"head_sha":"%s","fix_passes":%s,"steps":[%s]} -->\n' \
-      "$(git rev-parse HEAD)" "$n" "$steps"
+    # The mode goes in the attestation because a reader counting two steps has
+    # to be able to tell a combined gate from a separate one that skipped a
+    # pass. The reason is free text and lands inside JSON, so the two characters
+    # that would end the string early are escaped; one_line already took the
+    # control bytes and the newlines out at open.
+    reason="$(kv review_reason)"
+    reason="${reason//\\/\\\\}"
+    reason="${reason//\"/\\\"}"
+    printf '<!-- dux-attestation:v1 {"head_sha":"%s","fix_passes":%s,"review_mode":"%s","review_reason":"%s","steps":[%s]} -->\n' \
+      "$(git rev-parse HEAD)" "$n" "$mode" "$reason" "$steps"
     ;;
 
   push-ok)
@@ -211,7 +293,7 @@ case "$cmd" in
     head_sha="$(git rev-parse HEAD)"
     # The checks belong here too: a commit made after the suite ran is reviewed
     # code that was never run, and the descent test alone lets it through.
-    for phase in checks review security; do
+    for phase in $(phases); do
       sha="$(recorded_sha "$phase")" || exit $?
       [ "$sha" = "$head_sha" ] || finding \
         "the $phase covered $(git rev-parse --short "$sha"), not HEAD $(git rev-parse --short HEAD); open a fix pass and record every phase again"

@@ -4,8 +4,8 @@
 > lands and keep the "where this stands" block current: the plan file is the state of
 > the milestone, not the conversation. Break-verify at the task boundary, before the
 > next task starts. Do not run a code review of your own work: `/ship` owns the
-> branch's one review and its security pass (constitution principle 9), and a review
-> outside the gate is how the gate gets skipped.
+> reviews the branch owes and decides how many that is (constitution principle 9),
+> and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
 - <one line: drafted, reviewed, approved, or how many tasks are done>
@@ -51,9 +51,11 @@ write it.
 
 - [ ] <one step>
 - [ ] <one step>
-- [ ] Break-verify: break <the assertion>, run, confirm it fails, restore, paste the failure
-      into the commit body. A task is not done until every assertion it added has been broken
-      and seen to fail (constitution principle 3).
+- [ ] Break-verify: break <the protected behavior>, run, confirm the named test fails,
+      restore, paste the failure into the commit body. A task is not done until every
+      important protection it added has been broken and seen to fail, each one separately
+      (constitution principle 3). Ordinary formatting, mapping and happy-path assertions
+      need no break; say so rather than leaving it unsaid.
 
 <!-- At most about 60 lines per task, this heading to the next. A task that will not fit is
      two tasks, or its design is unsettled and belongs in the spec first. Every box is ticked

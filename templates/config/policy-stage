@@ -1,0 +1,22 @@
+# How much of the simplification rollout this install may act on. The rollout
+# lands in four stages and each one needs its own merged revision installed
+# before the policy it carries can be used. The revision record and the
+# application order live in docs/plans/dux-simplification-rollout.md.
+#
+# m1  Review modes, classification, break-verification at the task that added
+#     the guard, Dux-owned routing. Delivered-PR feedback rounds, same-session
+#     answers and approval, prerequisite dispatch and usage reporting are all
+#     unavailable; use existing recovery for any of them.
+# m2  Adds delivered-PR feedback rounds, positive parking and same-PR updates.
+# m3  Adds same-session answers, committed-plan approval, and dispatch that
+#     waits on a verified predecessor.
+# m4  Adds usage reporting.
+#
+# This is a statement about what is installed, never a request for it. Raise it
+# only after the matching revision is recorded in the plan's table and installed
+# here; a stage this checkout does not implement is a doctor failure rather than
+# a way to turn one on early.
+#
+# Copy this file to config/policy-stage to change it. The installer seeds the
+# value once and never edits one you wrote.
+m1

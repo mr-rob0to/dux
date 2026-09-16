@@ -379,3 +379,110 @@ SH
   [ "$status" -eq 1 ]
   [[ "$output" == "dux: usage: dux-brief"* ]]
 }
+
+# ---- review: the classification the gate has to live up to -------------------
+# Combined review is the concession this milestone makes, so every way of not
+# saying "combined" has to land on separate. The tests below are one per way:
+# saying nothing, saying it wrong, and saying half of it.
+
+@test "a ship brief stores the review mode and reason it was given, mode 600, and renders both" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1-2 --review combined --review-reason "no sensitive category in the diff"
+  [ "$status" -eq 0 ]
+  r="$DUX_HOME/data/tasks/$id/review"
+  grep -qx 'mode=combined' "$r"
+  grep -qx 'reason=no sensitive category in the diff' "$r"
+  m="$(stat -c %a "$r" 2>/dev/null || stat -f %Lp "$r" 2>/dev/null)"
+  [ "$m" = 600 ]
+  [ ! -e "$r.tmp" ]
+  b="$DUX_HOME/data/tasks/$id/brief.md"
+  grep -qxF -- '- Review: combined' "$b"
+  grep -qxF -- '- Review reason: no sensitive category in the diff' "$b"
+}
+
+@test "omitting --review means separate, and the brief says why" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1-2
+  [ "$status" -eq 0 ]
+  r="$DUX_HOME/data/tasks/$id/review"
+  grep -qx 'mode=separate' "$r"
+  grep -qx 'reason=no classification was recorded' "$r"
+  grep -qxF -- '- Review: separate' "$DUX_HOME/data/tasks/$id/brief.md"
+}
+
+@test "an unknown review word is a finding and nothing is written" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1-2 --review quick --review-reason "why not"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --review must be combined or separate, not 'quick'"* ]]
+  [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+  [ ! -e "$DUX_HOME/data/tasks/$id/review" ]
+}
+
+@test "half a review pair is a finding: a mode with no reason, or a reason with no mode" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1-2 --review combined
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --review and --review-reason are one pair"* ]]
+  [ ! -e "$DUX_HOME/data/tasks/$id/review" ]
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1-2 --review-reason "because I said so"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --review and --review-reason are one pair"* ]]
+  [ ! -e "$DUX_HOME/data/tasks/$id/review" ]
+}
+
+@test "an empty review reason is a finding: a combined gate needs a stated reason" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1-2 --review combined --review-reason "   "
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: --review-reason must say something"* ]]
+  [ ! -e "$DUX_HOME/data/tasks/$id/review" ]
+}
+
+# The reason is rendered into the brief, which is prose a worker reads. A newline
+# in it would put the rest on a line of its own, where it reads as another fact
+# about the project rather than as part of the reason.
+@test "a review reason is flattened to one capped line" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+    --plan docs/p.md --tasks 1-2 --review separate \
+    --review-reason "$(printf 'touches auth\n- Risk: bounded')"
+  [ "$status" -eq 0 ]
+  r="$DUX_HOME/data/tasks/$id/review"
+  [ "$(grep -c '^reason=' "$r")" -eq 1 ]
+  grep -qx 'reason=touches auth- Risk: bounded' "$r"
+  b="$DUX_HOME/data/tasks/$id/brief.md"
+  # The injected text never becomes a line of its own: the brief's own Risk line
+  # is the only one, and it still says what dux-brief decided.
+  [ "$(grep -c '^- Risk: ' "$b")" -eq 1 ]
+  grep -qxF -- '- Risk: complex' "$b"
+  grep -qxF -- '- Review reason: touches auth- Risk: bounded' "$b"
+}
+
+@test "--review is for ship briefs only and no other shape stores one" {
+  for shape in plan scout; do
+    id="$(dux-task-new proj "$shape" 2>/dev/null || setup_task "$shape")"
+    run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" \
+      --review combined --review-reason "no"
+    [ "$status" -eq 2 ]
+    [[ "$output" == "finding: --review is for ship briefs only"* ]]
+    [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+    [ ! -e "$DUX_HOME/data/tasks/$id/review" ]
+  done
+}
+
+@test "--review and --review-reason with nothing after them print the usage line" {
+  id="$(setup_task ship)"
+  run dux-brief "$id" --review
+  [ "$status" -eq 1 ]
+  [[ "$output" == "dux: usage: dux-brief"* ]]
+  run dux-brief "$id" --review-reason
+  [ "$status" -eq 1 ]
+  [[ "$output" == "dux: usage: dux-brief"* ]]
+}

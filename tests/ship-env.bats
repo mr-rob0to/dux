@@ -126,7 +126,7 @@ auto_checkout() {  # prints the checkout path
   run --separate-stderr env_at "$c" models
   [ "$status" -eq 2 ]
   [ -z "$output" ]
-  [ "$stderr" = "finding: unknown key 'models' (reviewer, security-reviewer)" ]
+  [ "$stderr" = "finding: unknown key 'models' (reviewer, security-reviewer, review-mode)" ]
 }
 
 @test "a directory that is not a Dux checkout is a finding" {
@@ -513,4 +513,56 @@ stub_project() {  # $1 checkout, $2 script body
   [ "$status" -eq 2 ]
   [ -z "$output" ]
   [ "$stderr" = "finding: no bundled pull request template at $c/templates/PULL_REQUEST_TEMPLATE.md" ]
+}
+
+# ---- review-mode -----------------------------------------------------------
+# One place decides whether a gate may run one reviewer instead of two. It is
+# not a classifier: the gate reads the brief and the branch diff and hands in
+# what it found. What lives here is the rule that combines the two, so there is
+# one answer to break rather than a paragraph of prose to obey.
+
+@test "review-mode says combined only for a combined claim over a clean diff" {
+  c="$(fake_checkout)"
+  run --separate-stderr env_at "$c" review-mode combined no
+  [ "$status" -eq 0 ]
+  [ "$output" = combined ]
+  [ -z "$stderr" ]
+}
+
+@test "review-mode says separate for every other pair" {
+  c="$(fake_checkout)"
+  for pair in "combined yes" "combined unknown" \
+              "separate no" "separate yes" "separate unknown" \
+              "unknown no" "unknown yes" "unknown unknown"; do
+    # shellcheck disable=SC2086
+    run env_at "$c" review-mode $pair
+    [ "$status" -eq 0 ]
+    [ "$output" = separate ] || { echo "'$pair' gave '$output'"; return 1; }
+  done
+}
+
+@test "review-mode refuses a claim or a verdict it does not know" {
+  c="$(fake_checkout)"
+  run --separate-stderr env_at "$c" review-mode maybe no
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [ "$stderr" = "finding: review-mode takes combined, separate or unknown, not 'maybe'" ]
+  run --separate-stderr env_at "$c" review-mode combined probably
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [ "$stderr" = "finding: review-mode takes yes, no or unknown for the sensitive verdict, not 'probably'" ]
+}
+
+@test "review-mode needs both answers, because half of one is not a classification" {
+  c="$(fake_checkout)"
+  for args in "" "combined"; do
+    # shellcheck disable=SC2086
+    run --separate-stderr env_at "$c" review-mode $args
+    [ "$status" -eq 2 ]
+    [ -z "$output" ]
+    [[ "$stderr" == "finding: usage: ship-env "* ]]
+  done
+  run --separate-stderr env_at "$c" review-mode combined no extra
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == "finding: usage: ship-env "* ]]
 }
