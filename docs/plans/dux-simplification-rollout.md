@@ -133,9 +133,14 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Files:** Paired spec, this plan, and PR #46's `docs/specs/2026-09-15-feedback-rounds-on-a-delivered-pr.md` and `docs/plans/2026-09-15-feedback-rounds-on-a-delivered-pr.md`.  
 **Acceptance:** Planning precedence, examples, and all seven PR #46 amendments match the approved source.
 
-- [ ] Reconcile references without changing historical evidence or completed boxes.
-- [ ] Retain all nine PR #46 tasks and remove its Task 8 deferral and prescribed 2.0.9 version.
-- [ ] Those two files exist only on PR #46's branch. Amend them there, or start M1 after PR #46 merges; never recreate them under other names on this branch.
+- [x] Reconcile references without changing historical evidence or completed boxes.
+- [x] Retain all nine PR #46 tasks and remove its Task 8 deferral and prescribed 2.0.9 version.
+- [x] Those two files exist only on PR #46's branch. Amend them there, or start M1 after PR #46 merges; never recreate them under other names on this branch.
+
+**Done.** PR #46 merged before M1 started, so both files were amended in place on this
+branch, never recreated. All seven amendments from spec section 6.1 are marked
+**Amended** where the provision they change appears. Counted before and after: nine task
+headings, thirty-nine unchecked boxes, fourteen review-finding rows, all unchanged.
 
 ## Task 2: Prepare staged external policy artifacts
 
@@ -143,10 +148,25 @@ Render new briefs and settings only for new tasks. Never rewrite running workers
 **Files:** This plan, its five named patch files, `bin/dux-result`, `tests/dux-result.bats`.  
 **Acceptance:** Patches use actual local source text, contain activation requirements, and do not activate future runtime behavior. A plan-shaped result may carry `docs/plans/patches/*.patch`.
 
-- [ ] Prepare all five patches and the revision/application record.
-- [ ] Check every before-text anchor against the current external files; identify source-detail gaps explicitly.
-- [ ] `plan_entry_ok()` in `bin/dux-result` accepts only `docs/*.md` and top-level `docs/plans/*.html`, so it rejects the patch artifacts and no plan task can deliver them. Add `docs/plans/patches/*.patch`.
-- [ ] Break-verify: after widening the shape, break it so a path outside `docs/` or an executable mode passes, run, confirm the test fails, restore, paste the failure.
+- [x] Prepare all five patches and the revision/application record.
+- [x] Check every before-text anchor against the current external files; identify source-detail gaps explicitly.
+- [x] `plan_entry_ok()` in `bin/dux-result` accepts only `docs/*.md` and top-level `docs/plans/*.html`, so it rejects the patch artifacts and no plan task can deliver them. Add `docs/plans/patches/*.patch`.
+- [x] Break-verify: after widening the shape, break it so a path outside `docs/` or an executable mode passes, run, confirm the test fails, restore, paste the failure.
+
+**Anchor check, run against the live external files on 2026-09-15.** Every BEFORE block
+in `m1-global.patch` (11 of 11) and `m1-ship.patch` (13 of 13) is exact current text in
+`~/.codex/AGENTS.md` and `~/.agents/skills/ship/SKILL.md`. Three later-stage blocks do not
+match yet: one in `m2-global.patch` and two in `m3-global.patch`. Each of those three is
+text an earlier stage's patch introduces, which is the staged order working as designed,
+not drift. Nothing in M1 depends on them.
+
+**Source-detail gaps** stay marked in the artifacts themselves, one `INSUFFICIENT SOURCE
+DETAIL` note each in `m1-global.patch`, `m1-ship.patch` and `m2-ship.patch`. Each names
+the replacement the approved source did not spell out and what was written instead.
+
+**The patches stay inert.** They are text for the operator to read and apply by hand.
+Nothing in this repository applies one, and `plan_entry_ok()` only widened far enough to
+let a plan task deliver the file: one flat directory, one extension, never executable.
 
 ## Task 3: Carry review classification in briefs
 

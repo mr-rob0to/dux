@@ -282,6 +282,59 @@ receipt_of() {  # $1.. the phases to file, in the order given
   [[ "$output" == *"docs/plans/run.md"* ]]
 }
 
+@test "a plan result may carry a staged external patch under docs/plans/patches" {
+  prepare plan
+  plan_docs
+  commit_file docs/plans/patches/m1-global.patch "--- a/x\n+++ b/x"
+  pr_at_head
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"done: PR https://github.com/acme/proj/pull/7"* ]]
+}
+
+# The widened shape is one directory and one extension, and each half of that is
+# a way in on its own: a patch anywhere else in the tree, and an executable one
+# that happens to sit in the right place.
+@test "a patch outside docs/plans/patches fails the plan shape" {
+  prepare plan
+  plan_docs
+  commit_file scripts/install.patch "--- a/x"
+  pr_at_head
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"scripts/install.patch"* ]]
+}
+
+@test "a patch below a subdirectory of docs/plans/patches fails the plan shape" {
+  prepare plan
+  plan_docs
+  commit_file docs/plans/patches/nested/m1.patch "--- a/x"
+  pr_at_head
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"docs/plans/patches/nested/m1.patch"* ]]
+}
+
+@test "an executable patch fails the plan shape" {
+  prepare plan
+  plan_docs
+  commit_file docs/plans/patches/m1-global.patch "--- a/x" 755
+  pr_at_head
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"docs/plans/patches/m1-global.patch"* ]]
+}
+
+@test "a file under docs/plans/patches that is not a patch fails the plan shape" {
+  prepare plan
+  plan_docs
+  commit_file docs/plans/patches/apply.sh "echo hi"
+  pr_at_head
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"docs/plans/patches/apply.sh"* ]]
+}
+
 @test "a plan without a spec markdown is no result" {
   prepare plan
   commit_file docs/plans/plan.md "# Plan"
