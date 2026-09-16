@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 17 are done, and task 18 waits only on the live round; milestones 3 and 4 are not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, is delivered through `/ship` and waits on the operator's merge and then R2; milestones 3 and 4 are not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -26,7 +26,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 | Milestone | Task range | Estimated added lines | Actual added lines | Delivery evidence |
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
-| M2: Amended PR #46 | 11–19 | 1,750–2,450 | Not recorded | Not recorded |
+| M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,974 | Task 19's pull request |
 | M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | Not recorded | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
@@ -615,7 +615,7 @@ moment `dux-round` moved it to running. The wrapper needed no change; it has wri
 **Acceptance:** Feedback completes `/ship` against the existing PR, with current classification, review, receipt, and CI.
 
 - [x] Implement existing-PR updates and history-preserving feedback base merging.
-- [ ] Exercise a real feedback round through the same PR and CI; retain this task in M2.
+- [x] Exercise a real feedback round through the same PR and CI; retain this task in M2.
 - [x] Break-verify: break the guard that keeps a round on its own PR, and the one that stops a feedback base repair from rewriting reviewed history, run, confirm two distinct failures, restore, paste both.
 
 **Landed with this task.** Step 8's "Opening it" looks up the open pull request for the branch into
@@ -632,7 +632,8 @@ lookup without `--head` (contract line 473; live, round 2's body landed on pull 
 edit with `--title` (line 474), a round allowed to rebase (line 479), the round file allowing a
 rebase (line 480), and the push without its ancestor test (live, a rewritten branch
 force-replaced reviewed commit `0f0fc0a`; intact, it stopped with the finding and exit 2). The
-live worker round, which ticks the second box, is Task 19's rehearsal.
+live worker round is Task 19's rehearsal: pull request 4 took a feedback round through the
+installed `/ship`, CI green on both heads.
 
 ## Task 19: Activate feedback and complete the rehearsal
 
@@ -640,9 +641,92 @@ live worker round, which ticks the second box, is Task 19's rehearsal.
 **Files:** `AGENTS.md`, `docs/constitution.md`, feedback policy skills, `bin/dux-notify`, `templates/brief.md`, PR #46 documents, `docs/ARCHITECTURE.md`, `README.md`, this plan.  
 **Acceptance:** M2 acceptance below is proved; questions and approval remain unavailable. This milestone changes receipt and handoff integrity, so it receives separate reviews.
 
-- [ ] Amend the constitution from M1's resulting version under its governance rule.
-- [ ] Complete the previously failed timeout rehearsal through actual PR and CI proof and deliver through `/ship`.
-- [ ] Record actual size and delivery evidence; after operator merge, record and install R2 before external M2 application.
+- [x] Amend the constitution from M1's resulting version under its governance rule.
+- [x] Complete the previously failed timeout rehearsal through actual PR and CI proof and deliver through `/ship`.
+- [x] Record actual size and delivery evidence; after operator merge, record and install R2 before external M2 application.
+
+**Landed with this task.** The operator now hears `Review, then merge or send feedback: <url>`
+for a delivered pull request. `AGENTS.md`, `skills/dux-dispatch` and `skills/dux-recover` say
+what feedback does from stage m2: the operator's words go to `data/tasks/<id>/feedback.md`,
+`bin/dux-round` sends them, nobody types into the tab, and a round that ends `failed` or
+`ended` leaves the pull request open with no further round. The brief tells a worker to write
+one terminal line per round and then wait at its prompt. `docs/ARCHITECTURE.md` carries
+`prompt`, parking, the round, receipt retention until the watcher consumes the handoff, and
+teardown of a parked session. Answers and approval are still not built, and the pins that say
+so still hold. The constitution goes to 4.0.0, a MAJOR amendment: principle 1 narrowed so a
+feedback round merges its base in and never rewrites reviewed commits, and principle 6 now
+names the one line Dux types into a tab. `bin/dux-doctor` now says this checkout implements
+m2, as its own comment asks the milestone that lands a stage to do; the default in
+`templates/config/policy-stage` stays m1 until the operator installs this revision.
+
+Eleven breaks, one at a time, each failing at its own assertion: the dispatch skill's feedback
+section dropped (PR #46's named break, contract line 732), its teardown sentence (736), the
+lifecycle arrow (729), the `dux-round` command in `AGENTS.md` (730), the old wake line (107),
+principle 6's clause (126), version 3.0.0 (129), `AGENTS.md` citing v3.0.0 (715), the old
+notification (notify lines 16, 62, 70), the old terminal rule (brief line 205), and stage m1
+(doctor lines 101, 119).
+
+**The live rehearsal**, on 2026-09-16, ran this branch's scripts against a scratch Dux home at
+stage m2, a private throwaway repository with CI, a tmux server of its own and Claude Code
+2.1.273. Each task was a bounded ship task on Sonnet with a combined review.
+
+- Run 1 delivered pull request 3 with CI green, but the worker copied `/ship`'s blocks by hand
+  and left out every `$DUX_SHIP_RECORD` line. The proof refused it: `ended: the result was not
+  proved: no /ship receipt for this task; the gate did not run under Dux`. It was classified
+  failed and torn down, and the pull request closed. Recovery's answer is a fresh task with
+  the reason in its intent, and run 2 is that task.
+- Run 2 recorded all four combined phases and opened pull request 4, CI green. The proof
+  said `done`, the `Stop` hook fired inside the 60-second idle wait, and the wrapper parked:
+  the marker named run `zh6ywBnj`, wrapper 61083 and group 61300. The receipt moved to its
+  delivered name only after the watcher had consumed handoff 1.
+- `bin/dux-round` with a one-line feedback printed `round 1 sent`, and the ledger read
+  `running`. The same wrapper took it up as run `zh6ywBnjr1` with `round=1` and `since` at the
+  delivered head `69217dd`. The same session committed `cc31717` on top, ran `/ship` again
+  (review, push behind the ancestor test, `gh pr edit`), and CI passed on the new head. A second
+  `done` came six minutes after the round was sent, and the session parked again.
+- `ps` after the round showed wrapper 61083 and group 61300, the same processes 22 minutes
+  on. Pull request 4 held two commits with `69217dd` an ancestor of the pushed head, and no
+  second pull request existed. Handoffs 1 and 2 were each consumed once, each naming its own
+  run.
+- `bin/dux-teardown` ended the parked wrapper and then the group, removed the worktree and
+  every state file for the task, and closed the tab, in three seconds. The ledger kept `done`
+  and pull request 4's url.
+- Run 3 set the idle wait to 1 second to force the timeout, and parked anyway: the `Stop` hook
+  wrote its file 0.906 seconds after the terminal line. Its worker had typed the reviewer
+  command without the skill's stdin redirect, and the reviewer waited for input until the
+  rehearsal driver ended it 16 minutes on. The worker then ran the command as the skill writes
+  it, the review came back clean, and pull request 5 went green. Teardown ended the parked
+  session and closed the tab.
+- Run 4 set the wait to 0 and took the timeout branch live. The wrapper logged `did not stop
+  within 0s of its terminal status; it is not parked`, stopped the session, and still
+  published the proved `done: PR` for pull request 6, CI green. It left no parked marker and
+  no group file, and the receipt kept the name the watcher checks. `bin/dux-round` then refused
+  with `the session for <id> is no longer in its tab (no wrapper is running for it)`, exit 2,
+  wrote no round file and left the ledger at `done`.
+
+Limits of that evidence. The round's `/ship` was the installed skill from `main`, because a
+personal skill shadows a project one; that skill already edits the pull request on a later
+push. This branch's edit-or-create lookup was proved in Task 18, by running the skill's own
+blocks against the same repository. Each worker ran `/ship` by copying its blocks, and two left
+a line out, as runs 1 and 3 show; the intents of runs 2 to 4 named what to keep. Each teardown
+had the branch's upstream set by hand first, because `/ship` pushes without one and teardown
+refuses a branch with none; that refusal predates this milestone. Dirty and unpushed teardown
+refusals are proved by `tests/dux-teardown.bats`, not live.
+
+Checks: `lint-shell`, `lint-pipes`, the unit files and the eight matrix jobs are green on macOS
+and on Ubuntu 24.04 as a non-root user, apart from three failures `main` shares.
+`lint-identifiers` fails on this machine for the reason Task 10 records. On Ubuntu under a
+parallel run, two process tests fail now and then: the TERM test in
+`tests/dux-worker-wrap.bats`, and one tmux `pid` wait in `tests/backend-adapter.bats`.
+Both also fail on `main` in the same container under the same load, and this branch's copies
+passed the same repeats.
+
+Size: 1,974 added lines against the milestone's estimate of 1,750 to 2,450 and PR
+#46's own ~1,625, under the 2,500 cap.
+
+Delivered through `/ship` with the separate reviews this milestone owes, as the pull request
+that carries this note. The merged commit id and the installed-revision evidence go in the R2
+row after the operator merges.
 
 ## Task 20: Extend round purposes
 
