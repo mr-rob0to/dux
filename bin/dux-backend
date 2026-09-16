@@ -33,5 +33,6 @@ case "$cmd" in
   close)  own_endpoint "${1:?endpoint}"; backend_close "$1" ;;
   notify) backend_notify "${1:?title}" "${2:-}" ;;
   title)  own_endpoint "${1:?endpoint}"; backend_title "$1" "${2:?text}" ;;
-  *) die "usage: dux-backend name|open|run|pid|find|exists|close|notify|title" ;;
+  prompt) own_endpoint "${1:?endpoint}"; backend_prompt "$1" "${2:?text}" ;;
+  *) die "usage: dux-backend name|open|run|pid|find|exists|close|notify|title|prompt" ;;
 esac

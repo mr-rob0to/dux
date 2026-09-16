@@ -379,6 +379,55 @@ teardown_file() {
   [[ "$output" == "finding: endpoint $other does not belong to backend $DUX_BACKEND"* ]]
 }
 
+# ---- prompt: one line typed into the pane's foreground process ---------------
+# A round reaches a parked session this way, so the line has to arrive whole and
+# submitted. On tmux the reader is a real process on the pane's terminal, which
+# hands a line over only once Enter arrives. The Herdr fake has no terminal: it
+# appends what `pane run` types into a live pane to a file standing in for one.
+@test "prompt types the line and Enter into the pane's foreground process" {
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  line="Read $DUX_HOME/channel/round-1.md and follow it."
+  if [ "$DUX_BACKEND" = tmux ]; then
+    reader=cat typed="$DUX_HOME/typed"
+    printf '#!/bin/sh\nexec cat > "%s"\n' "$typed" > "$DUX_HOME/reader"
+  else
+    reader=sleep typed="$FAKE_HERDR_LOG.input"
+    printf '#!/bin/sh\nexec sleep 60\n' > "$DUX_HOME/reader"
+  fi
+  chmod +x "$DUX_HOME/reader"
+  ep="$(dux-backend open t44 "$DUX_HOME")"
+  dux-backend run "$ep" "$DUX_HOME" "'$DUX_HOME/reader'"
+  wait_until 15 dux-backend pid "$ep" "$reader"
+  pid="$(dux-backend pid "$ep" "$reader" | cut -d' ' -f1)"
+  run dux-backend prompt "$ep" "$line"
+  wait_until 10 test -s "$typed" || true
+  kill -TERM -- "-$pid"
+  wait_until 15 not_running "$pid"
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  if [ ! -s "$typed" ]; then echo "the reader in the pane never received a line"; return 1; fi
+  [ "$(cat "$typed")" = "$line" ]
+  [ "$(wc -c < "$typed" | tr -d ' ')" -eq $(( ${#line} + 1 )) ]
+}
+
+@test "prompt is a finding when the line could not be typed, never a silent success" {
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  ep="$(dux-backend open t45 "$DUX_HOME")"
+  if [ "$DUX_BACKEND" = tmux ]; then
+    FAKE_TMUX_FAIL=send-keys run dux-backend prompt "$ep" "Read it and follow it."
+  else
+    FAKE_HERDR_RUN_FAIL=1 run dux-backend prompt "$ep" "Read it and follow it."
+  fi
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: $DUX_BACKEND could not type into $ep"* ]]
+}
+
+@test "prompt refuses an endpoint from the other backend" {
+  [ -n "${DUX_BACKEND:-}" ] || skip
+  run dux-backend prompt zellij:nope "Read it and follow it."
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: endpoint zellij:nope does not belong to backend $DUX_BACKEND"* ]]
+}
+
 # ---- pid: the pane's foreground process, by name ---------------------------
 # Four readings, the same on both adapters: the process is there and its group
 # and directory are reported; a name that is not running answers nothing; the

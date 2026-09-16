@@ -363,8 +363,31 @@ because neither exists before then.
 **Files:** `bin/dux-backend`, `bin/backends/herdr.sh`, `bin/backends/tmux.sh`, existing backend tests.  
 **Acceptance:** Live prompt, Stop hook, parking, and timeout behavior are qualified on both supported backends.
 
-- [ ] Implement PR #46's prompt support and record real backend qualification.
-- [ ] Test and break-verify important delivery and failure protections.
+- [x] Implement PR #46's prompt support and record real backend qualification.
+- [x] Test and break-verify important delivery and failure protections.
+
+**Landed with this task.** `dux-backend prompt <endpoint> <text>` types one line and submits
+it: `send-keys -l` then Enter on tmux, `herdr pane run` on Herdr. Measured 2026-09-16 on this
+machine against a live Claude Code 2.1.273 session, once in a tmux 3.6a pane and once in a
+Herdr 0.8.2 pane, with the same script: both deliveries reached the session's prompt and were
+submitted, so Herdr needs no `send-text` fallback and the milestone is not tmux-only. On both,
+the `Stop` hook fired once per turn, at the end of it, and had not fired ten seconds into a
+twenty-second tool call. Parking and the idle timeout are behaviour Tasks 13 and 15 add; the
+live rehearsal in Task 19 qualifies them.
+
+Three tests in `tests/backend-adapter.bats`, run under both backends, and four breaks, each
+failing where it should:
+
+- Dropping the tmux Enter: the delivery test failed with "the reader in the pane never received
+  a line".
+- Swallowing a failed tmux send, and separately a failed Herdr send: the failure test failed on
+  its exit status each time, because the send reported success.
+- Dropping `own_endpoint` from the `prompt` case: the ownership test failed on its finding text.
+
+The Herdr fake now types into the process it started when that process is still alive in the
+same pane, appending the line to a file it names to that process as `FAKE_HERDR_INPUT`. The
+suites that start processes through it (`harness`, `dux-spawn`, `dux-recover`, `dux-result`,
+`dux-worker-wrap` and both Herdr end-to-end files) pass unchanged.
 
 ## Task 12: Move PR #46's shared helpers
 

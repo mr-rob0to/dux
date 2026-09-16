@@ -35,6 +35,18 @@ backend_run() {  # endpoint cwd(ignored: the tab was opened there) cmd
   herdr pane run "$pane" "$3" >/dev/null || finding "herdr pane run failed on $pane"
 }
 
+# One line typed into the pane, submitted. `pane run` types its text and Enter
+# into whatever holds the pane's terminal, which is a shell when a worker starts
+# and the session itself once one is running. Measured 2026-09-16 against a live
+# Claude Code 2.1.273 session in a Herdr 0.8.2 pane: the line arrived at the
+# session's prompt and was submitted, so `send-text` and a separate Enter were
+# not needed. The session's Stop hook fired once, when that turn ended, and not
+# during a 20-second tool call inside it.
+backend_prompt() {  # endpoint text
+  local pane; pane="$(_pane "$1")"
+  herdr pane run "$pane" "$2" >/dev/null 2>&1 || finding "herdr could not type into $1"
+}
+
 # The pane's innermost foreground process, when its command name is <name>.
 # Measured 2026-09-14 against Herdr's own CLI: the reply nests under
 # .result.process_info, foreground_processes is ordered innermost first, and a

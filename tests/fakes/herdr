@@ -91,8 +91,20 @@ case "$1 ${2:-}" in
     # command, so it can see the state the rest of Dux is in right then.
     [ -z "${FAKE_HERDR_RUN_HOOK:-}" ] || bash -c "$FAKE_HERDR_RUN_HOOK"
     [ -n "${FAKE_HERDR_RUN_FAIL:-}" ] && { echo '{"error":{"code":"run_failed"}}' >&2; exit 1; }
+    # The real pane types the text into whatever holds its terminal. When that
+    # is the process an earlier run started in this same pane and it is still
+    # alive, the text is input to it and not a new command, so it lands in the
+    # file this fake stands in for a terminal with, one line per call. The
+    # started process is told that file as FAKE_HERDR_INPUT.
+    pid=""; [ -f "$procpid" ] && pid="$(cat "$procpid")"
+    if [ -n "${FAKE_HERDR_RUN:-}" ] && [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null &&
+       [ "$(cat "$procpid.pane" 2>/dev/null)" = "$3" ]; then
+      printf '%s\n' "$4" >> "$FAKE_HERDR_LOG.input"
+      echo '{"result":{}}'; exit 0
+    fi
     if [ -n "${FAKE_HERDR_RUN:-}" ]; then
       cwd="$(cat "${FAKE_HERDR_LOG:-/dev/null}.cwd")"
+      printf '%s\n' "$3" > "$procpid.pane"
       # The real pane runs the command as a foreground job of its shell, in a
       # session of its own, and process-info reports the innermost of them. So
       # the fake puts it in a session of its own too (POSIX::setsid) and records
@@ -109,7 +121,7 @@ case "$1 ${2:-}" in
       # test that leaves one running into a hang instead of a red line.
       # shellcheck disable=SC2016
       ( cd "$cwd" || exit
-        HERDR_PANE_ID="$3" HERDR_ENV=1 nohup perl -e '
+        HERDR_PANE_ID="$3" HERDR_ENV=1 FAKE_HERDR_INPUT="$FAKE_HERDR_LOG.input" nohup perl -e '
           use POSIX; POSIX::setsid();
           $SIG{INT} = "DEFAULT";
           open(my $f, ">", $ARGV[0]) or die; print $f "$$\n"; close $f;
