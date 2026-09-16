@@ -209,8 +209,8 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
 
 @test "the channel holds the worker's own copies and goes away with the run" {
   prepare scout
-  printf 'report all clear\nrun ls -ld "$(dirname "$DUX_STATUS_LOG")"/. "$(dirname "$DUX_STATUS_LOG")"/* > %s 2>&1\nrun printf %%s "$DUX_STATUS_LOG" > %s\nstatus done: report\n' \
-    "$DUX_HOME/state/chan.ls" "$DUX_HOME/state/chan.path" > "$FAKE_WORKER_SCRIPT"
+  printf 'report all clear\nrun ls -ld "$(dirname "$DUX_STATUS_LOG")"/. "$(dirname "$DUX_STATUS_LOG")"/* > %s 2>&1\nrun printf %%s "$DUX_STATUS_LOG" > %s\nrun cp "$(dirname "$DUX_STATUS_LOG")"/worker-settings.json %s\nstatus done: report\n' \
+    "$DUX_HOME/state/chan.ls" "$DUX_HOME/state/chan.path" "$DUX_HOME/state/settings.json" > "$FAKE_WORKER_SCRIPT"
   wrap
   ls="$DUX_HOME/state/chan.ls"
   grep -qE '^drwx------.*/\.$' "$ls"
@@ -222,6 +222,9 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   # directory, so the channel has nothing to stage.
   [ "$(grep -cE '/hooks$' "$ls" || true)" -eq 0 ]
   ch="$(dirname "$(cat "$DUX_HOME/state/chan.path")")"
+  # A turn ending is Stop's alone: after a tool call the session is still at work.
+  [ "$(jq -r '.hooks.Stop[0].hooks[1].command' "$DUX_HOME/state/settings.json")" = "touch '$ch/stopped'" ]
+  [ "$(jq '[.. | .command? // empty | select(test("stopped"))] | length' "$DUX_HOME/state/settings.json")" -eq 1 ]
   [ ! -e "$ch" ]
   [ ! -e "$DUX_HOME/state/$id.portal" ]
   [ ! -e "$DUX_HOME/state/$id.pgid" ]
@@ -230,6 +233,8 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   grep -qx "id=$id" "$DUX_HOME/state/$id.result-context"
   grep -qx "branch=dux/$id" "$DUX_HOME/state/$id.result-context"
   grep -qx "context=$(git hash-object "$DUX_HOME/state/$id.result-context")" "$DUX_HOME/state/$id.run"
+  grep -qx "round=0" "$DUX_HOME/state/$id.result-context"
+  grep -qx "since=$(git -C "$wt" rev-parse "refs/heads/dux/$id")" "$DUX_HOME/state/$id.result-context"
   # Which repository the run belongs to is read by github_slug, the same helper
   # intake builds a source key with. No GitHub origin records "-".
   grep -qx "repo=-" "$DUX_HOME/state/$id.result-context"
@@ -928,4 +933,106 @@ EOF
   printf 'mode=combined\nreason=nothing sensitive\n' > "$DUX_HOME/data/tasks/$id/review"
   wrap
   [ -s "$FAKE_WORKER_LOG" ]
+}
+
+# ---- parking a delivered pull request ------------------------------------
+# A ship worker that really delivers: a commit, the pull request the fake forge
+# reports for it, every phase its gate owes through its own recorder, its done
+# line, a line after that, and then the end of its turn. legacy is a receipt from
+# before review modes, which owes both reviews.
+deliver() {  # $1 combined|separate|legacy, $2 pull request number; sets $id and $wt
+  local p phases="checks review security pr ci" r mode=""
+  [ "$1" != combined ] || { phases="checks review pr ci"; mode=combined; }
+  id="$(fixture_task proj ship github "$mode")"
+  export FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1 DUX_HEARTBEAT_SECS=1
+  export FAKE_GH_PR_LIST_FILE="$DUX_HOME/state/pr.json" FAKE_GH_PR_CHECKS='[{"name":"build","state":"SUCCESS"}]'
+  harness_shim; pane_env
+  tmux -L dux-wrap set-environment -t duxwrap FAKE_GH_PR_LIST_FILE "$FAKE_GH_PR_LIST_FILE"
+  tmux -L dux-wrap set-environment -t duxwrap FAKE_GH_PR_CHECKS "$FAKE_GH_PR_CHECKS"
+  wt="$(dux-worktree create "$id")"; open_tab
+  r="$DUX_HOME/state/$id.ship-receipt"
+  cat > "$FAKE_WORKER_SCRIPT" <<SCRIPT
+run mkdir -p docs && printf '# Plan\n\n## Task 1: one\n- [x] one done\n\n## Task 2: two\n- [x] two done\n' > docs/plan.md
+run printf 'implementation\n' > src.txt
+run git add -A && git commit -q -m work
+run jq -nc --arg s "\$(git rev-parse HEAD)" --arg b "dux/$id" '[{number:$2,url:"https://github.com/acme/proj/pull/$2",isDraft:false,state:"OPEN",baseRefName:"main",headRefName:\$b,headRefOid:\$s,headRepository:{name:"proj"},headRepositoryOwner:{login:"acme"}}]' > "$FAKE_GH_PR_LIST_FILE"
+SCRIPT
+  for p in $phases; do printf 'run "$DUX_SHIP_RECORD" %s %s\n' "$p" "$mode" >> "$FAKE_WORKER_SCRIPT"; done
+  [ "$1" != legacy ] \
+    || printf "run grep -v '^review=' %s | sed 's/^version=2\$/version=1/' > %s.x && mv %s.x %s\n" "$r" "$r" "$r" "$r" >> "$FAKE_WORKER_SCRIPT"
+  printf 'status done: PR https://example.invalid/pr/1\nstatus working: after the done line\nsleep 0.2\ntouch stopped\nidle\n' >> "$FAKE_WORKER_SCRIPT"
+}
+
+@test "a proved pull request parks once its turn ends, and its receipt stays put until the watcher applies it" {
+  export DUX_WRAP_PARK_MAX_PASSES=120
+  n=7
+  for mode in combined separate legacy; do
+    deliver "$mode" "$n"
+    err="$DUX_HOME/state/$id.wrap.err"
+    bash -c 'cd "$1" && exec dux-worker-wrap "$2"' _ "$wt" "$id" 2> "$err" 3>&- & wp=$!
+    wait_until 90 grep -q "worker for $id parked in its tab" "$err" || { cat "$err"; kill "$wp"; return 1; }
+    # The session, its wrapper and this run's references all stay, and the
+    # marker names exactly them.
+    kill -0 "$wp"; [ "$(cat "$DUX_HOME/state/$id.pid")" = "$wp" ]
+    g="$(cat "$DUX_HOME/state/$id.pgid")"; group_runs "$g"
+    [ -e "$DUX_HOME/state/$id.portal" ]; [ -e "$DUX_HOME/state/$id.run" ]
+    [ "$(cat "$DUX_HOME/state/$id.parked")" = "$(printf 'run=%s\nwrapper=%s\npgid=%s' "$(sed -n 's/^run=//p' "$DUX_HOME/state/$id.run")" "$wp" "$g")" ]
+    # Publication and parking are not consumption: passes go by and the receipt
+    # stays where the watcher checks it, and the park is logged once.
+    sleep 3
+    [ -f "$DUX_HOME/state/$id.ship-receipt" ]; [ ! -e "$DUX_HOME/state/$id.ship-receipt.delivered" ]
+    [ "$(grep -c 'parked in its tab' "$err")" -eq 1 ]
+    [ "$(tail -n 1 "$err")" = "dux: worker for $id parked in its tab; feedback goes through dux-round" ]
+    dux-watch --once
+    [ "$(dux-ledger get "$id" state)" = done ]
+    [ "$(dux-ledger get "$id" pr)" = "https://github.com/acme/proj/pull/$n" ]
+    [ "$(handoff_status)" = "done: PR https://github.com/acme/proj/pull/$n" ]
+    # Applied, so the receipt is kept as this run's delivered evidence.
+    wait_until 5 test -f "$DUX_HOME/state/$id.ship-receipt.delivered"
+    [ ! -e "$DUX_HOME/state/$id.ship-receipt" ]
+    case "$mode" in
+      legacy) grep -qx version=1 "$DUX_HOME/state/$id.ship-receipt.delivered" ;;
+      *) grep -qx "review=$mode" "$DUX_HOME/state/$id.ship-receipt.delivered" ;;
+    esac
+    kill -TERM "$wp"; wait "$wp" || true
+    refute group_runs "$g"
+    [ ! -e "$DUX_HOME/state/$id.parked" ]
+    n=$((n + 1))
+  done
+}
+
+@test "a done line with no Stop after it is not parked, and a line written after it still fails the run" {
+  prepare ship
+  export DUX_WRAP_IDLE_SECS=2 DUX_WRAP_PARK_MAX_PASSES=2
+  # A Stop from before the done line is an earlier turn's, not this one's.
+  printf 'touch stopped\nsleep 1\nstatus done: PR https://example.invalid/pr/1\nstatus working: still going\nidle\n' \
+    > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [[ "$output" == *"dux: worker for $id did not stop within 2s of its terminal status; it is not parked"* ]]
+  [ "$status" -eq 2 ]
+  [ "$(handoff_status)" = "failed: wrapper: the worker for $id kept writing after its terminal status" ]
+  [ ! -e "$DUX_HOME/state/$id.parked" ]
+  refute group_runs "$(cat "$DUX_HOME/state/$id.pgid")"
+}
+
+@test "a done line the proof cannot back ends the run after its turn, instead of parking" {
+  prepare ship
+  export DUX_WRAP_PARK_MAX_PASSES=2
+  printf 'run ps -o pgid= -p $PPID | tr -d " " > %s\nstatus done: PR https://example.invalid/pr/1\nsleep 0.2\ntouch stopped\nidle\n' \
+    "$DUX_HOME/state/g" > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 0 ]
+  [ "$(handoff_event)" = ended ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "dux: worker for $id ended; result: $(handoff_status)" ]
+  refute group_runs "$(cat "$DUX_HOME/state/g")"
+}
+
+@test "a refusal after the turn ends stops the session it was keeping" {
+  prepare ship
+  printf 'run ps -o pgid= -p $PPID | tr -d " " > %s\nstatus done: PR https://example.invalid/pr/1\nrun rm "$DUX_REPORT" && : > "$DUX_REPORT"\nsleep 0.2\ntouch stopped\nidle\n' \
+    "$DUX_HOME/state/g" > "$FAKE_WORKER_SCRIPT"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"finding: the worker for $id replaced its report outbox" ]]
+  refute group_runs "$(cat "$DUX_HOME/state/g")"
 }

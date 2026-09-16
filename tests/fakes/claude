@@ -6,7 +6,10 @@ me="$(basename "$0")"
 printf '%s %s\n' "$me" "$*" >> "${FAKE_WORKER_LOG:-/dev/null}"
 script="${FAKE_WORKER_SCRIPT:-${FAKE_CLAUDE_SCRIPT:-}}"
 log="${DUX_STATUS_LOG:-/dev/null}"
-child=""; f=""; i=0; chan=""; base=""; pgidfile=""
+child=""; f=""; i=0; n=0; chan=""; base=""; pgidfile=""
+# The pane's terminal, kept where `idle` can read it: the script replays on stdin.
+exec 3<&0
+typed() { if [ -f "$FAKE_HERDR_INPUT" ]; then wc -l < "$FAKE_HERDR_INPUT" | tr -d ' '; else echo 0; fi; }
 trap 'kill "$child" 2>/dev/null; exit 130' INT
 trap 'kill "$child" 2>/dev/null; exit 143' TERM
 # A real session sits at its prompt for minutes, so the wrapper always has a
@@ -52,6 +55,19 @@ while IFS= read -r line || [ -n "$line" ]; do
     report\ *)   printf '%s\n' "${line#report }" >> "${DUX_REPORT:-/dev/null}" ;;
     say\ *)      printf '{"type":"assistant","text":%s}\n' "$(printf '%s' "${line#say }" | jq -Rs .)" ;;
     exit\ *)     exit "${line#exit }" ;;
+    # A session at its prompt: nothing happens until a line is typed into the
+    # pane. tmux types into this process's terminal; the Herdr fake has no
+    # terminal to give it, so it appends each line to FAKE_HERDR_INPUT. Then the
+    # round plays: exec points this loop's input at FAKE_WORKER_ROUND_SCRIPT,
+    # and the next read is that script's first line.
+    idle)        if [ -n "${FAKE_HERDR_INPUT:-}" ]; then
+                   n="$(typed)"; while [ "$(typed)" -le "$n" ]; do sleep 0.2; done
+                   f="$(tail -n 1 "$FAKE_HERDR_INPUT")"
+                 else
+                   f="$(head -n 1 <&3)"
+                 fi
+                 printf 'typed %s\n' "$f" >> "${FAKE_WORKER_LOG:-/dev/null}"
+                 [ -z "${FAKE_WORKER_ROUND_SCRIPT:-}" ] || exec < "$FAKE_WORKER_ROUND_SCRIPT" ;;
     *)           echo "fake $me: bad directive: $line" >&2; exit 99 ;;
   esac
 done < "$script"

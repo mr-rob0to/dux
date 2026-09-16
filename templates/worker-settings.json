@@ -32,6 +32,10 @@
           {
             "type": "command",
             "command": "touch '__CHANNEL__/beat'"
+          },
+          {
+            "type": "command",
+            "command": "touch '__CHANNEL__/stopped'"
           }
         ]
       }

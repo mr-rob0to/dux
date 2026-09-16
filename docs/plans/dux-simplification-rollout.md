@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1 is implemented, tasks 1 to 10, and delivered as pull request #51; milestones 2 to 4 are not started and no task in them is claimed.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 13 are done; milestones 3 and 4 are not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -419,8 +419,41 @@ stopped. Each failed at its own status check.
 **Files:** `bin/dux-worker-wrap`, `bin/dux-watch`, `templates/worker-settings.json`, `tests/dux-worker-wrap.bats`, `tests/dux-watch.bats`.  
 **Acceptance:** Positive Stop-only parking never removes evidence before watcher consumption.
 
-- [ ] Add run-bound parking and retain each receipt through durable handoff application.
-- [ ] Test delayed combined, separate, and legacy consumption and break-verify premature-removal protections.
+- [x] Add run-bound parking and retain each receipt through durable handoff application.
+- [x] Test delayed combined, separate, and legacy consumption and break-verify premature-removal protections.
+
+**Landed with this task.** A plan or ship run whose terminal line is `done: PR <url>` now waits
+up to `DUX_WRAP_IDLE_SECS` (60) for `<channel>/stopped`, which a second `Stop` hook in the
+settings template touches and nothing else does. Only a touch newer than the status outbox
+counts, so a Stop from an earlier turn proves nothing. Running out of time is a log line and
+the run ends as it always did. With the Stop seen and the result proved `done`, the wrapper
+publishes, writes `state/<id>.parked` (run, wrapper pid, group) in one move, logs the park
+line once, and waits silently. Once the watcher marks that handoff `consumed`, which it does
+only after applying the state and the pull request, the receipt becomes
+`state/<id>.ship-receipt.delivered`. A signal ends the wait: the marker goes, the group is
+stopped and the channel cleared. Any other result after a Stop stops the group first and
+ends as before, and a refusal now stops the group too.
+
+Lines after the terminal line are held rather than refused on sight, and every ending except a
+park still fails on them, through one check before the result. The result context gains
+`round=0` and `since=<branch tip at run start>`. No change was needed in `bin/dux-watch`, so
+delayed consumption is tested through the real watcher in `tests/dux-worker-wrap.bats`, and
+`tests/dux-watch.bats` is unchanged. PR #46's `tests/harness` is `tests/fakes/claude`, which
+gains an `idle` verb: it waits for a typed line and can then replay a round script. PR #46
+expected a teardown test and the end-to-end teardown step to need skipping. Neither does,
+because no fake touches `stopped` unless a script says so.
+
+Four new tests and one extended; eight breaks, each failing on its own:
+
+- Renaming the receipt at park time: the parking test failed at "receipt still in place" (line 983).
+- Parking without publishing, PR #46's named break: the same test failed at "watcher applies done".
+- A Stop from before the done line counting: the no-Stop test failed at its "did not stop" line.
+- A timed-out wait parking: the same test failed at its exit status.
+- Parking an unproved result: the proof test failed at its last output line.
+- A refusal leaving the group: the refusal test failed at "group is gone".
+- Dropping the late-line check: both the existing second-terminal test and the no-Stop test
+  failed at their exit status.
+- The `stopped` touch also on `PostToolUse`: the channel test failed at its hook count.
 
 ## Task 14: Apply parking consistently to admission and teardown
 
