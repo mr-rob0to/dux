@@ -6,16 +6,17 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 # bash 5.2+ expands & in ${var//pat/rep}; paths and branch names are literal here.
 shopt -u patsub_replacement 2>/dev/null || true
-usage="usage: dux-brief <id> --intent-file f --criteria-file f [--plan p --tasks r] [--risk bounded|complex] [--issue-file f]"
+usage="usage: dux-brief <id> --intent-file f --criteria-file f [--plan p --tasks r] [--risk bounded|complex] [--review combined|separate --review-reason t] [--issue-file f]"
 id="${1:-}"; [ -n "$id" ] || die "$usage"
 shift
-intent=""; criteria=""; plan=""; tasks=""; issue=""; risk=""
+intent=""; criteria=""; plan=""; tasks=""; issue=""; risk=""; review=""; review_reason=""
 while [ $# -gt 0 ]; do
   # Every one of these takes a value. Without the count check, set -u turns a
   # flag at the end of the line into an unbound-variable crash instead of the
   # usage line, and the caller sees a stack trace rather than what to fix.
   case "$1" in
-    --intent-file|--criteria-file|--plan|--tasks|--risk|--issue-file) [ $# -ge 2 ] || die "$usage" ;;
+    --intent-file|--criteria-file|--plan|--tasks|--risk|--review|--review-reason|--issue-file)
+      [ $# -ge 2 ] || die "$usage" ;;
   esac
   case "$1" in
     --intent-file)   intent="$2"; shift 2 ;;
@@ -23,13 +24,15 @@ while [ $# -gt 0 ]; do
     --plan)          plan="$2"; shift 2 ;;
     --tasks)         tasks="$2"; shift 2 ;;
     --risk)          risk="$2"; shift 2 ;;
+    --review)        review="$2"; shift 2 ;;
+    --review-reason) review_reason="$2"; shift 2 ;;
     --issue-file)    issue="$2"; shift 2 ;;
     *) die "$usage" ;;
   esac
 done
 
 task="$DUX_TASKS/$id"; out="$task/brief.md"; settings="$task/worker-settings.json"
-risk_file="$task/risk"
+risk_file="$task/risk"; review_file="$task/review"
 [ -d "$task" ] || finding "no task folder for $id; run dux-task-new first"
 [ -e "$out" ] && finding "brief already exists for $id; retries use a new task id"
 project="$("$DUX_ROOT/bin/dux-ledger" get "$id" project)" || exit $?
@@ -67,10 +70,32 @@ case "$shape" in
     else
       finding "a ship brief needs both --plan and --tasks, or neither"
     fi
-    [ -n "$risk" ] || risk=complex ;;
+    [ -n "$risk" ] || risk=complex
+    # The review mode is the one thing here that can make the gate do less, so
+    # every way of not stating it lands on the careful value. The pair is a pair
+    # for the same reason the plan and the range are: a mode with no reason is a
+    # classification nobody can check afterwards, and a reason with no mode
+    # names a decision that was never made. Stating neither is allowed and means
+    # separate; there is no spelling of "say nothing" that means combined.
+    if [ -n "$review" ] && [ -n "$review_reason" ]; then
+      case "$review" in
+        combined|separate) ;;
+        *) finding "--review must be combined or separate, not '$review'" ;;
+      esac
+      review_reason="$(cap_line "$review_reason")"
+      case "$review_reason" in
+        *[![:space:]]*) ;;
+        *) finding "--review-reason must say something" ;;
+      esac
+    elif [ -z "$review" ] && [ -z "$review_reason" ]; then
+      review=separate; review_reason="no classification was recorded"
+    else
+      finding "--review and --review-reason are one pair: both, or neither for separate"
+    fi ;;
   *)
     { [ -z "$plan" ] && [ -z "$tasks" ]; } || finding "--plan and --tasks are for ship briefs only"
-    [ -z "$risk" ] || finding "--risk is for ship briefs only" ;;
+    [ -z "$risk" ] || finding "--risk is for ship briefs only"
+    { [ -z "$review" ] && [ -z "$review_reason" ]; } || finding "--review is for ship briefs only" ;;
 esac
 [ -z "$issue" ] || [ -s "$issue" ] || finding "--issue-file $issue is missing or empty"
 # The brief is what /ship reads for Closes #<n>, so a task that came from an
@@ -123,6 +148,9 @@ while IFS= read -r line || [ -n "$line" ]; do
     '{{CRITERIA}}')    cat "$criteria" ;;
     '{{PLAN_LINES}}')  if [ -n "$plan" ]; then printf -- '- Plan: %s\n- Tasks: %s\n' "$plan" "$tasks"; fi ;;
     '{{RISK_LINE}}')   if [ "$shape" = ship ]; then printf -- '- Risk: %s\n' "$risk"; fi ;;
+    '{{REVIEW_LINES}}') if [ "$shape" = ship ]; then
+                          printf -- '- Review: %s\n- Review reason: %s\n' "$review" "$review_reason"
+                        fi ;;
     '{{ISSUE_LINE}}')  case "$source_key" in gh:*) printf -- '- Issue: %s\n' "${source_key#gh:}" ;; esac ;;
     '{{SHAPE_RULES}}') shape_rules ;;
     '{{DONE}}')        done_line ;;
@@ -145,11 +173,20 @@ if [ "$shape" = ship ]; then
   { : > "$risk_file.tmp" && chmod 600 "$risk_file.tmp" && printf '%s\n' "$risk" > "$risk_file.tmp"; } || {
     rm -f "$tmp" "$settings.tmp" "$risk_file.tmp"; finding "cannot write $risk_file"
   }
+  { : > "$review_file.tmp" && chmod 600 "$review_file.tmp" \
+    && printf 'mode=%s\nreason=%s\n' "$review" "$review_reason" > "$review_file.tmp"; } || {
+    rm -f "$tmp" "$settings.tmp" "$risk_file.tmp" "$review_file.tmp"
+    finding "cannot write $review_file"
+  }
 fi
 # Risk goes into place before the brief, so the file dux-worker-wrap routes on
 # is there whenever a finished brief is. The other order left a window: killed
 # between the two renames, the task has a brief dux-brief will not render again
 # and no risk file, and the wrapper then routes it complex without saying so.
 if [ "$shape" = ship ] && ! mv "$risk_file.tmp" "$risk_file"; then finding "cannot write $risk_file"; fi
+# The review file goes into place on the same argument and for the same reason:
+# a task briefed with no review file beside it is one dux-result reads as legacy,
+# which is the one reading that lets an old requirement stand in for a new one.
+if [ "$shape" = ship ] && ! mv "$review_file.tmp" "$review_file"; then finding "cannot write $review_file"; fi
 if ! mv "$settings.tmp" "$settings" || ! mv "$tmp" "$out"; then finding "cannot write $out"; fi
 echo "$out"

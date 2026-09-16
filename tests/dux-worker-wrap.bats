@@ -879,3 +879,35 @@ EOF
   [ "$status" -eq 0 ]
   kill -TERM -- "-$(printf '%s' "$output" | cut -d' ' -f2)" 2>/dev/null || true
 }
+
+# ---- the review mode the brief recorded -------------------------------------
+# The wrapper does not choose the mode and does not pass it anywhere: the brief
+# carries it to the worker. What it does is refuse to start on a classification
+# nothing can read, because the alternative is a worker that spends a whole
+# session and then has its gate refused by dux-result for a file dux-brief wrote.
+
+@test "a review file that is not combined or separate is a refusal, not a guess" {
+  prepare ship
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'mode=quick\nreason=faster\n' > "$DUX_HOME/data/tasks/$id/review"
+  run wrap
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: review mode for $id must be combined or separate, not 'quick'"* ]]
+  [ ! -s "$FAKE_WORKER_LOG" ]
+}
+
+@test "a ship task from before the review file existed starts, and is separate" {
+  prepare ship
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  rm -f "$DUX_HOME/data/tasks/$id/review"
+  wrap
+  [ -s "$FAKE_WORKER_LOG" ]
+}
+
+@test "a combined review file starts the worker" {
+  prepare ship
+  printf 'status working: hi\nexit 0\n' > "$FAKE_WORKER_SCRIPT"
+  printf 'mode=combined\nreason=nothing sensitive\n' > "$DUX_HOME/data/tasks/$id/review"
+  wrap
+  [ -s "$FAKE_WORKER_LOG" ]
+}
