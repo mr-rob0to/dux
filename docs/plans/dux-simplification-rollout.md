@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 14 are done; milestones 3 and 4 are not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 15 are done; milestones 3 and 4 are not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -508,8 +508,53 @@ Three new tests; thirteen breaks, each failing on its own:
 **Files:** `bin/dux-worker-wrap`, `bin/dux-env`, `tests/dux-worker-wrap.bats`.  
 **Acceptance:** Every activation gets fresh identity; parking clears before prompting; pending handoffs prevent reuse.
 
-- [ ] Implement the existing wrapper round design.
-- [ ] Break-verify duplicate activation and pending-handoff protections.
+- [x] Implement the existing wrapper round design.
+- [x] Break-verify duplicate activation and pending-handoff protections.
+
+**Landed with this task.** The wrapper's supervision is now one loop, and a round goes back to
+its top. A parked wrapper takes up only `data/tasks/<id>/round-<n>.md` for the next `n`, and
+only after the watcher has consumed the parked run's handoff. So a result still waiting holds
+the round back, and no round file runs twice. Taking it up removes the marker first, so the
+session stops counting as idle, then checks that the group it holds still runs. A group that has
+gone publishes `failed: the session for <id> was ended in its tab before round <n> could run`.
+Otherwise the round becomes a run of its own, `<channel nonce>r<n>`, and all of this happens
+before its line is typed:
+
+- `state/<id>.run` and the result context are written again, with `round=<n>` and
+  `since=<branch tip>`.
+- The ship recorder is rewritten for the new run: `chmod 600`, write, `chmod 500`.
+- Both outboxes are read from where they end, and both caps are measured from there. Nothing
+  written while parked is judged or kept, and earlier rounds never push a small round over a cap.
+- The round file is staged in the channel at mode 400, and
+  `Read <channel>/round-<n>.md and follow it.` goes through `dux-backend prompt`.
+
+Two changes from PR #46's text. The group check is `group_runs`, not `kill -0`, for the zombie
+reason Task 14 found. And a run hands `dux-result` a report only when that run wrote one, so an
+earlier run's report is never evidence for a later one. `bin/dux-env` needed no change.
+
+Task 14's promised teardown test is here. A parked session whose result has been applied is torn
+down, and teardown still refuses the unpushed branch. A round file written after that types
+nothing and publishes nothing.
+
+Three new tests; twelve breaks, each failing on its own:
+
+- Group check dropped, PR #46's named break: the ended-in-its-tab test failed at its handoff
+  status (line 1144).
+- Status outbox left where the parked run stopped reading, PR #46's other named break: the round
+  test failed waiting for the second park (line 1089). The wrapper logged "proposed a status line
+  over 200 bytes", read from what was written while parked. PR #46 expected the second-terminal
+  violation; this test's parked lines hit the line cap first.
+- Status outbox read from its start: failed at "the round's working line relayed once"
+  (line 1113), because the parked run's terminal line was read again and hid the round's.
+- Round taken before its result was consumed: failed at "nothing typed yet" (line 1085).
+- Marker kept while the round runs: failed at "the round began not parked" (line 1110).
+- Always `round-1.md`: failed at "typed once" (line 1100), because round 1 ran twice.
+- Cap measured over the whole outbox: second park (line 1089), "wrote more than 65536 bytes".
+- Report base not moved: second park (line 1089), "--report is evidence for a scout task only".
+- Report copied from its start: failed at "no report kept" (line 1111).
+- Run id not renewed: failed at the second handoff's run (line 1091).
+- Recorder not rewritten: second park (line 1089), "no /ship receipt for this task".
+- Teardown's parked branch disabled: the teardown test failed at "wrapper stopped" (line 1165).
 
 ## Task 16: Deliver the existing round command
 

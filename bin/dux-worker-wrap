@@ -185,43 +185,52 @@ fi
 # worker's environment carries no Dux path of any kind, and the id and run are
 # baked in so a worker cannot file a phase against a sibling task.
 ship_record=""
-if [ "$shape" = ship ]; then
-  for q in "$DUX_HOME" "$DUX_ROOT" "$id" "$run"; do
-    case "$q" in *\'*) refuse "cannot build a ship recorder for $id: a path or id holds a quote" ;; esac
-  done
-  ship_record="$channel/ship-record"
+write_recorder() {  # for the run in $run
   {
     echo '#!/bin/sh'
     echo '# Records one /ship phase. Made for one task and one run; do not reuse.'
     printf "exec env DUX_HOME='%s' '%s/bin/dux-result' record-ship '%s' '%s' \"\$@\"\n" \
       "$DUX_HOME" "$DUX_ROOT" "$id" "$run"
-  } > "$ship_record" || refuse "cannot stage the ship recorder in the task channel"
+  } > "$ship_record"
+}
+if [ "$shape" = ship ]; then
+  for q in "$DUX_HOME" "$DUX_ROOT" "$id" "$run"; do
+    case "$q" in *\'*) refuse "cannot build a ship recorder for $id: a path or id holds a quote" ;; esac
+  done
+  ship_record="$channel/ship-record"
+  write_recorder || refuse "cannot stage the ship recorder in the task channel"
   chmod 500 "$ship_record" || refuse "cannot restrict $ship_record"
 fi
 printf '%s\n' "$channel" > "$portal" || refuse "cannot write $portal"
 
 # What a result has to be checked against, written before the worker can
 # change anything: the run it belongs to and the project facts Dux registered.
+# Each round writes both again, for its own run.
 worktree_path="$(pwd -P)"
 slug="$(github_slug .)" || slug="-"
-# Where the branch stood before this run could move it. A first run is round 0.
-since="$(git rev-parse --verify -q "refs/heads/$branch" 2>/dev/null)" \
-  || refuse "cannot read the tip of $branch for $id"
-{
-  echo "version=1"; echo "id=$id"; echo "run=$run"; echo "shape=$shape"
-  echo "project=$project"; echo "repo=$slug"; echo "base=$base"; echo "branch=$branch"
-  echo "worktree=$worktree_path"
-  echo "plan=$(sed -n 's/^- Plan: //p' "$brief" | take_line)"
-  echo "tasks=$(sed -n 's/^- Tasks: //p' "$brief" | take_line)"
-  echo "round=0"; echo "since=$since"
-} > "$context" || refuse "cannot write $context"
-context_id="$(git hash-object --stdin < "$context" 2>/dev/null)" \
-  || refuse "cannot hash $context"
-{
-  echo "version=1"; echo "id=$id"; echo "run=$run"; echo "wrapper=$$"
-  echo "shape=$shape"; echo "worktree=$worktree_path"; echo "channel=$channel"
-  echo "context=$context_id"
-} > "$runfile" || refuse "cannot write $runfile"
+round=0
+write_run_records() {
+  local since context_id
+  # Where the branch stood before this run could move it. A first run is round 0.
+  since="$(git rev-parse --verify -q "refs/heads/$branch" 2>/dev/null)" \
+    || refuse "cannot read the tip of $branch for $id"
+  {
+    echo "version=1"; echo "id=$id"; echo "run=$run"; echo "shape=$shape"
+    echo "project=$project"; echo "repo=$slug"; echo "base=$base"; echo "branch=$branch"
+    echo "worktree=$worktree_path"
+    echo "plan=$(sed -n 's/^- Plan: //p' "$brief" | take_line)"
+    echo "tasks=$(sed -n 's/^- Tasks: //p' "$brief" | take_line)"
+    echo "round=$round"; echo "since=$since"
+  } > "$context" || refuse "cannot write $context"
+  context_id="$(git hash-object --stdin < "$context" 2>/dev/null)" \
+    || refuse "cannot hash $context"
+  {
+    echo "version=1"; echo "id=$id"; echo "run=$run"; echo "wrapper=$$"
+    echo "shape=$shape"; echo "worktree=$worktree_path"; echo "channel=$channel"
+    echo "context=$context_id"
+  } > "$runfile" || refuse "cannot write $runfile"
+}
+write_run_records
 # From here a result can name the run it belongs to, so every terminal state
 # this wrapper reaches, its own refusals included, leaves as a handoff.
 handoff_ready=1
@@ -242,6 +251,8 @@ cleanup_channel() {  # the channel and the references only this run owns
 LINE_CAP=200      # bytes of one cleaned status line
 STATUS_CAP=65536  # bytes of status.outbox over a whole run
 REPORT_CAP=1048576  # bytes of report.outbox over a whole run
+status_base=0     # where this run's status proposals begin; a round's start past the last run's
+report_base=0     # where this run's report begins
 accepted=0        # bytes of status.outbox already read
 accepted_sum=""   # what those bytes were, so a rewrite of them is visible
 terminal=""       # the one terminal proposal, held back until the run is over
@@ -266,7 +277,7 @@ import_proposals() {  # $1 "final" when nothing more is coming
   size="$(wc -c < "$status_outbox" | tr -d ' ')"
   # Checked before a byte of the new region is read, so a worker cannot make
   # Dux hold its whole outbox in memory just by writing a big one.
-  if [ "$size" -gt "$STATUS_CAP" ]; then
+  if [ $((size - status_base)) -gt "$STATUS_CAP" ]; then
     violation="the worker for $id wrote more than $STATUS_CAP bytes of status proposals"; return 0
   fi
   # What Dux has already read is the worker's own record too, and it does not
@@ -400,35 +411,6 @@ echo "$pgid" > "$pgidfile" \
 # the harness would then run unsupervised. Deliver it now.
 [ "$signalled" = 0 ] || kill -TERM -- "-$pgid" 2>/dev/null || true
 
-# ---- supervising it -------------------------------------------------------
-# Liveness is pid_runs, which is kill -0 and a command-line match. The match is
-# what makes a process we did not fork safe to poll: nothing waits on it, so its
-# pid can be recycled the moment it dies, and a recycled pid running something
-# else reads as gone. Measured on Linux 2026-09-14: after a group stop the pid
-# is a zombie kill -0 still answers for, and ps reads "[sleep] <defunct>", so
-# the match is the part that says gone.
-last_beat="$(date +%s)"; last_beat_mtime="$(mtime_epoch "$beatfile" 2>/dev/null || true)"
-while pid_runs "$hpid" "$hname"; do
-  sleep "$poll"
-  import_proposals
-  # A broken proposal ends the run, and so does the terminal line: the protocol
-  # has one per run, and an interactive session left alive behind it would be a
-  # second run Dux has no record of.
-  if [ -n "$violation" ] || [ -n "$terminal" ]; then break; fi
-  pid_runs "$hpid" "$hname" || break   # never heartbeat past the harness's exit
-  now_s="$(date +%s)"
-  if [ $((now_s - last_beat)) -ge "$beat" ]; then
-    # The beat file is touched by the harness's own PostToolUse and Stop hooks.
-    # Its mtime moving is a liveness hint of exactly the class the output file's
-    # byte count was: never proof, never read for content.
-    beat_mtime="$(mtime_epoch "$beatfile" 2>/dev/null || true)"
-    if [ -n "$beat_mtime" ] && [ "$beat_mtime" != "$last_beat_mtime" ]; then
-      echo "working: heartbeat" >> "$status_log"
-    fi
-    last_beat_mtime="$beat_mtime"; last_beat=$now_s
-  fi
-done
-
 # ---- the turn ending ------------------------------------------------------
 # A plan or ship run that proposes a pull request may park: its session stays in
 # the tab, idle, for feedback. What says its turn is over is the Stop hook, which
@@ -436,7 +418,6 @@ done
 # touch newer than the terminal line counts, since an earlier turn's Stop says
 # nothing about this one. The wait running out proves nothing, so that run ends
 # like any other.
-stopped=""
 wait_for_stop() {
   local waited=0 idle="${DUX_WRAP_IDLE_SECS:-60}"
   while [ "$waited" -lt "$idle" ]; do
@@ -447,51 +428,6 @@ wait_for_stop() {
   done
   log "worker for $id did not stop within ${idle}s of its terminal status; it is not parked"
 }
-case "$shape:$terminal" in
-  plan:done:\ PR\ ?*|ship:done:\ PR\ ?*) [ -n "$violation" ] || wait_for_stop ;;
-esac
-
-# A run the wrapper ended itself has to be stopped, or an interactive session
-# sits at its prompt after the line that ended the run. A session that may park
-# is kept until its result is known.
-if [ -z "$stopped" ]; then
-  if [ -n "$violation" ] || [ -n "$terminal" ]; then
-    stop_pgid "$pgid" || log "worker group $pgid for $id is still running"
-  fi
-  trap - INT TERM
-  # The harness has gone; whatever it left running has not. Nothing this run
-  # reports counts until the whole group is proven gone.
-  if ! stop_pgid "$pgid"; then
-    finding "the worker group $pgid for $id survived TERM and KILL; state/$id.pgid and its task channel are left for recovery"
-  fi
-fi
-
-# The references are how Task 2 finds this run's channel and its facts. If they
-# no longer name the channel this process made, nothing downstream can be sure
-# which run it is reading, so the result does not count.
-if [ "$(cat "$portal" 2>/dev/null)" != "$channel" ] \
-  || ! grep -q "^channel=$channel\$" "$runfile" 2>/dev/null \
-  || ! grep -q "^run=$run\$" "$runfile" 2>/dev/null; then
-  refuse "the run references for $id no longer name this run's channel"
-fi
-
-# A session that parks is alive and may be typed to, so the two rules about how
-# a finished run's outbox ends, nothing after the terminal line and no line left
-# unfinished, are not applied to it. Every other ending has nothing more coming.
-if [ -z "$stopped" ]; then
-  import_proposals final
-  [ -n "$violation" ] || violation="$late"
-fi
-[ -z "$violation" ] || refuse "$violation"
-outbox_intact "$report_outbox" "$report_pin" \
-  || refuse "the worker for $id replaced its report outbox"
-if [ -s "$report_outbox" ]; then
-  # Measured before a byte of it is copied, for the same reason as the status cap.
-  report_size="$(wc -c < "$report_outbox" | tr -d ' ')"
-  [ "$report_size" -le "$REPORT_CAP" ] \
-    || refuse "the worker for $id wrote more than $REPORT_CAP bytes of report"
-  clean_text < "$report_outbox" >> "$task/report.md" || refuse "cannot write $task/report.md"
-fi
 
 # ---- the result ----------------------------------------------------------
 # A terminal proposal is a request. For done the answer comes from dux-result,
@@ -499,11 +435,10 @@ fi
 # worker's word for any of it; the worker's own url, report claim and shape are
 # not inputs. Every other terminal word is the worker reporting on itself, which
 # only ever moves the task away from done, so its line stands.
-result_line=""; result_event=""
 prove_done() {
   local proof reason prc err="$channel/result.err"
   set -- verify "$id" "$run"
-  [ ! -s "$report_outbox" ] || set -- "$@" --report "$report_outbox"
+  [ "$report_size" -le "$report_base" ] || set -- "$@" --report "$report_outbox"
   proof="$("$DUX_ROOT/bin/dux-result" "$@" 2>"$err")"; prc=$?
   # dux-result's own words, not the worker's, but a check name inside them came
   # from GitHub, so they are cleaned and capped like anything else that arrived.
@@ -524,34 +459,18 @@ prove_done() {
   esac
 }
 
-# A harness the wrapper did not fork has no exit status to collect, so there is
-# no "exited <rc>" to report. Gone with no terminal line covers the operator
-# ending the session and the harness crashing alike, and ended is where both
-# belong: recovery proves what the run actually left behind.
-if [ -n "$terminal" ]; then
-  case "${terminal%%:*}" in
-    done) prove_done ;;
-    *) result_line="$terminal"; result_event="${terminal%%:*}" ;;
-  esac
-else
-  result_line="ended: the session ended without a terminal status"; result_event=ended
-fi
-if [ "$result_event" = failed ]; then
-  # The worker's output is its tab's scrollback, which Dux never reads. The
-  # fixed line is what the report says instead, so a reader is not left looking
-  # for a tail that was never captured.
-  { echo "## Failure tail"; echo "no output captured: the worker ran in its own tab"; } >> "$task/report.md"
-fi
-
 # ---- parked ---------------------------------------------------------------
 # A proved pull request whose turn has ended stays in its tab for feedback. The
 # marker is what tells the one-worker guard this session is idle: it names this
 # run, this wrapper and this group, and nothing else writes it. The receipt
 # stays where the watcher checks it until the watcher has applied this run's
-# handoff, and only then is it kept under its delivered name. The wait logs
-# nothing per pass, because a task can sit parked for days.
-park() {  # returns only when the result could not be published
+# handoff, and only then is it kept under its delivered name. Feedback is the
+# next round's file, and it is taken up only after that too: a round writes the
+# run records again, and a handoff still waiting behind them could never be read.
+# The wait logs nothing per pass, because a task can sit parked for days.
+park() {  # returns 0 once a round has started, 1 with a result still to publish
   local seq consumed parked="$DUX_STATE/$id.parked" receipt="$DUX_STATE/$id.ship-receipt" passes=0 archived=""
+  local next="$task/round-$((round + 1)).md"
   seq="$(publish_handoff "$id" "$run" "$result_line" "$result_event")" || return 1
   consumed="$(handoff_home "$id")/$seq/consumed"
   { printf 'run=%s\nwrapper=%s\npgid=%s\n' "$run" "$$" "$pgid" > "$parked.tmp" && mv "$parked.tmp" "$parked"; } \
@@ -562,6 +481,19 @@ park() {  # returns only when the result could not be published
       archived=yes
       [ ! -f "$receipt" ] || [ -L "$receipt" ] || mv "$receipt" "$receipt.delivered" \
         || log "cannot keep the delivered receipt for $id"
+    fi
+    if [ -n "$archived" ] && [ -f "$next" ]; then
+      # The session is no longer idle from here, whatever happens next.
+      rm -f "$parked"
+      # The group this wrapper has held all along. Gone means the session was
+      # ended in its tab, and the round would be typed into nothing.
+      if ! group_runs "$pgid"; then
+        result_line="failed: the session for $id was ended in its tab before round $((round + 1)) could run"
+        result_event=failed
+        return 1
+      fi
+      start_round "$next"
+      return 0
     fi
     # Tests only: in production the wait lasts as long as the task stays parked.
     [ -z "${DUX_WRAP_PARK_MAX_PASSES:-}" ] || [ "$passes" -lt "$DUX_WRAP_PARK_MAX_PASSES" ] || break
@@ -574,13 +506,144 @@ park() {  # returns only when the result could not be published
   log "parked worker for $id stopped; result: $result_line"
   exit 0
 }
-if [ -n "$stopped" ]; then
-  [ "$result_event" != "done" ] || park
-  # Not parked, so it is stopped like any other ending before the result goes out.
-  trap - INT TERM
-  stop_pgid "$pgid" \
-    || finding "the worker group $pgid for $id survived TERM and KILL; state/$id.pgid and its task channel are left for recovery"
-fi
+
+# ---- a round ----------------------------------------------------------------
+# Feedback runs in the session that delivered the pull request, under this same
+# wrapper, as a run of its own. Everything a run is checked against is made
+# again before the line is typed, never after: the run id, the records that name
+# it, the recorder, and where its proposals begin. So the parked run's terminal
+# line and report are not read a second time, anything written while parked
+# belongs to no run, and each run gets the whole of both caps.
+start_round() {  # $1 the round file
+  round=$((round + 1)); run="${channel##*.}r$round"
+  write_run_records
+  if [ -n "$ship_record" ]; then
+    # Mode 500, so a plain write onto it fails.
+    { chmod 600 "$ship_record" && write_recorder && chmod 500 "$ship_record"; } \
+      || refuse "cannot rewrite the ship recorder for $id"
+  fi
+  { outbox_intact "$status_outbox" "$status_pin" && outbox_intact "$report_outbox" "$report_pin"; } \
+    || refuse "the worker for $id replaced an outbox while its session was parked"
+  status_base="$(wc -c < "$status_outbox" | tr -d ' ')"; accepted="$status_base"
+  accepted_sum="$(prefix_sum "$status_outbox" "$accepted")"
+  report_base="$(wc -c < "$report_outbox" | tr -d ' ')"
+  terminal=""; late=""
+  rm -f "$channel/stopped"
+  { cp "$1" "$channel/round-$round.md" && chmod 400 "$channel/round-$round.md"; } \
+    || refuse "cannot stage round $round in the task channel for $id"
+  "$backend" prompt "$endpoint" "Read $channel/round-$round.md and follow it." \
+    || refuse "cannot type round $round into the tab for $id at $endpoint"
+}
+
+# ---- supervising it -------------------------------------------------------
+# Liveness is pid_runs, which is kill -0 and a command-line match. The match is
+# what makes a process we did not fork safe to poll: nothing waits on it, so its
+# pid can be recycled the moment it dies, and a recycled pid running something
+# else reads as gone. Measured on Linux 2026-09-14: after a group stop the pid
+# is a zombie kill -0 still answers for, and ps reads "[sleep] <defunct>", so
+# the match is the part that says gone. A round comes back to the top of this
+# loop, supervised the way the first run was.
+while :; do
+  last_beat="$(date +%s)"; last_beat_mtime="$(mtime_epoch "$beatfile" 2>/dev/null || true)"
+  while pid_runs "$hpid" "$hname"; do
+    sleep "$poll"
+    import_proposals
+    # A broken proposal ends the run, and so does the terminal line: the protocol
+    # has one per run, and an interactive session left alive behind it would be a
+    # second run Dux has no record of.
+    if [ -n "$violation" ] || [ -n "$terminal" ]; then break; fi
+    pid_runs "$hpid" "$hname" || break   # never heartbeat past the harness's exit
+    now_s="$(date +%s)"
+    if [ $((now_s - last_beat)) -ge "$beat" ]; then
+      # The beat file is touched by the harness's own PostToolUse and Stop hooks.
+      # Its mtime moving is a liveness hint of exactly the class the output file's
+      # byte count was: never proof, never read for content.
+      beat_mtime="$(mtime_epoch "$beatfile" 2>/dev/null || true)"
+      if [ -n "$beat_mtime" ] && [ "$beat_mtime" != "$last_beat_mtime" ]; then
+        echo "working: heartbeat" >> "$status_log"
+      fi
+      last_beat_mtime="$beat_mtime"; last_beat=$now_s
+    fi
+  done
+
+  stopped=""
+  case "$shape:$terminal" in
+    plan:done:\ PR\ ?*|ship:done:\ PR\ ?*) [ -n "$violation" ] || wait_for_stop ;;
+  esac
+
+  # A run the wrapper ended itself has to be stopped, or an interactive session
+  # sits at its prompt after the line that ended the run. A session that may park
+  # is kept until its result is known.
+  if [ -z "$stopped" ]; then
+    if [ -n "$violation" ] || [ -n "$terminal" ]; then
+      stop_pgid "$pgid" || log "worker group $pgid for $id is still running"
+    fi
+    trap - INT TERM
+    # The harness has gone; whatever it left running has not. Nothing this run
+    # reports counts until the whole group is proven gone.
+    if ! stop_pgid "$pgid"; then
+      finding "the worker group $pgid for $id survived TERM and KILL; state/$id.pgid and its task channel are left for recovery"
+    fi
+  fi
+
+  # The references are how Task 2 finds this run's channel and its facts. If they
+  # no longer name the channel this process made, nothing downstream can be sure
+  # which run it is reading, so the result does not count.
+  if [ "$(cat "$portal" 2>/dev/null)" != "$channel" ] \
+    || ! grep -q "^channel=$channel\$" "$runfile" 2>/dev/null \
+    || ! grep -q "^run=$run\$" "$runfile" 2>/dev/null; then
+    refuse "the run references for $id no longer name this run's channel"
+  fi
+
+  # A session that parks is alive and may be typed to, so the two rules about how
+  # a finished run's outbox ends, nothing after the terminal line and no line left
+  # unfinished, are not applied to it. Every other ending has nothing more coming.
+  if [ -z "$stopped" ]; then
+    import_proposals final
+    [ -n "$violation" ] || violation="$late"
+  fi
+  [ -z "$violation" ] || refuse "$violation"
+  outbox_intact "$report_outbox" "$report_pin" \
+    || refuse "the worker for $id replaced its report outbox"
+  # Measured before a byte of it is copied, for the same reason as the status cap,
+  # and only past where this run's report began.
+  report_size="$(wc -c < "$report_outbox" | tr -d ' ')"
+  if [ "$report_size" -gt "$report_base" ]; then
+    [ $((report_size - report_base)) -le "$REPORT_CAP" ] \
+      || refuse "the worker for $id wrote more than $REPORT_CAP bytes of report"
+    tail -c "+$((report_base + 1))" "$report_outbox" | clean_text >> "$task/report.md" \
+      || refuse "cannot write $task/report.md"
+  fi
+
+  # A harness the wrapper did not fork has no exit status to collect, so there is
+  # no "exited <rc>" to report. Gone with no terminal line covers the operator
+  # ending the session and the harness crashing alike, and ended is where both
+  # belong: recovery proves what the run actually left behind.
+  result_line=""; result_event=""
+  if [ -n "$terminal" ]; then
+    case "${terminal%%:*}" in
+      done) prove_done ;;
+      *) result_line="$terminal"; result_event="${terminal%%:*}" ;;
+    esac
+  else
+    result_line="ended: the session ended without a terminal status"; result_event=ended
+  fi
+  if [ "$result_event" = failed ]; then
+    # The worker's output is its tab's scrollback, which Dux never reads. The
+    # fixed line is what the report says instead, so a reader is not left looking
+    # for a tail that was never captured.
+    { echo "## Failure tail"; echo "no output captured: the worker ran in its own tab"; } >> "$task/report.md"
+  fi
+
+  if [ -n "$stopped" ]; then
+    if [ "$result_event" = "done" ] && park; then continue; fi
+    # Not parked, so it is stopped like any other ending before the result goes out.
+    trap - INT TERM
+    stop_pgid "$pgid" \
+      || finding "the worker group $pgid for $id survived TERM and KILL; state/$id.pgid and its task channel are left for recovery"
+  fi
+  break
+done
 publish_handoff "$id" "$run" "$result_line" "$result_event" >/dev/null \
   || finding "cannot publish the result for $id; state/$id.handoffs holds nothing"
 cleanup_channel
