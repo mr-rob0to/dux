@@ -395,8 +395,23 @@ suites that start processes through it (`harness`, `dux-spawn`, `dux-recover`, `
 **Files:** `bin/dux-env` and the existing callers and tests named by PR #46.  
 **Acceptance:** The two existing helpers have one shared owner and preserve behavior.
 
-- [ ] Move the two helpers according to PR #46.
-- [ ] Compare declaration counts and run affected tests; record required break evidence.
+- [x] Move the two helpers according to PR #46.
+- [x] Compare declaration counts and run affected tests; record required break evidence.
+
+**Landed with this task.** `dux-spawn`'s `another_worker` is `fleet_busy <id>` in `bin/dux-env`,
+and the wrapper's `stop_group` is `stop_pgid <pgid>` there too. Counted before and after: the
+fleet block is 75 lines both times, its comments included, and the stop is 22. The fleet check
+changed only its name and one `local` line, which now takes the id and the two script paths it
+used to find in the caller. The stop changed only in taking the group as an argument, and its
+"ignored TERM" log line no longer names the task, since the log it goes to is the task's own.
+Spawn keeps all six refusal wordings, and the wrapper's `group_alive` went with the stop, which
+was its only caller. Three direct tests in `tests/dux-env.bats`.
+
+Break: `fleet_busy` skipping the group file made spawn's "another task's live harness group
+refuses the start, and an unreadable one blocks it" fail at its first status check, because the
+start went ahead beside a live group. The three direct tests were each broken on their own: the
+pidfile never read as live, the group never read as live, and `stop_pgid` calling a survivor
+stopped. Each failed at its own status check.
 
 ## Task 13: Park delivered workers without losing receipts
 

@@ -230,30 +230,7 @@ cleanup_channel() {  # the channel and the references only this run owns
 # "the worker has stopped" is a question about the group, not about the one
 # process Dux happened to fork. A child that deliberately starts a session of
 # its own escapes this, and that is outside what Dux claims to contain.
-group_alive() { [ -n "$pgid" ] && group_runs "$pgid"; }
-
-stop_group() {  # TERM, then KILL; returns 1 if anything is still there
-  local i limit signals
-  # Tests only: nothing a test can start survives KILL, so without this the
-  # branch that refuses a survivor could never be seen to fail.
-  signals="${DUX_WRAP_STOP_SIGNALS:-on}"
-  group_alive || return 0
-  limit=$(( ${DUX_WRAP_STOP_GRACE_SECS:-10} * 5 ))
-  if [ "$signals" = on ]; then kill -TERM -- "-$pgid" 2>/dev/null || true; fi
-  i=0
-  while [ "$i" -lt "$limit" ]; do
-    group_alive || return 0
-    i=$((i + 1)); sleep 0.2
-  done
-  log "worker group $pgid for $id ignored TERM; killing it"
-  if [ "$signals" = on ]; then kill -KILL -- "-$pgid" 2>/dev/null || true; fi
-  i=0
-  while [ "$i" -lt 25 ]; do
-    group_alive || return 0
-    i=$((i + 1)); sleep 0.2
-  done
-  return 1
-}
+# dux-env's stop_pgid is the stop, shared with teardown.
 
 # ---- reading the worker's proposals --------------------------------------
 LINE_CAP=200      # bytes of one cleaned status line
@@ -444,12 +421,12 @@ done
 # A run the wrapper ended itself has to be stopped, or an interactive session
 # sits at its prompt after the line that ended the run.
 if [ -n "$violation" ] || [ -n "$terminal" ]; then
-  stop_group || log "worker group $pgid for $id is still running"
+  stop_pgid "$pgid" || log "worker group $pgid for $id is still running"
 fi
 trap - INT TERM
 # The harness has gone; whatever it left running has not. Nothing this run
 # reports counts until the whole group is proven gone.
-if ! stop_group; then
+if ! stop_pgid "$pgid"; then
   finding "the worker group $pgid for $id survived TERM and KILL; state/$id.pgid and its task channel are left for recovery"
 fi
 

@@ -220,3 +220,49 @@ load helpers/setup
   [ -z "$stderr" ] || { echo "producer wrote to stderr: $stderr"; return 1; }
   [ "$output" = first ] || { echo "wanted 'first', got '$output'"; return 1; }
 }
+
+# ---- the two helpers spawn, the wrapper and teardown share -----------------
+# Spawn's own suite reads every refusal through the start it blocks. These read
+# the helpers' answers directly, which is what a round and teardown call.
+@test "fleet_busy answers free when no other task has evidence, and names a live wrapper when one does" {
+  dux-ledger add a-scout-20260916-aaa proj scout local
+  dux-ledger add b-ship-20260916-bbb proj ship local
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy b-ship-20260916-bbb'
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  p="$(stand_in "dux-worker-wrap a-scout-20260916-aaa")"
+  echo "$p" > "$DUX_HOME/state/a-scout-20260916-aaa.pid"
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy b-ship-20260916-bbb'
+  [ "$status" -eq 0 ]; [ "$output" = "live a-scout-20260916-aaa" ]
+  # A task never blocks itself.
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy a-scout-20260916-aaa'
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  reap "$p"
+}
+
+@test "fleet_busy reads another task's live group, and a group file it cannot read, as busy" {
+  dux-ledger add a-scout-20260916-aaa proj scout local
+  ps -o pgid= -p $$ | tr -d ' ' > "$DUX_HOME/state/a-scout-20260916-aaa.pgid"
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy b-ship-20260916-bbb'
+  [ "$status" -eq 0 ]; [ "$output" = "live a-scout-20260916-aaa" ]
+  printf 'x\n' > "$DUX_HOME/state/a-scout-20260916-aaa.pgid"
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy b-ship-20260916-bbb'
+  [ "$status" -eq 0 ]; [ "$output" = "pgidfile a-scout-20260916-aaa" ]
+}
+
+@test "stop_pgid ends a group with TERM, and reports a group that outlives both signals" {
+  perl -e 'use POSIX; POSIX::setsid(); exec("sleep", "60")' </dev/null >/dev/null 2>&1 3>&- &
+  g=$!
+  wait_until 10 group_runs "$g"
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; stop_pgid "$1"' _ "$g"
+  [ "$status" -eq 0 ]
+  refute group_runs "$g"
+  # The test switch sends nothing, so a live group is a survivor on purpose.
+  perl -e 'use POSIX; POSIX::setsid(); exec("sleep", "60")' </dev/null >/dev/null 2>&1 3>&- &
+  g=$!
+  wait_until 10 group_runs "$g"
+  DUX_WRAP_STOP_SIGNALS=off DUX_WRAP_STOP_GRACE_SECS=1 \
+    run bash -c 'source "$DUX_ROOT/bin/dux-env"; stop_pgid "$1"' _ "$g"
+  kill -KILL -- "-$g"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"dux: worker group $g ignored TERM; killing it"* ]]
+}
