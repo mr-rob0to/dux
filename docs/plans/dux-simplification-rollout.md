@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, is delivered through `/ship` and waits on the operator's merge and then R2; milestones 3 and 4 are not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: task 20 has landed. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -26,8 +26,8 @@ Use this file's numbered task ranges when dispatching each milestone:
 | Milestone | Task range | Estimated added lines | Actual added lines | Delivery evidence |
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
-| M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | Task 19's pull request |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | Not recorded | Not recorded |
+| M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 259 after task 20 | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -736,8 +736,32 @@ row after the operator merges.
 **Interface:** `feedback`, `answer`, and `approval` purposes under spec section 6.3.  
 **Acceptance:** Each purpose enforces its own prerequisite; an ordinary answer never authorizes implementation.
 
-- [ ] Add purpose validation.
-- [ ] Break-verify waiting-state, delivered-PR, and approval distinctions.
+- [x] Add purpose validation.
+- [x] Break-verify waiting-state, delivered-PR, and approval distinctions.
+
+**Landed with this task.** `dux-round` takes `--purpose feedback|answer|approval`, and feedback
+is the default, so every M2 call is unchanged. Each purpose checks its own state first. Feedback
+goes to a `done` task with a pull request, as before. An answer goes to a task parked at
+`needs-decision` or `blocked`. Approval goes only to a `ship` task parked at `needs-decision`; a
+`plan` task is refused, because it delivers its plan as a pull request. Only approval takes
+`--plan`, `--tasks` and `--commit`, and it needs all three. An answer naming any of them is
+refused with `this answer approves no plan`, and the answer round itself tells the worker that
+work waiting for approval still waits. An answer or approval has no pull request to check, so
+nothing is fetched and GitHub is not asked. A waiting task whose session is gone is sent to
+`dux-recover --retry --answer-file`, not teardown, and a round that cannot be armed puts the
+task back in the state it came from. `templates/round.md` marks each purpose's lines with a tag,
+and the feedback round renders byte for byte as before. Task 23 checks what an approval names
+against the repository. A scout takes no round of any purpose. Seven new tests; ten breaks, each
+failing on its own:
+
+- An answer accepted at `done` (line 81), feedback at `needs-decision` (86), approval at
+  `blocked` (89).
+- Approval without `--commit` (99), an answer carrying `--plan` (95), approval for a plan
+  task (105).
+- A waiting task's lost session sent to teardown (171). A round that cannot be armed putting a
+  blocked task back to `done` (138).
+- An answer that checks the pull request, with no origin and GitHub failing (114). The render
+  ignoring purpose tags (164).
 
 ## Task 21: Preserve owners at supported waiting states
 

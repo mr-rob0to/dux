@@ -13,30 +13,32 @@ teardown_file() {
   drop_tmux_tmpdir
 }
 
-# A delivered task parked in a real tab, as a parked wrapper leaves it: its
-# result applied and acknowledged, a stand-in for the wrapper, and this test's
-# own process group for the session.
-parked_task() {  # [$1 shape]; sets $id, $wt, $pr, $s, $feedback
+# A task parked in a real tab, as a parked wrapper leaves it: its result applied
+# and acknowledged, a stand-in for the wrapper, and this test's own process group
+# for the session. Delivered unless a waiting state is named; $at is the state a
+# refusal must leave it in.
+parked_task() {  # [$1 shape], [$2 state]; sets $id, $wt, $pr, $s, $feedback, $at
   id="$(fixture_task proj "${1:-ship}")"
   wt="$(dux-worktree create "$id")"
-  pr="https://github.com/acme/proj/pull/5"; s="$DUX_HOME/state"
-  local w g c
-  dux-ledger set "$id" state done; dux-ledger set "$id" pr "$pr"; dux-ledger ack "$id" done
+  pr="https://github.com/acme/proj/pull/5"; s="$DUX_HOME/state"; at="${2:-done}"
+  local w g c line="done: PR $pr"
+  dux-ledger set "$id" state "$at"; dux-ledger ack "$id" "$at"
+  if [ "$at" = "done" ]; then dux-ledger set "$id" pr "$pr"; else line="$at: which name should the flag have?"; fi
   printf 'version=1\nrun=r1\n' > "$s/$id.run"
   w="$(stand_in "dux-worker-wrap $id")"; echo "$w" > "$s/$id.pid"
   g="$(ps -o pgid= -p $$ | tr -d ' ')"; echo "$g" > "$s/$id.pgid"
   printf 'run=r1\nwrapper=%s\npgid=%s\n' "$w" "$g" > "$s/$id.parked"
   c="$s/channels/$id.abcdefgh"; mkdir -p "$c"; echo "$c" > "$s/$id.portal"
   dux-backend open "$id" "$wt" > "$s/$id.endpoint"
-  handoff "$id" "done: PR $pr" "done" r1; touch "$s/$id.handoffs/1/consumed"
+  handoff "$id" "$line" "$at" r1; touch "$s/$id.handoffs/1/consumed"
   export FAKE_GH_PR_STATE=OPEN FAKE_GH_PR_HEAD="dux/$id" FAKE_GH_PR_BASE=main
   feedback="$DUX_HOME/feedback.md"
   printf 'Rename the flag to --since.\nKeep {{BASE}} and the old name working.\n' > "$feedback"
   export DUX_SESSION_PID=$$
   dux-lock acquire >/dev/null
 }
-# A refusal leaves the task as it found it: done, acknowledged, and no round
-# file or temporary file behind. Git says why a fetch failed above the finding.
+# A refusal leaves the task as it found it: in its state, acknowledged, and no
+# round file or temporary file behind. Git says why a fetch failed above the finding.
 refused() {  # $1 the finding, [$2 last to allow what Git printed before it]
   [ "$status" -eq 2 ]
   if [ "${2:-}" = last ]; then
@@ -44,17 +46,20 @@ refused() {  # $1 the finding, [$2 last to allow what Git printed before it]
   else
     [ "$output" = "finding: $1" ]
   fi
-  [ "$(dux-ledger get "$id" state)" = "done" ]; [ "$(dux-ledger get "$id" acked)" = "done" ]
+  [ "$(dux-ledger get "$id" state)" = "${at:-done}" ]; [ "$(dux-ledger get "$id" acked)" = "${at:-done}" ]
   [ -z "$(find "$DUX_HOME/data/tasks/$id" -name '*round-*')" ]
 }
 
-@test "the usage line, for no id, a flag with no value, and a flag it does not know" {
+@test "the usage line, for no id, a flag with no value, a flag it does not know, and a purpose it does not have" {
+  u="dux: usage: dux-round <id> --file <path> [--purpose feedback|answer|approval] [--plan <path> --tasks <range> --commit <sha>]"
   run dux-round
-  [ "$status" -eq 1 ]; [ "$output" = "dux: usage: dux-round <id> --file <path>" ]
+  [ "$status" -eq 1 ]; [ "$output" = "$u" ]
   run dux-round some-task --file
-  [ "$status" -eq 1 ]; [ "$output" = "dux: usage: dux-round <id> --file <path>" ]
+  [ "$status" -eq 1 ]; [ "$output" = "$u" ]
   run dux-round some-task --files x
-  [ "$status" -eq 1 ]; [ "$output" = "dux: usage: dux-round <id> --file <path>" ]
+  [ "$status" -eq 1 ]; [ "$output" = "$u" ]
+  run dux-round some-task --file x --purpose review
+  [ "$status" -eq 1 ]; [ "$output" = "$u" ]
 }
 
 @test "only the lock holder sends feedback, and only to a delivered plan or ship" {
@@ -70,13 +75,109 @@ refused() {  # $1 the finding, [$2 last to allow what Git printed before it]
   refused "task $id has no pull request on record"
 }
 
+@test "each purpose goes only to the state it is for" {
+  parked_task
+  run dux-round "$id" --file "$feedback" --purpose answer
+  refused "task $id is done; an answer goes to a task waiting at needs-decision or blocked"
+  run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit abc1234
+  refused "task $id is done; approval goes to a task waiting at needs-decision"
+  at=needs-decision; dux-ledger set "$id" state "$at"; dux-ledger ack "$id" "$at"
+  run dux-round "$id" --file "$feedback"
+  refused "task $id is needs-decision, not done; feedback goes to a delivered pull request"
+  at=blocked; dux-ledger set "$id" state "$at"; dux-ledger ack "$id" "$at"
+  run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit abc1234
+  refused "task $id is blocked; approval goes to a task waiting at needs-decision"
+}
+
+@test "only an approval names a plan, its tasks and a commit, and an approval names all three" {
+  parked_task ship needs-decision
+  run dux-round "$id" --file "$feedback" --purpose answer --plan docs/plans/p.md --tasks 1-2 --commit abc1234
+  refused "--plan, --tasks and --commit belong to an approval round; this answer approves no plan"
+  run dux-round "$id" --file "$feedback" --purpose answer --commit abc1234
+  refused "--plan, --tasks and --commit belong to an approval round; this answer approves no plan"
+  run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2
+  refused "an approval round names the plan, its tasks and the commit: --plan, --tasks and --commit"
+}
+
+@test "approval in place is for ship work: a plan task is refused" {
+  parked_task plan needs-decision
+  run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit abc1234
+  refused "approval in place is for integrated ship work; plan task $id delivers its plan as a pull request"
+}
+
+@test "an answer needs no pull request: it goes to a question parked in its tab and approves nothing" {
+  parked_task ship needs-decision
+  t="$DUX_HOME/data/tasks/$id"
+  # Nothing is fetched and GitHub is not asked: no pull request exists yet.
+  git -C "$DUX_HOME/proj" remote set-url origin "$DUX_HOME/no-such-origin"
+  FAKE_GH_FAIL=1 run dux-round "$id" --file "$feedback" --purpose answer
+  [ "$status" -eq 0 ]; [ "$output" = "round 1 sent to $id" ]
+  [ "$(dux-ledger get "$id" state)" = running ]; [ "$(dux-ledger get "$id" acked)" = - ]
+  cat > "$DUX_HOME/expected.md" <<EOF
+## Round 1 for task $id: an answer from the operator
+
+The operator answers what your last terminal line asked or was blocked on. This is the same task, under the same brief, on the same branch, dux/$id. Never work on main.
+
+- Run \`git fetch origin\` and \`git status\` before anything else, and start from what dux/$id holds now.
+- Carry on with the task from where it stopped, using the answer below. An answer approves no plan: work that waits for approval still waits for it.
+- End with the terminal line the brief asks for, and wait at the prompt. This round gets one terminal line, and every other rule in the brief still holds.
+
+## Answer (the operator's words)
+Rename the flag to --since.
+Keep {{BASE}} and the old name working.
+EOF
+  [ "$(cat "$t/round-1.md")" = "$(cat "$DUX_HOME/expected.md")" ]
+}
+
+@test "an answer goes to a blocker parked in its tab too, and one that cannot arm puts it back" {
+  parked_task ship blocked
+  mkdir -p "$DUX_HOME/mvbin"
+  printf '#!/usr/bin/env bash\ncase "${2:-}" in */round-*.md) exit 1 ;; esac\nexec %s "$@"\n' "$(command -v mv)" > "$DUX_HOME/mvbin/mv"
+  chmod +x "$DUX_HOME/mvbin/mv"
+  PATH="$DUX_HOME/mvbin:$PATH" run dux-round "$id" --file "$feedback" --purpose answer
+  refused "cannot arm round 1 for $id; $id is blocked again and round 1 was not sent"
+  run dux-round "$id" --file "$feedback" --purpose answer
+  [ "$status" -eq 0 ]; [ "$output" = "round 1 sent to $id" ]
+  head -n 1 "$DUX_HOME/data/tasks/$id/round-1.md" | grep -qx "## Round 1 for task $id: an answer from the operator"
+}
+
+@test "an approval round goes to a question parked in its tab and names what it approves" {
+  parked_task ship needs-decision
+  t="$DUX_HOME/data/tasks/$id"
+  FAKE_GH_FAIL=1 run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit abc1234
+  [ "$status" -eq 0 ]; [ "$output" = "round 1 sent to $id" ]
+  [ "$(dux-ledger get "$id" state)" = running ]
+  cat > "$DUX_HOME/expected.md" <<EOF
+## Round 1 for task $id: approval of docs/plans/p.md, tasks 1-2, at abc1234
+
+The operator approves tasks 1-2 of docs/plans/p.md exactly as committed at abc1234. This is the same task, under the same brief, on the same branch, dux/$id. Never work on main.
+
+- Run \`git fetch origin\` and \`git status\` before anything else, and start from what dux/$id holds now.
+- Implement tasks 1-2 of docs/plans/p.md in order, ticking each box as it lands.
+- In docs/plans/p.md, only box ticks and the three lines under **Where this stands** may differ from abc1234. Any other change to the plan needs \`needs-decision:\` and a renewed approval.
+- Run \`/ship\`, then append \`done: PR <url>\` to the file named by \`\$DUX_STATUS_LOG\` and wait at the prompt. This round gets one terminal line, and every other rule in the brief still holds.
+
+## Approval (the operator's words)
+Rename the flag to --since.
+Keep {{BASE}} and the old name working.
+EOF
+  [ "$(cat "$t/round-1.md")" = "$(cat "$DUX_HOME/expected.md")" ]
+}
+
+@test "a waiting task whose session is gone is sent to recovery, not teardown" {
+  parked_task ship blocked
+  printf 'run=r0\nwrapper=%s\npgid=%s\n' "$(cat "$s/$id.pid")" "$(cat "$s/$id.pgid")" > "$s/$id.parked"
+  run dux-round "$id" --file "$feedback" --purpose answer
+  refused "the session for $id is no longer in its tab (its wrapper is not parked); recover it with dux-recover $id --retry --answer-file <f>"
+}
+
 @test "a scout is refused before anything else about it is read" {
   id="$(fixture_task proj scout)"
   dux-ledger set "$id" state "done"; dux-ledger ack "$id" "done"
   export DUX_SESSION_PID=$$; dux-lock acquire >/dev/null
   printf 'more\n' > "$DUX_HOME/feedback.md"
   run dux-round "$id" --file "$DUX_HOME/feedback.md"
-  refused "a scout has no pull request to change; dispatch a new scout"
+  refused "a scout takes no rounds; recover it or dispatch a new scout"
 }
 
 @test "the feedback file is required, not empty, and carries no untrusted fence" {
