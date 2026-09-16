@@ -100,6 +100,25 @@ stop_pgid() {  # $1 pgid; TERM, then KILL; returns 1 if anything is still there
   return 1
 }
 
+# A session parked after its proved delivery sits idle at its prompt, which is
+# not a worker at work. The wrapper writes state/<id>.parked only once that run's
+# turn has ended, naming the run, itself and the session's group, and it counts
+# only while all three still hold: the run is the task's current run, the
+# wrapper is the pid state/<id>.pid names and it is still running, and the group
+# is the one state/<id>.pgid names. Anything unreadable or out of step is not
+# parked, and whatever else is still running is judged as it always was.
+parked() {  # $1 id
+  local m="$DUX_STATE/$1.parked" run wrapper group
+  run="$(sed -n 's/^run=//p' "$m" 2>/dev/null)"
+  wrapper="$(sed -n 's/^wrapper=//p' "$m" 2>/dev/null)"
+  group="$(sed -n 's/^pgid=//p' "$m" 2>/dev/null)"
+  [ -n "$run" ] || return 1
+  [ "$run" = "$(sed -n 's/^run=//p' "$DUX_STATE/$1.run" 2>/dev/null)" ] || return 1
+  case "$group" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$group" = "$(cat "$DUX_STATE/$1.pgid" 2>/dev/null)" ] || return 1
+  [ "$wrapper" = "$(cat "$DUX_STATE/$1.pid" 2>/dev/null)" ] && pid_runs "$wrapper" "dux-worker-wrap $1"
+}
+
 # One Dux-managed worker at a time. Several long workers spend one subscription
 # between them, and the cheapest fix that actually works is to start the second
 # one later. This is a refusal and not a queue: no scheduler, no reservation, no
@@ -122,8 +141,12 @@ stop_pgid() {  # $1 pgid; TERM, then KILL; returns 1 if anything is still there
 # refuse every spawn until the operator tidied up. Where Dux does believe a
 # worker is at work, a pane it can see is evidence and a stuck run blocks the
 # next start by design -- the refusal names it, and existing recovery clears it.
+#
+# A parked session is exempt from both signals, and only while its marker holds.
+# Its ledger reading still counts, so one whose result the watcher has not yet
+# applied still reads running, and its pane still blocks.
 fleet_busy() {  # $1 id; prints "<why> <other>" for a task whose worker may be alive, else returns 1
-  local id="$1" ledger="$DUX_ROOT/bin/dux-ledger" backend="$DUX_ROOT/bin/dux-backend" other opid opgid wpid g state at ids
+  local id="$1" ledger="$DUX_ROOT/bin/dux-ledger" backend="$DUX_ROOT/bin/dux-backend" other opid opgid wpid g state at ids idle
   # The roster is read here, on its own line, and not as a command substitution
   # in the loop's here-document: a here-document throws the substitution's exit
   # status away, so a ledger that could not enumerate would read as an empty
@@ -134,7 +157,8 @@ fleet_busy() {  # $1 id; prints "<why> <other>" for a task whose worker may be a
     [ -n "$other" ] || continue
     [ "$other" = "$id" ] && continue
     opid="$DUX_STATE/$other.pid"
-    if [ -e "$opid" ] || [ -L "$opid" ]; then
+    idle=""; if parked "$other"; then idle=yes; fi
+    if [ -z "$idle" ] && { [ -e "$opid" ] || [ -L "$opid" ]; }; then
       wpid="$(cat "$opid" 2>/dev/null)" || { printf 'pidfile %s' "$other"; return 0; }
       case "$wpid" in
         ''|*[!0-9]*) printf 'pidfile %s' "$other"; return 0 ;;
@@ -148,7 +172,7 @@ fleet_busy() {  # $1 id; prints "<why> <other>" for a task whose worker may be a
     # is written once the group is known and cleared at teardown, and its
     # unreadable forms fail closed exactly as the pidfile's do.
     opgid="$DUX_STATE/$other.pgid"
-    if [ -e "$opgid" ] || [ -L "$opgid" ]; then
+    if [ -z "$idle" ] && { [ -e "$opgid" ] || [ -L "$opgid" ]; }; then
       g="$(cat "$opgid" 2>/dev/null)" || { printf 'pgidfile %s' "$other"; return 0; }
       case "$g" in
         ''|*[!0-9]*) printf 'pgidfile %s' "$other"; return 0 ;;

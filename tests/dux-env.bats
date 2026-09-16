@@ -249,6 +249,29 @@ load helpers/setup
   [ "$status" -eq 0 ]; [ "$output" = "pgidfile a-scout-20260916-aaa" ]
 }
 
+@test "fleet_busy lets a parked task's wrapper and group through, only on a marker that still names them" {
+  a=a-ship-20260916-aaa
+  dux-ledger add "$a" proj ship local; dux-ledger set "$a" state done
+  p="$(stand_in "dux-worker-wrap $a")"; q="$(stand_in "dux-worker-wrap $a")"
+  g="$(ps -o pgid= -p $$ | tr -d ' ')"
+  echo "$p" > "$DUX_HOME/state/$a.pid"; echo "$g" > "$DUX_HOME/state/$a.pgid"
+  printf 'version=1\nrun=r1\n' > "$DUX_HOME/state/$a.run"
+  busy_when_parked() {  # $1 run, $2 wrapper, $3 group, as the marker names them
+    printf 'run=%s\nwrapper=%s\npgid=%s\n' "$1" "$2" "$3" > "$DUX_HOME/state/$a.parked"
+    run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy b-ship-20260916-bbb'
+  }
+  busy_when_parked r1 "$p" "$g"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  # Another run, another wrapper, another group: none of them is this session parked.
+  busy_when_parked r0 "$p" "$g"; [ "$output" = "live $a" ]
+  busy_when_parked r1 "$q" "$g"; [ "$output" = "live $a" ]
+  busy_when_parked r1 "$p" 999999; [ "$output" = "live $a" ]
+  # A wrapper that has gone leaves a group nobody is parking.
+  reap "$p"
+  busy_when_parked r1 "$p" "$g"; [ "$output" = "live $a" ]
+  reap "$q"
+}
+
 @test "stop_pgid ends a group with TERM, and reports a group that outlives both signals" {
   perl -e 'use POSIX; POSIX::setsid(); exec("sleep", "60")' </dev/null >/dev/null 2>&1 3>&- &
   g=$!

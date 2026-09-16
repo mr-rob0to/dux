@@ -570,6 +570,28 @@ live_wrapper_for() {  # $1 id; prints the pid
   wait_result "$b"
 }
 
+# A parked session is idle at its prompt. Once the watcher has applied its
+# result it holds no slot, but while its handoff is pending the ledger still
+# reads running, and a start waits as it always has.
+@test "a parked task lets a start through once its result is applied, and not before" {
+  a="$(fixture_task proj scout)"
+  run dux-spawn "$a"
+  [ "$status" -eq 0 ]
+  wait_result "$a"; wait_for_workers 30
+  p="$(stand_in "dux-worker-wrap $a")"; g="$(ps -o pgid= -p $$ | tr -d ' ')"
+  echo "$p" > "$DUX_HOME/state/$a.pid"; echo "$g" > "$DUX_HOME/state/$a.pgid"
+  printf 'run=%s\nwrapper=%s\npgid=%s\n' "$(sed -n 's/^run=//p' "$DUX_HOME/state/$a.run")" "$p" "$g" \
+    > "$DUX_HOME/state/$a.parked"
+  b="$(fixture_task proj ship)"
+  run dux-spawn "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: another Dux worker is active: $a; $b remains queued" ]
+  dux-ledger set "$a" state done
+  run dux-spawn "$b"
+  [ "$status" -eq 0 ]
+  wait_result "$b"
+}
+
 @test "a container for a task Dux believes is running blocks the start" {
   a="$(fixture_task proj scout)"
   run dux-spawn "$a"

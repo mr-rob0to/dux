@@ -307,6 +307,42 @@ settled() {  # $1 state, [$2 pr]
   [ "$status" -eq 0 ]; [ ! -d "$wt" ]; [ ! -e "$pf" ]
 }
 
+# A parked task is the one done task with something still running. Teardown ends
+# its wrapper first, so nothing is left to take up a round while it runs, then
+# its session's group. A refusal after that still keeps the work.
+@test "teardown of a parked task ends its wrapper, then its group, and keeps uncommitted work" {
+  spawned scout; settled done https://example.invalid/pr/9
+  fake_run "$id" r00 scout
+  # The session's group, led by a process its parent is slow to reap, the way tmux
+  # left a harness it had killed on Linux: stopped, it stays a zombie for a while.
+  perl -MPOSIX -e '$| = 1; my $c = fork; if (!$c) { setsid(); exec("sleep", "60") } print "$c\n"; sleep 60' \
+    </dev/null > "$DUX_HOME/state/g" 2>/dev/null 3>&- &
+  echo $! >> "$DUX_HOME/state/stand-ins"
+  wait_until 10 test -s "$DUX_HOME/state/g"; g="$(cat "$DUX_HOME/state/g")"
+  wait_until 10 group_runs "$g"
+  # A wrapper that writes down, as it is stopped, whether the group was still running.
+  # shellcheck disable=SC2016
+  perl -e 'exec {"/bin/bash"} "dux-worker-wrap $ARGV[0]", "-c", q{trap "ps -o stat= -p $1 | grep -qv Z && echo alive > $2 || echo gone > $2; exit" TERM; while :; do sleep 0.2; done}, "x", @ARGV[1, 2]' \
+    "$id" "$g" "$DUX_HOME/state/order" </dev/null >/dev/null 2>&1 3>&- &
+  p=$!; echo "$p" >> "$DUX_HOME/state/stand-ins"
+  wait_until 10 pid_runs "$p" "dux-worker-wrap $id"
+  echo "$p" > "$DUX_HOME/state/$id.pid"; echo "$g" > "$DUX_HOME/state/$id.pgid"
+  printf 'run=r00\nwrapper=%s\npgid=%s\n' "$p" "$g" > "$DUX_HOME/state/$id.parked"
+  : > "$DUX_HOME/state/$id.ship-receipt.delivered"
+  echo scratch > "$wt/scratch"
+  run dux-teardown "$id"
+  refute pid_runs "$p" "dux-worker-wrap $id"
+  [ "$(cat "$DUX_HOME/state/order")" = alive ]
+  refute group_runs "$g"
+  [ "$status" -eq 2 ]; [[ "$output" == *"finding: worktree $wt has uncommitted changes"* ]]
+  [ -f "$wt/scratch" ]
+  rm "$wt/scratch"
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  [ ! -d "$wt" ]
+  [ ! -e "$DUX_HOME/state/$id.parked" ]; [ ! -e "$DUX_HOME/state/$id.ship-receipt.delivered" ]
+}
+
 # Every script that builds a path from a task id checks it in the same place.
 # Teardown removes folders, so an id that could climb out of state/ must not
 # reach the ledger read, let alone anything after it.

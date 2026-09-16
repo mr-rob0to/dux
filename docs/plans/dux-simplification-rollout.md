@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 13 are done; milestones 3 and 4 are not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2 is in progress: tasks 11 to 14 are done; milestones 3 and 4 are not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -461,8 +461,46 @@ Four new tests and one extended; eight breaks, each failing on its own:
 **Files:** `bin/dux-env`, `bin/dux-spawn`, `bin/dux-teardown`, related tests.  
 **Acceptance:** A positively parked wrapper and process group do not block solely because they remain alive; uncertain state still blocks.
 
-- [ ] Apply the shared admission rule and preserve dirty or unpushed work on teardown refusal.
-- [ ] Break-verify PID, process-group, uncertainty, and cleanup protections separately.
+- [x] Apply the shared admission rule and preserve dirty or unpushed work on teardown refusal.
+- [x] Break-verify PID, process-group, uncertainty, and cleanup protections separately.
+
+**Landed with this task.** `bin/dux-env` gains `parked <id>`. A marker counts only while all
+three of its names still hold: its run is the task's current run, its group is the one
+`state/<id>.pgid` names, and its wrapper is the pid `state/<id>.pid` names and is still running.
+`fleet_busy`, which `dux-spawn` already calls, then skips that task's pidfile and pgid file and
+nothing else. Its ledger state and its pane still count, so a parked task whose result the
+watcher has not applied still blocks. `bin/dux-spawn` needed no change.
+
+`dux-teardown` on a `done` task whose marker holds stops the wrapper with TERM, waits up to 20
+seconds for it, then stops the group. The existing checks run after that, so a survivor, a
+dirty worktree or an unpushed branch is still a refusal with the work left on disk. Anything
+short of a marker that holds is judged as before. Teardown also removes
+`state/<id>.ship-receipt.delivered` and `state/<id>.parked`. Its group check now uses
+`group_runs` instead of `kill -0`: on Linux a group teardown has just stopped can be nothing but
+zombies for a while, and `kill -0` answers for those. macOS drops a zombie from its group, so
+that break was verified in Docker.
+
+PR #46's acceptance that a round file dropped in during teardown is never acted on needs rounds,
+so it is tested with Task 15. Running one teardown test alone on macOS takes about five minutes,
+because an existing fixture leaves a `sleep 300` holding bats' output open.
+
+Three new tests; thirteen breaks, each failing on its own:
+
+- PID exemption dropped: the fleet test failed at "a parked task goes through" (dux-env line 264),
+  and the spawn test at its start after `done` (dux-spawn line 591).
+- Group exemption dropped: the same two assertions.
+- Exemption in every ledger state, PR #46's named break: the spawn test failed at "refuses while
+  running" (line 587).
+- Marker run, wrapper, group and wrapper liveness each unchecked: the fleet test failed at its
+  stale-run, other-wrapper, other-group and wrapper-gone cases (lines 266, 267, 268, 271).
+- Group stopped before the wrapper, PR #46's named break: the teardown test failed at "group
+  still alive when the wrapper stopped" (line 335).
+- Wrapper not stopped, group not stopped, delivered receipt kept: the teardown test failed at
+  lines 334, 336 and 343.
+- Teardown stopping a done task's processes without a marker: the existing live-pid refusal test
+  failed because its worker had been killed (line 207).
+- `kill -0` back in the group check: green on macOS; on Linux the teardown test failed at
+  "uncommitted changes" (line 337) and passed unbroken.
 
 ## Task 15: Activate rounds in place
 
