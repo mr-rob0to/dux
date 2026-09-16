@@ -175,8 +175,14 @@ let a plan task deliver the file: one flat directory, one extension, never execu
 **Interface:** `--review combined|separate`; conservative missing metadata.  
 **Acceptance:** The stored mode and reason reach the worker; absent or invalid evidence cannot permit a combined gate.
 
-- [ ] Add metadata handling and rendering.
-- [ ] Test and break-verify the protections against invalid or missing review evidence.
+- [x] Add metadata handling and rendering.
+- [x] Test and break-verify the protections against invalid or missing review evidence.
+
+**Landed as `fb5d6f2`.** `--review` and `--review-reason` are one pair, stored in
+`data/tasks/<id>/review` at mode 600 and rendered into the brief beside Risk. Stating
+neither means separate. `dux-worker-wrap` refuses to start on a review file it cannot
+read. Break-verified, six breaks, six distinct failures, pasted in that commit;
+`dux-brief.bats` 33 green, `dux-worker-wrap.bats` 79 green.
 
 ## Task 4: Add versioned review modes to the gate
 
@@ -185,8 +191,14 @@ let a plan task deliver the file: one flat directory, one extension, never execu
 **Interface:** Spec section 3.1's mode-aware phase and commit requirements.  
 **Acceptance:** Combined and separate modes enforce their required phases; later commits invalidate stale evidence.
 
-- [ ] Add mode-aware receipt handling and fix-pass invalidation.
-- [ ] Break-verify skipped-phase, mismatched-mode, and stale-commit protections separately.
+- [x] Add mode-aware receipt handling and fix-pass invalidation.
+- [x] Break-verify skipped-phase, mismatched-mode, and stale-commit protections separately.
+
+**Landed as `8778940`.** The guard file is version 2 and holds the mode and its reason.
+Combined owes `checks review`; separate still owes `checks review security`. A version 1
+file reads as separate, and a mode that is neither word is a refusal rather than a
+reading. A fix pass clears the mode's phases and keeps the mode. Break-verified, seven
+breaks, seven distinct failures, pasted in that commit; `ship-guard.bats` 54 green.
 
 ## Task 5: Classify shipping and select reviewers
 
@@ -194,8 +206,16 @@ let a plan task deliver the file: one flat directory, one extension, never execu
 **Files:** `skills/ship/SKILL.md`, `skills/ship/ship-env`, `tests/ship-env.bats`, `.github/PULL_REQUEST_TEMPLATE.md`.  
 **Acceptance:** Standalone and supervised gates follow spec section 3, record classification, and preserve final-commit review coverage.
 
-- [ ] Update classification, review instructions, evidence, fallback disclosure, and PR reporting.
-- [ ] Exercise combined, separate, uncertain, and agent-consumed Markdown cases; break-verify important selection protections.
+- [x] Update classification, review instructions, evidence, fallback disclosure, and PR reporting.
+- [x] Exercise combined, separate, uncertain, and agent-consumed Markdown cases; break-verify important selection protections.
+
+**Landed as `91cd8d9`.** Step 0.5 reads the brief's classification and the whole-branch
+diff and opens the gate on `ship-env review-mode`'s answer. That rule is not a classifier
+and never reads the diff: combined needs a combined claim over a diff found clear, and
+everything else, including both kinds of not knowing, is separate. Both pull request
+templates report which mode ran and why. The Critical-only re-review exception is gone.
+Break-verified, six breaks, six distinct failures, pasted in that commit; `ship-env.bats`
+40 green, `contract.bats` 52 green.
 
 ## Task 6: Prove delivery by review mode
 
@@ -203,8 +223,16 @@ let a plan task deliver the file: one flat directory, one extension, never execu
 **Files:** `bin/dux-result`, `tests/dux-result.bats`.  
 **Acceptance:** Valid combined proof passes; separate tasks reject combined proof; legacy proof retains its old requirements.
 
-- [ ] Add mode-aware completion proof.
-- [ ] Break-verify identity, phase, mode, and final-commit protections.
+- [x] Add mode-aware completion proof.
+- [x] Break-verify identity, phase, mode, and final-commit protections.
+
+**Landed with this task.** The receipt is version 2 and records the mode the gate opened
+in. The mode is fixed when the receipt is created and never afterwards, so what a gate
+owes is settled before it records anything. A version 1 receipt keeps the five-phase
+requirement it was written under. One combined review is the only claim that costs a
+reviewer, so it is the only one checked back against the task's own classification, at
+recording and again at proof; escalation to separate needs no permission. Break-verified,
+five breaks, five distinct failures, pasted in the commit; `dux-result.bats` 72 green.
 
 ## Task 7: Align watcher handoff validation
 

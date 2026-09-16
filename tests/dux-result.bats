@@ -81,11 +81,28 @@ ship_plan_h3() {  # the same plan with the heading depth every merged plan uses
   git -C "$wt" commit -q -m "plan"
 }
 
+# A receipt from before the gate had review modes. It owes all five phases.
 receipt_of() {  # $1.. the phases to file, in the order given
   local r="$DUX_HOME/state/$id.ship-receipt" p sha
   sha="$(git -C "$wt" rev-parse HEAD)"
   { echo "version=1"; echo "id=$id"; echo "run=$runid"; echo "branch=dux/$id"; } > "$r"
   for p in "$@"; do printf 'phase=%s sha=%s at=2026-09-05T00:00:00Z\n' "$p" "$sha" >> "$r"; done
+}
+
+# The receipt this gate writes: a version and the mode whose phases it owes.
+receipt_v2() {  # $1 mode, $2.. the phases to file, in the order given
+  local r="$DUX_HOME/state/$id.ship-receipt" m="$1" p sha
+  shift
+  sha="$(git -C "$wt" rev-parse HEAD)"
+  { echo "version=2"; echo "id=$id"; echo "run=$runid"; echo "branch=dux/$id"
+    echo "review=$m"; } > "$r"
+  for p in "$@"; do printf 'phase=%s sha=%s at=2026-09-05T00:00:00Z\n' "$p" "$sha" >> "$r"; done
+}
+
+# What dux-brief writes beside a ship task it classified. fixture_task briefs
+# without --review, so every task here is separate until this says otherwise.
+classify() {  # $1 combined|separate
+  printf 'mode=%s\nreason=the test said so\n' "$1" > "$DUX_HOME/data/tasks/$id/review"
 }
 
 # ---- the run record ------------------------------------------------------
@@ -418,6 +435,193 @@ receipt_of() {  # $1.. the phases to file, in the order given
   [[ "$output" == "finding: run wrongrun is not the run recorded for $id"* ]]
 }
 
+# ---- review modes --------------------------------------------------------
+# What the gate owes is the mode's phase list, and the mode is fixed when the
+# receipt is created. A gate may always do more reviews than Dux asked for and
+# may never do fewer, so combined is the only claim checked against the task.
+
+@test "a combined gate records four phases and its receipt says which mode" {
+  prepare ship
+  classify combined
+  ship_plan x
+  commit_file src/main.sh "echo hi"
+  pr_at_head; green_checks
+  for phase in checks review pr ci; do
+    run dux-result record-ship "$id" "$runid" "$phase" combined
+    [ "$status" -eq 0 ]
+  done
+  r="$DUX_HOME/state/$id.ship-receipt"
+  grep -qx "version=2" "$r"
+  grep -qx "review=combined" "$r"
+  [ "$(sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$r" | tr '\n' ' ')" = "checks review pr ci " ]
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 0 ]
+  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
+}
+
+@test "a combined gate has no security phase to record" {
+  prepare ship
+  classify combined
+  ship_plan x
+  dux-result record-ship "$id" "$runid" checks combined
+  dux-result record-ship "$id" "$runid" review combined
+  run dux-result record-ship "$id" "$runid" security
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"combined review; it has no security phase"* ]]
+  [ "$(grep -c '^phase=security ' "$DUX_HOME/state/$id.ship-receipt" || true)" -eq 0 ]
+}
+
+@test "a task classified separate cannot open a combined gate" {
+  prepare ship
+  ship_plan x
+  run dux-result record-ship "$id" "$runid" checks combined
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"was classified separate"* ]]
+  [ ! -e "$DUX_HOME/state/$id.ship-receipt" ]
+}
+
+@test "a task classified combined may still take the separate gate" {
+  prepare ship
+  classify combined
+  ship_plan x
+  commit_file src/main.sh "echo hi"
+  pr_at_head; green_checks
+  for phase in checks review security pr ci; do
+    run dux-result record-ship "$id" "$runid" "$phase" separate
+    [ "$status" -eq 0 ]
+  done
+  grep -qx "review=separate" "$DUX_HOME/state/$id.ship-receipt"
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 0 ]
+  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
+}
+
+@test "a mode that is neither combined nor separate is a finding" {
+  prepare ship
+  ship_plan x
+  run dux-result record-ship "$id" "$runid" checks quick
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"must be combined or separate, not 'quick'"* ]]
+  [ ! -e "$DUX_HOME/state/$id.ship-receipt" ]
+}
+
+@test "a gate cannot change its review mode part way through" {
+  prepare ship
+  classify combined
+  ship_plan x
+  dux-result record-ship "$id" "$runid" checks combined
+  run dux-result record-ship "$id" "$runid" review separate
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"opened as combined"* ]]
+  [ "$(grep -c '^phase=review ' "$DUX_HOME/state/$id.ship-receipt" || true)" -eq 0 ]
+}
+
+@test "a ship task with no recorded classification gets the separate gate" {
+  prepare ship
+  rm -f "$DUX_HOME/data/tasks/$id/review"
+  ship_plan x
+  dux-result record-ship "$id" "$runid" checks
+  grep -qx "review=separate" "$DUX_HOME/state/$id.ship-receipt"
+  dux-result record-ship "$id" "$runid" review
+  run dux-result record-ship "$id" "$runid" security
+  [ "$status" -eq 0 ]
+}
+
+@test "a classification that is not a mode is read as separate, never combined" {
+  prepare ship
+  printf 'mode=maybe\nreason=who knows\n' > "$DUX_HOME/data/tasks/$id/review"
+  ship_plan x
+  run dux-result record-ship "$id" "$runid" checks combined
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"was classified separate"* ]]
+}
+
+@test "a combined receipt never completes a task classified separate" {
+  prepare ship
+  ship_plan x
+  commit_file src/main.sh "echo hi"
+  pr_at_head; green_checks
+  receipt_v2 combined checks review pr ci
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"claims one combined review"* ]]
+}
+
+@test "a combined receipt still owes its four phases against this commit" {
+  prepare ship
+  classify combined
+  ship_plan x
+  commit_file src/main.sh "echo hi"
+  pr_at_head; green_checks
+  receipt_v2 combined checks review pr
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not the combined gate's phases in order"* ]]
+  receipt_v2 combined checks review security pr ci
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not the combined gate's phases in order"* ]]
+  receipt_v2 combined checks review pr ci
+  commit_file src/more.sh "echo more"
+  pr_at_head
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"recorded against another commit"* ]]
+}
+
+@test "a combined receipt is still bound to this task's run and branch" {
+  prepare ship
+  classify combined
+  ship_plan x
+  commit_file src/main.sh "echo hi"
+  pr_at_head; green_checks
+  receipt_v2 combined checks review pr ci
+  r="$DUX_HOME/state/$id.ship-receipt"
+  awk '{ sub(/^run=.*$/, "run=deadbeef"); print }' "$r" > "$r.x" && mv "$r.x" "$r"
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"belongs to another run"* ]]
+  receipt_v2 combined checks review pr ci
+  awk '{ sub(/^branch=.*$/, "branch=dux/somebody-else"); print }' "$r" > "$r.x" && mv "$r.x" "$r"
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"names another branch"* ]]
+}
+
+@test "a legacy receipt keeps its five-phase requirement whatever the task says" {
+  prepare ship
+  classify combined
+  ship_plan x
+  commit_file src/main.sh "echo hi"
+  pr_at_head; green_checks
+  receipt_of checks review pr ci
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not the separate gate's phases in order"* ]]
+  receipt_of checks review security pr ci
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 0 ]
+  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
+}
+
+@test "a receipt whose review mode this reader cannot follow is no result" {
+  prepare ship
+  ship_plan x
+  commit_file src/main.sh "echo hi"
+  pr_at_head; green_checks
+  r="$DUX_HOME/state/$id.ship-receipt"
+  receipt_v2 separate checks review security pr ci
+  awk '{ sub(/^version=2$/, "version=3"); print }' "$r" > "$r.x" && mv "$r.x" "$r"
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no review mode"* ]]
+  receipt_v2 separate checks review security pr ci
+  awk '!/^review=/' "$r" > "$r.x" && mv "$r.x" "$r"
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no review mode"* ]]
+}
+
 # ---- the ship shape ------------------------------------------------------
 
 @test "checked tasks, an implementation file, five phases and green checks complete a ship" {
@@ -603,11 +807,11 @@ receipt_of() {  # $1.. the phases to file, in the order given
   receipt_of checks review security pr
   run dux-result verify "$id" "$runid"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not the five phases in order"* ]]
+  [[ "$output" == *"not the separate gate's phases in order"* ]]
   receipt_of checks security review pr ci
   run dux-result verify "$id" "$runid"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"not the five phases in order"* ]]
+  [[ "$output" == *"not the separate gate's phases in order"* ]]
   receipt_of checks review security pr ci
   commit_file src/more.sh "echo more"
   pr_at_head
@@ -921,7 +1125,7 @@ plan_free() { ctx_plan=""; ctx_tasks=""; write_run ship; }
   receipt_of checks review security pr
   run dux-result verify "$id" "$runid"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"is not the five phases in order"* ]]
+  [[ "$output" == *"not the separate gate's phases in order"* ]]
   # And a receipt recorded against another commit is refused the same way.
   receipt_of checks review security pr ci
   commit_file src/later.sh "echo later"

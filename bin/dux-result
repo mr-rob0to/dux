@@ -6,10 +6,15 @@ set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
+# Every name the gate may record, and the list each review mode actually owes.
+# A combined gate does one review and has no security phase to record; refusing
+# the name is how an unperformed security pass never lands in a receipt.
 PHASES="checks review security pr ci"
+COMBINED_PHASES="checks review pr ci"
+SEPARATE_PHASES="checks review security pr ci"
 CHECK_CAP=200        # checks read from one pull request
 REPORT_CAP=1048576   # bytes of a scout report
-usage="usage: dux-result record-ship <id> <run> <phase> | dux-result verify <id> <run> [--report <path>]"
+usage="usage: dux-result record-ship <id> <run> <phase> [combined|separate] | dux-result verify <id> <run> [--report <path>]"
 
 # Exit 1 is "the evidence does not add up", which leaves a task ended rather
 # than done. Exit 2 is a finding: Dux's own state is not what it should be.
@@ -298,9 +303,41 @@ check_plan_tasks() {
 
 recorded_phases() { sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$1" | tr '\n' ' '; }
 
-next_phase() {  # $1 the phases already recorded; prints the one that may follow
+mode_phases() {  # $1 combined|separate; the phases that mode owes, in order
+  case "$1" in combined) printf '%s\n' "$COMBINED_PHASES" ;; *) printf '%s\n' "$SEPARATE_PHASES" ;; esac
+}
+
+# How this task was classified when it was briefed. Anything that is not the
+# word combined is separate: a task briefed before the gate had modes has no
+# file here, and a file that says something else is a state dux-worker-wrap
+# already refuses to start. Both answers are the one that asks for more review,
+# so neither can let a gate do less than Dux asked for.
+task_review_mode() {  # $1 id
+  local f m
+  f="$DUX_TASKS/$1/review"
+  if [ ! -L "$f" ] && [ -f "$f" ]; then m="$(kv mode "$f" | tr -d '[:space:]')"; else m=""; fi
+  case "$m" in combined) printf 'combined\n' ;; *) printf 'separate\n' ;; esac
+}
+
+# The mode a receipt's phases must follow, or nothing and exit 1 when the
+# receipt was written by a version this reader cannot prove. Version 1 predates
+# review modes and owed both reviews, so it reads as separate and keeps the
+# requirement it was written under.
+receipt_mode() {  # $1 receipt
+  case "$(kv version "$1")" in
+    1) printf 'separate\n' ;;
+    2) case "$(kv review "$1")" in
+         combined) printf 'combined\n' ;;
+         separate) printf 'separate\n' ;;
+         *) return 1 ;;
+       esac ;;
+    *) return 1 ;;
+  esac
+}
+
+next_phase() {  # $1 the phases already recorded, $2 the phases this gate owes
   local rest="$1" p
-  for p in $PHASES; do
+  for p in $2; do
     case "$rest" in
       "$p "*) rest="${rest#"$p" }" ;;
       '') printf '%s' "$p"; return 0 ;;
@@ -312,15 +349,23 @@ next_phase() {  # $1 the phases already recorded; prints the one that may follow
 }
 
 check_receipt() {
-  local receipt got sha
+  local receipt got sha mode want
   receipt="$DUX_STATE/$id.ship-receipt"
   { [ ! -L "$receipt" ] && [ -f "$receipt" ]; } \
     || reject "no /ship receipt for this task; the gate did not run under Dux"
   [ "$(kv run "$receipt")" = "$run_id" ] || reject "the /ship receipt for this task belongs to another run"
   [ "$(kv branch "$receipt")" = "$branch" ] || reject "the /ship receipt for this task names another branch"
+  mode="$(receipt_mode "$receipt")" \
+    || reject "the /ship receipt for this task names no review mode this reader can prove: version '$(kv version "$receipt")', mode '$(kv review "$receipt")'"
+  # One review is the only thing a receipt can claim that costs a reviewer, so
+  # it is the only claim checked back against what Dux classified the task as.
+  # Two reviews are always enough, whichever way the task was classified.
+  [ "$mode" = separate ] || [ "$(task_review_mode "$id")" = combined ] \
+    || reject "the /ship receipt for this task claims one combined review, and this task was classified separate"
+  want="$(mode_phases "$mode")"
   got="$(recorded_phases "$receipt")"
-  [ "$got" = "checks review security pr ci " ] \
-    || reject "the /ship receipt for this task is not the five phases in order: ${got:-none recorded}"
+  [ "$got" = "$want " ] \
+    || reject "the /ship receipt for this task is not the $mode gate's phases in order ($want): ${got:-none recorded}"
   sha="$(sed -n 's/^phase=ci sha=\([0-9a-f]*\).*/\1/p' "$receipt" | take_line)"
   [ "$sha" = "$head_local" ] \
     || reject "the /ship receipt for this task was recorded against another commit"
@@ -343,8 +388,8 @@ check_ship_shape() {
 cmd="${1:-}"; shift || true
 case "$cmd" in
   record-ship)
-    [ $# -eq 3 ] || finding "$usage"
-    id="$1"; run_id="$2"; phase="$3"
+    { [ $# -eq 3 ] || [ $# -eq 4 ]; } || finding "$usage"
+    id="$1"; run_id="$2"; phase="$3"; mode="${4:-}"
     valid_task_id "$id"
     fail_mode=finding
     load_run "$id" "$run_id"
@@ -353,23 +398,47 @@ case "$cmd" in
       *" $phase "*) ;;
       *) finding "unknown /ship phase '$phase' (checks, review, security, pr, ci)" ;;
     esac
+    case "$mode" in
+      ''|combined|separate) ;;
+      *) finding "a /ship review mode must be combined or separate, not '$(cap_line "$mode")'" ;;
+    esac
+    # A gate may always run more reviews than Dux asked for; it may never run
+    # fewer. So an escalation to separate needs no permission, and a claim of
+    # one combined review is refused here, before any of it is written down.
+    if [ "$mode" = combined ] && [ "$(task_review_mode "$id")" != combined ]; then
+      finding "$id was classified separate, so its gate cannot record a combined review"
+    fi
     receipt="$DUX_STATE/$id.ship-receipt"
     [ ! -L "$receipt" ] || finding "state/$id.ship-receipt is a symlink, not a receipt"
     if [ -f "$receipt" ]; then
       [ "$(kv run "$receipt")" = "$run_id" ] || finding "the /ship receipt for $id belongs to another run"
       [ "$(kv branch "$receipt")" = "$branch" ] || finding "the /ship receipt for $id names another branch"
     else
-      { echo "version=1"; echo "id=$id"; echo "run=$run_id"; echo "branch=$branch"; } > "$receipt" \
+      # The mode is fixed when the receipt is created and never afterwards, so
+      # the phases a gate owes are settled before it has recorded any of them.
+      # Saying nothing means separate, here as everywhere else.
+      [ -n "$mode" ] || mode=separate
+      { echo "version=2"; echo "id=$id"; echo "run=$run_id"; echo "branch=$branch"
+        echo "review=$mode"; } > "$receipt" \
         || finding "cannot write state/$id.ship-receipt"
     fi
+    opened="$(receipt_mode "$receipt")" \
+      || finding "the /ship receipt for $id names no review mode this gate can follow: version '$(kv version "$receipt")', mode '$(kv review "$receipt")'"
+    { [ -z "$mode" ] || [ "$mode" = "$opened" ]; } \
+      || finding "the /ship receipt for $id opened as $opened; it cannot record '$phase' as $mode"
+    want_phases="$(mode_phases "$opened")"
+    case " $want_phases " in
+      *" $phase "*) ;;
+      *) finding "the /ship receipt for $id is a combined review; it has no $phase phase" ;;
+    esac
     # The next phase is the one after everything already filed, so a skipped,
     # repeated, or reordered call is refused rather than filed under a name it
     # did not earn.
     got="$(recorded_phases "$receipt")"
-    want="$(next_phase "$got")" \
+    want="$(next_phase "$got" "$want_phases")" \
       || finding "the /ship receipt for $id is not in the recorded order: ${got:-none recorded}"
     [ "$phase" = "$want" ] \
-      || finding "/ship phase '$phase' is out of order; expected '${want:-nothing: all five are recorded}'"
+      || finding "/ship phase '$phase' is out of order; expected '${want:-nothing: the gate is fully recorded}'"
     # The last phase is the only claim GitHub can settle, so it is settled here
     # rather than taken from the skill that is making it.
     if [ "$phase" = ci ]; then

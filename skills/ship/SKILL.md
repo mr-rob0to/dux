@@ -199,7 +199,7 @@ same at the end of steps 6, 7, 8, and 9. When the variable is unset, skip every 
 line; nothing else about this skill changes.
 
 ```bash
-[ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD checks
+[ -z "${DUX_SHIP_RECORD:-}" ] || $DUX_SHIP_RECORD checks "$MODE"
 ```
 
 Separately, and on every run whether or not Dux is watching, bind this phase to
@@ -339,9 +339,10 @@ only to a fresh gate after a revert, never to getting past a refusal.
 "$SHIP_GUARD" record review
 ```
 
-`$DUX_SHIP_RECORD` takes the mode on its first call only, which is step 4's `checks`; passing it
-again here is harmless and keeps the two calls reading the same. Dux refuses a combined mode for a
-task it classified separate, so an escalation always goes through and a downgrade never does.
+`$DUX_SHIP_RECORD` fixes the mode on its first call, which is step 4's `checks`; the receipt owes
+that mode's phases from then on. Passing it again here is harmless as long as it is the same word,
+and a different one is refused. Dux also refuses a combined mode for a task it classified separate,
+so an escalation always goes through and a downgrade never does.
 
 **In a combined gate, skip step 7 and go to step 8.** There is no security phase to record and the
 guard refuses one.
