@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 22 have landed. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 23 have landed. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -27,7 +27,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 721 after task 22 | Not recorded |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 933 after task 23 | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -840,8 +840,31 @@ failing on its own:
 **Files:** `bin/dux-round`, `bin/dux-recover`, related tests.  
 **Acceptance:** Approval identifies the committed plan path, approved commit, and task range before implementation starts.
 
-- [ ] Record and validate approval through the existing continuation mechanism.
-- [ ] Break-verify missing, mismatched, and ordinary-answer authorization cases.
+- [x] Record and validate approval through the existing continuation mechanism.
+- [x] Break-verify missing, mismatched, and ordinary-answer authorization cases.
+
+**Landed with this task.** An approval round goes only to work briefed to plan first, and names
+exactly what it approves. `dux-round` checks that the plan is a Markdown path inside the
+repository, the tasks are one task or one upward range of at most 65, and the commit is 7 to 40
+hexadecimal digits. It then checks that the commit is the tip of the task's branch, that the plan
+is committed there, and that every task in the range has its heading in it. Before the round is
+armed it writes `round-<n>.approval` at mode 600, naming the plan, the range and the full commit,
+and moves the phase to implementation. A round that cannot be armed removes the record and puts
+the phase back. An answer or feedback round removes any record left at its own round number and
+never moves the phase. `dux-recover` names the approval command for work planning first that is
+parked at a question, and a retry of such work is briefed to plan again. Two round tests added and
+two changed, two recover tests added; nineteen breaks, each failing on its own:
+
+- Approval to work not briefed to plan first (round test line 202). The plan path (207), the range
+  spelling (211), a downward or longer range (211) and the commit spelling (215) not checked.
+- A commit that is not the tip (226), a plan not committed there (220) and a task missing from it
+  (222), each accepted.
+- The record never moved into place (170), written at mode 644 (173), or written after the round
+  (170). The phase not moved on (172).
+- A round that cannot be armed leaving the record (235) or the phase at implementation (235).
+- An answer leaving a stale record in place (120), or recording an approval itself (120).
+- `dux-recover` showing the approval step for a blocker (recover test line 524) or never (519). A
+  retry of planning work briefed without the phase (713: the brief was refused).
 
 ## Task 24: Permit progress edits without changing approval
 

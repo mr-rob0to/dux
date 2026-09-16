@@ -62,6 +62,31 @@ if [ "$purpose" = approval ]; then
 elif [ -n "$plan$tasks$commit" ]; then
   finding "--plan, --tasks and --commit belong to an approval round; this $purpose approves no plan"
 fi
+# Approval is for work briefed to plan first, and names exactly what it approves:
+# a Markdown plan inside the repository, one task or one upward range of them,
+# and a commit id. Each spelling is checked here, before Git is asked anything,
+# and every value goes into the approval record as it stands.
+first=""; last=""
+if [ "$purpose" = approval ]; then
+  [ -f "$task/phase" ] \
+    || finding "task $id was not briefed to plan first; approval goes to work that plans first and asks for it"
+  case "$plan" in
+    /*|*..*|*[!A-Za-z0-9._/-]*) plan_ok="" ;;
+    ?*.md) plan_ok=yes ;;
+    *) plan_ok="" ;;
+  esac
+  [ -n "$plan_ok" ] || finding "--plan must be a Markdown path inside the repository, not $(cap_line "$plan")"
+  case "$tasks" in
+    *[!0-9-]*|-*|*-|*-*-*|0[0-9]*|*-0[0-9]*) first="" ;;
+    *) first="${tasks%-*}"; last="${tasks#*-}" ;;
+  esac
+  { [ -n "$first" ] && [ "${#first}" -le 4 ] && [ "${#last}" -le 4 ] \
+    && [ "$first" -le "$last" ] && [ $((last - first)) -le 64 ]; } \
+    || finding "--tasks must be one task or one upward range of at most 65 tasks, like 3 or 20-30, not $(cap_line "$tasks")"
+  case "$commit" in *[!0-9a-f]*) commit_ok="" ;; *) commit_ok=yes ;; esac
+  { [ -n "$commit_ok" ] && [ "${#commit}" -ge 7 ] && [ "${#commit}" -le 40 ]; } \
+    || finding "--commit must be a commit id of 7 to 40 hexadecimal digits, not $(cap_line "$commit")"
+fi
 
 # The operator's own words, trusted exactly as an intent file is.
 [ -n "$file" ] || finding "--file is required"
@@ -149,6 +174,28 @@ check_pull_request() {
   [ "$pr_base" = "$base" ] || finding "pull request $pr targets $(cap_line "$pr_base"), not $base"
 }
 [ "$purpose" != feedback ] || check_pull_request
+# What an approval names is checked against the branch as it stands. The commit
+# is the branch tip, so nothing lands between the plan the operator read and the
+# work it starts, and the plan and each task in the range are there at it. The
+# record names the full commit, and so does the round.
+check_approval() {
+  local approved tip n text
+  approved="$(git -C "$repo" rev-parse --verify -q "$commit^{commit}" 2>/dev/null)" || approved=""
+  tip="$(git -C "$repo" rev-parse --verify -q "refs/heads/$branch" 2>/dev/null)" \
+    || finding "cannot read the tip of $branch in $repo"
+  { [ -n "$approved" ] && [ "$approved" = "$tip" ]; } \
+    || finding "commit $commit is not the tip of $branch; approval names the commit the branch holds now"
+  text="$(git -C "$repo" cat-file blob "$tip:$plan" 2>/dev/null)" \
+    || finding "$plan is not committed at $commit on $branch"
+  n="$first"
+  while [ "$n" -le "$last" ]; do
+    printf '%s\n' "$text" | grep -E "^#{1,6}[[:blank:]]+Task $n([:[:blank:]]|\$)" >/dev/null \
+      || finding "task $n is not in $plan at $commit"
+    n=$((n + 1))
+  done
+  commit="$tip"
+}
+[ "$purpose" != approval ] || check_approval
 
 fill() {  # $1 template line with inline tokens
   local l="$1" t
@@ -181,19 +228,43 @@ k="$(printf '%s\n' "$rendered" | wc -l | tr -d ' ')"
 
 tmp="$task/.round-$n.tmp"
 printf '%s\n' "$rendered" > "$tmp" || { rm -f "$tmp"; finding "cannot write $tmp"; }
+# The approval record for this round, and the phase as it was before it. A record
+# already at this name belongs to no round that went out, and only an approval
+# round may leave one behind it.
+approval="$task/round-$n.approval"; phase_tmp="$task/.phase.tmp"; phase_was=""
+[ ! -f "$task/phase" ] || phase_was="$(tr -d '[:space:]' < "$task/phase")"
+[ "$purpose" = approval ] || rm -f "$approval" || { rm -f "$tmp"; finding "cannot remove $approval"; }
 # The ledger moves first, so the task is running before a round exists to be
 # proved, and the next done wakes Dux instead of reading as the last one again.
 acked="$("$ledger" get "$id" acked)" || { rc=$?; rm -f "$tmp"; exit "$rc"; }
 "$ledger" set-if "$id" state "$state" running || { rc=$?; rm -f "$tmp"; exit "$rc"; }
 put_back() {  # $1 what failed
-  rm -f "$tmp"
+  local what="$1"
+  rm -f "$tmp" "$approval.tmp" "$phase_tmp"
+  # An approval that did not go out approves nothing: its record goes, and the
+  # phase is what it was.
+  if [ "$purpose" = approval ]; then
+    rm -f "$approval"
+    { : > "$phase_tmp" && chmod 600 "$phase_tmp" && printf '%s\n' "$phase_was" > "$phase_tmp" \
+      && mv "$phase_tmp" "$task/phase"; } \
+      || { rm -f "$phase_tmp"; what="$what, the phase of $id stays at implementation"; }
+  fi
   if "$ledger" set-if "$id" state running "$state" >/dev/null \
     && { [ "$acked" != "$state" ] || "$ledger" ack "$id" "$state" >/dev/null; }; then
-    finding "$1; $id is $state again and round $n was not sent"
+    finding "$what; $id is $state again and round $n was not sent"
   fi
-  finding "$1, and $id could not be put back to $state; round $n was not sent"
+  finding "$what, and $id could not be put back to $state; round $n was not sent"
 }
 "$ledger" unack "$id" >/dev/null || put_back "cannot clear the acknowledgement of $id"
+# What the operator approved goes into place before the round that acts on it,
+# and the phase moves on only with its record beside it.
+if [ "$purpose" = approval ]; then
+  { : > "$approval.tmp" && chmod 600 "$approval.tmp" \
+    && printf 'plan=%s\ntasks=%s\ncommit=%s\n' "$plan" "$tasks" "$commit" > "$approval.tmp" \
+    && mv "$approval.tmp" "$approval"; } || put_back "cannot record the approval for round $n of $id"
+  { : > "$phase_tmp" && chmod 600 "$phase_tmp" && printf 'implementation\n' > "$phase_tmp" \
+    && mv "$phase_tmp" "$task/phase"; } || put_back "cannot move $id on to implementation"
+fi
 # The rename is what the parked wrapper is waiting for, so it is the last step.
 # Within one directory it is atomic: the wrapper never reads half a file.
 mv "$tmp" "$task/round-$n.md" || put_back "cannot arm round $n for $id"

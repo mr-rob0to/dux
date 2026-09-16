@@ -358,6 +358,9 @@ retry() {
     set -- "$@" --issue-file "$DUX_TASKS/$new/issue.md"
   fi
   [ -z "$plan" ] || set -- "$@" --plan "$plan" --tasks "$tasks"
+  # Work that plans first starts again at planning. An approval was for the
+  # session and the commit it named, and a retry has neither.
+  [ ! -f "$task/phase" ] || set -- "$@" --phase planning
   if ! "$DUX_ROOT/bin/dux-brief" "$new" "$@" >/dev/null; then
     "$ledger" set "$new" state dropped || true
     finding "brief for retry $new could not be rendered (see above); $new dropped, $id unchanged"
@@ -396,6 +399,10 @@ case "$action" in
         # has no session left to answer, so the answer goes to a fresh task.
         if parked "$id"; then
           echo "next: after the operator answers, dux-round $id --purpose answer --file <f>"
+          # Work that plans first asks for its approval as a question.
+          if [ "$state" = needs-decision ] && [ -f "$task/phase" ]; then
+            echo "next: if the operator approves the plan it names, dux-round $id --purpose approval --file <f> --plan <path> --tasks <range> --commit <sha>"
+          fi
         else
           echo "next: after the operator answers, dux-recover $id --retry --answer-file <f>"
         fi ;;

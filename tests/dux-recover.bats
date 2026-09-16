@@ -510,6 +510,20 @@ park_marker() {  # $1 pgid
   done
 }
 
+@test "work that plans first, parked at its question, can be approved in its tab; a blocker cannot" {
+  task_in needs-decision ship; status_is "needs-decision: approve tasks 1-2 of docs/plans/p.md at abc1234"
+  printf 'planning\n' > "$DUX_HOME/data/tasks/$id/phase"
+  park_marker "$(ps -o pgid= -p $$ | tr -d ' ')"
+  run dux-recover "$id"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | tail -n 2)" = "next: after the operator answers, dux-round $id --purpose answer --file <f>
+next: if the operator approves the plan it names, dux-round $id --purpose approval --file <f> --plan <path> --tasks <range> --commit <sha>" ]
+  dux-ledger set "$id" state blocked
+  run dux-recover "$id"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "next: after the operator answers, dux-round $id --purpose answer --file <f>" ]
+}
+
 @test "a retry ends a session still parked at its question, and writes nothing while any of it runs" {
   task_in needs-decision ship; status_is "needs-decision: A or B?"
   w="$(cat "$DUX_HOME/state/$id.pid")"
@@ -683,4 +697,24 @@ park_marker() {  # $1 pgid
   grep -qxF -- '- Risk: bounded' "$b"
   [ "$(grep -c '^- Plan: ' "$b" || true)" -eq 0 ]
   [ "$(grep -c '^- Tasks: ' "$b" || true)" -eq 0 ]
+}
+
+@test "a retry of work that plans first plans again, even after its plan was approved" {
+  task_in failed ship; kill_worker
+  id2="$(dux-task-new proj ship)"
+  t2="$DUX_HOME/data/tasks/$id2"
+  cp "$DUX_HOME/data/tasks/$id/intent.md" "$t2/intent.md"
+  cp "$DUX_HOME/data/tasks/$id/criteria.md" "$t2/criteria.md"
+  dux-brief "$id2" --intent-file "$t2/intent.md" --criteria-file "$t2/criteria.md" --phase planning >/dev/null
+  printf 'implementation\n' > "$t2/phase"
+  dux-ledger set "$id2" state failed
+  fake_run "$id2" r01 ship acme/proj "$DUX_HOME/proj"
+  id="$id2" run dux-recover "$id2" --retry
+  [ "$status" -eq 0 ]
+  new="$(cat "$t2/retry")"
+  [ "$(cat "$DUX_HOME/data/tasks/$new/phase")" = planning ]
+  b="$DUX_HOME/data/tasks/$new/brief.md"
+  grep -qxF -- '- Phase: planning' "$b"
+  grep -qxF -- '- Risk: complex' "$b"
+  [ "$(grep -c '^- Plan: ' "$b" || true)" -eq 0 ]
 }

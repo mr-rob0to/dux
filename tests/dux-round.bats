@@ -108,11 +108,16 @@ refused() {  # $1 the finding, [$2 last to allow what Git printed before it]
 @test "an answer needs no pull request: it goes to a question parked in its tab and approves nothing" {
   parked_task ship needs-decision
   t="$DUX_HOME/data/tasks/$id"
+  # Work planning first, with an approval record left behind for this round
+  # number by an approval that never went out.
+  printf 'planning\n' > "$t/phase"
+  printf 'plan=docs/plans/p.md\ntasks=1-2\ncommit=%s\n' "$(git -C "$wt" rev-parse HEAD)" > "$t/round-1.approval"
   # Nothing is fetched and GitHub is not asked: no pull request exists yet.
   git -C "$DUX_HOME/proj" remote set-url origin "$DUX_HOME/no-such-origin"
   FAKE_GH_FAIL=1 run dux-round "$id" --file "$feedback" --purpose answer
   [ "$status" -eq 0 ]; [ "$output" = "round 1 sent to $id" ]
   [ "$(dux-ledger get "$id" state)" = running ]; [ "$(dux-ledger get "$id" acked)" = - ]
+  [ "$(cat "$t/phase")" = planning ]; [ ! -e "$t/round-1.approval" ]
   cat > "$DUX_HOME/expected.md" <<EOF
 ## Round 1 for task $id: an answer from the operator
 
@@ -141,20 +146,41 @@ EOF
   head -n 1 "$DUX_HOME/data/tasks/$id/round-1.md" | grep -qx "## Round 1 for task $id: an answer from the operator"
 }
 
-@test "an approval round goes to a question parked in its tab and names what it approves" {
+# Work briefed to plan first, parked at its question, with its plan of two tasks
+# committed at the tip of its branch.
+planning_task() {  # sets what parked_task sets, $t, and $sha
   parked_task ship needs-decision
   t="$DUX_HOME/data/tasks/$id"
-  FAKE_GH_FAIL=1 run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit abc1234
+  printf 'planning\n' > "$t/phase"
+  mkdir -p "$wt/docs/plans"
+  printf '# P\n\n**Where this stands**\n- one\n- two\n- three\n\n## Task 1: one\n- [ ] a\n\n## Task 2: two\n- [ ] b\n' > "$wt/docs/plans/p.md"
+  git -C "$wt" add docs/plans/p.md; git -C "$wt" commit -q -m plan
+  sha="$(git -C "$wt" rev-parse HEAD)"
+}
+
+@test "an approval round records the plan, its tasks and the commit it approves, and moves the phase on" {
+  planning_task
+  short="$(printf '%s' "$sha" | cut -c1-7)"
+  # What is on disk at the moment the round file appears.
+  mkdir -p "$DUX_HOME/mvbin"
+  printf '#!/usr/bin/env bash\ncase "${2:-}" in */round-*.md) { cat %s/phase; cat %s/round-1.approval; } > %s ;; esac\nexec %s "$@"\n' \
+    "$t" "$t" "$DUX_HOME/at-rename" "$(command -v mv)" > "$DUX_HOME/mvbin/mv"
+  chmod +x "$DUX_HOME/mvbin/mv"
+  FAKE_GH_FAIL=1 PATH="$DUX_HOME/mvbin:$PATH" run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit "$short"
   [ "$status" -eq 0 ]; [ "$output" = "round 1 sent to $id" ]
   [ "$(dux-ledger get "$id" state)" = running ]
+  [ "$(cat "$DUX_HOME/at-rename")" = "$(printf 'implementation\nplan=docs/plans/p.md\ntasks=1-2\ncommit=%s' "$sha")" ]
+  [ "$(ls -l "$t/round-1.approval" | cut -c1-10)" = "-rw-------" ]
+  [ "$(ls -l "$t/phase" | cut -c1-10)" = "-rw-------" ]
+  [ -z "$(find "$t" -name '.*tmp')" ]
   cat > "$DUX_HOME/expected.md" <<EOF
-## Round 1 for task $id: approval of docs/plans/p.md, tasks 1-2, at abc1234
+## Round 1 for task $id: approval of docs/plans/p.md, tasks 1-2, at $sha
 
-The operator approves tasks 1-2 of docs/plans/p.md exactly as committed at abc1234. This is the same task, under the same brief, on the same branch, dux/$id. Never work on main.
+The operator approves tasks 1-2 of docs/plans/p.md exactly as committed at $sha. This is the same task, under the same brief, on the same branch, dux/$id. Never work on main.
 
 - Run \`git fetch origin\` and \`git status\` before anything else, and start from what dux/$id holds now.
 - Implement tasks 1-2 of docs/plans/p.md in order, ticking each box as it lands.
-- In docs/plans/p.md, only box ticks and the three lines under **Where this stands** may differ from abc1234. Any other change to the plan needs \`needs-decision:\` and a renewed approval.
+- In docs/plans/p.md, only box ticks and the three lines under **Where this stands** may differ from $sha. Any other change to the plan needs \`needs-decision:\` and a renewed approval.
 - Run \`/ship\`, then append \`done: PR <url>\` to the file named by \`\$DUX_STATUS_LOG\` and wait at the prompt. This round gets one terminal line, and every other rule in the brief still holds.
 
 ## Approval (the operator's words)
@@ -162,6 +188,54 @@ Rename the flag to --since.
 Keep {{BASE}} and the old name working.
 EOF
   [ "$(cat "$t/round-1.md")" = "$(cat "$DUX_HOME/expected.md")" ]
+}
+
+# A refused approval leaves the phase where it was, as well as what refused() checks.
+approval_refused() {  # $1 the finding
+  refused "$1"; [ "$(cat "$t/phase")" = planning ]
+}
+
+@test "approval goes only to work that plans first, and names a committed plan, tasks in it, and the branch tip" {
+  planning_task
+  mv "$t/phase" "$t/phase.kept"
+  run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit "$sha"
+  refused "task $id was not briefed to plan first; approval goes to work that plans first and asks for it"
+  [ ! -e "$t/phase" ]
+  mv "$t/phase.kept" "$t/phase"
+  for p in /tmp/p.md docs/../p.md docs/plans/p.txt 'docs/plans/p q.md'; do
+    run dux-round "$id" --file "$feedback" --purpose approval --plan "$p" --tasks 1-2 --commit "$sha"
+    approval_refused "--plan must be a Markdown path inside the repository, not $p"
+  done
+  for r in 1-x 2-1 1-2-3 01-2 1,2 1-66 12345; do
+    run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks "$r" --commit "$sha"
+    approval_refused "--tasks must be one task or one upward range of at most 65 tasks, like 3 or 20-30, not $r"
+  done
+  for c in abc123 "${sha}0" ABCDEF1 HEAD; do
+    run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit "$c"
+    approval_refused "--commit must be a commit id of 7 to 40 hexadecimal digits, not $c"
+  done
+  run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit 0000000
+  approval_refused "commit 0000000 is not the tip of dux/$id; approval names the commit the branch holds now"
+  run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/q.md --tasks 1-2 --commit "$sha"
+  approval_refused "docs/plans/q.md is not committed at $sha on dux/$id"
+  run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 2-3 --commit "$sha"
+  approval_refused "task 3 is not in docs/plans/p.md at $sha"
+  # A commit after the plan is work the operator has not read.
+  printf 'more\n' > "$wt/more.txt"; git -C "$wt" add more.txt; git -C "$wt" commit -q -m more
+  run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit "$sha"
+  approval_refused "commit $sha is not the tip of dux/$id; approval names the commit the branch holds now"
+}
+
+@test "an approval that cannot arm removes its record and puts the phase back" {
+  planning_task
+  mkdir -p "$DUX_HOME/mvbin"
+  printf '#!/usr/bin/env bash\ncase "${2:-}" in */round-*.md) exit 1 ;; esac\nexec %s "$@"\n' "$(command -v mv)" > "$DUX_HOME/mvbin/mv"
+  chmod +x "$DUX_HOME/mvbin/mv"
+  PATH="$DUX_HOME/mvbin:$PATH" run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit "$sha"
+  approval_refused "cannot arm round 1 for $id; $id is needs-decision again and round 1 was not sent"
+  [ -z "$(find "$t" -name '.*tmp')" ]
+  run dux-round "$id" --file "$feedback" --purpose approval --plan docs/plans/p.md --tasks 1-2 --commit "$sha"
+  [ "$status" -eq 0 ]; [ "$(cat "$t/phase")" = implementation ]; [ -f "$t/round-1.approval" ]
 }
 
 @test "a waiting task whose session is gone is sent to recovery, not teardown" {
