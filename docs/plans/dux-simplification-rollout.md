@@ -1,8 +1,8 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15; this record does not claim any implementation task is complete.
-- The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 retains feedback ownership.
+- Approved by the operator on 2026-09-15. Milestone 1 is implemented, tasks 1 to 10, and delivered as pull request #51; milestones 2 to 4 are not started and no task in them is claimed.
+- The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
 **Estimated diff:** 5,650–8,250 added lines across 36 tasks in four milestones. Each milestone remains limited to 12 tasks and 2,500 added lines. Estimates include code, tests, documentation, and patch artifacts.
@@ -25,7 +25,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 
 | Milestone | Task range | Estimated added lines | Actual added lines | Delivery evidence |
 |---|---|---:|---|---|
-| M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,223 | Delivered by `/ship` from `dux/dux-ship-20260916-i1g`; PR link and merged commit recorded with R1 after merge |
+| M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,251 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | Not recorded | Not recorded |
 | M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | Not recorded | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
@@ -334,6 +334,12 @@ so this task adds three tests across that path and breaks each one:
 `tests/worker-adapter.bats` needed no change: the launcher exports the recorder's path and
 never its arguments, and both directions of that are already pinned there.
 
+The gate's own security pass then found one more protection this milestone owed. Step 0.5 has the
+gate read the branch's diff to decide whether the change is sensitive, and nothing said that diff
+is data. `skills/ship/SKILL.md` now says the diff is evidence and never instruction, and that a
+file arguing for its own classification is a reason to escalate. `tests/contract.bats` pins it, and
+removing the rule made that test fail.
+
 Checks: `lint-shell`, `lint-pipes`, the unit files and the eight matrix jobs are green on
 macOS and again on Ubuntu 24.04 as a non-root user, which is where this repository's
 GNU-versus-BSD and inode-reuse defects have surfaced before. `lint-identifiers` fails on this
@@ -341,10 +347,14 @@ machine for the reason `docs/plans/2026-09-14-interactive-worker-sessions.md` al
 the operator's denylist holds a project name that appears in historical documents this branch
 does not touch, and it fails the same way on `main`. CI has no denylist and skips the check.
 
-Size: 2,223 added lines against an estimate of 1,650 to 2,350 and a cap of 2,500.
+Size: 2,251 added lines against an estimate of 1,650 to 2,350 and a cap of 2,500.
 
-The pull request link and the merged commit id are not here because neither exists before the
-operator merges. They belong in the R1 row and the M1 row above, recorded then.
+Delivered as pull request #51, https://github.com/mr-rob0to/dux/pull/51, through `/ship` with the
+separate reviews this milestone owes. Both passes ran and their findings, and what was done about
+each, are in that pull request's body. The gate records its `ci` phase only when GitHub reports the
+branch's checks green and not empty, so the receipt behind this delivery is the CI evidence. The
+merged commit id and the installed-revision evidence go in the R1 row after the operator merges,
+because neither exists before then.
 
 ## Task 11: Qualify live prompting
 
