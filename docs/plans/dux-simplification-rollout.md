@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestones 1 to 3, tasks 1 to 30, merged as pull requests #51, #52 and #54. Milestone 4, tasks 31 to 36, is being implemented: task 31 has landed.
+- Approved by the operator on 2026-09-15. Milestones 1 to 3, tasks 1 to 30, merged as pull requests #51, #52 and #54. Milestone 4, tasks 31 to 36, is being implemented: tasks 31 and 32 have landed.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -1202,8 +1202,53 @@ the task file.
 **Files:** Existing task evidence and this rollout record.  
 **Acceptance:** Available and unavailable numeric metadata are recorded without reading transcripts.
 
-- [ ] Inspect supported structured metadata.
-- [ ] Record availability and phase-separation limits for the installed harnesses.
+- [x] Inspect supported structured metadata.
+- [x] Record availability and phase-separation limits for the installed harnesses.
+
+**Inventory, taken on 2026-09-17** against Dux at `1e5dadd`, Claude Code 2.1.274 and
+codex-cli 0.154.0. Each harness was probed with a one-line prompt, and only numeric fields and
+key names were printed. No transcript, scrollback or worker report was opened.
+
+| Record | Counts it gives | What they cover | Used |
+|---|---|---|---|
+| Codex `exec --json`, its `turn.completed` event | input with cached input inside it, cached input, cache write, output with reasoning inside it | one run; a resumed thread reports its running total | yes, task 34 |
+| Claude Code `-p --output-format json`, its `modelUsage` | input, output, cache read, cache write, list cost, per model | one run, side calls included | no |
+| Claude Code's status-line input | running: list cost, cache write, request count; last request only: all four counts | one interactive session | no |
+| Claude Code's own config file, last-session totals | all four counts and list cost, per model | the last session to end in that repository | no |
+| Dux's receipt, run, round, retry and ledger records | none | which phases ran, in which run and round, and which attempts failed | yes, for rows |
+
+What the probes showed:
+
+- Codex: one run that also ran a shell command wrote one `turn.completed`, input 55,813 with
+  33,664 cached, output 132. A second thread ran once (input 28,384, output 5) and then
+  `exec resume` ran it again: `thread.started` repeated the same id and the new total was input
+  62,356, output 10. That is the running total with the first run inside it.
+- Claude status line, two prompts in a scratch session: `total_input_tokens` read 9,720 and then
+  18,105, which is the second request alone (10 input, 8,179 cache write, 9,916 cache read).
+  Cache writes, 9,710 then 17,889, and list cost were running totals.
+- Claude headless: the main loop's `usage` had input 10, `modelUsage` had input 909, so side
+  calls appear only in `modelUsage`. Its cost basis is `list`.
+- Last-session totals: after the probe ended in a worktree, the entry for the whole Dux
+  repository held the probe's totals. Every session in that repository writes the same entry,
+  the coordinator's included.
+
+Availability for installed Dux:
+
+- Worker sessions: unavailable. Workers run Claude Code interactively, which gives running
+  totals only through a status-line command. Dux configures none, and the operator's own
+  status line would lose its place in every worker tab. The last-session entry is overwritten
+  by the next session to end in the same repository, so it cannot be tied to a task after the
+  fact. Codex workers are refused.
+- Reviews: available through `codex exec --json`, which both `/ship` passes resolve to on this
+  host, once the gate asks for it. A Claude reviewer, chosen only on a host without codex, runs
+  without JSON output, so its usage is unavailable.
+- Planning and design review: unavailable. Plan workers are interactive sessions, and design
+  reviews run by hand without JSON output.
+
+Phase separation: one worker session holds planning for integrated work, implementation and
+the gate's own steps. None of those can be split from the others, and rounds add to the same
+running total. Each review is its own process, so its row separates cleanly. A reviewer
+dispatched as an agent runs inside the worker's session and is counted there.
 
 ## Task 33: Extract Claude usage only where supported
 
