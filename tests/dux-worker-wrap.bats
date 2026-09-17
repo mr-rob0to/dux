@@ -903,6 +903,20 @@ EOF
   kill -TERM -- "-$(printf '%s' "$output" | cut -d' ' -f2)" 2>/dev/null || true
 }
 
+# Issue #53: a harness that is merely slow to reach the pane is not the same
+# as one that never starts. DUX_WRAP_FORK_PAUSE_SECS delays the launcher, so
+# the harness appears partway through the window rather than at the start;
+# the wrapper must wait it out and proceed, not refuse.
+@test "a harness that appears partway through the window is supervised, not refused" {
+  prepare scout
+  printf 'report all clear\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  export DUX_WRAP_FORK_PAUSE_SECS=2 DUX_WRAP_START_SECS=10
+  run wrap
+  [ "$status" -eq 0 ]
+  [ "$(handoff_status)" = "done: report" ]
+  [ "$(handoff_event)" = done ]
+}
+
 # ---- the review mode the brief recorded -------------------------------------
 # The wrapper does not choose the mode and does not pass it anywhere: the brief
 # carries it to the worker. What it does is refuse to start on a classification
