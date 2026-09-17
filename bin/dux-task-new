@@ -5,12 +5,16 @@ set -u
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 project="${1:-}"; shape="${2:-}"
-{ [ -n "$project" ] && [ -n "$shape" ]; } || die "usage: dux-task-new <project> <shape> [--source local|gh:<owner>/<repo>#<n>]"
+{ [ -n "$project" ] && [ -n "$shape" ]; } || die "usage: dux-task-new <project> <shape> [--source local|gh:<owner>/<repo>#<n>] [--after <task-id>]"
 shift 2
-source_key="local"
+source_key="local"; after=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --source) source_key="$2"; shift 2 ;;
+    --after)
+      [ $# -ge 2 ] || die "--after needs a task id"
+      [ -z "$after" ] || finding "a task waits on one task at most; sequencing is linear, so --after comes once"
+      valid_task_id "$2"; after="$2"; shift 2 ;;
     *) die "unknown flag $1" ;;
   esac
 done
@@ -22,6 +26,15 @@ case "$source_key" in
   *) printf '%s' "$source_key" | grep -E '^gh:[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+$' >/dev/null \
        || finding "source must be local or gh:<owner>/<repo>#<n>: $source_key" ;;
 esac
+# Only work that delivers a pull request can be waited on: what the new task
+# waits for is that pull request's merge, which dux-spawn checks before it starts.
+if [ -n "$after" ]; then
+  after_shape="$("$DUX_ROOT/bin/dux-ledger" get "$after" shape)" || exit $?
+  case "$after_shape" in
+    plan|ship) ;;
+    *) finding "task $after is a $after_shape task and delivers no pull request, so nothing can wait on its merge" ;;
+  esac
+fi
 
 # head bounds the read, so nothing closes a pipe early on a reader that would
 # otherwise never stop. 256 random bytes leave ~62 usable characters.
@@ -43,5 +56,10 @@ while :; do
   [ "$tries" -ge 5 ] && finding "could not allocate a task id for $project after 5 tries (last: $id)"
 done
 : > "$DUX_TASKS/$id/status.log" || finding "cannot create $DUX_TASKS/$id/status.log"
+# The waiting task owns the reference, and it is there before the task is queued,
+# so nothing can dispatch it without seeing what it waits on.
+if [ -n "$after" ] && ! printf '%s\n' "$after" > "$DUX_TASKS/$id/after"; then
+  rm -rf "${DUX_TASKS:?}/$id"; finding "cannot record the task $id waits on"
+fi
 "$DUX_ROOT/bin/dux-ledger" add "$id" "$project" "$shape" "$source_key" || { rc=$?; rm -rf "${DUX_TASKS:?}/$id"; exit $rc; }
 echo "$id"

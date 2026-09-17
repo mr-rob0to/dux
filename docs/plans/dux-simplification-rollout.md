@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 25 have landed. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 26 have landed. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -27,7 +27,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 1,291 after task 25 | Not recorded |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 1,372 after task 26 | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -926,8 +926,21 @@ each failing on its own:
 **Interface:** Optional `--after <task-id>`; linear sequencing only.  
 **Acceptance:** The dependent task owns its prerequisite reference.
 
-- [ ] Add the single predecessor reference at creation.
-- [ ] Test and break-verify invalid prerequisite input protections.
+- [x] Add the single predecessor reference at creation.
+- [x] Test and break-verify invalid prerequisite input protections.
+
+**Landed with this task.** `dux-task-new --after <task-id>` names the one task a new task waits on.
+The id must be well formed and in the ledger, and the task must deliver a pull request, so a plan
+or ship task and never a scout. A second `--after` is refused, because sequencing is linear. The
+reference is written to the new task's own `after` file before its queued line, so nothing can
+dispatch it without seeing what it waits on, and the task it waits on is left untouched. Two
+tests added; six breaks, each failing on its own:
+
+- A second `--after` replacing the first (task-new test line 86). The id not checked (90: the
+  ledger still refused it, with its own message). A task Dux does not know (95) or a scout (98)
+  accepted. `--after` with nothing after it not refused (102: the script stopped on an unset
+  variable instead).
+- The reference never written (70).
 
 ## Task 27: Verify prerequisites before dispatch
 
