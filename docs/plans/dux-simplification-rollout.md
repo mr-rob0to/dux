@@ -1,8 +1,8 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestones 1 to 3, tasks 1 to 30, merged as pull requests #51, #52 and #54. Milestone 4, tasks 31 to 36, is being implemented: tasks 31 to 34 have landed.
-- The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
+- Approved by the operator on 2026-09-15. Milestones 1 to 3, tasks 1 to 30, merged as pull requests #51, #52 and #54. Milestone 4, tasks 31 to 36, has landed and waits on the operator's merge; R4 is recorded after it.
+- The token-efficiency baseline's two worker-through-CI exercises are closed by #45 and #51 (Task 35). Every task dispatched since R1 was installed has failed Dux's 120-second start check.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
 **Estimated diff:** 5,650–8,250 added lines across 36 tasks in four milestones. Each milestone remains limited to 12 tasks and 2,500 added lines. Estimates include code, tests, documentation, and patch artifacts.
@@ -11,7 +11,7 @@
 
 **Spec:** [Dux simplification amendment](../specs/2026-09-15-dux-simplification-rollout.md). It settles the decisions inherited by this plan and amends the base orchestrator design and named earlier designs. Land the spec and this plan together under constitution principle 8.
 
-**Deviations:** Milestone 1 narrows constitution principle 3 and changes principle 9's review policy through the required major amendment. Milestone 2 amends principle 1 for history-preserving feedback-round base merges. These changes activate with their supporting milestones, not merely when this record lands.
+**Deviations:** Milestone 1 narrows constitution principle 3 and changes principle 9's review policy through the required major amendment. Milestone 2 amends principle 1 for history-preserving feedback-round base merges. These changes activate with their supporting milestones, not merely when this record lands. Milestone 4 keeps its evaluation in Task 36 instead of a usage summary per task folder: every count in the sample is unknown, and those folders are outside a worker's worktree.
 
 ## Design
 
@@ -28,7 +28,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
 | M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 2,428 | Task 30's pull request |
-| M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
+| M4: Usage evidence and evaluation | 31–36 | 500–1,000 | 541 | Task 36's pull request |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
 
@@ -1330,8 +1330,42 @@ eleven breaks, eleven failures.
 **Files:** Existing task evidence and this rollout record.  
 **Acceptance:** One bounded and one complex installed task complete `/ship`, independent proof, and real CI.
 
-- [ ] Run both installed worker-through-CI exercises.
-- [ ] Record each exact installed Dux revision and delivery evidence; do not substitute fake-backed tests.
+- [x] Run both installed worker-through-CI exercises.
+- [x] Record each exact installed Dux revision and delivery evidence; do not substitute fake-backed tests.
+
+**Evidence, taken on 2026-09-17 from Dux's own records.** This task dispatched nothing, because
+a worker cannot start a Dux task. Both shapes had already run on installed Dux as real work, and
+Dux proved each one. The installed revision is the Dux checkout's `HEAD` when the task was
+dispatched, read from that checkout's reflog; any uncommitted edits it held then are not recorded.
+
+| Shape | Task and pull request | Installed Dux at dispatch | `/ship` | Independent proof | Real CI |
+|---|---|---|---|---|---|
+| Bounded, plan-free | `dux-ship-20260915-d04`, [#45](https://github.com/mr-rob0to/dux/pull/45) | `8794cfb9b9b09784129cc58bc3870ab0aae7a8fb`, 2026-09-15T14:23:29Z | checks, review and security on `fe33a7e`, one fix pass | the watcher's `done` at 14:58:11Z, same revision | [run 34983872127](https://github.com/mr-rob0to/dux/actions/runs/34983872127), success |
+| Complex, planned, tasks 1 to 10 | `dux-ship-20260916-i1g`, [#51](https://github.com/mr-rob0to/dux/pull/51) | `7d6952346c1810b1b4620f7df38fc550282774d7`, 2026-09-16T00:12:56Z | the same three phases on `c1fd3e3`, two fix passes | the watcher's `done` at 04:04:48Z, same revision | [run 35053183616](https://github.com/mr-rob0to/dux/actions/runs/35053183616), success |
+
+The `/ship` column comes from each pull request's attestation comment and the proof column from
+`state/events.log`. Both revisions' `bin/dux-result` requires a receipt and green checks.
+
+What happened after R1 was installed:
+
+- Every task dispatched since then failed Dux's 120-second start check: `dux-ship-20260916-pe3`
+  and `-9my` on `423292b` (R1), `dux-ship-20260916-ufy` on `8d33657` (R2), and this task on
+  `1e5dadd` (R3). The same check failed once before R1, for `dux-plan-20260915-tyi` on
+  `8794cfb`. Each worker kept running in its tab with nothing supervising it.
+- Two of those still delivered. [#52](https://github.com/mr-rob0to/dux/pull/52) and
+  [#54](https://github.com/mr-rob0to/dux/pull/54) completed `/ship` and real CI
+  ([run 35145890275](https://github.com/mr-rob0to/dux/actions/runs/35145890275),
+  [run 35184544289](https://github.com/mr-rob0to/dux/actions/runs/35184544289)). Dux proved them
+  later, outside the watcher: the ledger reads `done` at 2026-09-16T22:04:52Z and
+  2026-09-17T14:34:00Z. The kept delivery for #54 holds a five-phase receipt on `85383ef` and the
+  handoff that recorded the failed start.
+- No bounded task has run on R1 or later. On the installed R3, a new exercise of either shape
+  would start the same way: unsupervised, and proved only through recovery. That start check is
+  the gap left open, and fixing it is not this milestone's work.
+- This milestone's own delivery is the complex exercise on R3. It was dispatched at
+  2026-09-17T14:53:23Z on `1e5dadd` and failed the start check at 14:55:54Z. It is delivered
+  through `/ship` as the pull request that carries this note. Its proof and CI go in the R4 row
+  after the operator merges.
 
 ## Task 36: Evaluate representative deliveries
 
@@ -1339,9 +1373,68 @@ eleven breaks, eleven failures.
 **Files:** Usage summaries in existing task evidence, this plan, relevant documentation.  
 **Acceptance:** Five to ten accepted deliverables cover bounded, ordinary complex, sensitive, feedback-round, and failed-attempt cases.
 
-- [ ] Summarize measured usage, missing fields, retries, and remaining limits.
-- [ ] Deliver applicable reporting changes through `/ship`; record actual size and R4 after operator merge.
-- [ ] Evaluate only the deferred thresholds in the paired spec; do not treat the sample as proof against rare defects.
+- [x] Summarize measured usage, missing fields, retries, and remaining limits.
+- [x] Deliver applicable reporting changes through `/ship`; record actual size and R4 after operator merge.
+- [x] Evaluate only the deferred thresholds in the paired spec; do not treat the sample as proof against rare defects.
+
+**Evaluation, on 2026-09-17.** It uses the ledger, retry records, run records, receipts, each pull
+request's attestation comment, and GitHub's own fields. No transcript, status text, report or
+pull request prose was read.
+
+| Deliverable | Case | Review | Attempts | Fix passes | Added lines | Tokens |
+|---|---|---|---|---|---:|---|
+| [#45](https://github.com/mr-rob0to/dux/pull/45) | Bounded, plan-free; replaced the delivered #44 on the operator's feedback, as a fresh task | Three phases, before review modes | 1 | 1 | 18 | unknown |
+| [#43](https://github.com/mr-rob0to/dux/pull/43) | Complex, planned | Three phases, before review modes | 1 | 3 | 1,950 | unknown |
+| [#50](https://github.com/mr-rob0to/dux/pull/50) | Planning: this plan and its spec, docs only | None | 4: three bounded attempts, blocked, needs-decision and ended with #49 still open, then a plan task that ended; the operator merged its pull request | none recorded | 1,720 | unknown |
+| [#51](https://github.com/mr-rob0to/dux/pull/51) | Complex, planned: milestone 1 | Three phases, no mode recorded | 1 | 2 | 2,259 | unknown |
+| [#52](https://github.com/mr-rob0to/dux/pull/52) | Complex, sensitive: milestone 2 | Separate | 2: the first failed at start and was retried | 0 | 1,976 | unknown |
+| [#54](https://github.com/mr-rob0to/dux/pull/54) | Complex, sensitive: milestone 3 | Separate | 1 | 0 | 2,428 | unknown |
+| This pull request | Complex, ordinary: milestone 4 | Combined | 1 | at the gate | see below | unknown |
+
+Six are merged and this one waits on the operator. Task 35 has the proof and CI for each.
+
+- **Measured usage:** none. No record gives a token count for any deliverable here. Workers ran
+  as interactive sessions, which expose none (tasks 32 and 33). Every review ran before the gate
+  asked Codex for its counts (task 34). A usage summary for any of them would be all `unknown`
+  with the phase split unavailable, so none was written. A `data/tasks/<id>/usage.md` is also
+  outside a worker's worktree.
+- **Missing fields:** all four counts for implementation, planning and design review; review
+  counts before this milestone; queue time; allowance used.
+- **Retries:** the three bounded attempts behind #50 each stopped differently, and the plan task
+  that followed ended as well. The retry behind #52 followed a start that failed Dux's start check. #44 was
+  delivered, closed unmerged, and replaced by #45.
+- **Cases not covered:** no feedback round has run on a delivered pull request, so the sample has
+  no feedback-round delivery. #45 is the nearest: feedback on a delivered pull request, handled by
+  a fresh task before rounds existed. The only ordinary complex delivery with a combined review
+  is this one, not yet merged.
+- **Remaining limits:** every task dispatched since R1 was installed failed the 120-second start
+  check (task 35), so none was supervised or parked. A parked session is what a feedback round
+  needs. Supervision and rounds stay unproved on the installed revision until that is fixed.
+
+Deferred thresholds from spec section 11, and only those. None is met:
+
+- **Narrower feedback-round review:** not met. No round has run, and no delivery has counts
+  showing what whole-branch review costs.
+- **More usage automation:** not met. No delivery has usable metadata yet, against the ten
+  required, and collecting it by hand has no measured cost.
+- **Token limits or allowance scheduling:** not met. No record here shows a run exhausting the
+  allowance, and no harness relates usage to allowance (task 32).
+- **Parallel workers:** not met. No record measures how long a task waited for the one worker
+  slot.
+- **General dependency graph:** not met. Every deliverable here sat in one repository, and none
+  waited on another.
+- **Transcript checkpoints or resumption after process loss:** not met. The sample has one start
+  that failed the start check and was retried, and two attempts behind #50 that ended. None measured what a
+  fresh recovery cost.
+- **Further review removal:** not met. The sample has one combined-review delivery and no
+  matched comparison of what each review found.
+
+Seven deliveries do not show that rare defects are absent. A serious defect that escapes a
+combined review reopens that decision, as section 11 says.
+
+Delivered through `/ship` with the combined review its brief classified, as the pull request
+that carries this note. The added lines are in the milestone table. The merged commit ID and the
+installed-revision evidence go in the R4 row after the operator merges.
 
 ## Milestone acceptance
 

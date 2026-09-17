@@ -124,6 +124,11 @@ which reviewer ran. It never falls back automatically to Claude. No other `/ship
 
 ## 8. Deferred work and evidence threshold
 
+> **Superseded in part** from rollout stage m4, once its revision is installed: minimal usage
+> reporting from structured records is no longer deferred. The
+> [simplification amendment](2026-09-15-dux-simplification-rollout.md) owns it in section 8 and
+> the evidence thresholds for the rest of this list in section 11.
+
 Do not implement token or cost capture, usage records, accounting, reports, benchmarks,
 allowance-aware admission, automatic queueing, rate-limit pause/resume, operator accounting,
 checkpoint pipelines, plan-page rendering, safe-mode profiles, mechanical `/ship` helpers or
