@@ -4,9 +4,11 @@
 One summary per accepted deliverable, from rollout stage m4, kept beside the rest of its
 evidence at data/tasks/<task id>/usage.md. Copy this file there and fill it in. Every count
 starts as unknown and stays unknown until a structured record gives a number for it: a
-harness's own numeric usage output, or a record Dux wrote. Never a transcript, the tab's
-scrollback, a prompt, or a worker's own report. docs/plans/dux-simplification-rollout.md,
-tasks 32 to 34, says which harness exposes which count.
+harness's own numeric usage output, or a record Dux wrote. A review's `usage:` line in the
+pull request is one, because the gate prints it from the reviewer's own counts. Never a
+transcript, the tab's scrollback, a prompt, or a worker's own report.
+docs/plans/dux-simplification-rollout.md, tasks 32 to 34, says which harness exposes which
+count.
 -->
 
 - Pull request: <url>

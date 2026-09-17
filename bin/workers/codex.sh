@@ -20,3 +20,38 @@ worker_run() {  # brief model effort settings(ignored); replaces the current pro
 }
 
 worker_effort_ok() { case "$1" in minimal|low|medium|high|xhigh) return 0 ;; *) return 1 ;; esac; }
+
+# The usage a `codex exec --json` event stream on stdin reports, as one line:
+# `input=<n> output=<n> cache_read=<n> cache_write=<n>`, each a count or
+# `unknown`. Only the usage field of a top-level turn.completed event is read,
+# never what a run said or what its commands printed, so a reviewer whose events
+# a worker printed is counted from the reviewer's own stream alone. Codex counts
+# cached input inside input and reasoning inside output (the rollout plan, task
+# 32), so cached input is taken out and nothing is added. A resumed thread
+# reports its running total, so each thread's last total counts once. Any cache
+# write leaves input unknown, since no probe showed whether input includes it.
+worker_usage() {
+  jq -R -r -s '
+    def tokens: if type == "number" and . >= 0 and . == floor then . else null end;
+    def total: reduce .[] as $v (0; if . == null or $v == null then null else . + $v end);
+    [split("\n")[] | fromjson? | objects]
+    | reduce .[] as $e ({thread: null, runs: {}, n: 0};
+        if $e.type == "thread.started" then .thread = (($e.thread_id | strings) // null)
+        elif $e.type == "turn.completed" then
+          (if .thread == null then "run \(.n)" else "thread \(.thread)" end) as $k
+          | .runs[$k] = ($e.usage | objects // {}) | .n += 1
+        else . end)
+    | [.runs[]] as $runs
+    | def sum(f): if ($runs | length) == 0 then null else [$runs[] | f] | total end;
+      {
+        input: sum((.input_tokens | tokens) as $i | (.cached_input_tokens | tokens) as $c
+                   | if $i != null and $c != null and $i >= $c
+                        and (.cache_write_input_tokens | tokens) == 0
+                     then $i - $c else null end),
+        output: sum(.output_tokens | tokens),
+        cache_read: sum(.cached_input_tokens | tokens),
+        cache_write: sum(.cache_write_input_tokens | tokens)
+      }
+    | "input=\(.input // "unknown") output=\(.output // "unknown") cache_read=\(.cache_read // "unknown") cache_write=\(.cache_write // "unknown")"
+  '
+}

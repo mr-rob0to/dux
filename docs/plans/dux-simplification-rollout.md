@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestones 1 to 3, tasks 1 to 30, merged as pull requests #51, #52 and #54. Milestone 4, tasks 31 to 36, is being implemented: tasks 31 to 33 have landed.
+- Approved by the operator on 2026-09-15. Milestones 1 to 3, tasks 1 to 30, merged as pull requests #51, #52 and #54. Milestone 4, tasks 31 to 36, is being implemented: tasks 31 to 34 have landed.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -1287,8 +1287,42 @@ keeps the copy when the run ends. That is the operator's call.
 **Files:** `bin/workers/codex.sh`, `skills/ship/SKILL.md`, relevant adapter tests, `docs/ARCHITECTURE.md` where supported.  
 **Acceptance:** Cumulative totals and embedded reviewer totals are not counted twice.
 
-- [ ] Add only qualified structured extraction.
-- [ ] Test overlap and repeated-total cases; record unsupported fields as unavailable.
+- [x] Add only qualified structured extraction.
+- [x] Test overlap and repeated-total cases; record unsupported fields as unavailable.
+
+**Landed with this task.** Reviews are the one place a count is available, so that is all
+this task built:
+
+- `worker_usage` in `bin/workers/codex.sh` reads a `codex exec --json` event stream. It
+  prints input, output, cache read and cache write for the run, each a number or `unknown`.
+- It reads only the usage field of top-level `turn.completed` events. Cached input is taken
+  out of input, and reasoning is not added to output, because Codex counts both inside.
+- A resumed thread counts its last running total once, and separate threads add up. A
+  reviewer's events that a worker printed are text inside the worker's stream, so they are
+  never counted there.
+- Any count Codex did not give stays `unknown`, and so does any sum that needs it. So does
+  input whenever a cache write is reported, because no probe showed whether input includes it.
+- Steps 6 and 7 of `/ship` run a `codex exec` reviewer with `--json`, print its answer, then
+  one `usage:` line. The pull request carries that line for every review run. Any other command
+  reviewer prints `unknown`, and an agent reviewer is `in session total`.
+
+Unavailable, and recorded as such: reasoning tokens on their own, which output already counts;
+input for a run with cache writes; a reviewer not started as `codex exec`, such as one named by
+full path; and every count of an agent or Claude reviewer. The `usage:` line reaches the pull
+request through the worker that runs the gate, so it is as trustworthy as the gate's other
+statements, such as which reviewer ran.
+
+Run for real once on codex-cli 0.154.0, with a two-line prompt instead of a review. It printed
+`usage: input=21794 output=10 cache_read=6528 cache_write=0`. It also showed that Codex writes
+its answer with no final newline, which glued the usage line onto `No findings.`. The block
+now ends every answer line, and the test's fake writes the answer the way Codex does.
+
+Each protection was broken alone and its named test failed; the failure output is in the
+commit that landed this task. Cached input left in input, reasoning added to output, every
+total counted, only the last thread counted, no run read as zero, a malformed count read as
+zero, a sum of only the known counts, a cache write ignored, events parsed out of transcript
+text, a reviewer without counts read as zero, and the answer's last line left unterminated:
+eleven breaks, eleven failures.
 
 ## Task 35: Close the installed delivery evidence gaps
 
