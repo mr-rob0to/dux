@@ -82,7 +82,8 @@ fi
 # pull request merged from that branch and that commit into the registered base,
 # and the merge has to be on that base once fetched. A check the brief names, such
 # as a deployment, has to have succeeded on the merge too. What was verified is
-# kept with the waiting task. Every refusal leaves it queued, to be checked again.
+# kept with the waiting task, and a later start, or a retry that carries it, has
+# to verify the same again. Every refusal leaves the task queued.
 still_queued() { finding "$1; $id remains queued"; }
 kv() { sed -n "s/^$1=//p" "$2" 2>/dev/null | take_line; }
 if [ -f "$task/after" ]; then
@@ -103,18 +104,21 @@ if [ -f "$task/after" ]; then
   n="${pr#"https://github.com/$slug/pull/"}"
   case "$n" in ''|*[!0-9]*) still_queued "$id waits on $after, whose pull request $pr is not in $slug" ;; esac
 
-  run="$(kv run "$DUX_STATE/$after.run")"
+  # Where the run left its evidence, or, once that task is torn down, the copy
+  # teardown kept in its folder under the same names.
+  ev="$DUX_STATE/$after."; hand="$(handoff_home "$after")/$(($(handoff_next_seq "$after") - 1))"
+  if [ ! -e "${ev}run" ]; then ev="$DUX_TASKS/$after/delivery/"; hand="${ev}handoff"; fi
+  run="$(kv run "${ev}run")"
   [ -n "$run" ] || still_queued "$id waits on $after, and the record of the run that delivered it is gone"
   head=""
-  for r in "$DUX_STATE/$after.ship-receipt" "$DUX_STATE/$after.ship-receipt.delivered"; do
+  for r in "${ev}ship-receipt" "${ev}ship-receipt.delivered"; do
     [ "$(kv run "$r")" = "$run" ] || continue
     head="$(sed -n 's/^phase=ci sha=\([0-9a-f]\{40\}\) .*/\1/p' "$r" | take_line)"
     [ -z "$head" ] || break
   done
   [ -n "$head" ] || still_queued "$id waits on $after, which has no /ship receipt for the run that delivered it"
-  h="$(handoff_home "$after")/$(($(handoff_next_seq "$after") - 1))"
-  { [ -e "$h/consumed" ] && [ "$(take_line < "$h/run")" = "$run" ] \
-      && [ "$(take_line < "$h/status")" = "done: PR $pr" ]; } 2>/dev/null \
+  { [ -e "$hand/consumed" ] && [ "$(take_line < "$hand/run")" = "$run" ] \
+      && [ "$(take_line < "$hand/status")" = "done: PR $pr" ]; } 2>/dev/null \
     || still_queued "$id waits on $after, and no proved delivery of $pr is on record"
 
   view="$(gh pr view "$n" --repo "$slug" --json state,baseRefName,headRefName,headRefOid,mergeCommit 2>/dev/null)" || view=""
@@ -150,8 +154,12 @@ if [ -f "$task/after" ]; then
     esac
   fi
   record="$task/prerequisite"
-  { { printf 'after=%s\nrepo=%s\npr=%s\nhead=%s\nmerge=%s\n' "$after" "$slug" "$pr" "$head" "$merge"
-      [ -z "$check" ] || printf 'check=%s\n' "$check"; } > "$record.tmp" && mv "$record.tmp" "$record"; } \
+  verified="$(printf 'after=%s\nrepo=%s\npr=%s\nhead=%s\nmerge=%s\n' "$after" "$slug" "$pr" "$head" "$merge"
+    [ -z "$check" ] || printf 'check=%s\n' "$check")"
+  if [ -f "$record" ] && [ "$(cat "$record")" != "$verified" ]; then
+    still_queued "what $id waits on is no longer what was verified in $record"
+  fi
+  { printf '%s\n' "$verified" > "$record.tmp" && mv "$record.tmp" "$record"; } \
     || { rm -f "$record.tmp"; still_queued "cannot record what $id waits on in $record"; }
 fi
 

@@ -116,6 +116,25 @@ if [ -e "$pgidfile" ] || [ -L "$pgidfile" ]; then
   esac
 fi
 
+# A delivered task can be one another task waits on, and dux-spawn checks that
+# delivery when the waiting task starts, usually after this teardown. So before
+# state/ loses them, the run record, the receipts and the last handoff are copied
+# into the task's own folder under the names dux-spawn reads. A rerun finds
+# state/ already cleared and leaves the copy alone.
+keep_delivery() {  # $1 the folder; quiet, since the finding below names it
+  local f n
+  { mkdir -p "$1" && rm -rf "$1/handoff" && cp "$DUX_STATE/$id.run" "$1/run"; } 2>/dev/null || return 1
+  for f in ship-receipt ship-receipt.delivered; do
+    [ ! -f "$DUX_STATE/$id.$f" ] || cp "$DUX_STATE/$id.$f" "$1/$f" 2>/dev/null || return 1
+  done
+  n=$(($(handoff_next_seq "$id") - 1))
+  [ "$n" -lt 1 ] || cp -R "$(handoff_home "$id")/$n" "$1/handoff" 2>/dev/null
+}
+if [ "$final" = "done" ] && [ -f "$DUX_STATE/$id.run" ]; then
+  keep_delivery "$DUX_TASKS/$id/delivery" \
+    || finding "cannot keep the delivery of $id in $DUX_TASKS/$id/delivery; its worktree and records are left in place"
+fi
+
 "$DUX_ROOT/bin/dux-worktree" remove "$id" || exit $?
 
 if [ -f "$epfile" ]; then

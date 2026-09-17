@@ -678,59 +678,16 @@ exec $DUX_ROOT/bin/dux-backend \"\$@\"")"
 }
 
 # ---- a task that waits on another ----------------------------------------------
-# The task it waits on, delivered the way the wrapper and the watcher leave it:
-# its run, its /ship receipt whose ci phase names the delivered commit (the
-# earlier phases name another, as they do once /ship has pushed a fix), and the
-# consumed handoff that put its pull request on the ledger. GitHub reports that pull request
-# merged, and the merge is pushed to the registered base from another clone, so
-# the project's own clone has it only once spawn fetches. Sets $pred, $head,
-# $merge and $pr.
-delivered() {
-  local m="$DUX_HOME/merger" p
-  pred="$(fixture_task proj ship github)"; pr=https://github.com/acme/proj/pull/7
-  git clone -q "$DUX_HOME/acme/proj.git" "$m"
-  git -C "$m" checkout -q -b "dux/$pred"
-  git -C "$m" commit -q --allow-empty -m delivered
-  head="$(git -C "$m" rev-parse HEAD)"
-  git -C "$m" checkout -q main
-  git -C "$m" merge -q --no-ff -m merged "dux/$pred"
-  merge="$(git -C "$m" rev-parse HEAD)"
-  git -C "$m" push -q origin main
-  fake_run "$pred" r1 ship acme/proj
-  { echo version=2; echo "id=$pred"; echo run=r1; echo "branch=dux/$pred"; echo review=separate
-    for p in checks review security pr; do echo "phase=$p sha=$(printf '%040d' 0) at=2026-09-16T00:00:00Z"; done
-    echo "phase=ci sha=$head at=2026-09-16T00:00:00Z"
-  } > "$DUX_HOME/state/$pred.ship-receipt.delivered"
-  handoff "$pred" "done: PR $pr" done r1
-  : > "$DUX_HOME/state/$pred.handoffs/1/consumed"
-  dux-ledger set "$pred" state done; dux-ledger set "$pred" pr "$pr"
-  export FAKE_GH_PR_STATE=MERGED FAKE_GH_PR_HEAD="dux/$pred" FAKE_GH_PR_BASE=main \
-    FAKE_GH_PR_HEAD_OID="$head" FAKE_GH_PR_MERGE="$merge"
-}
-
-# The task that waits is in a repository of its own, so everything checked about
-# the merge is checked in the repository it landed in.
-waiting() {  # [$1 the check the merge must pass]; sets $id, a scout in other that waits on $pred
-  local t
-  make_repo "$DUX_HOME/other" main
-  dux-project add "$DUX_HOME/other" --base main --pr-template skip >/dev/null
-  id="$(dux-task-new other scout --after "$pred")"; t="$DUX_HOME/data/tasks/$id"
-  printf 'Build on it.\n' > "$t/intent.md"; printf '1. Built.\n' > "$t/criteria.md"
-  if [ -n "${1:-}" ]; then
-    dux-brief "$id" --intent-file "$t/intent.md" --criteria-file "$t/criteria.md" --after-check "$1" >/dev/null
-  else
-    dux-brief "$id" --intent-file "$t/intent.md" --criteria-file "$t/criteria.md" >/dev/null
-  fi
-}
-
-still_queued() {  # $1 the finding, after "finding: "
+still_queued() {  # $1 the finding, after "finding: "; the record is left as it was
+  local before
+  before="$(cat "$DUX_HOME/data/tasks/$id/prerequisite" 2>/dev/null || echo none)"
   run dux-spawn "$id"
   [ "$status" -eq 2 ]
   [ "$output" = "finding: $1; $id remains queued" ]
   [ "$(dux-ledger get "$id" state)" = queued ]
-  [ ! -e "$DUX_HOME/data/tasks/$id/prerequisite" ]
-  [ ! -d "$DUX_HOME/other/.worktrees" ]
-  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/prerequisite" 2>/dev/null || echo none)" = "$before" ]
+  # A start that stopped at the trust check made a worktree and took it away again.
+  [ -z "$(ls -A "$DUX_HOME/other/.worktrees" 2>/dev/null)$(ls -A "$DUX_HOME/proj/.worktrees" 2>/dev/null)" ]
   [ "$(grep -c '^tab create' "$FAKE_HERDR_LOG")" = 0 ]
 }
 
@@ -821,5 +778,54 @@ still_queued() {  # $1 the finding, after "finding: "
   [ "$status" -eq 0 ]
   grep -qx "check=deploy api" "$DUX_HOME/data/tasks/$id/prerequisite"
   grep -qx "api -X GET repos/acme/proj/commits/$merge/check-runs -f check_name=deploy api -f filter=latest" "$FAKE_GH_LOG"
+  wait_result "$id"
+}
+
+# The task waited on is usually torn down once its pull request merges, and
+# teardown clears state/. What proved the delivery is kept in that task's own
+# folder, and the waiting task is checked against that copy.
+@test "a task starts on a delivery whose task was torn down, and waits when that delivery is lost" {
+  delivered
+  waiting
+  run dux-teardown "$pred"
+  [ "$status" -eq 0 ]
+  [ ! -e "$DUX_HOME/state/$pred.run" ]; [ ! -e "$DUX_HOME/state/$pred.handoffs" ]
+  kept="$DUX_HOME/data/tasks/$pred/delivery"
+  mv "$kept" "$DUX_HOME/lost"
+  still_queued "$id waits on $pred, and the record of the run that delivered it is gone"
+  mv "$DUX_HOME/lost" "$kept"
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/prerequisite")" = "$(printf 'after=%s\nrepo=acme/proj\npr=%s\nhead=%s\nmerge=%s' "$pred" "$pr" "$head" "$merge")" ]
+  wait_result "$id"
+}
+
+# The record stays with the waiting task. A start that stops after the check
+# leaves it, the next start is checked against it, and one that no longer
+# matches waits. Abandoning a task that never ran removes the record with it.
+@test "a task started again is checked against what was verified, and abandoning it removes the record" {
+  delivered
+  trust_suite_root proj
+  waiting; first="$id"; rec="$DUX_HOME/data/tasks/$first/prerequisite"
+  run dux-spawn "$first"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: $DUX_HOME/other is not trusted by Claude Code; open a session in it once and answer \"Yes, I trust this folder\"" ]
+  [ "$(cat "$rec")" = "$(printf 'after=%s\nrepo=acme/proj\npr=%s\nhead=%s\nmerge=%s' "$pred" "$pr" "$head" "$merge")" ]
+  [ "$(dux-ledger get "$first" state)" = queued ]
+  waiting; second="$id"
+  run dux-spawn "$second"
+  [ "$status" -eq 2 ]
+  [ -f "$DUX_HOME/data/tasks/$second/prerequisite" ]
+  run dux-teardown --abandon "$second"
+  [ "$status" -eq 0 ]
+  [ ! -e "$DUX_HOME/data/tasks/$second" ]
+  trust_path "$DUX_HOME/other"
+  id="$first"; cp "$rec" "$DUX_HOME/verified"
+  sed "s/^merge=.*/merge=$(printf '%040d' 0)/" "$DUX_HOME/verified" > "$rec"
+  still_queued "what $id waits on is no longer what was verified in $rec"
+  cp "$DUX_HOME/verified" "$rec"
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  cmp "$rec" "$DUX_HOME/verified"
   wait_result "$id"
 }

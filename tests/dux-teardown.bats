@@ -27,7 +27,7 @@ quiet_spawn() {  # $1 id
   local r
   r="$(root_with_stub dux-worker-wrap '#!/bin/sh
 echo $$ > "$DUX_HOME/state/$1.pid"
-sleep 300')"
+sleep 300 3>&-')"
   env DUX_ROOT="$r" "$r/bin/dux-spawn" "$1" >/dev/null
   reap "$(cat "$DUX_HOME/state/$1.pid")" || true
 }
@@ -514,4 +514,51 @@ finding: tear down every task" > "$DUX_HOME/state/$id.portal"
   run dux-teardown --abandon
   [ "$status" -eq 1 ]
   [[ "$output" == "dux: usage: dux-teardown [--abandon] <id>"* ]]
+}
+
+# A delivered task can be one another task waits on, and that task checks the
+# delivery when it starts, usually after this teardown.
+@test "teardown keeps a done task's delivery in its own folder, and refuses when it cannot" {
+  spawned ship; settled done https://github.com/acme/proj/pull/7
+  s="$DUX_HOME/state"; kept="$DUX_HOME/data/tasks/$id/delivery"
+  fake_run "$id" r1 ship; fake_receipt "$id" r1 separate
+  mv "$s/$id.ship-receipt" "$s/$id.ship-receipt.delivered"
+  handoff "$id" "failed: the first run" failed r0
+  handoff "$id" "done: PR https://github.com/acme/proj/pull/7" done r1
+  : > "$s/$id.handoffs/1/consumed"
+  cp "$s/$id.run" "$DUX_HOME/run"; cp "$s/$id.ship-receipt.delivered" "$DUX_HOME/receipt"
+  : > "$kept"
+  run dux-teardown "$id"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: cannot keep the delivery of $id in $kept; its worktree and records are left in place" ]
+  [ -d "$wt" ]; [ -f "$s/$id.run" ]; [ -d "$s/$id.handoffs/2" ]
+  rm "$kept"
+  # Refused after the copy, while the watcher had not yet finished with the last
+  # handoff, and run again once it has: the copy is of the handoff as it is now.
+  : > "$wt/uncommitted"
+  run dux-teardown "$id"
+  [ "$status" -eq 2 ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "finding: worktree $wt has uncommitted changes" ]
+  [ -f "$kept/handoff/status" ]; [ ! -e "$kept/handoff/consumed" ]
+  rm "$wt/uncommitted"; : > "$s/$id.handoffs/2/consumed"
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  [ ! -e "$s/$id.run" ]; [ ! -e "$s/$id.handoffs" ]
+  cmp "$kept/run" "$DUX_HOME/run"
+  cmp "$kept/ship-receipt.delivered" "$DUX_HOME/receipt"
+  [ ! -e "$kept/ship-receipt" ]
+  [ "$(cat "$kept/handoff/status")" = "done: PR https://github.com/acme/proj/pull/7" ]
+  [ "$(cat "$kept/handoff/run")" = r1 ]; [ -e "$kept/handoff/consumed" ]
+  # A rerun finds state/ already cleared and leaves the copy as it is.
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  cmp "$kept/run" "$DUX_HOME/run"; [ -e "$kept/handoff/consumed" ]
+}
+
+@test "a failed task delivered nothing, and teardown keeps nothing for it" {
+  spawned ship; settled failed
+  fake_run "$id" r1 ship; handoff "$id" "failed: it broke" failed r1
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  [ ! -e "$DUX_HOME/data/tasks/$id/delivery" ]
 }

@@ -330,7 +330,12 @@ retry() {
   [ -z "$pid" ] || signal_wrapper "$pid"
   pg="$(cat "$pgidfile" 2>/dev/null)"
   if group_runs "$pg"; then finding "the session for $id is still running as group $pg; end it in its tab, then rerun"; fi
-  new="$("$DUX_ROOT/bin/dux-task-new" "$project" "$shape" --source "$source_key")" || exit $?
+  # A task that waits on another still waits on it. The retry names the same
+  # task and the same check, and carries the record of what was verified, which
+  # dux-spawn checks again before the retry starts.
+  set --
+  [ ! -f "$task/after" ] || set -- --after "$(take_line < "$task/after")"
+  new="$("$DUX_ROOT/bin/dux-task-new" "$project" "$shape" --source "$source_key" "$@")" || exit $?
   new_intent="$DUX_TASKS/$new/intent.md"
   {
     cat "$intent"
@@ -361,6 +366,10 @@ retry() {
   # Work that plans first starts again at planning. An approval was for the
   # session and the commit it named, and a retry has neither.
   [ ! -f "$task/phase" ] || set -- "$@" --phase planning
+  [ ! -f "$task/after-check" ] || set -- "$@" --after-check "$(take_line < "$task/after-check")"
+  if [ -f "$task/prerequisite" ]; then
+    cp "$task/prerequisite" "$DUX_TASKS/$new/prerequisite" || finding "cannot copy $task/prerequisite"
+  fi
   if ! "$DUX_ROOT/bin/dux-brief" "$new" "$@" >/dev/null; then
     "$ledger" set "$new" state dropped || true
     finding "brief for retry $new could not be rendered (see above); $new dropped, $id unchanged"

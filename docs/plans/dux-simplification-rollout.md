@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 27 have landed. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 28 have landed. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -27,7 +27,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 1,780 after task 27 | Not recorded |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 1,979 after task 28 | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -993,8 +993,39 @@ test changed; 35 breaks, each failing on its own:
 **Files:** `bin/dux-recover`, `bin/dux-teardown`, related tests.  
 **Acceptance:** Needed delivery evidence survives predecessor teardown; retries revalidate it; dependent removal removes its record.
 
-- [ ] Cover teardown, retry, restart, and removal.
-- [ ] Break-verify lost-evidence and stale-prerequisite protections.
+- [x] Cover teardown, retry, restart, and removal.
+- [x] Break-verify lost-evidence and stale-prerequisite protections.
+
+**Landed with this task.** A delivery stays checkable after its task is torn down, and a waiting
+task is checked again every time it starts. `dux-spawn` changed with the two named files, because
+it is the reader.
+
+- Teardown: before `state/` is cleared, a done task's run record, `/ship` receipts and last handoff
+  are copied into `data/tasks/<id>/delivery/`, under the names `dux-spawn` reads. A copy that cannot
+  be made is a finding, and the worktree and records stay. A failed task keeps nothing.
+- Lost evidence: once the run record is gone from `state/`, `dux-spawn` reads that copy, and a lost
+  copy leaves the waiting task queued.
+- Restart and retry: a start that finds a `prerequisite` record, left by an earlier start that
+  stopped after the check or carried by a retry, has to verify the same delivery again. Anything
+  different leaves the task queued and the record untouched. A retry waits on the same task, under
+  the same `--after-check`, and carries the record.
+- Removal: abandoning a waiting task that never ran removes its folder and the record with it.
+
+Two spawn tests, two teardown tests and one recover test added. The spawn refusal helper now also
+checks that the record is left as it was and that no worktree remains. The teardown suite's stub
+wrapper no longer keeps the test runner waiting five minutes after the last test. 17 breaks, each
+failing on its own:
+
+- Teardown keeping nothing (teardown test line 532), a failed copy not refused (532), the last
+  handoff not copied (542), the first handoff copied instead (542), the archived receipt not copied
+  (548), an earlier attempt's copy not replaced (551), a failed task's delivery kept (563).
+- Spawn never reading the kept copy (spawn test line 798) or its handoff (798), a record that no
+  longer matches not refused (helper line 685, called at 825), a refusal that rewrites the record
+  (688, called at 825), a refusal after the worktree is made (690, called at 795), a carried record
+  trusted without checking (recover test line 737).
+- A retry dropping the task it waits on (736: the brief refused the check with nothing to wait on),
+  the check (737: the start refused the record as no longer matching) or the record (741).
+  Abandoning without removing the folder (spawn test line 821).
 
 ## Task 29: Activate supported continuation and sequencing policy
 

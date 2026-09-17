@@ -718,3 +718,31 @@ next: if the operator approves the plan it names, dux-round $id --purpose approv
   grep -qxF -- '- Risk: complex' "$b"
   [ "$(grep -c '^- Plan: ' "$b" || true)" -eq 0 ]
 }
+
+# A retry is the same work again, so it waits on the same delivery under the
+# same check, and carries the record of what was verified. Its start checks all
+# of it again, and waits while any of it no longer holds.
+@test "a retry of a task that waits keeps waiting on the same delivery, and its start checks it again" {
+  delivered
+  export FAKE_GH_CHECK_RUNS='{"check_runs":[{"name":"deploy api","status":"completed","conclusion":"success"}]}'
+  waiting 'deploy api'; old="$DUX_HOME/data/tasks/$id"
+  # other is not trusted in this suite, so this start stops after the check.
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [ -f "$old/prerequisite" ]
+  dux-ledger set "$id" state failed
+  FAKE_GH_CHECK_RUNS='{"check_runs":[{"name":"deploy api","status":"completed","conclusion":"failure"}]}' \
+    run dux-recover "$id" --retry
+  [ "$status" -eq 2 ]
+  new="$(cat "$old/retry")"; t="$DUX_HOME/data/tasks/$new"
+  [ "$output" = "$(printf "finding: check 'deploy api' has not succeeded on the merge of %s; %s remains queued\nretry %s created but not spawned; run dux-spawn %s" "$pr" "$new" "$new" "$new")" ]
+  [ "$(cat "$t/after")" = "$pred" ]
+  [ "$(cat "$t/after-check")" = 'deploy api' ]
+  grep -qxF -- '- After check: deploy api succeeds' "$t/brief.md"
+  cmp "$old/prerequisite" "$t/prerequisite"
+  [ "$(dux-ledger get "$new" state)" = queued ]
+  trust_path "$DUX_HOME/other"
+  run dux-spawn "$new"
+  [ "$status" -eq 0 ]
+  [ "$(dux-ledger get "$new" state)" = running ]
+  cmp "$old/prerequisite" "$t/prerequisite"
+}
