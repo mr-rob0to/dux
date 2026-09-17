@@ -38,7 +38,7 @@ worker_env() {
     # The git identity and the gh fixtures travel with the pane: a worker that
     # commits has no machine git config to fall back on, and the run's own
     # result proof reads the fake forge from the wrapper's environment.
-    for v in DUX_HOME DUX_BACKEND DUX_TMUX_SOCKET DUX_TMUX_SESSION PATH FAKE_WORKER_SCRIPT FAKE_WORKER_LOG DUX_WRAP_POLL_SECS DUX_HEARTBEAT_SECS \
+    for v in DUX_HOME DUX_BACKEND DUX_TMUX_SOCKET DUX_TMUX_SESSION PATH FAKE_WORKER_SCRIPT FAKE_WORKER_ROUND_SCRIPT FAKE_WORKER_LOG DUX_WRAP_POLL_SECS DUX_HEARTBEAT_SECS \
              GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL \
              FAKE_GH_LOG FAKE_GH_PR_LIST FAKE_GH_PR_LIST_FILE FAKE_GH_PR_CHECKS; do
       tmux -L dux-e2e set-environment -t "$DUX_TMUX_SESSION" "$v" "${!v-}"
@@ -315,6 +315,107 @@ EOF
   wait_file "$DUX_HOME/state/$next.handoffs/1/status" 60
   [ "$(cat "$DUX_HOME/state/$next.handoffs/1/status")" = "done: report" ]
   [ "$(sed -n 's/^worktree=//p' "$DUX_HOME/state/$next.result-context")" = "$DUX_HOME/other/.worktrees/dux-$next" ]
+}
+
+# Work that plans first, spawned and parked at the question that asks for its
+# approval. Each later turn of that session replays the round script, which a
+# test writes before the round it belongs to; state/ship.script is the build.
+plan_first() {
+  export FAKE_GH_PR_LIST_FILE="$DUX_HOME/state/pr.json" FAKE_GH_PR_CHECKS='[{"name":"build","state":"SUCCESS"}]'
+  export FAKE_WORKER_ROUND_SCRIPT="$DUX_HOME/state/round.script" DUX_WRAP_PARK_MAX_PASSES=120
+  worker_env
+  make_github_repo proj
+  dux-project add "$DUX_HOME/proj" --base main --pr-template skip >/dev/null
+  id="$(dux-task-new proj ship)"; t="$DUX_HOME/data/tasks/$id"; s="$DUX_HOME/state"
+  wt="$DUX_HOME/proj/.worktrees/dux-$id"; pr=https://github.com/acme/proj/pull/7
+  printf 'Plan it, then build what is approved.\n' > "$t/intent.md"; printf '1. Built.\n' > "$t/criteria.md"
+  dux-brief "$id" --intent-file "$t/intent.md" --criteria-file "$t/criteria.md" --phase planning >/dev/null
+  cat > "$FAKE_WORKER_SCRIPT" <<'EOF'
+run mkdir -p docs/plans && printf '# Plan\n\n**Where this stands**\n- Planned.\n\n## Task 1: one\n- [ ] one\n\n## Task 2: two\n- [ ] two\n' > docs/plans/p.md
+run git add -A && git commit -q -m plan
+status needs-decision: approve tasks 1-2 of docs/plans/p.md
+sleep 0.2
+touch stopped
+idle
+EOF
+  cat > "$s/ship.script" <<EOF
+run printf 'implementation\n' > src.txt && git add -A && git commit -q -m build && git push -q -u origin HEAD
+run "\$DUX_SHIP_RECORD" checks && "\$DUX_SHIP_RECORD" review && "\$DUX_SHIP_RECORD" security && "\$DUX_SHIP_RECORD" pr
+run jq -nc --arg s "\$(git rev-parse HEAD)" --arg b "dux/$id" '[{number:7,url:"$pr",isDraft:false,state:"OPEN",baseRefName:"main",headRefName:\$b,headRefOid:\$s,headRepository:{name:"proj"},headRepositoryOwner:{login:"acme"}}]' > "$FAKE_GH_PR_LIST_FILE"
+run "\$DUX_SHIP_RECORD" ci
+EOF
+  dux-spawn "$id" >/dev/null
+  wait_file "$s/$id.parked" 60
+  [ "$(cat "$s/$id.handoffs/1/status")" = "needs-decision: approve tasks 1-2 of docs/plans/p.md" ]
+  dux-watch --once
+  [ "$(dux-ledger get "$id" state)" = needs-decision ]
+}
+
+# The whole of integrated approval on the backend. An answer is a round in the
+# same session and approves nothing. The approval names the plan, its tasks and
+# the commit, and the build it starts is proved against exactly that, then torn
+# down with its delivery kept.
+@test "work that plans first builds only once an approval round names its plan" {
+  ready || skip
+  plan_first
+  run dux-recover "$id"
+  [[ "$output" == *"next: after the operator answers, dux-round $id --purpose answer --file <f>"* ]]
+  [[ "$output" == *"next: if the operator approves the plan it names, dux-round $id --purpose approval --file <f> --plan <path> --tasks <range> --commit <sha>"* ]]
+  printf 'status needs-decision: approve tasks 1-2 of docs/plans/p.md\nsleep 0.2\ntouch stopped\nidle\n' > "$FAKE_WORKER_ROUND_SCRIPT"
+  printf 'Go ahead.\n' > "$t/answer.md"
+  run dux-round "$id" --purpose answer --file "$t/answer.md"
+  [ "$output" = "round 1 sent to $id" ]
+  wait_file "$s/$id.handoffs/2/status" 60
+  [ "$(cat "$s/$id.handoffs/2/status")" = "needs-decision: approve tasks 1-2 of docs/plans/p.md" ]
+  wait_file "$s/$id.parked" 30
+  [ "$(cat "$t/phase")" = planning ]; [ ! -e "$t/round-1.approval" ]
+  dux-watch --once
+  { printf '%s\n' "run printf '# Plan\n\n**Where this stands**\n- Built.\n\n## Task 1: one\n- [x] one\n\n## Task 2: two\n- [x] two\n' > docs/plans/p.md"
+    cat "$s/ship.script"; printf 'status done: PR %s\nsleep 0.2\ntouch stopped\nidle\n' "$pr"; } > "$FAKE_WORKER_ROUND_SCRIPT"
+  tip="$(git -C "$wt" rev-parse HEAD)"; printf 'Approved: tasks 1-2.\n' > "$t/approval.md"
+  run dux-round "$id" --purpose approval --file "$t/approval.md" --plan docs/plans/p.md --tasks 1-2 --commit "${tip:0:7}"
+  [ "$output" = "round 2 sent to $id" ]
+  [ "$(cat "$t/round-2.approval")" = "$(printf 'plan=docs/plans/p.md\ntasks=1-2\ncommit=%s' "$tip")" ]
+  [ "$(cat "$t/phase")" = implementation ]
+  wait_file "$s/$id.handoffs/3/status" 60
+  [ "$(cat "$s/$id.handoffs/3/status")" = "done: PR $pr" ]
+  wait_file "$s/$id.parked" 30
+  dux-watch --once
+  [ "$(dux-ledger get "$id" state)" = done ]; [ "$(dux-ledger get "$id" pr)" = "$pr" ]
+  run dux-teardown "$id"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$t/delivery/handoff/status")" = "done: PR $pr" ]; [ ! -e "$wt" ]
+}
+
+# The stopped-run path a rollback takes. The operator ends an approved build in
+# its tab part-way: both processes go, the run is recorded unfinished, and all
+# it leaves stays. Recovery proves nothing from boxes still open, and the task
+# settles only on the operator's word.
+@test "an approved build stopped part-way keeps its evidence and waits for explicit recovery" {
+  ready || skip
+  plan_first
+  { cat "$s/ship.script"; echo 'sleep 60'; } > "$FAKE_WORKER_ROUND_SCRIPT"
+  printf 'Approved: tasks 1-2.\n' > "$t/approval.md"
+  dux-round "$id" --purpose approval --file "$t/approval.md" --plan docs/plans/p.md --tasks 1-2 --commit "$(git -C "$wt" rev-parse HEAD)" >/dev/null
+  wait_for "$s/$id.ship-receipt" '^phase=ci ' 60
+  wp="$(cat "$s/$id.pid")"; pg="$(cat "$s/$id.pgid")"
+  kill -TERM -- "-$pg"
+  wait_file "$s/$id.handoffs/2/status" 30
+  [ "$(cat "$s/$id.handoffs/2/status")" = "ended: the session ended without a terminal status" ]
+  wait_until 10 refute kill -0 "$wp" 2>/dev/null; refute kill -0 -- "-$pg" 2>/dev/null
+  dux-watch --once
+  [ "$(dux-ledger get "$id" state)" = ended ]
+  grep -qx "run=$(cat "$s/$id.handoffs/2/run")" "$s/$id.run"
+  [ "$(sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$s/$id.ship-receipt" | tr '\n' ' ')" = "checks review security pr ci " ]
+  [ -f "$t/round-1.approval" ]; [ "$(cat "$t/phase")" = implementation ]
+  [ "$(git -C "$wt" log -1 --format=%s)" = build ]
+  run dux-recover "$id"
+  [[ "$output" == *"$id has no proved result."*"task 1 in docs/plans/p.md still has an unchecked box"* ]]
+  [[ "$output" == *"next: dux-recover $id --classify failed, or dispatch a fresh task" ]]
+  [ ! -e "$s/$id.handoffs/3" ]
+  run dux-recover "$id" --classify failed
+  [ "$output" = "classified $id as failed" ]
+  [ "$(dux-ledger get "$id" state)" = failed ]; [ -d "$wt" ]
 }
 
 # The other gate, end to end. A combined review is four phases, and every hop

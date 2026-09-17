@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 29 have landed. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is delivered through `/ship` and waits on the operator's merge and then R3. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -27,7 +27,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 2,251 after task 29 | Not recorded |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 2,428 | Task 30's pull request |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -1090,9 +1090,82 @@ at m2 (101 and 124).
 **Files:** Continuation, approval, routing, installation, policy, and adapter tests; this plan.  
 **Acceptance:** M3 acceptance below is proved without two active implementation workers. This milestone changes approval authority and cross-repository ordering, so it receives separate reviews.
 
-- [ ] Exercise integrated approval, two-repository sequencing, and the stopped-run rollback path.
-- [ ] Deliver through `/ship`; record actual size and installed exercise evidence.
+- [x] Exercise integrated approval, two-repository sequencing, and the stopped-run rollback path.
+- [x] Deliver through `/ship`; record actual size and installed exercise evidence.
 - [ ] After operator merge, record and install R3 before external M3 application.
+
+**Landed with this task.** Two end-to-end tests in `tests/e2e-dispatch.bats` take the milestone's
+new paths through `bin/` on tmux and on the Herdr fake, with the fake worker, a fake GitHub and a
+local bare remote. One worker runs at a time in each.
+
+- Integrated approval. A ship task briefed `--phase planning` commits a plan and parks at
+  `needs-decision`, and recovery names both rounds. An answer round runs in the same session,
+  leaves the phase at planning with no approval record, and parks at the same question. The
+  approval round names the plan, tasks 1 to 2 and a seven-digit commit; its record holds the full
+  commit and the phase moves on. The same session ticks the boxes, rewrites the line under
+  **Where this stands**, builds and runs the five phases, and its `done: PR` is proved and parks.
+  The watcher records it done, and teardown removes the worktree and keeps the delivery.
+- The stopped run. The same approval round is ended in its tab after all five phases, with both
+  boxes open. The wrapper and the worker's group are gone, and the handoff is `ended`. The run
+  record, receipt, approval record, phase, branch and worktree remain. Recovery proves and
+  publishes nothing, because task 1 still has an unchecked box, and `--classify failed` records
+  the task failed on the operator's word, with the worktree kept.
+- Two-repository sequencing is Task 27's end-to-end test, run again on both backends. The task in
+  the second repository stays queued while the first works, while its pull request is open, and
+  until the named check passes on the merge; then it starts in its own worktree.
+
+Ten breaks, one at a time, each failing on its own (end-to-end test lines): an answer moving the
+phase on and writing an approval record (371), the approval record keeping the short commit
+(378), recovery not naming the approval round (363), a question not parking (360, in the helper
+at 348), a teardown whose delivery copy fails (386: it refuses, as Task 28 requires), a teardown
+keeping nothing (387), the lines under **Where this stands** not exempt (381), the approved boxes
+not checked (413), the receipt removed with the run's channel (409), and a classification that
+does not record failed (418).
+
+**The rollback rehearsal**, on 2026-09-16, was not committed. A scratch bats file drove this
+branch's scripts to a stopped run, as in the second test, with a scout in a second repository
+created `--after` it. It then followed spec section 10 on a tmux server of its own, and restored
+`main` at 8d33657, milestone 2's merge, from `git archive`.
+
+- Stopped and verified: once the session was ended in its tab, `ps` found neither the wrapper nor
+  anything in its group. Handoff 2 read `ended: the session ended without a terminal status`,
+  and this branch's watcher drained it.
+- Recorded incomplete under this revision: its recovery proved nothing (`task 1 in
+  docs/plans/p.md still has an unchecked box`), and `--classify failed` recorded it. The run
+  record, context, receipt, handoffs 1 and 2, approval record, phase, the scout's `after` record,
+  and the clean worktree with its plan and build commits all remained.
+- Restored: with `main`'s scripts and stage m2, recovery printed the failure and offered a retry.
+  The retry was refused (`a ship brief with no plan needs --risk bounded`) and its new task
+  dropped, so a plan-first task comes back as a fresh task. The evidence stayed.
+
+Two orderings matter, and the rehearsal showed each going wrong when ignored:
+
+- Settle an `ended` plan-first run under this revision before `main`'s scripts return. In a copy
+  of the home taken while it was `ended`, `main`'s recovery printed `proved <id>: done: PR
+  https://github.com/acme/proj/pull/7; published as handoff 3`. Its brief names no plan, so that
+  reader checks no boxes and no approval: the older reader accepting what this one refuses.
+- `main` does not hold a task created `--after` another: its `dux-spawn` reads no such record, and
+  it started the scout while the task it waited on was failed and never merged. Keep such tasks
+  undispatched until R3 is installed again, or abandon them.
+
+Limits: no live worker, real GitHub or CI ran in these exercises. Merging is the operator's, so no
+real merge between two repositories was made, and milestone 4 owns the installed exercises that
+reach real CI. The line a round types into a live session is milestone 2's, rehearsed in Task 19.
+
+Checks: `lint-shell` and `lint-pipes` are green on macOS and on Ubuntu 24.04 as a non-root user.
+The unit files and the eight matrix jobs are green under bash 5 and again under bash 3.2 on
+macOS, with both end-to-end dispatch jobs at 14 tests. On Ubuntu the same run is green apart from
+one tmux adapter wait in `tests/backend-adapter.bats`, the flake Task 19 records: test 36 failed
+in the full parallel run and test 39 in an earlier one. Run alone, that job then passed nine times
+on this branch and nine times on `main`. `lint-identifiers` fails on this machine for the reason
+Task 10 records.
+
+Size: 2,428 added lines against the milestone's estimate of 1,750 to 2,450, under the
+2,500 cap.
+
+Delivered through `/ship` with the separate reviews this milestone owes, as the pull request that
+carries this note. The merged commit id and the installed-revision evidence go in the R3 row after
+the operator merges.
 
 ## Task 31: Add the small usage report
 
