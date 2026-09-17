@@ -276,7 +276,21 @@ who wants another one edits a file instead of this skill.
 
 ```bash
 REVIEWER="$("$SHIP_ENV" reviewer)"
-$REVIEWER "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings."
+RUN_DIR="$(mktemp -d)"; ANSWER="$RUN_DIR/stdout"
+case "$REVIEWER" in
+  "codex exec "*) ANSWER="$RUN_DIR/answer"; REVIEWER="$REVIEWER --json -o $ANSWER" ;;
+esac
+$REVIEWER "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings." > "$RUN_DIR/stdout"
+STATUS=$?
+awk 1 "$ANSWER"
+if [ "$ANSWER" = "$RUN_DIR/answer" ]; then
+  jq -R -r 'fromjson? | objects | select(.type == "error") | "reviewer error: \(.message)"' "$RUN_DIR/stdout"
+  echo "usage: $(bash -c '. "$1" && worker_usage' _ "$("$SHIP_ENV" --root)/bin/workers/codex.sh" < "$RUN_DIR/stdout")"
+else
+  echo "usage: input=unknown output=unknown cache_read=unknown cache_write=unknown"
+fi
+rm -rf "$RUN_DIR"
+[ "$STATUS" -eq 0 ] || { echo "finding: the reviewer exited $STATUS" >&2; exit 2; }
 ```
 
 `$REVIEWER` is deliberately unquoted: the value is a command line and its words
@@ -285,7 +299,19 @@ unquoted value into words; a shell that does not, `zsh` among them, runs the
 whole value as one command name and reports it not found. Run the block with
 `bash -c` on such a host. If the model it names is refused, fall back to
 another one and **say in the pull request which reviewer actually ran** — a
-review that silently downgraded is worse than one that did not happen.
+review that silently downgraded is worse than one that did not happen. A Codex
+reviewer shows a refusal as a `reviewer error:` line naming status 400.
+
+**The block prints the reviewer's answer, then one `usage:` line that is the
+gate's own.** A `codex exec` reviewer writes its answer to a file and its events
+to another, and the line is the four counts Codex reported for that run, read by
+`worker_usage` from the Dux install and never from the repository under review.
+Any other reviewer gives no counts, so every count is `unknown`. A reviewer that
+exits non-zero ends the block with a finding after those lines. The reading
+below applies to the answer alone. Put each run's `usage:` line in the pull
+request beside the reviewer that ran, re-runs after a fix pass included, exactly
+as printed: never a count estimated, filled in, or taken from what a reviewer
+wrote.
 
 **Give the reviewer only** the repo state, the base branch, the diff, the acceptance
 criteria, and the checklist.
@@ -411,9 +437,13 @@ The value has two shapes, and the gate handles both:
 - **`agent:<name>`** — only ever from a stated `config/security-reviewer`, never
   chosen automatically. Dispatch that agent on this host, fresh, having seen
   nothing of the change. **A host that cannot dispatch agents stops here** and
-  names `config/security-reviewer` as the file to change.
+  names `config/security-reviewer` as the file to change. The agent runs inside
+  this session, so its usage is already in the session's own total: its line in
+  the pull request is `usage: in session total`, never counts of its own.
 - **Anything else** is a command line, and the audit prompt below is appended to
-  it as one argument, exactly as step 6 does.
+  it as one argument, exactly as step 6 does: run step 6's block with
+  `$SECURITY_REVIEWER` in place of `$REVIEWER` and this prompt in place of that
+  one, so the answer and its `usage:` line print the same way.
 
 Pass the reviewer the resolved base branch explicitly, since it will otherwise
 have to guess:
@@ -554,9 +584,9 @@ would have picked the same one is a guess.
 Fill the template's own sections. Between them the body must carry: summary of
 the change, test evidence (actual command output, not "tests pass"), **which
 review mode ran and the reason for it**, the review findings with how each was
-resolved, an explicit note when a review came back clean, and anything
-deliberately deferred. **Verbose material goes inside `<details>`** so the body
-stays readable.
+resolved, an explicit note when a review came back clean, each review run's
+`usage:` line from steps 6 and 7, and anything deliberately deferred. **Verbose
+material goes inside `<details>`** so the body stays readable.
 
 **Name the mode in words, not only in the attestation.** A combined gate ran one reviewer, and a
 reader who cannot see that stated reads two steps and assumes a security pass happened. Say which
@@ -767,3 +797,8 @@ All of these mean: go back and do the step properly.
   install made before this landed still has its own older copy in `config/`; resolved through
   `--root`, because a bare path would be the reviewed repository's own file.
 - Each config file carries a note saying what it is for; read it before changing it.
+- **A review's usage comes from its reviewer's own counts or not at all.** Only `codex exec`
+  gives them, through `--json`, and `worker_usage` in the Dux install's `bin/workers/codex.sh`
+  turns one run's events into the `usage:` line. Codex's cached input is inside its input and is
+  taken out; a resumed thread's running total counts once. Every other command reviewer is
+  `unknown`, and an agent is `in session total`, because its tokens are the session's.

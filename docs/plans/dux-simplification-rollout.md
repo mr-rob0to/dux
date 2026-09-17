@@ -1,8 +1,8 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is delivered through `/ship` and waits on the operator's merge and then R3. Milestone 4 is not started.
-- The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
+- Approved by the operator on 2026-09-15. Milestones 1 to 3, tasks 1 to 30, merged as pull requests #51, #52 and #54. Milestone 4, tasks 31 to 36, has landed and waits on the operator's merge; R4 is recorded after it.
+- The token-efficiency baseline's two worker-through-CI exercises are closed by #45 and #51 (Task 35). Every task dispatched since R1 was installed has failed Dux's 120-second start check.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
 **Estimated diff:** 5,650–8,250 added lines across 36 tasks in four milestones. Each milestone remains limited to 12 tasks and 2,500 added lines. Estimates include code, tests, documentation, and patch artifacts.
@@ -11,7 +11,7 @@
 
 **Spec:** [Dux simplification amendment](../specs/2026-09-15-dux-simplification-rollout.md). It settles the decisions inherited by this plan and amends the base orchestrator design and named earlier designs. Land the spec and this plan together under constitution principle 8.
 
-**Deviations:** Milestone 1 narrows constitution principle 3 and changes principle 9's review policy through the required major amendment. Milestone 2 amends principle 1 for history-preserving feedback-round base merges. These changes activate with their supporting milestones, not merely when this record lands.
+**Deviations:** Milestone 1 narrows constitution principle 3 and changes principle 9's review policy through the required major amendment. Milestone 2 amends principle 1 for history-preserving feedback-round base merges. These changes activate with their supporting milestones, not merely when this record lands. Milestone 4 keeps its evaluation in Task 36 instead of a usage summary per task folder: every count in the sample is unknown, and those folders are outside a worker's worktree.
 
 ## Design
 
@@ -28,7 +28,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
 | M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 2,428 | Task 30's pull request |
-| M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
+| M4: Usage evidence and evaluation | 31–36 | 500–1,000 | 547 | Task 36's pull request |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
 
@@ -1173,8 +1173,28 @@ the operator merges.
 **Files:** `templates/usage.md`, this plan.  
 **Acceptance:** Spec section 8's phases, unknowns, failed-attempt attribution, and total rules are represented.
 
-- [ ] Add the report template attached to existing task evidence.
-- [ ] Check that unavailable fields remain explicit.
+- [x] Add the report template attached to existing task evidence.
+- [x] Check that unavailable fields remain explicit.
+
+**Landed with this task.** `templates/usage.md` is the summary an accepted deliverable gets
+from stage m4. It is copied to `data/tasks/<id>/usage.md`, beside the task's other evidence,
+and filled from structured records only: a harness's own numeric usage output, or a record Dux
+wrote. It has one row for each phase section 8 names: planning, design review under planning,
+implementation, correctness or combined review, and the security review of a separate gate.
+Each failed or retried run gets a row of its own naming the phase it failed in, and a total
+comes last. Its rules carry the rest of section 8:
+
+- Unknown is not zero, and a total that needs an unknown count is unknown.
+- The four counts never overlap: a harness that counts cached tokens inside its input has them
+  taken out first.
+- A session's cumulative total is written once, never once per round.
+- A reviewer that ran inside the worker's own session reads `in session total`.
+- Phases that cannot be told apart get one `Session total` row and an unavailable phase split.
+- A phase that did not happen reads `not run`, and list-price cost is not allowance used.
+
+Checked by count, with awk over the table: seven rows, 28 count cells, all 28 `unknown`, so a
+copy starts with nothing that reads as measured. `docs/ARCHITECTURE.md` lists the template and
+the task file.
 
 ## Task 32: Inventory structured usage availability
 
@@ -1182,8 +1202,53 @@ the operator merges.
 **Files:** Existing task evidence and this rollout record.  
 **Acceptance:** Available and unavailable numeric metadata are recorded without reading transcripts.
 
-- [ ] Inspect supported structured metadata.
-- [ ] Record availability and phase-separation limits for the installed harnesses.
+- [x] Inspect supported structured metadata.
+- [x] Record availability and phase-separation limits for the installed harnesses.
+
+**Inventory, taken on 2026-09-17** against Dux at `1e5dadd`, Claude Code 2.1.274 and
+codex-cli 0.154.0. Each harness was probed with a one-line prompt, and only numeric fields and
+key names were printed. No transcript, scrollback or worker report was opened.
+
+| Record | Counts it gives | What they cover | Used |
+|---|---|---|---|
+| Codex `exec --json`, its `turn.completed` event | input with cached input inside it, cached input, cache write, output with reasoning inside it | one run; a resumed thread reports its running total | yes, task 34 |
+| Claude Code `-p --output-format json`, its `modelUsage` | input, output, cache read, cache write, list cost, per model | one run, side calls included | no |
+| Claude Code's status-line input | running: list cost, cache write, request count; last request only: all four counts | one interactive session | no |
+| Claude Code's own config file, last-session totals | all four counts and list cost, per model | the last session to end in that repository | no |
+| Dux's receipt, run, round, retry and ledger records | none | which phases ran, in which run and round, and which attempts failed | yes, for rows |
+
+What the probes showed:
+
+- Codex: one run that also ran a shell command wrote one `turn.completed`, input 55,813 with
+  33,664 cached, output 132. A second thread ran once (input 28,384, output 5) and then
+  `exec resume` ran it again: `thread.started` repeated the same id and the new total was input
+  62,356, output 10. That is the running total with the first run inside it.
+- Claude status line, two prompts in a scratch session: `total_input_tokens` read 9,720 and then
+  18,105, which is the second request alone (10 input, 8,179 cache write, 9,916 cache read).
+  Cache writes, 9,710 then 17,889, and list cost were running totals.
+- Claude headless: the main loop's `usage` had input 10, `modelUsage` had input 909, so side
+  calls appear only in `modelUsage`. Its cost basis is `list`.
+- Last-session totals: after the probe ended in a worktree, the entry for the whole Dux
+  repository held the probe's totals. Every session in that repository writes the same entry,
+  the coordinator's included.
+
+Availability for installed Dux:
+
+- Worker sessions: unavailable. Workers run Claude Code interactively, which gives running
+  totals only through a status-line command. Dux configures none, and the operator's own
+  status line would lose its place in every worker tab. The last-session entry is overwritten
+  by the next session to end in the same repository, so it cannot be tied to a task after the
+  fact. Codex workers are refused.
+- Reviews: available through `codex exec --json`, which both `/ship` passes resolve to on this
+  host, once the gate asks for it. A Claude reviewer, chosen only on a host without codex, runs
+  without JSON output, so its usage is unavailable.
+- Planning and design review: unavailable. Plan workers are interactive sessions, and design
+  reviews run by hand without JSON output.
+
+Phase separation: one worker session holds planning for integrated work, implementation and
+the gate's own steps. None of those can be split from the others, and rounds add to the same
+running total. Each review is its own process, so its row separates cleanly. A reviewer
+dispatched as an agent runs inside the worker's session and is counted there.
 
 ## Task 33: Extract Claude usage only where supported
 
@@ -1191,8 +1256,30 @@ the operator merges.
 **Files:** `bin/workers/claude.sh`, `tests/worker-adapter.bats`, `docs/ARCHITECTURE.md` only if supported extraction exists.  
 **Acceptance:** Extraction relies on independently exposed numeric metadata; unsupported extraction is recorded as unavailable.
 
-- [ ] Qualify metadata availability and implement only the supported extraction.
-- [ ] Test implemented behavior; record an unavailable result instead of adding transcript collection.
+- [x] Qualify metadata availability and implement only the supported extraction.
+- [x] Test implemented behavior; record an unavailable result instead of adding transcript collection.
+
+**Unavailable, so nothing was built.** Task 32's probes are the qualification. A Dux worker is
+an interactive Claude Code session, and the only numeric usage such a session exposes is the
+input to a status-line command. Dux configures none, and adding one here would fail twice:
+
+- It would replace the operator's own status line in every worker tab.
+- Its copy would be deleted with the run's channel unless the wrapper kept it, and the wrapper
+  is not this task's file.
+
+Even kept, it would give running totals for list cost and cache writes only. Input, output
+and cache reads are reported per request, so they would stay unknown. The last-session totals
+in Claude Code's own config cannot be tied to a task. Headless JSON output is complete, but no
+installed Dux path runs Claude headless on this host.
+
+So `bin/workers/claude.sh` gains no extraction, and neither its tests nor
+`docs/ARCHITECTURE.md` change. Worker, plan-worker and design-review counts stay `unknown` in
+every usage summary, and nothing reads a transcript to fill them in. This task added no
+protection, so there is nothing to break.
+
+What would make two of those counts available is a status-line command that passes its input
+on to the operator's own command and keeps a numbers-only copy, plus a wrapper change that
+keeps the copy when the run ends. That is the operator's call.
 
 ## Task 34: Extract Codex and review usage only where supported
 
@@ -1200,8 +1287,42 @@ the operator merges.
 **Files:** `bin/workers/codex.sh`, `skills/ship/SKILL.md`, relevant adapter tests, `docs/ARCHITECTURE.md` where supported.  
 **Acceptance:** Cumulative totals and embedded reviewer totals are not counted twice.
 
-- [ ] Add only qualified structured extraction.
-- [ ] Test overlap and repeated-total cases; record unsupported fields as unavailable.
+- [x] Add only qualified structured extraction.
+- [x] Test overlap and repeated-total cases; record unsupported fields as unavailable.
+
+**Landed with this task.** Reviews are the one place a count is available, so that is all
+this task built:
+
+- `worker_usage` in `bin/workers/codex.sh` reads a `codex exec --json` event stream. It
+  prints input, output, cache read and cache write for the run, each a number or `unknown`.
+- It reads only the usage field of top-level `turn.completed` events. Cached input is taken
+  out of input, and reasoning is not added to output, because Codex counts both inside.
+- A resumed thread counts its last running total once, and separate threads add up. A
+  reviewer's events that a worker printed are text inside the worker's stream, so they are
+  never counted there.
+- Any count Codex did not give stays `unknown`, and so does any sum that needs it. So does
+  input whenever a cache write is reported, because no probe showed whether input includes it.
+- Steps 6 and 7 of `/ship` run a `codex exec` reviewer with `--json`, print its answer, then
+  one `usage:` line. The pull request carries that line for every review run. Any other command
+  reviewer prints `unknown`, and an agent reviewer is `in session total`.
+
+Unavailable, and recorded as such: reasoning tokens on their own, which output already counts;
+input for a run with cache writes; a reviewer not started as `codex exec`, such as one named by
+full path; and every count of an agent or Claude reviewer. The `usage:` line reaches the pull
+request through the worker that runs the gate, so it is as trustworthy as the gate's other
+statements, such as which reviewer ran.
+
+Run for real once on codex-cli 0.154.0, with a two-line prompt instead of a review. It printed
+`usage: input=21794 output=10 cache_read=6528 cache_write=0`. It also showed that Codex writes
+its answer with no final newline, which glued the usage line onto `No findings.`. The block
+now ends every answer line, and the test's fake writes the answer the way Codex does.
+
+Each protection was broken alone and its named test failed; the failure output is in the
+commit that landed this task. Cached input left in input, reasoning added to output, every
+total counted, only the last thread counted, no run read as zero, a malformed count read as
+zero, a sum of only the known counts, a cache write ignored, events parsed out of transcript
+text, a reviewer without counts read as zero, and the answer's last line left unterminated:
+eleven breaks, eleven failures.
 
 ## Task 35: Close the installed delivery evidence gaps
 
@@ -1209,8 +1330,42 @@ the operator merges.
 **Files:** Existing task evidence and this rollout record.  
 **Acceptance:** One bounded and one complex installed task complete `/ship`, independent proof, and real CI.
 
-- [ ] Run both installed worker-through-CI exercises.
-- [ ] Record each exact installed Dux revision and delivery evidence; do not substitute fake-backed tests.
+- [x] Run both installed worker-through-CI exercises.
+- [x] Record each exact installed Dux revision and delivery evidence; do not substitute fake-backed tests.
+
+**Evidence, taken on 2026-09-17 from Dux's own records.** This task dispatched nothing, because
+a worker cannot start a Dux task. Both shapes had already run on installed Dux as real work, and
+Dux proved each one. The installed revision is the Dux checkout's `HEAD` when the task was
+dispatched, read from that checkout's reflog; any uncommitted edits it held then are not recorded.
+
+| Shape | Task and pull request | Installed Dux at dispatch | `/ship` | Independent proof | Real CI |
+|---|---|---|---|---|---|
+| Bounded, plan-free | `dux-ship-20260915-d04`, [#45](https://github.com/mr-rob0to/dux/pull/45) | `8794cfb9b9b09784129cc58bc3870ab0aae7a8fb`, 2026-09-15T14:23:29Z | checks, review and security on `fe33a7e`, one fix pass | the watcher's `done` at 14:58:11Z, same revision | [run 34983872127](https://github.com/mr-rob0to/dux/actions/runs/34983872127), success |
+| Complex, planned, tasks 1 to 10 | `dux-ship-20260916-i1g`, [#51](https://github.com/mr-rob0to/dux/pull/51) | `7d6952346c1810b1b4620f7df38fc550282774d7`, 2026-09-16T00:12:56Z | the same three phases on `c1fd3e3`, two fix passes | the watcher's `done` at 04:04:48Z, same revision | [run 35053183616](https://github.com/mr-rob0to/dux/actions/runs/35053183616), success |
+
+The `/ship` column comes from each pull request's attestation comment and the proof column from
+`state/events.log`. Both revisions' `bin/dux-result` requires a receipt and green checks.
+
+What happened after R1 was installed:
+
+- Every task dispatched since then failed Dux's 120-second start check: `dux-ship-20260916-pe3`
+  and `-9my` on `423292b` (R1), `dux-ship-20260916-ufy` on `8d33657` (R2), and this task on
+  `1e5dadd` (R3). The same check failed once before R1, for `dux-plan-20260915-tyi` on
+  `8794cfb`. Each worker kept running in its tab with nothing supervising it.
+- Two of those still delivered. [#52](https://github.com/mr-rob0to/dux/pull/52) and
+  [#54](https://github.com/mr-rob0to/dux/pull/54) completed `/ship` and real CI
+  ([run 35145890275](https://github.com/mr-rob0to/dux/actions/runs/35145890275),
+  [run 35184544289](https://github.com/mr-rob0to/dux/actions/runs/35184544289)). Dux proved them
+  later, outside the watcher: the ledger reads `done` at 2026-09-16T22:04:52Z and
+  2026-09-17T14:34:00Z. The kept delivery for #54 holds a five-phase receipt on `85383ef` and the
+  handoff that recorded the failed start.
+- No bounded task has run on R1 or later. On the installed R3, a new exercise of either shape
+  would start the same way: unsupervised, and proved only through recovery. That start check is
+  the gap left open, and fixing it is not this milestone's work.
+- This milestone's own delivery is the complex exercise on R3. It was dispatched at
+  2026-09-17T14:53:23Z on `1e5dadd` and failed the start check at 14:55:54Z. It is delivered
+  through `/ship` as the pull request that carries this note. Its proof and CI go in the R4 row
+  after the operator merges.
 
 ## Task 36: Evaluate representative deliveries
 
@@ -1218,9 +1373,68 @@ the operator merges.
 **Files:** Usage summaries in existing task evidence, this plan, relevant documentation.  
 **Acceptance:** Five to ten accepted deliverables cover bounded, ordinary complex, sensitive, feedback-round, and failed-attempt cases.
 
-- [ ] Summarize measured usage, missing fields, retries, and remaining limits.
-- [ ] Deliver applicable reporting changes through `/ship`; record actual size and R4 after operator merge.
-- [ ] Evaluate only the deferred thresholds in the paired spec; do not treat the sample as proof against rare defects.
+- [x] Summarize measured usage, missing fields, retries, and remaining limits.
+- [x] Deliver applicable reporting changes through `/ship`; record actual size and R4 after operator merge.
+- [x] Evaluate only the deferred thresholds in the paired spec; do not treat the sample as proof against rare defects.
+
+**Evaluation, on 2026-09-17.** It uses the ledger, retry records, run records, receipts, each pull
+request's attestation comment, and GitHub's own fields. No transcript, status text, report or
+pull request prose was read.
+
+| Deliverable | Case | Review | Attempts | Fix passes | Added lines | Tokens |
+|---|---|---|---|---|---:|---|
+| [#45](https://github.com/mr-rob0to/dux/pull/45) | Bounded, plan-free; replaced the delivered #44 on the operator's feedback, as a fresh task | Three phases, before review modes | 1 | 1 | 18 | unknown |
+| [#43](https://github.com/mr-rob0to/dux/pull/43) | Complex, planned | Three phases, before review modes | 1 | 3 | 1,950 | unknown |
+| [#50](https://github.com/mr-rob0to/dux/pull/50) | Planning: this plan and its spec, docs only | None | 4: three bounded attempts, blocked, needs-decision and ended with #49 still open, then a plan task that ended; the operator merged its pull request | none recorded | 1,720 | unknown |
+| [#51](https://github.com/mr-rob0to/dux/pull/51) | Complex, planned: milestone 1 | Three phases, no mode recorded | 1 | 2 | 2,259 | unknown |
+| [#52](https://github.com/mr-rob0to/dux/pull/52) | Complex, sensitive: milestone 2 | Separate | 2: the first failed at start and was retried | 0 | 1,976 | unknown |
+| [#54](https://github.com/mr-rob0to/dux/pull/54) | Complex, sensitive: milestone 3 | Separate | 1 | 0 | 2,428 | unknown |
+| This pull request | Complex, ordinary: milestone 4 | Combined | 1 | at the gate | see below | unknown |
+
+Six are merged and this one waits on the operator. Task 35 has the proof and CI for each.
+
+- **Measured usage:** none. No record gives a token count for any deliverable here. Workers ran
+  as interactive sessions, which expose none (tasks 32 and 33). Every review ran before the gate
+  asked Codex for its counts (task 34). A usage summary for any of them would be all `unknown`
+  with the phase split unavailable, so none was written. A `data/tasks/<id>/usage.md` is also
+  outside a worker's worktree.
+- **Missing fields:** all four counts for implementation, planning and design review; review
+  counts before this milestone; queue time; allowance used.
+- **Retries:** the three bounded attempts behind #50 each stopped differently, and the plan task
+  that followed ended as well. The retry behind #52 followed a start that failed Dux's start check. #44 was
+  delivered, closed unmerged, and replaced by #45.
+- **Cases not covered:** no feedback round has run on a delivered pull request, so the sample has
+  no feedback-round delivery. #45 is the nearest: feedback on a delivered pull request, handled by
+  a fresh task before rounds existed. The only ordinary complex delivery with a combined review
+  is this one, not yet merged.
+- **Remaining limits:** every task dispatched since R1 was installed failed the 120-second start
+  check (task 35), so none was supervised or parked. A parked session is what a feedback round
+  needs. Supervision and rounds stay unproved on the installed revision until that is fixed.
+
+Deferred thresholds from spec section 11, and only those. None is met:
+
+- **Narrower feedback-round review:** not met. No round has run, and no delivery has counts
+  showing what whole-branch review costs.
+- **More usage automation:** not met. No delivery has usable metadata yet, against the ten
+  required, and collecting it by hand has no measured cost.
+- **Token limits or allowance scheduling:** not met. No record here shows a run exhausting the
+  allowance, and no harness relates usage to allowance (task 32).
+- **Parallel workers:** not met. No record measures how long a task waited for the one worker
+  slot.
+- **General dependency graph:** not met. Every deliverable here sat in one repository, and none
+  waited on another.
+- **Transcript checkpoints or resumption after process loss:** not met. The sample has one start
+  that failed the start check and was retried, and two attempts behind #50 that ended. None measured what a
+  fresh recovery cost.
+- **Further review removal:** not met. The sample has one combined-review delivery and no
+  matched comparison of what each review found.
+
+Seven deliveries do not show that rare defects are absent. A serious defect that escapes a
+combined review reopens that decision, as section 11 says.
+
+Delivered through `/ship` with the combined review its brief classified, as the pull request
+that carries this note. The added lines are in the milestone table. The merged commit ID and the
+installed-revision evidence go in the R4 row after the operator merges.
 
 ## Milestone acceptance
 

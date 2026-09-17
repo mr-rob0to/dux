@@ -17,7 +17,10 @@ skills/
   dux-project/SKILL.md     register a repo; ask before installing the PR template
   dux-status/SKILL.md      show the fleet digest and explain its next actions
   dux-recover/SKILL.md     judge and handle stale, dead, ended, or failed work
-  ship/SKILL.md            bundled delivery gate, installed by dux-install (milestone 1, task 8)
+  ship/SKILL.md            bundled delivery gate, installed by dux-install (milestone 1, task 8);
+                           each review run's usage: line, Codex's own counts for that run,
+                           unknown, or in session total for an agent, goes in the pull request
+                           (rollout milestone 4)
   ship/ship-guard          open/record/check/fix-pass/attest/push-ok: binds each gate phase
                            to the commit it saw, refuses a push the review never covered
                            (milestone 5), and builds the pull request attestation from the
@@ -96,7 +99,10 @@ bin/
                            both entry points share one flag list: --tools limited to
                            Bash,Read,Glob,Grep,Write,Edit, --strict-mcp-config with the
                            empty templates/worker-mcp.json, and --no-chrome
-  workers/codex.sh         same adapter for Codex; tested, not dispatchable in milestone 2
+  workers/codex.sh         same adapter for Codex; tested, not dispatchable in milestone 2.
+                           worker_usage reads a codex exec --json event stream: input with
+                           cached input taken out, output, cache read, cache write, each
+                           thread's last running total once, unknown where Codex gave none
   dux-doctor               preflight: CLIs, gh auth, backend CLI, both reviewers resolved the
                            way the gate resolves them, the rollout stage and what it leaves
                            unavailable, registry, lock
@@ -111,6 +117,8 @@ templates/
                            project that has none
   brief.md                 the brief skeleton dux-brief renders
   round.md                 the round file dux-round renders
+  usage.md                 the usage summary an accepted deliverable gets from stage m4,
+                           copied into its task folder and filled from structured records
   worker-settings.json     Claude deny rules, __BASE__ rendered per task
   worker-mcp.json          the empty MCP config every Claude worker is held to
 tests/fixtures/
@@ -125,7 +133,7 @@ data/         (gitignored) projects.md registry; backlog.md ledger with acked st
                            tasks/<id>/{intent.md,criteria.md,brief.md,issue.md,status.log,
                            report.md,worker-settings.json,risk,review,harness,hooks/,worktree.log,
                            retry,retried-from,phase,after,after-check,prerequisite,
-                           round-<n>.md,round-<n>.approval,delivery/}
+                           round-<n>.md,round-<n>.approval,delivery/,usage.md}
 state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            <id>.endpoint; <id>.pid; <id>.pgid; <id>.wrap.log; events.log;
                            <id>.run; <id>.portal; <id>.result-context;

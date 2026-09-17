@@ -235,3 +235,174 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
   [ "$status" -eq 0 ]
   [ "$output" = claude ]
 }
+
+# ---- the usage a codex run reports ---------------------------------------
+# `codex exec --json` ends a run with one turn.completed event, and its usage is
+# numbers in fields of their own, apart from the transcript items around it.
+# Probed on codex-cli 0.154.0 (the rollout plan, task 32): input counts cached
+# input inside it, output counts reasoning inside it, and `exec resume` reports
+# the thread's running total under the same thread id.
+
+events() {  # $@ event lines; written where the usage tests read them
+  printf '%s\n' "$@" > "$DUX_HOME/events"
+}
+
+@test "codex usage takes cached input out of input and adds no reasoning to output" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  events '{"type":"thread.started","thread_id":"t-1"}' '{"type":"turn.started"}' \
+    '{"type":"turn.completed","usage":{"input_tokens":55813,"cached_input_tokens":33664,"cache_write_input_tokens":0,"output_tokens":132,"reasoning_output_tokens":40}}'
+  run adapter worker_usage < "$DUX_HOME/events"
+  [ "$status" -eq 0 ]
+  [ "$output" = "input=22149 output=132 cache_read=33664 cache_write=0" ]
+}
+
+@test "codex usage counts a resumed thread's running total once" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  # The probe's own numbers: one run, then exec resume of the same thread.
+  events '{"type":"thread.started","thread_id":"t-1"}' \
+    '{"type":"turn.completed","usage":{"input_tokens":28384,"cached_input_tokens":6528,"cache_write_input_tokens":0,"output_tokens":5,"reasoning_output_tokens":0}}' \
+    '{"type":"thread.started","thread_id":"t-1"}' \
+    '{"type":"turn.completed","usage":{"input_tokens":62356,"cached_input_tokens":13568,"cache_write_input_tokens":0,"output_tokens":10,"reasoning_output_tokens":0}}'
+  run adapter worker_usage < "$DUX_HOME/events"
+  [ "$status" -eq 0 ]
+  [ "$output" = "input=48788 output=10 cache_read=13568 cache_write=0" ]
+}
+
+@test "codex usage adds separate runs together" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  events '{"type":"thread.started","thread_id":"t-1"}' \
+    '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"cache_write_input_tokens":0,"output_tokens":30,"reasoning_output_tokens":0}}' \
+    '{"type":"thread.started","thread_id":"t-2"}' \
+    '{"type":"turn.completed","usage":{"input_tokens":2000,"cached_input_tokens":500,"cache_write_input_tokens":0,"output_tokens":70,"reasoning_output_tokens":9}}'
+  run adapter worker_usage < "$DUX_HOME/events"
+  [ "$status" -eq 0 ]
+  [ "$output" = "input=2100 output=100 cache_read=900 cache_write=0" ]
+}
+
+@test "codex usage leaves a count codex did not give unknown, never zero" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  # A refused model: the run failed and reported no usage at all.
+  events '{"type":"thread.started","thread_id":"t-1"}' '{"type":"error","message":"status 400"}' \
+    '{"type":"turn.failed","error":{"message":"status 400"}}'
+  run adapter worker_usage < "$DUX_HOME/events"
+  [ "$status" -eq 0 ]
+  [ "$output" = "input=unknown output=unknown cache_read=unknown cache_write=unknown" ]
+  run adapter worker_usage < /dev/null
+  [ "$output" = "input=unknown output=unknown cache_read=unknown cache_write=unknown" ]
+  # One field missing and one that is not a count: those two, and only those.
+  events '{"type":"thread.started","thread_id":"t-1"}' \
+    '{"type":"turn.completed","usage":{"input_tokens":55813,"cached_input_tokens":33664,"cache_write_input_tokens":0,"output_tokens":"132"}}'
+  run adapter worker_usage < "$DUX_HOME/events"
+  [ "$output" = "input=22149 output=unknown cache_read=33664 cache_write=0" ]
+  # A run that gave nothing makes the sum of two runs unknown, not the other run alone.
+  events '{"type":"thread.started","thread_id":"t-1"}' \
+    '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"cache_write_input_tokens":0,"output_tokens":30}}' \
+    '{"type":"thread.started","thread_id":"t-2"}' '{"type":"turn.completed","usage":{}}'
+  run adapter worker_usage < "$DUX_HOME/events"
+  [ "$output" = "input=unknown output=unknown cache_read=unknown cache_write=unknown" ]
+}
+
+@test "codex usage leaves input unknown when a run reports cache writes" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  # Every probe reported 0 cache writes, so whether input counts them is not
+  # known. Input would be wrong by that much either way; the rest still holds.
+  events '{"type":"thread.started","thread_id":"t-1"}' \
+    '{"type":"turn.completed","usage":{"input_tokens":55813,"cached_input_tokens":33664,"cache_write_input_tokens":500,"output_tokens":132}}'
+  run adapter worker_usage < "$DUX_HOME/events"
+  [ "$status" -eq 0 ]
+  [ "$output" = "input=unknown output=132 cache_read=33664 cache_write=500" ]
+}
+
+@test "codex usage counts reviewer runs printed inside a worker's run only as the reviewers'" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  # A codex worker that runs a separate gate prints both reviewers' own events,
+  # and the model can repeat them, inside its transcript items. Each review is
+  # counted from its own event stream, so here they count for nothing: only the
+  # worker's own top-level event does.
+  reviewers='{"type":"thread.started","thread_id":"t-2"}
+{"type":"turn.completed","usage":{"input_tokens":999999,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":999999}}
+{"type":"thread.started","thread_id":"t-3"}
+{"type":"turn.completed","usage":{"input_tokens":999999,"cached_input_tokens":0,"cache_write_input_tokens":0,"output_tokens":999999}}'
+  ran="$(jq -cn --arg out "$reviewers" '{type:"item.completed",item:{id:"c",type:"command_execution",aggregated_output:$out}}')"
+  said="$(jq -cn --arg text "$reviewers" '{type:"item.completed",item:{id:"m",type:"agent_message",text:$text}}')"
+  events '{"type":"thread.started","thread_id":"t-1"}' "$ran" "$said" 'turn.completed "input_tokens":999999' \
+    '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"cache_write_input_tokens":0,"output_tokens":30}}'
+  run adapter worker_usage < "$DUX_HOME/events"
+  [ "$status" -eq 0 ]
+  [ "$output" = "input=600 output=30 cache_read=400 cache_write=0" ]
+}
+
+# ---- the gate's review block ---------------------------------------------
+# Step 6 of the ship skill carries the block that runs a reviewer, and step 7
+# runs the same block. It is run here as the skill carries it, against a codex
+# that writes what the probes showed: events on stdout, its answer to -o.
+
+review_block() {
+  sed -n '/^## Step 6\./,/^## Step 7\./p' "$DUX_ROOT/skills/ship/SKILL.md" | awk '
+    /^```bash$/ { inside = 1; text = ""; next }
+    /^```$/ { if (inside && text ~ /SHIP_ENV" reviewer\)/) printf "%s", text; inside = 0; next }
+    inside { text = text $0 "\n" }'
+}
+
+gate_fakes() {  # $1 the reviewer command ship-env resolves
+  mkdir -p "$DUX_HOME/fake" "$DUX_HOME/tmp"
+  printf '#!/bin/sh\ncase "$1" in reviewer) echo %s ;; --root) echo %s ;; esac\n' "'$1'" "'$DUX_ROOT'" \
+    > "$DUX_HOME/fake/ship-env"
+  cat > "$DUX_HOME/fake/codex" <<'FAKE'
+#!/bin/sh
+answer=""
+while [ "$#" -gt 0 ]; do [ "$1" = -o ] && answer="$2"; shift; done
+echo '{"type":"thread.started","thread_id":"t-1"}'
+if [ -n "${FAKE_REFUSED:-}" ]; then
+  echo '{"type":"error","message":"{\"type\":\"error\",\"status\":400}"}'
+  echo '{"type":"turn.failed","error":{"message":"{\"type\":\"error\",\"status\":400}"}}'
+  exit 1
+fi
+# Codex writes its answer with no newline after the last line.
+printf '## Findings\nNo findings.' > "$answer"
+echo '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"cache_write_input_tokens":0,"output_tokens":30}}'
+FAKE
+  printf '#!/bin/sh\nprintf "## Findings\\nNo findings.\\n"\n' > "$DUX_HOME/fake/other-reviewer"
+  chmod +x "$DUX_HOME/fake/ship-env" "$DUX_HOME/fake/codex" "$DUX_HOME/fake/other-reviewer"
+}
+
+run_review_block() {
+  block="$(review_block)"
+  [ -n "$block" ] || { echo "step 6 carries no reviewer block"; return 1; }
+  run env SHIP_ENV="$DUX_HOME/fake/ship-env" BASE=main TMPDIR="$DUX_HOME/tmp" \
+    PATH="$DUX_HOME/fake:$PATH" bash -c "$block"
+}
+
+@test "the gate prints a codex review's answer, then the usage codex reported for it" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  gate_fakes 'codex exec -m some-model --sandbox read-only'
+  run_review_block
+  [ "${lines[0]}" = "## Findings" ]
+  [ "${lines[1]}" = "No findings." ]
+  [ "${lines[2]}" = "usage: input=600 output=30 cache_read=400 cache_write=0" ]
+  [ "${#lines[@]}" -eq 3 ]
+  # Nothing of the run is left behind.
+  [ -z "$(ls -A "$DUX_HOME/tmp")" ]
+}
+
+@test "the gate shows a refused review model, leaves its usage unknown and fails" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  gate_fakes 'codex exec -m some-model --sandbox read-only'
+  FAKE_REFUSED=1 run_review_block
+  [ "$status" -eq 2 ]
+  [[ "$output" != *"## Findings"* ]]
+  [[ "$output" == *'reviewer error: {"type":"error","status":400}'* ]]
+  [[ "$output" == *"usage: input=unknown output=unknown cache_read=unknown cache_write=unknown"* ]]
+  [ "${lines[${#lines[@]}-1]}" = "finding: the reviewer exited 1" ]
+  [ -z "$(ls -A "$DUX_HOME/tmp")" ]
+}
+
+@test "the gate leaves a reviewer that gives no counts unknown" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  gate_fakes 'other-reviewer --read-only'
+  run_review_block
+  [ "${lines[0]}" = "## Findings" ]
+  [ "${lines[1]}" = "No findings." ]
+  [ "${lines[2]}" = "usage: input=unknown output=unknown cache_read=unknown cache_write=unknown" ]
+  [ -z "$(ls -A "$DUX_HOME/tmp")" ]
+}
