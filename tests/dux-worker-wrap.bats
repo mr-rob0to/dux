@@ -1294,15 +1294,27 @@ briefed_to_plan() {  # [$1 combined]; prints the task id
   deliver combined 7 planning
   round_script
   s="$DUX_HOME/state"; err="$s/$id.wrap.err"; t="$DUX_HOME/data/tasks/$id"
-  printf 'run printf "plan\\n" > src.txt && git add -A && git commit -q -m plan\nstatus needs-decision: approve tasks 1-2 of docs/plan.md\nsleep 0.2\ntouch stopped\nidle\n' \
-    > "$FAKE_WORKER_SCRIPT"
+  cat > "$FAKE_WORKER_SCRIPT" <<'SCRIPT'
+run mkdir -p docs/plans && printf '# Plan\n\n**Where this stands**\n- Planned.\n\n## Task 1: one\n- [ ] one\n\n## Task 2: two\n- [ ] two\n' > docs/plans/p.md
+run printf 'plan\n' > src.txt && git add -A && git commit -q -m plan
+status needs-decision: approve tasks 1-2 of docs/plans/p.md
+sleep 0.2
+touch stopped
+idle
+SCRIPT
+  # The round ticks the boxes and says where it stands before it ships.
+  { echo "run printf '# Plan\\n\\n**Where this stands**\\n- Built.\\n\\n## Task 1: one\\n- [x] one\\n\\n## Task 2: two\\n- [x] two\\n' > docs/plans/p.md && git commit -qam tick"
+    cat "$FAKE_WORKER_ROUND_SCRIPT"; } > "$s/round-script.new"
+  mv "$s/round-script.new" "$FAKE_WORKER_ROUND_SCRIPT"
   bash -c 'cd "$1" && exec dux-worker-wrap "$2"' _ "$wt" "$id" 2> "$err" 3>&- & wp=$!
   wait_until 90 parks 1 || { cat "$err"; kill "$wp"; return 1; }
   first="$(run_in "$s/$id.run")"
   grep -qx phase=planning "$s/$id.result-context"
-  [ "$(handoff_status)" = "needs-decision: approve tasks 1-2 of docs/plan.md" ]
+  [ "$(handoff_status)" = "needs-decision: approve tasks 1-2 of docs/plans/p.md" ]
   dux-watch --once
-  # What an approval round leaves behind it: the phase moved on, then the round.
+  # What an approval round leaves behind it: the record of what it approved,
+  # the phase moved on, then the round.
+  printf 'plan=docs/plans/p.md\ntasks=1-2\ncommit=%s\n' "$(git -C "$wt" rev-parse HEAD)" > "$t/round-1.approval"
   printf 'implementation\n' > "$t/phase"
   printf 'approved\n' > "$t/round-1.md"
   wait_until 60 parks 2 || { cat "$err"; kill "$wp"; return 1; }

@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 23 have landed. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 24 have landed. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -27,7 +27,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 933 after task 23 | Not recorded |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 1,223 after task 24 | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -872,8 +872,29 @@ two changed, two recover tests added; nineteen breaks, each failing on its own:
 **Files:** `bin/dux-result`, approval and continuation tests.  
 **Acceptance:** Only checkbox state and the designated three-line status block may differ without renewed approval.
 
-- [ ] Compare approved substance while allowing the specified progress edits.
-- [ ] Test permitted edits and separately break-verify acceptance-criteria, task-range, and substantive-amendment rejection.
+- [x] Compare approved substance while allowing the specified progress edits.
+- [x] Test permitted edits and separately break-verify acceptance-criteria, task-range, and substantive-amendment rejection.
+
+**Landed with this task.** Work briefed to plan first proves only under its approval. `dux-result`
+takes the newest approval at or before the run's round and ends a run that has none. The record
+must name a full commit and a plan path inside the repository. The plan on the branch is compared
+with the plan at that commit, with box ticks and up to three lines under **Where this stands**
+masked. Any other difference ends the run, and the reason names what changed: the tasks, the
+acceptance criteria (an `Acceptance` paragraph, or a section under an acceptance heading), or
+anything else. The task heading reader is now shared with the box reader. The wrapper test for the
+round after approval writes the record and a real plan, and its round ticks the boxes. Five result
+tests added and one wrapper test changed; fifteen breaks, each failing on its own:
+
+- Box state (result test line 1304) or the lines under Where this stands (1308) not masked. A
+  fourth line under it masked too (1356).
+- Task headings (1317), an `Acceptance` paragraph (1335) or an acceptance section (1338) not told
+  apart. Any plan passing the comparison (1316, 1334, 1346).
+- Approved work skipping the approval (1316, 1334, 1346, 1372). An approval from a later round
+  counted (1372). A run with no approval not refused (1372: it became a finding about the empty
+  record). The commit spelling (1376) or the plan path (1380) not checked. A plan missing at the
+  approved commit (1385) or gone from the branch (1393) read as empty.
+- The wrapper test's round with no approval record: it ended with "has no approval to build"
+  (wrapper test line 1319).
 
 ## Task 25: Prove approved task completion
 
