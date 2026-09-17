@@ -95,16 +95,12 @@ own_checkout() {
 
 @test "a stage this checkout does not implement is a failure, not a switch" {
   tools
-  printf 'm4\n' > "$DUX_HOME/config/policy-stage"
-  PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"FAIL policy stage: config says m4 and this checkout implements m3"* ]]
-  # And nothing is reported as available on the strength of a value like that.
-  [[ "$output" != *"policy: m4"* ]]
   printf 'whenever\n' > "$DUX_HOME/config/policy-stage"
   PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
   [ "$status" -eq 1 ]
   [[ "$output" == *"FAIL policy stage: 'whenever' is not a rollout stage"* ]]
+  # And nothing is reported as available on the strength of a value like that.
+  [[ "$output" != *"policy: whenever"* ]]
 }
 
 @test "an earlier stage than this checkout implements is the operator's to state" {
@@ -124,4 +120,11 @@ own_checkout() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"ok policy stage m3"* ]]
   [[ "$output" == *"policy: m3; unavailable: usage reporting; use existing recovery for those"* ]]
+  # This checkout carries usage reporting too, so m4 is accepted with nothing
+  # left unavailable.
+  printf 'm4\n' > "$DUX_HOME/config/policy-stage"
+  PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ok policy stage m4"* ]]
+  [[ "$output" == *"policy: m4; unavailable: nothing"* ]]
 }
