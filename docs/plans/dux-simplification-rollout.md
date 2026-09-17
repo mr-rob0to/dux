@@ -70,10 +70,10 @@ The approved source names test groups where existing files must be selected by t
 
 | Record | Required contents | Full merged commit ID | Installed revision and verification | External application evidence |
 |---|---|---|---|---|
-| R1 | All M1 acceptance requirements | Not recorded | Not recorded | Not applied by this record |
-| R2 | All nine amended PR #46 tasks and M2 acceptance | Not recorded | Not recorded | Not applied by this record |
-| R3 | All M3 acceptance requirements | Not recorded | Not recorded | Not applied by this record |
-| R4 | M4 reporting support | Not recorded | Not recorded | No additional global patch |
+| R1 | All M1 acceptance requirements | 423292b (PR #51) | `m1-global.patch` and `m1-ship.patch` applied 2026-09-17, verified by full-file read | Applied to the operator's `~/.codex/AGENTS.md` (symlinked from `~/.claude/CLAUDE.md`) and `~/.agents/skills/ship/SKILL.md` |
+| R2 | All nine amended PR #46 tasks and M2 acceptance | 8d33657 (PR #52) | `m2-global.patch` and `m2-ship.patch` applied 2026-09-17, verified by full-file read | Applied to the same two operator files |
+| R3 | All M3 acceptance requirements | 1e5dadd (PR #54) | `m3-global.patch` applied 2026-09-17, verified by full-file read | Applied to `~/.codex/AGENTS.md`; M3 defines no ship-skill patch |
+| R4 | M4 reporting support | 877e6f7 (PR #55) | No global or ship-skill patch required; usage template and Codex/Claude extraction ship in the repo itself, verified by full-file read | No additional global patch |
 
 Record the actual full merged commit ID after each merge. The installed revision must be that commit or a descendant retaining its required support. A placeholder, branch name, patch artifact, or approved plan is not an eligible installed revision.
 
