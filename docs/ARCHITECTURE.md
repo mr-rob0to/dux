@@ -111,6 +111,8 @@ templates/
                            project that has none
   brief.md                 the brief skeleton dux-brief renders
   round.md                 the round file dux-round renders
+  usage.md                 the usage summary an accepted deliverable gets from stage m4,
+                           copied into its task folder and filled from structured records
   worker-settings.json     Claude deny rules, __BASE__ rendered per task
   worker-mcp.json          the empty MCP config every Claude worker is held to
 tests/fixtures/
@@ -125,7 +127,7 @@ data/         (gitignored) projects.md registry; backlog.md ledger with acked st
                            tasks/<id>/{intent.md,criteria.md,brief.md,issue.md,status.log,
                            report.md,worker-settings.json,risk,review,harness,hooks/,worktree.log,
                            retry,retried-from,phase,after,after-check,prerequisite,
-                           round-<n>.md,round-<n>.approval,delivery/}
+                           round-<n>.md,round-<n>.approval,delivery/,usage.md}
 state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            <id>.endpoint; <id>.pid; <id>.pgid; <id>.wrap.log; events.log;
                            <id>.run; <id>.portal; <id>.result-context;

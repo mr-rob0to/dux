@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is delivered through `/ship` and waits on the operator's merge and then R3. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestones 1 to 3, tasks 1 to 30, merged as pull requests #51, #52 and #54. Milestone 4, tasks 31 to 36, is being implemented: task 31 has landed.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -1173,8 +1173,28 @@ the operator merges.
 **Files:** `templates/usage.md`, this plan.  
 **Acceptance:** Spec section 8's phases, unknowns, failed-attempt attribution, and total rules are represented.
 
-- [ ] Add the report template attached to existing task evidence.
-- [ ] Check that unavailable fields remain explicit.
+- [x] Add the report template attached to existing task evidence.
+- [x] Check that unavailable fields remain explicit.
+
+**Landed with this task.** `templates/usage.md` is the summary an accepted deliverable gets
+from stage m4. It is copied to `data/tasks/<id>/usage.md`, beside the task's other evidence,
+and filled from structured records only: a harness's own numeric usage output, or a record Dux
+wrote. It has one row for each phase section 8 names: planning, design review under planning,
+implementation, correctness or combined review, and the security review of a separate gate.
+Each failed or retried run gets a row of its own naming the phase it failed in, and a total
+comes last. Its rules carry the rest of section 8:
+
+- Unknown is not zero, and a total that needs an unknown count is unknown.
+- The four counts never overlap: a harness that counts cached tokens inside its input has them
+  taken out first.
+- A session's cumulative total is written once, never once per round.
+- A reviewer that ran inside the worker's own session reads `in session total`.
+- Phases that cannot be told apart get one `Session total` row and an unavailable phase split.
+- A phase that did not happen reads `not run`, and list-price cost is not allowance used.
+
+Checked by count, with awk over the table: seven rows, 28 count cells, all 28 `unknown`, so a
+copy starts with nothing that reads as measured. `docs/ARCHITECTURE.md` lists the template and
+the task file.
 
 ## Task 32: Inventory structured usage availability
 
