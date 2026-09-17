@@ -582,8 +582,8 @@ Fill the template's own sections. Between them the body must carry: summary of
 the change, test evidence (actual command output, not "tests pass"), **which
 review mode ran and the reason for it**, the review findings with how each was
 resolved, an explicit note when a review came back clean, each review run's
-`usage:` line from steps 6 and 7, and anything deliberately deferred. **Verbose material goes inside `<details>`** so the body
-stays readable.
+`usage:` line from steps 6 and 7, and anything deliberately deferred. **Verbose
+material goes inside `<details>`** so the body stays readable.
 
 **Name the mode in words, not only in the attestation.** A combined gate ran one reviewer, and a
 reader who cannot see that stated reads two steps and assumes a security pass happened. Say which

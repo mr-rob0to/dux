@@ -28,7 +28,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
 | M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 2,428 | Task 30's pull request |
-| M4: Usage evidence and evaluation | 31–36 | 500–1,000 | 541 | Task 36's pull request |
+| M4: Usage evidence and evaluation | 31–36 | 500–1,000 | 542 | Task 36's pull request |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
 
