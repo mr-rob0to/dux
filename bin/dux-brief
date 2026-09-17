@@ -6,16 +6,17 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 # bash 5.2+ expands & in ${var//pat/rep}; paths and branch names are literal here.
 shopt -u patsub_replacement 2>/dev/null || true
-usage="usage: dux-brief <id> --intent-file f --criteria-file f [--plan p --tasks r | --phase planning] [--risk bounded|complex] [--review combined|separate --review-reason t] [--issue-file f]"
+usage="usage: dux-brief <id> --intent-file f --criteria-file f [--plan p --tasks r | --phase planning] [--risk bounded|complex] [--review combined|separate --review-reason t] [--issue-file f] [--after-check <name>]"
 id="${1:-}"; [ -n "$id" ] || die "$usage"
 shift
 intent=""; criteria=""; plan=""; tasks=""; issue=""; risk=""; review=""; review_reason=""; phase=""
+after_check=""; after_check_given=""
 while [ $# -gt 0 ]; do
   # Every one of these takes a value. Without the count check, set -u turns a
   # flag at the end of the line into an unbound-variable crash instead of the
   # usage line, and the caller sees a stack trace rather than what to fix.
   case "$1" in
-    --intent-file|--criteria-file|--plan|--tasks|--risk|--review|--review-reason|--issue-file|--phase)
+    --intent-file|--criteria-file|--plan|--tasks|--risk|--review|--review-reason|--issue-file|--phase|--after-check)
       [ $# -ge 2 ] || die "$usage" ;;
   esac
   case "$1" in
@@ -28,12 +29,13 @@ while [ $# -gt 0 ]; do
     --review-reason) review_reason="$2"; shift 2 ;;
     --issue-file)    issue="$2"; shift 2 ;;
     --phase)         phase="$2"; shift 2 ;;
+    --after-check)   after_check="$2"; after_check_given=yes; shift 2 ;;
     *) die "$usage" ;;
   esac
 done
 
 task="$DUX_TASKS/$id"; out="$task/brief.md"; settings="$task/worker-settings.json"
-risk_file="$task/risk"; review_file="$task/review"; phase_file="$task/phase"
+risk_file="$task/risk"; review_file="$task/review"; phase_file="$task/phase"; check_file="$task/after-check"
 [ -d "$task" ] || finding "no task folder for $id; run dux-task-new first"
 [ -e "$out" ] && finding "brief already exists for $id; retries use a new task id"
 project="$("$DUX_ROOT/bin/dux-ledger" get "$id" project)" || exit $?
@@ -111,6 +113,15 @@ case "$shape" in
     { [ -z "$review" ] && [ -z "$review_reason" ]; } || finding "--review is for ship briefs only"
     [ -z "$phase" ] || finding "--phase is for ship briefs only; a $shape task's worktree never becomes one that builds" ;;
 esac
+# A merge is not always enough for the task that waits on it: a deployment or a
+# contract check may have to pass on the merge first. That check is named here,
+# and stored beside the brief for dux-spawn, which reads no prose.
+if [ -n "$after_check_given" ]; then
+  [ -f "$task/after" ] || finding "--after-check is for a task that waits on another; create it with dux-task-new --after"
+  case "$after_check" in *[![:space:]]*) ;; *) after_check="" ;; esac
+  { [ -n "$after_check" ] && [ "$after_check" = "$(cap_line "$after_check")" ] && [ "${#after_check}" -le 100 ]; } \
+    || finding "--after-check must name one check in at most 100 characters"
+fi
 [ -z "$issue" ] || [ -s "$issue" ] || finding "--issue-file $issue is missing or empty"
 # The brief is what /ship reads for Closes #<n>, so a task that came from an
 # issue is never briefed without the issue text beside it.
@@ -170,6 +181,7 @@ while IFS= read -r line || [ -n "$line" ]; do
     '{{PLAN_LINES}}')  if [ -n "$plan" ]; then printf -- '- Plan: %s\n- Tasks: %s\n' "$plan" "$tasks"; fi ;;
     '{{RISK_LINE}}')   if [ "$shape" = ship ]; then printf -- '- Risk: %s\n' "$risk"; fi ;;
     '{{PHASE_LINE}}')  if [ -n "$phase" ]; then printf -- '- Phase: %s\n' "$phase"; fi ;;
+    '{{AFTER_CHECK_LINE}}') if [ -n "$after_check_given" ]; then printf -- '- After check: %s succeeds\n' "$after_check"; fi ;;
     '{{REVIEW_LINES}}') if [ "$shape" = ship ]; then
                           printf -- '- Review: %s\n- Review reason: %s\n' "$review" "$review_reason"
                         fi ;;
@@ -207,6 +219,12 @@ if [ -n "$phase" ]; then
     finding "cannot write $phase_file"
   }
 fi
+if [ -n "$after_check_given" ]; then
+  { : > "$check_file.tmp" && chmod 600 "$check_file.tmp" && printf '%s\n' "$after_check" > "$check_file.tmp"; } || {
+    rm -f "$tmp" "$settings.tmp" "$risk_file.tmp" "$review_file.tmp" "$phase_file.tmp" "$check_file.tmp"
+    finding "cannot write $check_file"
+  }
+fi
 # Risk goes into place before the brief, so the file dux-worker-wrap routes on
 # is there whenever a finished brief is. The other order left a window: killed
 # between the two renames, the task has a brief dux-brief will not render again
@@ -219,5 +237,8 @@ if [ "$shape" = ship ] && ! mv "$review_file.tmp" "$review_file"; then finding "
 # The phase too: a brief that says to plan first with no phase beside it is one
 # the wrapper refuses to start.
 if [ -n "$phase" ] && ! mv "$phase_file.tmp" "$phase_file"; then finding "cannot write $phase_file"; fi
+# The check too: a brief that names one with no file beside it would start
+# without that check ever being asked.
+if [ -n "$after_check_given" ] && ! mv "$check_file.tmp" "$check_file"; then finding "cannot write $check_file"; fi
 if ! mv "$settings.tmp" "$settings" || ! mv "$tmp" "$out"; then finding "cannot write $out"; fi
 echo "$out"

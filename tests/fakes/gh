@@ -42,11 +42,21 @@ case "$1 ${2:-}" in
   "pr view")
     if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: pr view failed" >&2; exit 1; fi
     # A caller that picks the state out with -q gets the state. One that asks for
-    # the JSON gets the three fields dux-round reads.
+    # the JSON gets the fields dux-round and dux-spawn read; a pull request with
+    # no merge commit gets null, as GitHub gives one that is not merged.
     case " $* " in
       *" -q "*|*" --jq "*) echo "${FAKE_GH_PR_STATE:-OPEN}" ;;
       *) jq -nc --arg s "${FAKE_GH_PR_STATE:-OPEN}" --arg h "${FAKE_GH_PR_HEAD:-}" --arg b "${FAKE_GH_PR_BASE:-main}" \
-           '{state: $s, headRefName: $h, baseRefName: $b}' ;;
+           --arg o "${FAKE_GH_PR_HEAD_OID:-}" --arg m "${FAKE_GH_PR_MERGE:-}" \
+           '{state: $s, headRefName: $h, baseRefName: $b, headRefOid: $o,
+             mergeCommit: (if $m == "" then null else {oid: $m} end)}' ;;
     esac ;;
+  "api "*)
+    # Only the check runs on a commit, which dux-spawn asks for by name.
+    if [ -n "${FAKE_GH_FAIL:-}${FAKE_GH_API_FAIL:-}" ]; then echo "fake gh: api failed" >&2; exit 1; fi
+    # The default is a variable: bash 3.2 keeps the backslash of an escaped
+    # brace inside ${var:-...}, and the JSON is then unreadable.
+    none='{"check_runs":[]}'
+    echo "${FAKE_GH_CHECK_RUNS:-$none}" ;;
   *) echo "fake gh: unhandled: $*" >&2; exit 2 ;;
 esac

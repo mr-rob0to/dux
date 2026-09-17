@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 26 have landed. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 27 have landed. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -27,7 +27,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 1,372 after task 26 | Not recorded |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 1,780 after task 27 | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -948,8 +948,44 @@ tests added; six breaks, each failing on its own:
 **Files:** `bin/dux-spawn`, `tests/dux-spawn.bats`, `tests/e2e-dispatch.bats`.  
 **Acceptance:** Delivery proof, expected GitHub merge, fetched registered base, and named deployment or contract evidence are all checked.
 
-- [ ] Store verified repository, PR, delivered head, and merge commit with the dependent task.
-- [ ] Break-verify open, failed, wrongly targeted, unverifiable, and deployment-incomplete prerequisite refusals.
+- [x] Store verified repository, PR, delivered head, and merge commit with the dependent task.
+- [x] Break-verify open, failed, wrongly targeted, unverifiable, and deployment-incomplete prerequisite refusals.
+
+**Landed with this task.** A task created with `--after` starts only once the task it waits on is
+delivered and merged. After the capacity check, `dux-spawn` requires, in order:
+
+- The task waited on is done in the ledger, and its pull request is in its own registered GitHub
+  repository.
+- Its delivery proof: the run record, the `/ship` receipt of that run, whose ci phase names the
+  delivered commit, and the last handoff, consumed, from that run, for that pull request.
+- GitHub reports the pull request merged into the registered base, from `dux/<id>`, at that
+  delivered commit, with a merge commit, and the merge is on the base once fetched in that task's
+  project.
+- A check the waiting brief names with `dux-brief --after-check <name>`, such as a deployment, has
+  succeeded on the merge. The name is stored in `after-check` beside the brief, like risk and phase.
+  Only GitHub check runs are read, not commit statuses.
+
+What was verified goes in the waiting task's `prerequisite` file: the task, repository, pull
+request, delivered head, merge commit and check. Every refusal says the task remains queued and
+writes nothing. `--after` now takes ship tasks only, because a plan task's pull request has no
+receipt behind it. Five spawn tests, one brief test and one end-to-end test added, one task-new
+test changed; 35 breaks, each failing on its own:
+
+- Open (spawn test line 760), closed (761), running (754) and failed (757) predecessors starting.
+- Wrongly targeted: the base (767), head branch (768), merged head (769) or repository (772) not
+  compared. A project not on GitHub not refused (774: the repository check still refused it).
+- Unverifiable: a receipt from another run read (784), no receipt required (782: the head
+  comparison still refused it), the proved commit read from another phase (742), no run record
+  required (787: the receipt check still refused it), an unconsumed handoff (790), one from another
+  run (793) or for another pull request (796), a state GitHub did not give (798), a merge commit
+  name that is not one (800), the base never fetched (742), the merge never looked for on it (802).
+- Deployment-incomplete: the named check never asked (811), unfinished or failed (812), a check
+  with another name counting (816), no answer from GitHub (818).
+- The record never written (744) or without its check (822). `--after-check` on a task that waits
+  on nothing (brief test line 565), blank, over 100 characters, or over two lines (558), its file
+  at mode 644 (550) or never written (548), its line not rendered (546). A plan task accepted by
+  `--after` (task-new test line 102). Spawn never reading what a task waits on (end-to-end test
+  line 296).
 
 ## Task 28: Preserve prerequisite evidence through its lifecycle
 

@@ -676,3 +676,150 @@ exec $DUX_ROOT/bin/dux-backend \"\$@\"")"
   [ "$status" -eq 0 ]
   wait_result "$b"
 }
+
+# ---- a task that waits on another ----------------------------------------------
+# The task it waits on, delivered the way the wrapper and the watcher leave it:
+# its run, its /ship receipt whose ci phase names the delivered commit (the
+# earlier phases name another, as they do once /ship has pushed a fix), and the
+# consumed handoff that put its pull request on the ledger. GitHub reports that pull request
+# merged, and the merge is pushed to the registered base from another clone, so
+# the project's own clone has it only once spawn fetches. Sets $pred, $head,
+# $merge and $pr.
+delivered() {
+  local m="$DUX_HOME/merger" p
+  pred="$(fixture_task proj ship github)"; pr=https://github.com/acme/proj/pull/7
+  git clone -q "$DUX_HOME/acme/proj.git" "$m"
+  git -C "$m" checkout -q -b "dux/$pred"
+  git -C "$m" commit -q --allow-empty -m delivered
+  head="$(git -C "$m" rev-parse HEAD)"
+  git -C "$m" checkout -q main
+  git -C "$m" merge -q --no-ff -m merged "dux/$pred"
+  merge="$(git -C "$m" rev-parse HEAD)"
+  git -C "$m" push -q origin main
+  fake_run "$pred" r1 ship acme/proj
+  { echo version=2; echo "id=$pred"; echo run=r1; echo "branch=dux/$pred"; echo review=separate
+    for p in checks review security pr; do echo "phase=$p sha=$(printf '%040d' 0) at=2026-09-16T00:00:00Z"; done
+    echo "phase=ci sha=$head at=2026-09-16T00:00:00Z"
+  } > "$DUX_HOME/state/$pred.ship-receipt.delivered"
+  handoff "$pred" "done: PR $pr" done r1
+  : > "$DUX_HOME/state/$pred.handoffs/1/consumed"
+  dux-ledger set "$pred" state done; dux-ledger set "$pred" pr "$pr"
+  export FAKE_GH_PR_STATE=MERGED FAKE_GH_PR_HEAD="dux/$pred" FAKE_GH_PR_BASE=main \
+    FAKE_GH_PR_HEAD_OID="$head" FAKE_GH_PR_MERGE="$merge"
+}
+
+# The task that waits is in a repository of its own, so everything checked about
+# the merge is checked in the repository it landed in.
+waiting() {  # [$1 the check the merge must pass]; sets $id, a scout in other that waits on $pred
+  local t
+  make_repo "$DUX_HOME/other" main
+  dux-project add "$DUX_HOME/other" --base main --pr-template skip >/dev/null
+  id="$(dux-task-new other scout --after "$pred")"; t="$DUX_HOME/data/tasks/$id"
+  printf 'Build on it.\n' > "$t/intent.md"; printf '1. Built.\n' > "$t/criteria.md"
+  if [ -n "${1:-}" ]; then
+    dux-brief "$id" --intent-file "$t/intent.md" --criteria-file "$t/criteria.md" --after-check "$1" >/dev/null
+  else
+    dux-brief "$id" --intent-file "$t/intent.md" --criteria-file "$t/criteria.md" >/dev/null
+  fi
+}
+
+still_queued() {  # $1 the finding, after "finding: "
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: $1; $id remains queued" ]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ ! -e "$DUX_HOME/data/tasks/$id/prerequisite" ]
+  [ ! -d "$DUX_HOME/other/.worktrees" ]
+  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+  [ "$(grep -c '^tab create' "$FAKE_HERDR_LOG")" = 0 ]
+}
+
+@test "a task that waits on another starts once that delivery merged and is on the fetched base, and keeps what was verified" {
+  delivered
+  waiting
+  ! git -C "$DUX_HOME/proj" merge-base --is-ancestor "$merge" refs/remotes/origin/main
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  [ "$(dux-ledger get "$id" state)" = running ]
+  [ "$(cat "$DUX_HOME/data/tasks/$id/prerequisite")" = "$(printf 'after=%s\nrepo=acme/proj\npr=%s\nhead=%s\nmerge=%s' "$pred" "$pr" "$head" "$merge")" ]
+  git -C "$DUX_HOME/proj" merge-base --is-ancestor "$merge" refs/remotes/origin/main
+  grep -qx "pr view 7 --repo acme/proj --json state,baseRefName,headRefName,headRefOid,mergeCommit" "$FAKE_GH_LOG"
+  wait_result "$id"
+}
+
+@test "a task waits while the task before it has not delivered, delivered nothing, or its pull request is not merged" {
+  delivered
+  waiting
+  dux-ledger set "$pred" state running
+  still_queued "$id waits on $pred, which is running and has not delivered yet"
+  for st in failed ended dropped; do
+    dux-ledger set "$pred" state "$st"
+    still_queued "$id waits on $pred, which is $st and delivered nothing"
+  done
+  dux-ledger set "$pred" state done
+  FAKE_GH_PR_STATE=OPEN still_queued "$id waits on $pred, whose pull request $pr is still open"
+  FAKE_GH_PR_STATE=CLOSED still_queued "$id waits on $pred, whose pull request $pr was closed without merging"
+}
+
+@test "a task waits while the merge it needs went somewhere other than the registered base, branch and commit" {
+  delivered
+  waiting
+  FAKE_GH_PR_BASE=develop still_queued "pull request $pr merged into develop, not main, the base registered for proj"
+  FAKE_GH_PR_HEAD=elsewhere still_queued "pull request $pr was merged from elsewhere, not dux/$pred"
+  FAKE_GH_PR_HEAD_OID="$merge" still_queued "the head GitHub merged for $pr is not the commit Dux proved for $pred"
+  dux-ledger set "$pred" pr https://github.com/acme/other/pull/7
+  echo "done: PR https://github.com/acme/other/pull/7" > "$DUX_HOME/state/$pred.handoffs/1/status"
+  still_queued "$id waits on $pred, whose pull request https://github.com/acme/other/pull/7 is not in acme/proj"
+  git -C "$DUX_HOME/proj" remote set-url origin "$DUX_HOME/acme/proj.git"
+  still_queued "proj is not a GitHub repository, so the merge $id waits on cannot be verified"
+}
+
+@test "a task waits while the delivery it needs cannot be verified" {
+  delivered
+  waiting
+  s="$DUX_HOME/state"; h="$s/$pred.handoffs/1"
+  mv "$s/$pred.ship-receipt.delivered" "$s/kept"
+  still_queued "$id waits on $pred, which has no /ship receipt for the run that delivered it"
+  sed 's/^run=r1$/run=r0/' "$s/kept" > "$s/$pred.ship-receipt"
+  still_queued "$id waits on $pred, which has no /ship receipt for the run that delivered it"
+  rm "$s/$pred.ship-receipt"; mv "$s/kept" "$s/$pred.ship-receipt.delivered"
+  mv "$s/$pred.run" "$s/kept"
+  still_queued "$id waits on $pred, and the record of the run that delivered it is gone"
+  mv "$s/kept" "$s/$pred.run"
+  rm "$h/consumed"
+  still_queued "$id waits on $pred, and no proved delivery of $pr is on record"
+  : > "$h/consumed"
+  echo r0 > "$h/run"
+  still_queued "$id waits on $pred, and no proved delivery of $pr is on record"
+  echo r1 > "$h/run"
+  dux-ledger set "$pred" pr https://github.com/acme/proj/pull/8
+  still_queued "$id waits on $pred, and no proved delivery of https://github.com/acme/proj/pull/8 is on record"
+  dux-ledger set "$pred" pr "$pr"
+  FAKE_GH_PR_STATE=DRAFT still_queued "GitHub did not say whether pull request $pr merged"
+  FAKE_GH_FAIL=1 still_queued "GitHub did not say whether pull request $pr merged"
+  FAKE_GH_PR_MERGE=main still_queued "GitHub named no merge commit for pull request $pr"
+  FAKE_GH_PR_MERGE= still_queued "GitHub named no merge commit for pull request $pr"
+  FAKE_GH_PR_MERGE=0123456789abcdef0123456789abcdef01234567 \
+    still_queued "the merge of $pr is not on origin/main as fetched in $DUX_HOME/proj"
+  mv "$DUX_HOME/acme/proj.git" "$DUX_HOME/gone.git"
+  still_queued "cannot fetch origin/main in $DUX_HOME/proj"
+}
+
+@test "a task waits until the check its brief names has succeeded on the merge" {
+  delivered
+  waiting 'deploy api'
+  still_queued "check 'deploy api' has not run on the merge of $pr"
+  FAKE_GH_CHECK_RUNS='{"check_runs":[{"name":"deploy api","status":"in_progress","conclusion":null}]}' \
+    still_queued "check 'deploy api' has not succeeded on the merge of $pr"
+  FAKE_GH_CHECK_RUNS='{"check_runs":[{"name":"deploy api","status":"completed","conclusion":"failure"}]}' \
+    still_queued "check 'deploy api' has not succeeded on the merge of $pr"
+  FAKE_GH_CHECK_RUNS='{"check_runs":[{"name":"build","status":"completed","conclusion":"success"}]}' \
+    still_queued "check 'deploy api' has not run on the merge of $pr"
+  FAKE_GH_API_FAIL=1 still_queued "GitHub did not answer for the checks on the merge of $pr"
+  export FAKE_GH_CHECK_RUNS='{"check_runs":[{"name":"deploy api","status":"completed","conclusion":"success"}]}'
+  run dux-spawn "$id"
+  [ "$status" -eq 0 ]
+  grep -qx "check=deploy api" "$DUX_HOME/data/tasks/$id/prerequisite"
+  grep -qx "api -X GET repos/acme/proj/commits/$merge/check-runs -f check_name=deploy api -f filter=latest" "$FAKE_GH_LOG"
+  wait_result "$id"
+}

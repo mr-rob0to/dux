@@ -65,23 +65,24 @@ setup_project() { make_repo "$DUX_HOME/proj" main; dux-project add "$DUX_HOME/pr
 @test "--after records the one task a new task waits on, in the new task's own folder" {
   setup_project
   first="$(dux-task-new proj ship)"
-  planned="$(dux-task-new proj plan)"
+  other="$(dux-task-new proj ship)"
   id="$(dux-task-new proj ship --after "$first")"
   [ "$(cat "$DUX_HOME/data/tasks/$id/after")" = "$first" ]
   [ ! -e "$DUX_HOME/data/tasks/$first/after" ]
   [ "$(dux-ledger get "$id" state)" = queued ]
-  id="$(dux-task-new proj ship --source 'gh:acme/widgets#12' --after "$planned")"
-  [ "$(cat "$DUX_HOME/data/tasks/$id/after")" = "$planned" ]
+  id="$(dux-task-new proj scout --source 'gh:acme/widgets#12' --after "$other")"
+  [ "$(cat "$DUX_HOME/data/tasks/$id/after")" = "$other" ]
   [ "$(dux-ledger get "$id" source)" = 'gh:acme/widgets#12' ]
   id="$(dux-task-new proj ship)"
   [ ! -e "$DUX_HOME/data/tasks/$id/after" ]
 }
 
-@test "--after takes one known task that delivers a pull request, and a refusal leaves nothing behind" {
+@test "--after takes one known ship task, and a refusal leaves nothing behind" {
   setup_project
   first="$(dux-task-new proj ship)"
   second="$(dux-task-new proj ship)"
   scout="$(dux-task-new proj scout)"
+  planned="$(dux-task-new proj plan)"
   run dux-task-new proj ship --after "$first" --after "$second"
   [ "$status" -eq 2 ]
   [ "$output" = "finding: a task waits on one task at most; sequencing is linear, so --after comes once" ]
@@ -96,10 +97,13 @@ setup_project() { make_repo "$DUX_HOME/proj" main; dux-project add "$DUX_HOME/pr
   [ "$output" = "finding: task proj-ship-20260916-zzz not in ledger" ]
   run dux-task-new proj ship --after "$scout"
   [ "$status" -eq 2 ]
-  [ "$output" = "finding: task $scout is a scout task and delivers no pull request, so nothing can wait on its merge" ]
+  [ "$output" = "finding: task $scout is a scout task; only ship work can be waited on, because only its delivered commit is on record" ]
+  run dux-task-new proj ship --after "$planned"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: task $planned is a plan task; only ship work can be waited on, because only its delivered commit is on record" ]
   run dux-task-new proj ship --after
   [ "$status" -eq 1 ]
   [ "$output" = "dux: --after needs a task id" ]
-  [ "$(ls "$DUX_HOME/data/tasks" | wc -l | tr -d ' ')" -eq 3 ]
-  [ "$(dux-ledger list | wc -l | tr -d ' ')" -eq 3 ]
+  [ "$(ls "$DUX_HOME/data/tasks" | wc -l | tr -d ' ')" -eq 4 ]
+  [ "$(dux-ledger list | wc -l | tr -d ' ')" -eq 4 ]
 }

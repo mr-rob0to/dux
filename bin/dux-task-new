@@ -26,13 +26,14 @@ case "$source_key" in
   *) printf '%s' "$source_key" | grep -E '^gh:[A-Za-z0-9._-]+/[A-Za-z0-9._-]+#[0-9]+$' >/dev/null \
        || finding "source must be local or gh:<owner>/<repo>#<n>: $source_key" ;;
 esac
-# Only work that delivers a pull request can be waited on: what the new task
-# waits for is that pull request's merge, which dux-spawn checks before it starts.
+# Only ship work can be waited on: what the new task waits for is that pull
+# request's merge, and dux-spawn checks the merged head against the commit the
+# /ship receipt proved. A plan task's pull request has no receipt behind it.
 if [ -n "$after" ]; then
   after_shape="$("$DUX_ROOT/bin/dux-ledger" get "$after" shape)" || exit $?
   case "$after_shape" in
-    plan|ship) ;;
-    *) finding "task $after is a $after_shape task and delivers no pull request, so nothing can wait on its merge" ;;
+    ship) ;;
+    *) finding "task $after is a $after_shape task; only ship work can be waited on, because only its delivered commit is on record" ;;
   esac
 fi
 

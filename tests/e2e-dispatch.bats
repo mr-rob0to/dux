@@ -248,6 +248,75 @@ EOF
   [ "$output" = "Review, then merge or send feedback: https://github.com/acme/proj/pull/7 (proj ship)" ]
 }
 
+# Two repositories, one after the other. The task that waits stays queued while
+# the ship task before it works, and again while that pull request is open. Once
+# GitHub reports it merged into the base, and the check the waiting brief names
+# has passed on the merge, the waiting task starts in its own repository and
+# keeps what was verified. Two workers never run at once.
+@test "a task in another repository starts only once the ship task before it is merged and checked" {
+  ready || skip
+  export FAKE_GH_PR_LIST_FILE="$DUX_HOME/state/pr.json"
+  export FAKE_GH_PR_CHECKS='[{"name":"build","state":"SUCCESS"}]'
+  worker_env
+  first="$(fixture_task proj ship github)"
+  make_repo "$DUX_HOME/other" main
+  dux-project add "$DUX_HOME/other" --base main --pr-template skip >/dev/null
+  trust_path "$DUX_HOME/other"
+  next="$(dux-task-new other scout --after "$first")"; t="$DUX_HOME/data/tasks/$next"
+  printf 'Build on it.\n' > "$t/intent.md"; printf '1. Built.\n' > "$t/criteria.md"
+  dux-brief "$next" --intent-file "$t/intent.md" --criteria-file "$t/criteria.md" --after-check 'deploy api' >/dev/null
+  pr=https://github.com/acme/proj/pull/7
+  cat > "$FAKE_WORKER_SCRIPT" <<EOF
+run mkdir -p docs && printf '# Plan\n\n## Task 1: one\n- [x] one done\n\n## Task 2: two\n- [x] two done\n' > docs/plan.md
+run printf 'implementation\n' > src.txt
+run git add -A && git commit -q -m work
+run "\$DUX_SHIP_RECORD" checks
+run "\$DUX_SHIP_RECORD" review
+run "\$DUX_SHIP_RECORD" security
+run "\$DUX_SHIP_RECORD" pr
+run jq -nc --arg s "\$(git rev-parse HEAD)" --arg b "dux/$first" '[{number:7,url:"$pr",isDraft:false,state:"OPEN",baseRefName:"main",headRefName:\$b,headRefOid:\$s,headRepository:{name:"proj"},headRepositoryOwner:{login:"acme"}}]' > "$DUX_HOME/state/pr.json"
+run "\$DUX_SHIP_RECORD" ci
+sleep 3
+status done: PR $pr
+EOF
+  dux-spawn "$first" >/dev/null
+  run dux-spawn "$next"
+  [ "$status" -eq 2 ]
+  case "$output" in
+    "finding: another Dux worker is active: $first; $next remains queued") ;;
+    "finding: $next waits on $first, which is running and has not delivered yet; $next remains queued") ;;
+    *) false ;;
+  esac
+  wait_file "$DUX_HOME/state/$first.handoffs/1/status" 60
+  [ "$(cat "$DUX_HOME/state/$first.handoffs/1/status")" = "done: PR $pr" ]
+  wait_for_workers 30
+  dux-watch --once
+  [ "$(dux-ledger get "$first" state)" = done ]
+  run dux-spawn "$next"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: $next waits on $first, whose pull request $pr is still open; $next remains queued" ]
+
+  m="$DUX_HOME/merger"; head="$(git -C "$DUX_HOME/proj" rev-parse "dux/$first")"
+  git clone -q "$DUX_HOME/acme/proj.git" "$m"
+  git -C "$m" fetch -q "$DUX_HOME/proj" "dux/$first"
+  git -C "$m" merge -q --no-ff -m merged FETCH_HEAD
+  git -C "$m" push -q origin main
+  export FAKE_GH_PR_STATE=MERGED FAKE_GH_PR_HEAD="dux/$first" FAKE_GH_PR_BASE=main \
+    FAKE_GH_PR_HEAD_OID="$head" FAKE_GH_PR_MERGE="$(git -C "$m" rev-parse HEAD)"
+  run dux-spawn "$next"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: check 'deploy api' has not run on the merge of $pr; $next remains queued" ]
+  [ "$(dux-ledger get "$next" state)" = queued ]
+  export FAKE_GH_CHECK_RUNS='{"check_runs":[{"name":"deploy api","status":"completed","conclusion":"success"}]}'
+  printf 'report built on it\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  run dux-spawn "$next"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$t/prerequisite")" = "$(printf 'after=%s\nrepo=acme/proj\npr=%s\nhead=%s\nmerge=%s\ncheck=deploy api' "$first" "$pr" "$head" "$FAKE_GH_PR_MERGE")" ]
+  wait_file "$DUX_HOME/state/$next.handoffs/1/status" 60
+  [ "$(cat "$DUX_HOME/state/$next.handoffs/1/status")" = "done: report" ]
+  [ "$(sed -n 's/^worktree=//p' "$DUX_HOME/state/$next.result-context")" = "$DUX_HOME/other/.worktrees/dux-$next" ]
+}
+
 # The other gate, end to end. A combined review is four phases, and every hop
 # between the operator's classification and the ledger has to agree on that:
 # the brief records it, the recorder carries it, the receipt opens on it, the

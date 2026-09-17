@@ -75,6 +75,86 @@ if busy="$(fleet_busy "$id")"; then
   esac
 fi
 
+# A task created with --after starts only once the task it waits on is delivered
+# and merged where Dux registered that task. The delivery is what Dux proved: the
+# run, its /ship receipt at the delivered commit, and the handoff the watcher
+# applied, since a ledger state alone proves nothing. GitHub then has to say that
+# pull request merged from that branch and that commit into the registered base,
+# and the merge has to be on that base once fetched. A check the brief names, such
+# as a deployment, has to have succeeded on the merge too. What was verified is
+# kept with the waiting task. Every refusal leaves it queued, to be checked again.
+still_queued() { finding "$1; $id remains queued"; }
+kv() { sed -n "s/^$1=//p" "$2" 2>/dev/null | take_line; }
+if [ -f "$task/after" ]; then
+  after="$(take_line < "$task/after")"
+  valid_task_id "$after"
+  after_state="$("$ledger" get "$after" state)" || exit $?
+  case "$after_state" in
+    done) ;;
+    failed|dead|ended|dropped) still_queued "$id waits on $after, which is $after_state and delivered nothing" ;;
+    *) still_queued "$id waits on $after, which is $after_state and has not delivered yet" ;;
+  esac
+  pr="$("$ledger" get "$after" pr)" || exit $?
+  after_project="$("$ledger" get "$after" project)" || exit $?
+  after_path="$("$DUX_ROOT/bin/dux-project" get "$after_project" path)" || exit $?
+  after_base="$("$DUX_ROOT/bin/dux-project" get "$after_project" base)" || exit $?
+  slug="$(github_slug "$after_path")" \
+    || still_queued "$after_project is not a GitHub repository, so the merge $id waits on cannot be verified"
+  n="${pr#"https://github.com/$slug/pull/"}"
+  case "$n" in ''|*[!0-9]*) still_queued "$id waits on $after, whose pull request $pr is not in $slug" ;; esac
+
+  run="$(kv run "$DUX_STATE/$after.run")"
+  [ -n "$run" ] || still_queued "$id waits on $after, and the record of the run that delivered it is gone"
+  head=""
+  for r in "$DUX_STATE/$after.ship-receipt" "$DUX_STATE/$after.ship-receipt.delivered"; do
+    [ "$(kv run "$r")" = "$run" ] || continue
+    head="$(sed -n 's/^phase=ci sha=\([0-9a-f]\{40\}\) .*/\1/p' "$r" | take_line)"
+    [ -z "$head" ] || break
+  done
+  [ -n "$head" ] || still_queued "$id waits on $after, which has no /ship receipt for the run that delivered it"
+  h="$(handoff_home "$after")/$(($(handoff_next_seq "$after") - 1))"
+  { [ -e "$h/consumed" ] && [ "$(take_line < "$h/run")" = "$run" ] \
+      && [ "$(take_line < "$h/status")" = "done: PR $pr" ]; } 2>/dev/null \
+    || still_queued "$id waits on $after, and no proved delivery of $pr is on record"
+
+  view="$(gh pr view "$n" --repo "$slug" --json state,baseRefName,headRefName,headRefOid,mergeCommit 2>/dev/null)" || view=""
+  field() { printf '%s' "$view" | jq -r "$1 // \"\"" 2>/dev/null; }
+  case "$(field .state)" in
+    MERGED) ;;
+    OPEN) still_queued "$id waits on $after, whose pull request $pr is still open" ;;
+    CLOSED) still_queued "$id waits on $after, whose pull request $pr was closed without merging" ;;
+    *) still_queued "GitHub did not say whether pull request $pr merged" ;;
+  esac
+  merged_into="$(field .baseRefName)"; merged_from="$(field .headRefName)"; merge="$(field .mergeCommit.oid)"
+  [ "$merged_into" = "$after_base" ] \
+    || still_queued "pull request $pr merged into $(cap_line "$merged_into"), not $after_base, the base registered for $after_project"
+  [ "$merged_from" = "dux/$after" ] || still_queued "pull request $pr was merged from $(cap_line "$merged_from"), not dux/$after"
+  [ "$(field .headRefOid)" = "$head" ] || still_queued "the head GitHub merged for $pr is not the commit Dux proved for $after"
+  printf '%s\n' "$merge" | LC_ALL=C grep -xE '[0-9a-f]{40}' >/dev/null \
+    || still_queued "GitHub named no merge commit for pull request $pr"
+  git -C "$after_path" fetch --quiet origin "$after_base" 2>/dev/null \
+    || still_queued "cannot fetch origin/$after_base in $after_path"
+  git -C "$after_path" merge-base --is-ancestor "$merge" "refs/remotes/origin/$after_base" 2>/dev/null \
+    || still_queued "the merge of $pr is not on origin/$after_base as fetched in $after_path"
+
+  check=""
+  if [ -f "$task/after-check" ]; then
+    check="$(take_line < "$task/after-check")"
+    runs="$(gh api -X GET "repos/$slug/commits/$merge/check-runs" -f check_name="$check" -f filter=latest 2>/dev/null)" || runs=""
+    case "$(printf '%s' "$runs" | jq -r --arg c "$check" '[.check_runs[] | select(.name == $c)]
+        | if length == 0 then "none" elif all(.conclusion == "success") then "success" else "failed" end' 2>/dev/null)" in
+      success) ;;
+      none) still_queued "check '$check' has not run on the merge of $pr" ;;
+      failed) still_queued "check '$check' has not succeeded on the merge of $pr" ;;
+      *) still_queued "GitHub did not answer for the checks on the merge of $pr" ;;
+    esac
+  fi
+  record="$task/prerequisite"
+  { { printf 'after=%s\nrepo=%s\npr=%s\nhead=%s\nmerge=%s\n' "$after" "$slug" "$pr" "$head" "$merge"
+      [ -z "$check" ] || printf 'check=%s\n' "$check"; } > "$record.tmp" && mv "$record.tmp" "$record"; } \
+    || { rm -f "$record.tmp"; still_queued "cannot record what $id waits on in $record"; }
+fi
+
 if [ -n "$harness" ]; then echo "$harness" > "$task/harness" || finding "cannot write $task/harness"; fi
 
 wt="$("$worktree" create "$id")" || exit $?

@@ -532,3 +532,38 @@ SH
   [ "$status" -eq 1 ]
   [[ "$output" == "dux: usage: dux-brief"* ]]
 }
+
+# A task that waits on another may name the check that must succeed on that
+# task's merge, such as a deployment. The brief is where it is named.
+@test "--after-check names the check the merge must pass, only for a task that waits on another" {
+  make_repo "$DUX_HOME/proj" main
+  dux-project add "$DUX_HOME/proj" --base main --pr-template skip >/dev/null
+  first="$(dux-task-new proj ship)"
+  printf 'Build on it.\n' > "$DUX_HOME/intent.md"; printf '1. Built.\n' > "$DUX_HOME/criteria.md"
+  id="$(dux-task-new proj scout --after "$first")"
+  dux-brief "$id" --intent-file "$DUX_HOME/intent.md" --criteria-file "$DUX_HOME/criteria.md" \
+    --after-check 'deploy api' >/dev/null
+  [ "$(grep -c '^- After check: ' "$DUX_HOME/data/tasks/$id/brief.md")" -eq 1 ]
+  grep -qxF -- '- After check: deploy api succeeds' "$DUX_HOME/data/tasks/$id/brief.md"
+  [ "$(cat "$DUX_HOME/data/tasks/$id/after-check")" = 'deploy api' ]
+  r="$DUX_HOME/data/tasks/$id/after-check"
+  [ "$(stat -c %a "$r" 2>/dev/null || stat -f %Lp "$r" 2>/dev/null)" = 600 ]
+  id="$(dux-task-new proj scout --after "$first")"
+  dux-brief "$id" --intent-file "$DUX_HOME/intent.md" --criteria-file "$DUX_HOME/criteria.md" >/dev/null
+  refute grep -q '^- After check: ' "$DUX_HOME/data/tasks/$id/brief.md"
+  [ ! -e "$DUX_HOME/data/tasks/$id/after-check" ]
+  for bad in '' ' ' "$(printf 'deploy\nextra')" "$(printf '%0101d' 0)"; do
+    id="$(dux-task-new proj scout --after "$first")"
+    run dux-brief "$id" --intent-file "$DUX_HOME/intent.md" --criteria-file "$DUX_HOME/criteria.md" --after-check "$bad"
+    [ "$status" -eq 2 ]
+    [ "$output" = "finding: --after-check must name one check in at most 100 characters" ]
+    [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+    [ ! -e "$DUX_HOME/data/tasks/$id/after-check" ]
+  done
+  id="$(dux-task-new proj scout)"
+  run dux-brief "$id" --intent-file "$DUX_HOME/intent.md" --criteria-file "$DUX_HOME/criteria.md" --after-check deploy
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: --after-check is for a task that waits on another; create it with dux-task-new --after" ]
+  [ ! -e "$DUX_HOME/data/tasks/$id/brief.md" ]
+  [ ! -e "$DUX_HOME/data/tasks/$id/after-check" ]
+}
