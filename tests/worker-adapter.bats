@@ -385,13 +385,15 @@ run_review_block() {
   [ -z "$(ls -A "$DUX_HOME/tmp")" ]
 }
 
-@test "the gate shows a refused review model and leaves its usage unknown" {
+@test "the gate shows a refused review model, leaves its usage unknown and fails" {
   [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
   gate_fakes 'codex exec -m some-model --sandbox read-only'
   FAKE_REFUSED=1 run_review_block
+  [ "$status" -eq 2 ]
   [[ "$output" != *"## Findings"* ]]
   [[ "$output" == *'reviewer error: {"type":"error","status":400}'* ]]
-  [ "${lines[${#lines[@]}-1]}" = "usage: input=unknown output=unknown cache_read=unknown cache_write=unknown" ]
+  [[ "$output" == *"usage: input=unknown output=unknown cache_read=unknown cache_write=unknown"* ]]
+  [ "${lines[${#lines[@]}-1]}" = "finding: the reviewer exited 1" ]
   [ -z "$(ls -A "$DUX_HOME/tmp")" ]
 }
 

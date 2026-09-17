@@ -281,6 +281,7 @@ case "$REVIEWER" in
   "codex exec "*) ANSWER="$RUN_DIR/answer"; REVIEWER="$REVIEWER --json -o $ANSWER" ;;
 esac
 $REVIEWER "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings." > "$RUN_DIR/stdout"
+STATUS=$?
 awk 1 "$ANSWER"
 if [ "$ANSWER" = "$RUN_DIR/answer" ]; then
   jq -R -r 'fromjson? | objects | select(.type == "error") | "reviewer error: \(.message)"' "$RUN_DIR/stdout"
@@ -289,6 +290,7 @@ else
   echo "usage: input=unknown output=unknown cache_read=unknown cache_write=unknown"
 fi
 rm -rf "$RUN_DIR"
+[ "$STATUS" -eq 0 ] || { echo "finding: the reviewer exited $STATUS" >&2; exit 2; }
 ```
 
 `$REVIEWER` is deliberately unquoted: the value is a command line and its words
@@ -304,7 +306,8 @@ reviewer shows a refusal as a `reviewer error:` line naming status 400.
 gate's own.** A `codex exec` reviewer writes its answer to a file and its events
 to another, and the line is the four counts Codex reported for that run, read by
 `worker_usage` from the Dux install and never from the repository under review.
-Any other reviewer gives no counts, so every count is `unknown`. The reading
+Any other reviewer gives no counts, so every count is `unknown`. A reviewer that
+exits non-zero ends the block with a finding after those lines. The reading
 below applies to the answer alone. Put each run's `usage:` line in the pull
 request beside the reviewer that ran, re-runs after a fix pass included, exactly
 as printed: never a count estimated, filled in, or taken from what a reviewer
