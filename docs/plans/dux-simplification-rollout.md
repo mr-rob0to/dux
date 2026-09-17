@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestones 1 to 3, tasks 1 to 30, merged as pull requests #51, #52 and #54. Milestone 4, tasks 31 to 36, is being implemented: tasks 31 and 32 have landed.
+- Approved by the operator on 2026-09-15. Milestones 1 to 3, tasks 1 to 30, merged as pull requests #51, #52 and #54. Milestone 4, tasks 31 to 36, is being implemented: tasks 31 to 33 have landed.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -1256,8 +1256,30 @@ dispatched as an agent runs inside the worker's session and is counted there.
 **Files:** `bin/workers/claude.sh`, `tests/worker-adapter.bats`, `docs/ARCHITECTURE.md` only if supported extraction exists.  
 **Acceptance:** Extraction relies on independently exposed numeric metadata; unsupported extraction is recorded as unavailable.
 
-- [ ] Qualify metadata availability and implement only the supported extraction.
-- [ ] Test implemented behavior; record an unavailable result instead of adding transcript collection.
+- [x] Qualify metadata availability and implement only the supported extraction.
+- [x] Test implemented behavior; record an unavailable result instead of adding transcript collection.
+
+**Unavailable, so nothing was built.** Task 32's probes are the qualification. A Dux worker is
+an interactive Claude Code session, and the only numeric usage such a session exposes is the
+input to a status-line command. Dux configures none, and adding one here would fail twice:
+
+- It would replace the operator's own status line in every worker tab.
+- Its copy would be deleted with the run's channel unless the wrapper kept it, and the wrapper
+  is not this task's file.
+
+Even kept, it would give running totals for list cost and cache writes only. Input, output
+and cache reads are reported per request, so they would stay unknown. The last-session totals
+in Claude Code's own config cannot be tied to a task. Headless JSON output is complete, but no
+installed Dux path runs Claude headless on this host.
+
+So `bin/workers/claude.sh` gains no extraction, and neither its tests nor
+`docs/ARCHITECTURE.md` change. Worker, plan-worker and design-review counts stay `unknown` in
+every usage summary, and nothing reads a transcript to fill them in. This task added no
+protection, so there is nothing to break.
+
+What would make two of those counts available is a status-line command that passes its input
+on to the operator's own command and keeps a numbers-only copy, plus a wrapper change that
+keeps the copy when the run ends. That is the operator's call.
 
 ## Task 34: Extract Codex and review usage only where supported
 
