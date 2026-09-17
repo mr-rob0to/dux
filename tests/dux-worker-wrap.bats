@@ -877,12 +877,14 @@ EOF
 }
 
 # Issue #53: a harness merely slow to appear is not a harness that never
-# started. Delaying the pane run past a window that would have failed under
-# the old 120s default, but staying inside a generous one, must still finish.
+# started. Discovery has to poll more than once before the pane's shell has
+# finished the exec chain into the harness, per the comment above the loop;
+# a window wide enough to outlast that settling, not just the first poll,
+# must still finish rather than refuse.
 @test "a harness that appears late but inside the window is supervised, not refused" {
   prepare scout
   printf 'report all clear\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
-  export DUX_WRAP_FORK_PAUSE_SECS=3 DUX_WRAP_START_SECS=8
+  export DUX_WRAP_START_SECS=10
   run wrap
   [ "$status" -eq 0 ]
   [ "$(handoff_status)" = "done: report" ]
