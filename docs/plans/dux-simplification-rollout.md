@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, is delivered through `/ship` and waits on the operator's merge and then R2; milestones 3 and 4 are not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is delivered through `/ship` and waits on the operator's merge and then R3. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -26,8 +26,8 @@ Use this file's numbered task ranges when dispatching each milestone:
 | Milestone | Task range | Estimated added lines | Actual added lines | Delivery evidence |
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
-| M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | Task 19's pull request |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | Not recorded | Not recorded |
+| M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 2,428 | Task 30's pull request |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -736,8 +736,32 @@ row after the operator merges.
 **Interface:** `feedback`, `answer`, and `approval` purposes under spec section 6.3.  
 **Acceptance:** Each purpose enforces its own prerequisite; an ordinary answer never authorizes implementation.
 
-- [ ] Add purpose validation.
-- [ ] Break-verify waiting-state, delivered-PR, and approval distinctions.
+- [x] Add purpose validation.
+- [x] Break-verify waiting-state, delivered-PR, and approval distinctions.
+
+**Landed with this task.** `dux-round` takes `--purpose feedback|answer|approval`, and feedback
+is the default, so every M2 call is unchanged. Each purpose checks its own state first. Feedback
+goes to a `done` task with a pull request, as before. An answer goes to a task parked at
+`needs-decision` or `blocked`. Approval goes only to a `ship` task parked at `needs-decision`; a
+`plan` task is refused, because it delivers its plan as a pull request. Only approval takes
+`--plan`, `--tasks` and `--commit`, and it needs all three. An answer naming any of them is
+refused with `this answer approves no plan`, and the answer round itself tells the worker that
+work waiting for approval still waits. An answer or approval has no pull request to check, so
+nothing is fetched and GitHub is not asked. A waiting task whose session is gone is sent to
+`dux-recover --retry --answer-file`, not teardown, and a round that cannot be armed puts the
+task back in the state it came from. `templates/round.md` marks each purpose's lines with a tag,
+and the feedback round renders byte for byte as before. Task 23 checks what an approval names
+against the repository. A scout takes no round of any purpose. Seven new tests; ten breaks, each
+failing on its own:
+
+- An answer accepted at `done` (line 81), feedback at `needs-decision` (86), approval at
+  `blocked` (89).
+- Approval without `--commit` (99), an answer carrying `--plan` (95), approval for a plan
+  task (105).
+- A waiting task's lost session sent to teardown (171). A round that cannot be armed putting a
+  blocked task back to `done` (138).
+- An answer that checks the pull request, with no origin and GitHub failing (114). The render
+  ignoring purpose tags (164).
 
 ## Task 21: Preserve owners at supported waiting states
 
@@ -745,8 +769,34 @@ row after the operator merges.
 **Files:** `bin/dux-worker-wrap`, `bin/dux-recover`, related tests.  
 **Acceptance:** Supported questions and recoverable blockers preserve a live positively parked owner; failed or dead sessions use recovery.
 
-- [ ] Extend waiting-state continuation through PR #46.
-- [ ] Break-verify unsafe activation and mistaken-idle protections.
+- [x] Extend waiting-state continuation through PR #46.
+- [x] Break-verify unsafe activation and mistaken-idle protections.
+
+**Landed with this task.** A plan or ship run whose terminal line is `needs-decision:` or
+`blocked:` now waits for its Stop the way a proved pull request does, and parks. The marker, the
+one-worker exemption and teardown's stop work as they do for `done`, and the log says `parked in
+its tab at <state>; an answer goes through dux-round`. A failure never waits. A wait that runs
+out parks nothing, and neither does a Stop from an earlier turn. The answer round is taken up only
+after the watcher has applied the stop, as feedback is. A gate that the question stopped part-way
+keeps its receipt as `ship-receipt.unfinished` once the stop is applied, so the answer's run
+records a receipt of its own; teardown removes that file. `dux-recover` names
+`dux-round --purpose answer` for a waiting task still parked in its tab, and `--retry` for one
+that is not. A retry now ends a live wrapper first, and refuses, writing nothing, while the
+session's group still runs. Four new tests and one extended; eleven breaks, each failing on its
+own:
+
+- A wait that ran out taken as a stop (wrapper test line 1240). A Stop from before the line taken
+  as this turn's (1247). A failure waiting to park (1254). A done the proof ended parking (1026).
+- A question never waiting for its Stop (1206). The answer taken up before the stop was applied
+  (1215). The stopped gate's receipt left in place, so the answer's gate was refused with `the
+  /ship receipt for this task belongs to another run` (1221).
+- `dux-recover` not seeing the parked session (recover test line 505). A retry leaving the parked
+  wrapper running (524). A retry going ahead while the session's group ran (523: exit 2, but not
+  this refusal).
+- Teardown leaving the unfinished receipt (teardown test line 344).
+
+Two older timing tests, a scout's rewritten outbox and `--stop` on a real wrapper, failed once
+with four test files running at once and passed alone; neither parks.
 
 ## Task 22: Add integrated task phases
 
@@ -755,8 +805,34 @@ row after the operator merges.
 **Interface:** `ship` retains its shape and carries `planning|implementation` phase metadata.  
 **Acceptance:** Only explicitly declared planning-phase work may start without a plan; it pauses for approval.
 
-- [ ] Add phase metadata and planning briefs with Opus ownership throughout.
-- [ ] Break-verify unauthorized implementation and plan-only worktree promotion protections.
+- [x] Add phase metadata and planning briefs with Opus ownership throughout.
+- [x] Break-verify unauthorized implementation and plan-only worktree promotion protections.
+
+**Landed with this task.** `dux-brief --phase planning` briefs ship work to plan first. Such a
+brief names no plan, refuses `--plan`, `--tasks` and `--risk bounded`, and takes no other phase.
+Plan and scout briefs refuse `--phase`, and complex work with no plan now needs it. The phase is
+stored beside the brief at mode 600, and the brief carries `- Phase: planning`, three plan-first
+rules and its own definition of done. Every brief now says to stop and wait at the prompt after
+`blocked` or `needs-decision`. The wrapper reads the phase at the start of every run and records it
+in the run context. It refuses a phase on a plan or scout task, a phase file or brief line without
+the other, an unknown phase, a first run already at implementation, and planning work on the
+bounded model. A done while planning ends the run unproved, even one the repository and GitHub
+would prove. Two brief tests added and two changed, four wrapper tests added; twenty breaks, each
+failing on its own:
+
+- A complex brief with no plan and no phase accepted (brief test line 364). A phase other than
+  planning (388), a planning brief with a plan pair (384) or on bounded risk (386), and `--phase`
+  on a plan or scout brief (395), each accepted.
+- The phase file at mode 644 (368), or never moved into place (368). The phase line (371), the
+  plan-first rules (373) and the planning done line (376) not rendered. The old exit rule put back
+  (206).
+- A done while planning proved: the pull request was proved and the session parked (wrapper test
+  line 1287). A round not reading the phase again (1308). The context not recording it (1286,
+  1302).
+- A phase on a plan task not refused: the wrapper stopped on an unset variable and recorded nothing
+  (1323). A phase file on work not briefed to plan first (1334), an unknown phase (1351), a first
+  run at implementation (1355) and planning on the bounded model (1359), each starting the worker.
+  A missing phase file refused only as an unknown phase (1348).
 
 ## Task 23: Record committed-plan approval
 
@@ -764,8 +840,31 @@ row after the operator merges.
 **Files:** `bin/dux-round`, `bin/dux-recover`, related tests.  
 **Acceptance:** Approval identifies the committed plan path, approved commit, and task range before implementation starts.
 
-- [ ] Record and validate approval through the existing continuation mechanism.
-- [ ] Break-verify missing, mismatched, and ordinary-answer authorization cases.
+- [x] Record and validate approval through the existing continuation mechanism.
+- [x] Break-verify missing, mismatched, and ordinary-answer authorization cases.
+
+**Landed with this task.** An approval round goes only to work briefed to plan first, and names
+exactly what it approves. `dux-round` checks that the plan is a Markdown path inside the
+repository, the tasks are one task or one upward range of at most 65, and the commit is 7 to 40
+hexadecimal digits. It then checks that the commit is the tip of the task's branch, that the plan
+is committed there, and that every task in the range has its heading in it. Before the round is
+armed it writes `round-<n>.approval` at mode 600, naming the plan, the range and the full commit,
+and moves the phase to implementation. A round that cannot be armed removes the record and puts
+the phase back. An answer or feedback round removes any record left at its own round number and
+never moves the phase. `dux-recover` names the approval command for work planning first that is
+parked at a question, and a retry of such work is briefed to plan again. Two round tests added and
+two changed, two recover tests added; nineteen breaks, each failing on its own:
+
+- Approval to work not briefed to plan first (round test line 202). The plan path (207), the range
+  spelling (211), a downward or longer range (211) and the commit spelling (215) not checked.
+- A commit that is not the tip (226), a plan not committed there (220) and a task missing from it
+  (222), each accepted.
+- The record never moved into place (170), written at mode 644 (173), or written after the round
+  (170). The phase not moved on (172).
+- A round that cannot be armed leaving the record (235) or the phase at implementation (235).
+- An answer leaving a stale record in place (120), or recording an approval itself (120).
+- `dux-recover` showing the approval step for a blocker (recover test line 524) or never (519). A
+  retry of planning work briefed without the phase (713: the brief was refused).
 
 ## Task 24: Permit progress edits without changing approval
 
@@ -773,8 +872,29 @@ row after the operator merges.
 **Files:** `bin/dux-result`, approval and continuation tests.  
 **Acceptance:** Only checkbox state and the designated three-line status block may differ without renewed approval.
 
-- [ ] Compare approved substance while allowing the specified progress edits.
-- [ ] Test permitted edits and separately break-verify acceptance-criteria, task-range, and substantive-amendment rejection.
+- [x] Compare approved substance while allowing the specified progress edits.
+- [x] Test permitted edits and separately break-verify acceptance-criteria, task-range, and substantive-amendment rejection.
+
+**Landed with this task.** Work briefed to plan first proves only under its approval. `dux-result`
+takes the newest approval at or before the run's round and ends a run that has none. The record
+must name a full commit and a plan path inside the repository. The plan on the branch is compared
+with the plan at that commit, with box ticks and up to three lines under **Where this stands**
+masked. Any other difference ends the run, and the reason names what changed: the tasks, the
+acceptance criteria (an `Acceptance` paragraph, or a section under an acceptance heading), or
+anything else. The task heading reader is now shared with the box reader. The wrapper test for the
+round after approval writes the record and a real plan, and its round ticks the boxes. Five result
+tests added and one wrapper test changed; fifteen breaks, each failing on its own:
+
+- Box state (result test line 1304) or the lines under Where this stands (1308) not masked. A
+  fourth line under it masked too (1356).
+- Task headings (1317), an `Acceptance` paragraph (1335) or an acceptance section (1338) not told
+  apart. Any plan passing the comparison (1316, 1334, 1346).
+- Approved work skipping the approval (1316, 1334, 1346, 1372). An approval from a later round
+  counted (1372). A run with no approval not refused (1372: it became a finding about the empty
+  record). The commit spelling (1376) or the plan path (1380) not checked. A plan missing at the
+  approved commit (1385) or gone from the branch (1393) read as empty.
+- The wrapper test's round with no approval record: it ended with "has no approval to build"
+  (wrapper test line 1319).
 
 ## Task 25: Prove approved task completion
 
@@ -782,8 +902,22 @@ row after the operator merges.
 **Files:** `bin/dux-result`, `tests/dux-result.bats`.  
 **Acceptance:** Valid approval and completed boxes for the recorded range are both required.
 
-- [ ] Extend completion proof without treating checked boxes as delivery evidence.
-- [ ] Break-verify missing approval, changed substance, and incomplete-task protections.
+- [x] Extend completion proof without treating checked boxes as delivery evidence.
+- [x] Break-verify missing approval, changed substance, and incomplete-task protections.
+
+**Landed with this task.** Approved work completes only when the tasks its approval names have
+every box ticked. `dux-result` reads those boxes from the approved plan and range, after comparing
+the plan with the approved commit, and still requires the receipt and green checks. The approval's
+range must be one the box reader can read. The permitted-edit test no longer proves an unchanged
+plan first, because its boxes are unticked. Two result tests added and one changed; seven breaks,
+each failing on its own:
+
+- Approved work never reading its boxes (result test line 1397). Boxes read for a range other than
+  the approval's (1405). The approval's range not checked (1410).
+- A run with no approval passing that step (1422): a later check still refused it, with the
+  message that a plan with no name "is not committed at the commit its approval names". A changed
+  plan passing once every box is ticked (1425).
+- Approved work skipping its receipt (1430) or its checks (1435).
 
 ## Task 26: Record one predecessor
 
@@ -792,8 +926,21 @@ row after the operator merges.
 **Interface:** Optional `--after <task-id>`; linear sequencing only.  
 **Acceptance:** The dependent task owns its prerequisite reference.
 
-- [ ] Add the single predecessor reference at creation.
-- [ ] Test and break-verify invalid prerequisite input protections.
+- [x] Add the single predecessor reference at creation.
+- [x] Test and break-verify invalid prerequisite input protections.
+
+**Landed with this task.** `dux-task-new --after <task-id>` names the one task a new task waits on.
+The id must be well formed and in the ledger, and the task must deliver a pull request, so a plan
+or ship task and never a scout. A second `--after` is refused, because sequencing is linear. The
+reference is written to the new task's own `after` file before its queued line, so nothing can
+dispatch it without seeing what it waits on, and the task it waits on is left untouched. Two
+tests added; six breaks, each failing on its own:
+
+- A second `--after` replacing the first (task-new test line 86). The id not checked (90: the
+  ledger still refused it, with its own message). A task Dux does not know (95) or a scout (98)
+  accepted. `--after` with nothing after it not refused (102: the script stopped on an unset
+  variable instead).
+- The reference never written (70).
 
 ## Task 27: Verify prerequisites before dispatch
 
@@ -801,8 +948,44 @@ row after the operator merges.
 **Files:** `bin/dux-spawn`, `tests/dux-spawn.bats`, `tests/e2e-dispatch.bats`.  
 **Acceptance:** Delivery proof, expected GitHub merge, fetched registered base, and named deployment or contract evidence are all checked.
 
-- [ ] Store verified repository, PR, delivered head, and merge commit with the dependent task.
-- [ ] Break-verify open, failed, wrongly targeted, unverifiable, and deployment-incomplete prerequisite refusals.
+- [x] Store verified repository, PR, delivered head, and merge commit with the dependent task.
+- [x] Break-verify open, failed, wrongly targeted, unverifiable, and deployment-incomplete prerequisite refusals.
+
+**Landed with this task.** A task created with `--after` starts only once the task it waits on is
+delivered and merged. After the capacity check, `dux-spawn` requires, in order:
+
+- The task waited on is done in the ledger, and its pull request is in its own registered GitHub
+  repository.
+- Its delivery proof: the run record, the `/ship` receipt of that run, whose ci phase names the
+  delivered commit, and the last handoff, consumed, from that run, for that pull request.
+- GitHub reports the pull request merged into the registered base, from `dux/<id>`, at that
+  delivered commit, with a merge commit, and the merge is on the base once fetched in that task's
+  project.
+- A check the waiting brief names with `dux-brief --after-check <name>`, such as a deployment, has
+  succeeded on the merge. The name is stored in `after-check` beside the brief, like risk and phase.
+  Only GitHub check runs are read, not commit statuses.
+
+What was verified goes in the waiting task's `prerequisite` file: the task, repository, pull
+request, delivered head, merge commit and check. Every refusal says the task remains queued and
+writes nothing. `--after` now takes ship tasks only, because a plan task's pull request has no
+receipt behind it. Five spawn tests, one brief test and one end-to-end test added, one task-new
+test changed; 35 breaks, each failing on its own:
+
+- Open (spawn test line 760), closed (761), running (754) and failed (757) predecessors starting.
+- Wrongly targeted: the base (767), head branch (768), merged head (769) or repository (772) not
+  compared. A project not on GitHub not refused (774: the repository check still refused it).
+- Unverifiable: a receipt from another run read (784), no receipt required (782: the head
+  comparison still refused it), the proved commit read from another phase (742), no run record
+  required (787: the receipt check still refused it), an unconsumed handoff (790), one from another
+  run (793) or for another pull request (796), a state GitHub did not give (798), a merge commit
+  name that is not one (800), the base never fetched (742), the merge never looked for on it (802).
+- Deployment-incomplete: the named check never asked (811), unfinished or failed (812), a check
+  with another name counting (816), no answer from GitHub (818).
+- The record never written (744) or without its check (822). `--after-check` on a task that waits
+  on nothing (brief test line 565), blank, over 100 characters, or over two lines (558), its file
+  at mode 644 (550) or never written (548), its line not rendered (546). A plan task accepted by
+  `--after` (task-new test line 102). Spawn never reading what a task waits on (end-to-end test
+  line 296).
 
 ## Task 28: Preserve prerequisite evidence through its lifecycle
 
@@ -810,8 +993,39 @@ row after the operator merges.
 **Files:** `bin/dux-recover`, `bin/dux-teardown`, related tests.  
 **Acceptance:** Needed delivery evidence survives predecessor teardown; retries revalidate it; dependent removal removes its record.
 
-- [ ] Cover teardown, retry, restart, and removal.
-- [ ] Break-verify lost-evidence and stale-prerequisite protections.
+- [x] Cover teardown, retry, restart, and removal.
+- [x] Break-verify lost-evidence and stale-prerequisite protections.
+
+**Landed with this task.** A delivery stays checkable after its task is torn down, and a waiting
+task is checked again every time it starts. `dux-spawn` changed with the two named files, because
+it is the reader.
+
+- Teardown: before `state/` is cleared, a done task's run record, `/ship` receipts and last handoff
+  are copied into `data/tasks/<id>/delivery/`, under the names `dux-spawn` reads. A copy that cannot
+  be made is a finding, and the worktree and records stay. A failed task keeps nothing.
+- Lost evidence: once the run record is gone from `state/`, `dux-spawn` reads that copy, and a lost
+  copy leaves the waiting task queued.
+- Restart and retry: a start that finds a `prerequisite` record, left by an earlier start that
+  stopped after the check or carried by a retry, has to verify the same delivery again. Anything
+  different leaves the task queued and the record untouched. A retry waits on the same task, under
+  the same `--after-check`, and carries the record.
+- Removal: abandoning a waiting task that never ran removes its folder and the record with it.
+
+Two spawn tests, two teardown tests and one recover test added. The spawn refusal helper now also
+checks that the record is left as it was and that no worktree remains. The teardown suite's stub
+wrapper no longer keeps the test runner waiting five minutes after the last test. 17 breaks, each
+failing on its own:
+
+- Teardown keeping nothing (teardown test line 532), a failed copy not refused (532), the last
+  handoff not copied (542), the first handoff copied instead (542), the archived receipt not copied
+  (548), an earlier attempt's copy not replaced (551), a failed task's delivery kept (563).
+- Spawn never reading the kept copy (spawn test line 798) or its handoff (798), a record that no
+  longer matches not refused (helper line 685, called at 825), a refusal that rewrites the record
+  (688, called at 825), a refusal after the worktree is made (690, called at 795), a carried record
+  trusted without checking (recover test line 737).
+- A retry dropping the task it waits on (736: the brief refused the check with nothing to wait on),
+  the check (737: the start refused the record as no longer matching) or the record (741).
+  Abandoning without removing the folder (spawn test line 821).
 
 ## Task 29: Activate supported continuation and sequencing policy
 
@@ -819,8 +1033,56 @@ row after the operator merges.
 **Files:** `AGENTS.md`, `docs/constitution.md`, policy skills, affected specs, `docs/ARCHITECTURE.md`, `README.md`, this plan.  
 **Acceptance:** Current instructions describe only installed support and preserve separate repository ownership.
 
-- [ ] Align answer, approval, integrated planning, and prerequisite instructions.
-- [ ] Retain explicit recovery for lost sessions and operator-only merge.
+- [x] Align answer, approval, integrated planning, and prerequisite instructions.
+- [x] Retain explicit recovery for lost sessions and operator-only merge.
+
+**Landed with this task.** The instructions now say what this checkout does, each from the
+stage that carries it.
+
+- `AGENTS.md`: from stage m3, an answer to `needs-decision` or `blocked`, and approval of a
+  plan a worker committed under `--phase planning`, go to the parked session through
+  `skills/dux-recover`, and an answer never approves a plan. Before that stage, or once the
+  session is no longer in its tab, each is a fresh task through `skills/dux-recover`. Work in
+  another repository is its own task, created `--after` the one it follows, and stays queued
+  until capacity is free and what it waits on is proved merged; Dux dispatches it, not the
+  operator. The file stays at 150 lines.
+- `skills/dux-dispatch`: `--after` at creation, with the API change landing before its
+  client; `--phase planning` only for work that needs a plan because of its size alone, since
+  every other line of the plan test owes a design review that worker does not run;
+  `--after-check` names an existing deployment or contract check and never invents one; a
+  refusal ending `remains queued` is relayed, and a waiting task is spawned after the teardown
+  of the task it waits on. Teardown's copy of the delivery, and abandon removing the record,
+  are named.
+- `skills/dux-recover`: the answer goes to `bin/dux-round --purpose answer` when the script's
+  own `next:` line names it, and to a retry otherwise. Approval is the operator's explicit word
+  on that plan, range and commit; the operator reads the plan in the worktree and this session
+  does not. A retry of a waiting task waits on the same task and check. The paragraph on a
+  feedback round that ends badly no longer says every other ending stops the session, since a
+  question or a blocker now parks.
+- `docs/ARCHITECTURE.md`, `README.md`, and status notes in the feedback-rounds and
+  one-session specs carry the same. `bin/dux-doctor` now says this checkout implements m3, as
+  its comment asks; the default in `templates/config/policy-stage` stays m1 until the operator
+  installs R3.
+- Operator-only merge is unchanged, and now pinned in `AGENTS.md` and the dispatch skill.
+- The constitution needed no amendment. Principle 1's exception covers only a feedback round
+  on an open pull request, and its rule that a different repository or a lost session gets a
+  fresh worker is what this milestone implements. Principle 6's one fixed line per round is
+  the line answer and approval rounds type.
+
+25 breaks, one at a time, each failing at its own assertion. In `tests/contract.bats`: the old
+lifecycle arrow (729); the stage m3 qualifier on answers (744); the sentence that an answer
+never approves (745); the lost session left out of the fallback (746); `--purpose answer`
+dropped (748); `--commit` dropped from the approval command (749); the recover skill's
+sentence that an answer never starts the build (750); the plan read into the session (751);
+the retry command dropped (752); `not built yet` restored (756);
+`--after` dropped from `AGENTS.md` (763); the merge dropped from what a queued task waits on
+(764); `--phase planning` dropped from the pair rule (765); `--after` dropped from the
+`dux-task-new` usage (767); `--phase planning` dropped from the brief usage (768); any check
+allowed (769); inventing one allowed (770); `remains queued` dropped (771); spawning after
+teardown dropped (772); plan-first allowed for any plan (773); the design-review sentence
+dropped (774); the retry of a waiting task (776); merge without the operator's explicit word
+(780); the dispatch skill's merge line (781). In `tests/dux-doctor.bats`: the stage line back
+at m2 (101 and 124).
 
 ## Task 30: Verify M3 and stopped-run rollback
 
@@ -828,9 +1090,82 @@ row after the operator merges.
 **Files:** Continuation, approval, routing, installation, policy, and adapter tests; this plan.  
 **Acceptance:** M3 acceptance below is proved without two active implementation workers. This milestone changes approval authority and cross-repository ordering, so it receives separate reviews.
 
-- [ ] Exercise integrated approval, two-repository sequencing, and the stopped-run rollback path.
-- [ ] Deliver through `/ship`; record actual size and installed exercise evidence.
+- [x] Exercise integrated approval, two-repository sequencing, and the stopped-run rollback path.
+- [x] Deliver through `/ship`; record actual size and installed exercise evidence.
 - [ ] After operator merge, record and install R3 before external M3 application.
+
+**Landed with this task.** Two end-to-end tests in `tests/e2e-dispatch.bats` take the milestone's
+new paths through `bin/` on tmux and on the Herdr fake, with the fake worker, a fake GitHub and a
+local bare remote. One worker runs at a time in each.
+
+- Integrated approval. A ship task briefed `--phase planning` commits a plan and parks at
+  `needs-decision`, and recovery names both rounds. An answer round runs in the same session,
+  leaves the phase at planning with no approval record, and parks at the same question. The
+  approval round names the plan, tasks 1 to 2 and a seven-digit commit; its record holds the full
+  commit and the phase moves on. The same session ticks the boxes, rewrites the line under
+  **Where this stands**, builds and runs the five phases, and its `done: PR` is proved and parks.
+  The watcher records it done, and teardown removes the worktree and keeps the delivery.
+- The stopped run. The same approval round is ended in its tab after all five phases, with both
+  boxes open. The wrapper and the worker's group are gone, and the handoff is `ended`. The run
+  record, receipt, approval record, phase, branch and worktree remain. Recovery proves and
+  publishes nothing, because task 1 still has an unchecked box, and `--classify failed` records
+  the task failed on the operator's word, with the worktree kept.
+- Two-repository sequencing is Task 27's end-to-end test, run again on both backends. The task in
+  the second repository stays queued while the first works, while its pull request is open, and
+  until the named check passes on the merge; then it starts in its own worktree.
+
+Ten breaks, one at a time, each failing on its own (end-to-end test lines): an answer moving the
+phase on and writing an approval record (371), the approval record keeping the short commit
+(378), recovery not naming the approval round (363), a question not parking (360, in the helper
+at 348), a teardown whose delivery copy fails (386: it refuses, as Task 28 requires), a teardown
+keeping nothing (387), the lines under **Where this stands** not exempt (381), the approved boxes
+not checked (413), the receipt removed with the run's channel (409), and a classification that
+does not record failed (418).
+
+**The rollback rehearsal**, on 2026-09-16, was not committed. A scratch bats file drove this
+branch's scripts to a stopped run, as in the second test, with a scout in a second repository
+created `--after` it. It then followed spec section 10 on a tmux server of its own, and restored
+`main` at 8d33657, milestone 2's merge, from `git archive`.
+
+- Stopped and verified: once the session was ended in its tab, `ps` found neither the wrapper nor
+  anything in its group. Handoff 2 read `ended: the session ended without a terminal status`,
+  and this branch's watcher drained it.
+- Recorded incomplete under this revision: its recovery proved nothing (`task 1 in
+  docs/plans/p.md still has an unchecked box`), and `--classify failed` recorded it. The run
+  record, context, receipt, handoffs 1 and 2, approval record, phase, the scout's `after` record,
+  and the clean worktree with its plan and build commits all remained.
+- Restored: with `main`'s scripts and stage m2, recovery printed the failure and offered a retry.
+  The retry was refused (`a ship brief with no plan needs --risk bounded`) and its new task
+  dropped, so a plan-first task comes back as a fresh task. The evidence stayed.
+
+Two orderings matter, and the rehearsal showed each going wrong when ignored:
+
+- Settle an `ended` plan-first run under this revision before `main`'s scripts return. In a copy
+  of the home taken while it was `ended`, `main`'s recovery printed `proved <id>: done: PR
+  https://github.com/acme/proj/pull/7; published as handoff 3`. Its brief names no plan, so that
+  reader checks no boxes and no approval: the older reader accepting what this one refuses.
+- `main` does not hold a task created `--after` another: its `dux-spawn` reads no such record, and
+  it started the scout while the task it waited on was failed and never merged. Keep such tasks
+  undispatched until R3 is installed again, or abandon them.
+
+Limits: no live worker, real GitHub or CI ran in these exercises. Merging is the operator's, so no
+real merge between two repositories was made, and milestone 4 owns the installed exercises that
+reach real CI. The line a round types into a live session is milestone 2's, rehearsed in Task 19.
+
+Checks: `lint-shell` and `lint-pipes` are green on macOS and on Ubuntu 24.04 as a non-root user.
+The unit files and the eight matrix jobs are green under bash 5 and again under bash 3.2 on
+macOS, with both end-to-end dispatch jobs at 14 tests. On Ubuntu the same run is green apart from
+one tmux adapter wait in `tests/backend-adapter.bats`, the flake Task 19 records: test 36 failed
+in the full parallel run and test 39 in an earlier one. Run alone, that job then passed nine times
+on this branch and nine times on `main`. `lint-identifiers` fails on this machine for the reason
+Task 10 records.
+
+Size: 2,428 added lines against the milestone's estimate of 1,750 to 2,450, under the
+2,500 cap.
+
+Delivered through `/ship` with the separate reviews this milestone owes, as the pull request that
+carries this note. The merged commit id and the installed-revision evidence go in the R3 row after
+the operator merges.
 
 ## Task 31: Add the small usage report
 

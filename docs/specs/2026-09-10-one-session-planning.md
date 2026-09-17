@@ -2,8 +2,10 @@
 
 Status: section 7's mechanism, a headless session resumed by id, is superseded on 2026-09-15
 for live sessions by `2026-09-15-feedback-rounds-on-a-delivered-pr.md`: a round is one line
-typed into the session already at its prompt. Built first for a delivered pull request; the
-other rounds in section 7 remain the design for the next milestone, on that mechanism.
+typed into the session already at its prompt. Built first for a delivered pull request. An
+answer, and approval of a plan the worker committed, were built on that mechanism in milestone
+3 of `../plans/dux-simplification-rollout.md`, as `2026-09-15-dux-simplification-rollout.md`
+section 6.3 settles them; the other rounds in section 7 are not built.
 
 
 Design authority for the change that lets the operator talk to the Dux session and

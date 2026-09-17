@@ -13,6 +13,8 @@
 - Worktree: <set by dux-spawn>
 {{PLAN_LINES}}
 {{RISK_LINE}}
+{{PHASE_LINE}}
+{{AFTER_CHECK_LINE}}
 {{REVIEW_LINES}}
 {{ISSUE_LINE}}
 
@@ -26,7 +28,7 @@
 - You run with the operator's own authority, and nothing you say is taken on trust. Dux proves the result from the repository, the forge, and its own receipt before it counts. Never claim work you cannot evidence.
 - Write `working: waiting on <what> <url>` before any wait you expect to exceed 10 minutes.
 - The same obstacle twice means `blocked: <what, tried what>`, then stop.
-- After writing `blocked` or `needs-decision`, exit. An answer arrives as a new task with the answer appended to Intent.
+- After writing `blocked` or `needs-decision`, stop and wait at your prompt. The answer comes as a round file, or Dux ends the session and sends it as a new task.
 {{SHAPE_RULES}}
 
 ## Definition of done

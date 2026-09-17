@@ -51,6 +51,7 @@ load_run() {  # $1 id, $2 run
   shape="$(kv shape "$context")"; repo="$(kv repo "$context")"; base="$(kv base "$context")"
   branch="$(kv branch "$context")"; worktree="$(kv worktree "$context")"
   plan_path="$(kv plan "$context")"; task_range="$(kv tasks "$context")"
+  run_phase="$(kv phase "$context")"
   case "$shape" in plan|ship|scout) ;; *) finding "unknown shape '$shape' in the result context for $1" ;; esac
   case "$worktree" in /*) ;; *) finding "the result context for $1 records no absolute worktree path" ;; esac
   [ -d "$worktree" ] || finding "the worktree recorded for $1 is gone: $worktree"
@@ -228,6 +229,26 @@ expand_range() {  # $1 "1-3,5"; prints "1 2 3 5"
   printf '%s' "${out# }"
 }
 
+# The task number a line opens, or "" when it opens no task. The box reader
+# uses it for the heading being looked for and for the heading that ends a
+# task, so a line can never end a task without being able to start one. Seven
+# or more hashes is not a heading to Markdown, so it is not one here.
+# "Task 0(a)" is a sub-heading of task 0, not task 0 and not a task of its own,
+# so it must not end anything.
+TASK_NUM_AWK='
+      function task_num(line,   n, h, c) {
+        if (!match(line, /^#+/)) return ""
+        n = RLENGTH
+        if (n > 6) return ""
+        h = substr(line, n + 1)
+        if (h !~ /^[ \t]/) return ""
+        sub(/^[ \t]+/, "", h)
+        if (!match(h, /^Task [0-9]+/)) return ""
+        c = substr(h, RLENGTH + 1, 1)
+        if (c != "" && c != ":" && c != " " && c != "\t") return ""
+        return substr(h, 6, RLENGTH - 5)
+      }'
+
 check_plan_tasks() {
   local f nums n section ht
   { [ -n "$plan_path" ] && [ -n "$task_range" ]; } \
@@ -257,25 +278,7 @@ check_plan_tasks() {
     # so a "- [x]" quoted in an example cannot stand in for a real box. A task
     # ends only at the next task heading, so subsections, deeper headings and
     # pasted shell comments keep their boxes inside the task they belong to.
-    section="$(awk -v want="$n" '
-      # The task number this line opens, or "" when it opens no task. Used for
-      # the heading being looked for and for the heading that ends a task, so
-      # a line can never end a task without being able to start one. Seven or
-      # more hashes is not a heading to Markdown, so it is not one here.
-      # "Task 0(a)" is a sub-heading of task 0, not task 0 and not a task of
-      # its own, so it must not end anything.
-      function task_num(line,   n, h, c) {
-        if (!match(line, /^#+/)) return ""
-        n = RLENGTH
-        if (n > 6) return ""
-        h = substr(line, n + 1)
-        if (h !~ /^[ \t]/) return ""
-        sub(/^[ \t]+/, "", h)
-        if (!match(h, /^Task [0-9]+/)) return ""
-        c = substr(h, RLENGTH + 1, 1)
-        if (c != "" && c != ":" && c != " " && c != "\t") return ""
-        return substr(h, 6, RLENGTH - 5)
-      }
+    section="$(awk -v want="$n" "$TASK_NUM_AWK"'
       {
         s = $0
         sub(/^[ \t]*/, "", s)
@@ -311,6 +314,80 @@ check_plan_tasks() {
       || reject "task $n in $plan_path has no checkboxes to prove it was done"
   done
   return 0
+}
+
+# ---- the plan an approval names ------------------------------------------
+# Work briefed to plan first builds under an approval round, which named a plan,
+# the tasks in it and the commit the operator read. The newest approval at or
+# before this run's round is the one this run works under.
+approved_plan=""; approved_tasks=""; approved_commit=""
+load_approval() {
+  local round k f
+  round="$(kv round "$context")"
+  case "$round" in ''|*[!0-9]*) round=0 ;; esac
+  k="$round"
+  while [ "$k" -ge 1 ] && [ ! -f "$DUX_TASKS/$id/round-$k.approval" ]; do k=$((k - 1)); done
+  [ "$k" -ge 1 ] || no_result "$id has no approval to build: none is recorded at or before round $round"
+  f="$DUX_TASKS/$id/round-$k.approval"
+  approved_plan="$(kv plan "$f")"; approved_tasks="$(kv tasks "$f")"; approved_commit="$(kv commit "$f")"
+  printf '%s\n' "$approved_commit" | LC_ALL=C grep -xE '[0-9a-f]{40}' >/dev/null \
+    || finding "the approval recorded for $id at round $k names no full commit id"
+  case "$approved_plan" in
+    ''|/*|*..*|*[!A-Za-z0-9._/-]*)
+      finding "the approval recorded for $id at round $k names no plan inside the repository" ;;
+  esac
+  expand_range "$approved_tasks" >/dev/null \
+    || finding "the approval recorded for $id at round $k names no task range"
+}
+
+# A plan with what may change after its approval masked: the state of each box,
+# and the lines under **Where this stands**, up to the three the brief asks for.
+# Each line is tagged by what it belongs to, so a change can be named: L for a
+# task heading, A for acceptance criteria, T for anything else.
+plan_substance() {  # reads a plan on stdin
+  awk "$TASK_NUM_AWK"'
+    {
+      line = $0
+      if (status > 0 && line ~ /^[ \t]*[-*+][ \t]/) { status--; next }
+      status = 0
+      if (!seen && line ~ /^[ \t]*\*\*Where this stands\*\*[ \t]*$/) { seen = 1; status = 3 }
+      if (match(line, /^[ \t>]*([-*+]|[0-9]+[.)])[ \t]+\[[ \t]*[xX]?[ \t]*\]/)) {
+        n = RLENGTH; box = substr(line, 1, n)
+        sub(/\[[ \t]*[xX]?[ \t]*\]$/, "[?]", box)
+        line = box substr(line, n + 1)
+      }
+      if (task_num(line) != "") { acc = 0; para = 0; print "L:" line; next }
+      if (match(line, /^#+[ \t]/) && RLENGTH <= 7) {
+        # An acceptance section runs to the next heading as high as its own.
+        if (acc && RLENGTH - 1 <= level) acc = 0
+        if (!acc && tolower(line) ~ /acceptance/) { acc = 1; level = RLENGTH - 1 }
+        para = 0
+      } else if (line ~ /^[ \t]*$/) {
+        para = 0
+      } else if (line ~ /^[ \t]*(\*\*)?Acceptance/) {
+        para = 1
+      }
+      print ((acc || para) ? "A:" : "T:") line
+    }'
+}
+
+# Only box ticks and the lines under **Where this stands** may change without a
+# renewed approval. Anything else, including a change those lines describe, is
+# work nobody approved, so the run proves nothing until it is approved again.
+check_approved_plan() {
+  local approved now
+  approved="$(dgit cat-file blob "$approved_commit:$approved_plan" 2>/dev/null)" \
+    || no_result "$approved_plan is not committed at the commit its approval names"
+  now="$(dgit cat-file blob "$head_local:$approved_plan" 2>/dev/null)" \
+    || no_result "$approved_plan, the plan its approval names, is gone from $branch"
+  approved="$(printf '%s\n' "$approved" | plan_substance)"
+  now="$(printf '%s\n' "$now" | plan_substance)"
+  [ "$approved" != "$now" ] || return 0
+  [ "$(printf '%s\n' "$approved" | grep '^L:')" = "$(printf '%s\n' "$now" | grep '^L:')" ] \
+    || no_result "the tasks in $approved_plan changed since tasks $approved_tasks were approved; a changed task range needs approving again"
+  [ "$(printf '%s\n' "$approved" | grep '^A:')" = "$(printf '%s\n' "$now" | grep '^A:')" ] \
+    || no_result "the acceptance criteria in $approved_plan changed since its approval; they need approving again"
+  no_result "$approved_plan changed since its approval beyond box ticks and the three lines under Where this stands; it needs approving again"
 }
 
 recorded_phases() { sed -n 's/^phase=\([a-z]*\) .*/\1/p' "$1" | tr '\n' ' '; }
@@ -392,6 +469,16 @@ check_ship_shape() {
   # it names a plan whose boxes nothing can find, or a range with no plan to
   # find them in, and neither is a state dux-brief can produce.
   if [ -n "$plan_path" ] || [ -n "$task_range" ]; then check_plan_tasks; fi
+  # Work briefed to plan first names no plan in its brief; its approval does,
+  # and only the tasks it approved need their boxes ticked. Ticked boxes are
+  # progress, not delivery: the receipt and the checks below still decide. A
+  # phase this reader does not know is held to an approval too.
+  if [ -n "$run_phase" ]; then
+    load_approval
+    check_approved_plan
+    plan_path="$approved_plan"; task_range="$approved_tasks"
+    check_plan_tasks
+  fi
   check_receipt
   require_green_checks
 }

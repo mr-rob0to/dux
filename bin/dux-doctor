@@ -50,7 +50,7 @@ fi
 # implement is a failure: nothing here would carry the policy it names, and a
 # worker told to use a stage that is not there has no way to find that out.
 # The milestone that lands the next stage raises this line.
-STAGE_HERE=m2
+STAGE_HERE=m3
 
 first_value() {  # $1 file; the first line that is neither blank nor a note
   local line

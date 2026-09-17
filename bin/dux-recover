@@ -312,7 +312,7 @@ classify_as() {
 }
 
 retry() {
-  local new intent criteria plan tasks risk new_intent source_key rc
+  local new intent criteria plan tasks risk new_intent source_key rc pid pg
   need_state --retry "failed, blocked, or needs-decision" failed blocked needs-decision
   [ ! -e "$task/retry" ] || finding "$id was already retried as $(cat "$task/retry"); a further attempt is the operator's call through dux-dispatch"
   if [ "$state" = failed ] && [ -e "$task/retried-from" ]; then
@@ -323,7 +323,19 @@ retry() {
   intent="$task/intent.md"; criteria="$task/criteria.md"
   { [ -s "$intent" ] && [ -s "$criteria" ]; } || finding "no intent.md and criteria.md in tasks/$id; write the retry brief through dux-dispatch"
   source_key="$("$ledger" get "$id" source)" || exit $?
-  new="$("$DUX_ROOT/bin/dux-task-new" "$project" "$shape" --source "$source_key")" || exit $?
+  # A question or a blocker can still hold its session, parked in its tab for an
+  # answer. A retry is a new session, so the old one is ended first, and nothing
+  # is written while any of it still runs.
+  pid="$(wrapper_pid)" || exit $?
+  [ -z "$pid" ] || signal_wrapper "$pid"
+  pg="$(cat "$pgidfile" 2>/dev/null)"
+  if group_runs "$pg"; then finding "the session for $id is still running as group $pg; end it in its tab, then rerun"; fi
+  # A task that waits on another still waits on it. The retry names the same
+  # task and the same check, and carries the record of what was verified, which
+  # dux-spawn checks again before the retry starts.
+  set --
+  [ ! -f "$task/after" ] || set -- --after "$(take_line < "$task/after")"
+  new="$("$DUX_ROOT/bin/dux-task-new" "$project" "$shape" --source "$source_key" "$@")" || exit $?
   new_intent="$DUX_TASKS/$new/intent.md"
   {
     cat "$intent"
@@ -351,6 +363,13 @@ retry() {
     set -- "$@" --issue-file "$DUX_TASKS/$new/issue.md"
   fi
   [ -z "$plan" ] || set -- "$@" --plan "$plan" --tasks "$tasks"
+  # Work that plans first starts again at planning. An approval was for the
+  # session and the commit it named, and a retry has neither.
+  [ ! -f "$task/phase" ] || set -- "$@" --phase planning
+  [ ! -f "$task/after-check" ] || set -- "$@" --after-check "$(take_line < "$task/after-check")"
+  if [ -f "$task/prerequisite" ]; then
+    cp "$task/prerequisite" "$DUX_TASKS/$new/prerequisite" || finding "cannot copy $task/prerequisite"
+  fi
   if ! "$DUX_ROOT/bin/dux-brief" "$new" "$@" >/dev/null; then
     "$ledger" set "$new" state dropped || true
     finding "brief for retry $new could not be rendered (see above); $new dropped, $id unchanged"
@@ -385,7 +404,17 @@ case "$action" in
         echo "next: dux-recover $id --retry [--answer-file <f>] once, or dispatch a scout" ;;
       blocked|needs-decision)
         print_status_tail
-        echo "next: after the operator answers, dux-recover $id --retry --answer-file <f>" ;;
+        # A session parked in its tab takes the answer itself. One that is not
+        # has no session left to answer, so the answer goes to a fresh task.
+        if parked "$id"; then
+          echo "next: after the operator answers, dux-round $id --purpose answer --file <f>"
+          # Work that plans first asks for its approval as a question.
+          if [ "$state" = needs-decision ] && [ -f "$task/phase" ]; then
+            echo "next: if the operator approves the plan it names, dux-round $id --purpose approval --file <f> --plan <path> --tasks <range> --commit <sha>"
+          fi
+        else
+          echo "next: after the operator answers, dux-recover $id --retry --answer-file <f>"
+        fi ;;
       *) finding "nothing to recover for $id (state $state)" ;;
     esac ;;
   extend) extend ;;

@@ -19,6 +19,12 @@ round, same-PR `/ship` updates, eight feedback rounds, and safe teardown.
 [rollout plan](../plans/dux-simplification-rollout.md), tasks 11 to 19, which holds the
 evidence for each task. It is used once `config/policy-stage` names `m2`.
 
+**Extended 2026-09-16** by milestone 3 of the same plan, tasks 20 to 30, used once
+`config/policy-stage` names `m3`. A question or a blocker now parks as a delivery does, and
+takes an answer, or an approval of a plan the worker committed, as a round of that purpose.
+From that stage, "What this does not cover" below and section 7's `done`-only limit describe
+stage m2. A round that ends `failed` or `ended` still takes no further round.
+
 ## 1. What the operator gets
 
 A worker that has opened its pull request no longer ends. It waits at its prompt, in its

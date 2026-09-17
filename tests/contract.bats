@@ -726,7 +726,7 @@ unquoted() { sed 's/^> //' "$1" | tr '\n' ' ' | tr -s ' '; }
 # one script that checks it is still there, and never by typing into its tab.
 @test "feedback on a delivered pull request goes through dux-round" {
   life="$(unwrapped '/^## Task lifecycle/,/^## Talking to the operator/p' "$DUX_ROOT/AGENTS.md")"
-  [[ "$life" == *'done -> running on a feedback round'* ]]
+  [[ "$life" == *'done | needs-decision | blocked -> running on a round'* ]]
   [[ "$life" == *'`bin/dux-round <id> --file data/tasks/<id>/feedback.md`'* ]]
   fb="$(unwrapped '/^## Feedback on a delivered pull request/,/^## Teardown/p' "$DUX_ROOT/skills/dux-dispatch/SKILL.md")"
   [[ "$fb" == *'data/tasks/<id>/feedback.md'* ]]
@@ -736,14 +736,49 @@ unquoted() { sed 's/^> //' "$1" | tr '\n' ' ' | tr -s ' '; }
   [[ "$teardown" == *'ends the parked session'* ]]
 }
 
-@test "what this stage does not carry is named, and points at recovery" {
+# An answer and an approval go to the session that asked, through the one script
+# that checks it is still there. Only an approval names what it approves, and a
+# session that is gone, or a stage that lacks the round, is explicit recovery.
+@test "answers and approval go to the parked session, and an answer never approves" {
   life="$(unwrapped '/^## Task lifecycle/,/^## Talking to the operator/p' "$DUX_ROOT/AGENTS.md")"
-  [[ "$life" == *'are not built yet'* ]]
-  [[ "$life" == *'fresh task through `skills/dux-recover`'* ]]
+  [[ "$life" == *'From stage m3, an answer to `needs-decision` or `blocked`, and approval of a plan the worker committed under `--phase planning`'* ]]
+  [[ "$life" == *'An answer never approves a plan.'* ]]
+  [[ "$life" == *'Before its stage, or once the session is no longer in its tab, each is a fresh task through `skills/dux-recover`'* ]]
   rec="$(unwrapped '1,$p' "$DUX_ROOT/skills/dux-recover/SKILL.md")"
-  [[ "$rec" == *'not built yet'* ]]
+  [[ "$rec" == *'`bin/dux-round <id> --purpose answer --file data/tasks/<id>/answer.md`'* ]]
+  [[ "$rec" == *'`bin/dux-round <id> --purpose approval --file data/tasks/<id>/approval.md --plan <path> --tasks <range> --commit <sha>`'* ]]
+  [[ "$rec" == *'Anything else they say is an answer, and an answer never starts the build'* ]]
+  [[ "$rec" == *'never read it into this session'* ]]
+  [[ "$rec" == *'`bin/dux-recover <id> --retry --answer-file data/tasks/<id>/answer.md`'* ]]
   [[ "$rec" == *'a fresh task with the answer or the feedback copied into its Intent'* ]]
   [[ "$rec" == *'Do not tell the operator to type into a worker'* ]]
+  # What is built is not described as missing any more.
+  [[ "$life$rec" != *'not built yet'* ]]
+}
+
+# Work in another repository is its own task, started only on a proved merge,
+# and the plan a worker writes itself is only for work no design review is owed.
+@test "a task that waits on another starts on a proved merge, and Dux dispatches it" {
+  life="$(unwrapped '/^## Task lifecycle/,/^## Talking to the operator/p' "$DUX_ROOT/AGENTS.md")"
+  [[ "$life" == *'its own task, created `--after` this one from stage m3'* ]]
+  [[ "$life" == *'what it waits on is proved merged'* ]]
+  [[ "$life" == *'or neither with `--risk bounded` or, from stage m3, `--phase planning`'* ]]
+  ski="$(unwrapped '1,$p' "$DUX_ROOT/skills/dux-dispatch/SKILL.md")"
+  [[ "$ski" == *'bin/dux-task-new <project> <shape> [--source gh:<owner>/<repo>#<n>] [--after <task-id>]'* ]]
+  [[ "$ski" == *'[--plan <path> --tasks <a-b> | --phase planning]'* ]]
+  [[ "$ski" == *'`--after-check <name>` names the existing deployment or contract check'* ]]
+  [[ "$ski" == *'never invent one'* ]]
+  [[ "$ski" == *'Anything less is a finding ending `remains queued`'* ]]
+  [[ "$ski" == *'Then spawn any queued task created `--after` this one'* ]]
+  [[ "$ski" == *'work that needs a plan only because of the last line'* ]]
+  [[ "$ski" == *'The other lines still need a `plan` task'* ]]
+  rec="$(unwrapped '1,$p' "$DUX_ROOT/skills/dux-recover/SKILL.md")"
+  [[ "$rec" == *'waits on the same task and check, and its start proves that delivery again'* ]]
+}
+
+@test "merging stays the operator's word" {
+  grep -qF 'Never merge a PR without the operator'"'"'s explicit word in this conversation.' "$DUX_ROOT/AGENTS.md"
+  grep -qF 'Never merge, and never push to a base branch, from this session.' "$DUX_ROOT/skills/dux-dispatch/SKILL.md"
 }
 
 @test "the dispatch skill classifies before it briefs, and the brief takes the pair" {

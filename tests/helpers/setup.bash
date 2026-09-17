@@ -313,3 +313,50 @@ fake_receipt() {  # $1 id, $2 run, [$3 combined|separate]
     printf 'phase=%s sha=%s at=2026-09-05T00:00:00Z\n' "$p" "$sha" >> "$r"
   done
 }
+
+# The task it waits on, delivered the way the wrapper and the watcher leave it:
+# its run, its /ship receipt whose ci phase names the delivered commit (the
+# earlier phases name another, as they do once /ship has pushed a fix), and the
+# consumed handoff that put its pull request on the ledger. GitHub reports that pull request
+# merged, and the merge is pushed to the registered base from another clone, so
+# the project's own clone has it only once spawn fetches. Sets $pred, $head,
+# $merge and $pr.
+delivered() {
+  local m="$DUX_HOME/merger" p
+  pred="$(fixture_task proj ship github)"; pr=https://github.com/acme/proj/pull/7
+  git clone -q "$DUX_HOME/acme/proj.git" "$m"
+  git -C "$m" checkout -q -b "dux/$pred"
+  git -C "$m" commit -q --allow-empty -m delivered
+  head="$(git -C "$m" rev-parse HEAD)"
+  git -C "$m" checkout -q main
+  git -C "$m" merge -q --no-ff -m merged "dux/$pred"
+  merge="$(git -C "$m" rev-parse HEAD)"
+  git -C "$m" push -q origin main
+  fake_run "$pred" r1 ship acme/proj
+  { echo version=2; echo "id=$pred"; echo run=r1; echo "branch=dux/$pred"; echo review=separate
+    for p in checks review security pr; do echo "phase=$p sha=$(printf '%040d' 0) at=2026-09-16T00:00:00Z"; done
+    echo "phase=ci sha=$head at=2026-09-16T00:00:00Z"
+  } > "$DUX_HOME/state/$pred.ship-receipt.delivered"
+  handoff "$pred" "done: PR $pr" "done" r1
+  : > "$DUX_HOME/state/$pred.handoffs/1/consumed"
+  dux-ledger set "$pred" state "done"; dux-ledger set "$pred" pr "$pr"
+  export FAKE_GH_PR_STATE=MERGED FAKE_GH_PR_HEAD="dux/$pred" FAKE_GH_PR_BASE=main \
+    FAKE_GH_PR_HEAD_OID="$head" FAKE_GH_PR_MERGE="$merge"
+}
+
+# The task that waits is in a repository of its own, so everything checked about
+# the merge is checked in the repository it landed in.
+waiting() {  # [$1 the check the merge must pass]; sets $id, a scout in other that waits on $pred
+  local t
+  if ! dux-project list | grep -x other >/dev/null; then
+    make_repo "$DUX_HOME/other" main
+    dux-project add "$DUX_HOME/other" --base main --pr-template skip >/dev/null
+  fi
+  id="$(dux-task-new other scout --after "$pred")"; t="$DUX_HOME/data/tasks/$id"
+  printf 'Build on it.\n' > "$t/intent.md"; printf '1. Built.\n' > "$t/criteria.md"
+  if [ -n "${1:-}" ]; then
+    dux-brief "$id" --intent-file "$t/intent.md" --criteria-file "$t/criteria.md" --after-check "$1" >/dev/null
+  else
+    dux-brief "$id" --intent-file "$t/intent.md" --criteria-file "$t/criteria.md" >/dev/null
+  fi
+}

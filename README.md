@@ -147,6 +147,9 @@ Three shapes, from safest to most involved.
 
 > *"Build milestone 2 of that plan."*
 
+From `policy-stage` `m3`, a ship task can plan first: the worker commits a plan,
+asks you to approve the tasks it names, and builds exactly those once you do.
+
 And any time, in any repo, with no Dux involved:
 
 > *"Ship it."*
@@ -160,7 +163,10 @@ And any time, in any repo, with no Dux involved:
 2. It cuts a worktree on a new branch from a freshly fetched base and starts a
    worker in its own pane.
 3. The worker works. Dux sees state changes, not output.
-4. It finishes, gets stuck, or asks a question. You get one line.
+4. It finishes, gets stuck, or asks a question. You get one line. Your answer, or
+   your approval of a plan it asked you to approve, goes to the same worker,
+   still waiting in its tab. This needs `policy-stage` at `m3`; before that, or
+   once that session is gone, the answer is a fresh task.
 5. Dux checks the branch, the PR and CI before agreeing it is done.
 6. You review, then merge or send feedback. Feedback goes to the same worker,
    still waiting in its tab, and comes back as new commits on the same PR, checked
@@ -168,6 +174,9 @@ And any time, in any repo, with no Dux involved:
    is a fresh task.
 7. After you merge, Dux tears the worktree down and ends the waiting session,
    refusing if anything there is uncommitted or unpushed.
+8. Work in a second repository, such as a client for an API change, is a task
+   of its own. From `m3`, Dux starts it only once the first pull request has
+   merged and any deployment or contract check named for it has passed.
 
 <details>
 <summary><strong>Why this shape — the four problems it is built around</strong></summary>

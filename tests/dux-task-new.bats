@@ -57,3 +57,53 @@ setup_project() { make_repo "$DUX_HOME/proj" main; dux-project add "$DUX_HOME/pr
   [[ "$output" == "finding: could not allocate a task id for proj after 5 tries"* ]]
   [ "$(dux-ledger list | wc -l | tr -d ' ')" -eq 1 ]
 }
+
+# ---- one predecessor ---------------------------------------------------------
+# A task can wait on one earlier task that delivers a pull request. The waiting
+# task keeps the reference in its own folder; the task it waits on is untouched.
+
+@test "--after records the one task a new task waits on, in the new task's own folder" {
+  setup_project
+  first="$(dux-task-new proj ship)"
+  other="$(dux-task-new proj ship)"
+  id="$(dux-task-new proj ship --after "$first")"
+  [ "$(cat "$DUX_HOME/data/tasks/$id/after")" = "$first" ]
+  [ ! -e "$DUX_HOME/data/tasks/$first/after" ]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  id="$(dux-task-new proj scout --source 'gh:acme/widgets#12' --after "$other")"
+  [ "$(cat "$DUX_HOME/data/tasks/$id/after")" = "$other" ]
+  [ "$(dux-ledger get "$id" source)" = 'gh:acme/widgets#12' ]
+  id="$(dux-task-new proj ship)"
+  [ ! -e "$DUX_HOME/data/tasks/$id/after" ]
+}
+
+@test "--after takes one known ship task, and a refusal leaves nothing behind" {
+  setup_project
+  first="$(dux-task-new proj ship)"
+  second="$(dux-task-new proj ship)"
+  scout="$(dux-task-new proj scout)"
+  planned="$(dux-task-new proj plan)"
+  run dux-task-new proj ship --after "$first" --after "$second"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: a task waits on one task at most; sequencing is linear, so --after comes once" ]
+  run dux-task-new proj ship --after ../x
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: task id must match [A-Za-z0-9._-]+: ../x" ]
+  run dux-task-new proj ship --after ''
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: task id must match [A-Za-z0-9._-]+: " ]
+  run dux-task-new proj ship --after proj-ship-20260916-zzz
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: task proj-ship-20260916-zzz not in ledger" ]
+  run dux-task-new proj ship --after "$scout"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: task $scout is a scout task; only ship work can be waited on, because only its delivered commit is on record" ]
+  run dux-task-new proj ship --after "$planned"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: task $planned is a plan task; only ship work can be waited on, because only its delivered commit is on record" ]
+  run dux-task-new proj ship --after
+  [ "$status" -eq 1 ]
+  [ "$output" = "dux: --after needs a task id" ]
+  [ "$(ls "$DUX_HOME/data/tasks" | wc -l | tr -d ' ')" -eq 4 ]
+  [ "$(dux-ledger list | wc -l | tr -d ' ')" -eq 4 ]
+}

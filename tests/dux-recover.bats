@@ -489,6 +489,63 @@ retire_line="failed: stopped for security-boundary upgrade; worktree kept"
   [[ "$output" == *"next: after the operator answers, dux-recover $id --retry --answer-file <f>" ]]
 }
 
+# The marker a wrapper parked at a waiting state leaves: this run, the live
+# stand-in wrapper, and the group named.
+park_marker() {  # $1 pgid
+  echo "$1" > "$DUX_HOME/state/$id.pgid"
+  printf 'run=r00\nwrapper=%s\npgid=%s\n' "$(cat "$DUX_HOME/state/$id.pid")" "$1" > "$DUX_HOME/state/$id.parked"
+}
+
+@test "a question or a blocker still parked in its tab is answered there, and one no longer parked is retried" {
+  for at in needs-decision blocked; do
+    task_in "$at" ship; status_is "$at: A or B?"
+    park_marker "$(ps -o pgid= -p $$ | tr -d ' ')"
+    run dux-recover "$id"
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s\n' "$output" | tail -n 1)" = "next: after the operator answers, dux-round $id --purpose answer --file <f>" ]
+    rm "$DUX_HOME/state/$id.parked"
+    run dux-recover "$id"
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s\n' "$output" | tail -n 1)" = "next: after the operator answers, dux-recover $id --retry --answer-file <f>" ]
+  done
+}
+
+@test "work that plans first, parked at its question, can be approved in its tab; a blocker cannot" {
+  task_in needs-decision ship; status_is "needs-decision: approve tasks 1-2 of docs/plans/p.md at abc1234"
+  printf 'planning\n' > "$DUX_HOME/data/tasks/$id/phase"
+  park_marker "$(ps -o pgid= -p $$ | tr -d ' ')"
+  run dux-recover "$id"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | tail -n 2)" = "next: after the operator answers, dux-round $id --purpose answer --file <f>
+next: if the operator approves the plan it names, dux-round $id --purpose approval --file <f> --plan <path> --tasks <range> --commit <sha>" ]
+  dux-ledger set "$id" state blocked
+  run dux-recover "$id"
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "next: after the operator answers, dux-round $id --purpose answer --file <f>" ]
+}
+
+@test "a retry ends a session still parked at its question, and writes nothing while any of it runs" {
+  task_in needs-decision ship; status_is "needs-decision: A or B?"
+  w="$(cat "$DUX_HOME/state/$id.pid")"
+  # The session's own group, apart from this test's, and one that outlives its wrapper.
+  perl -e 'setpgrp(0, 0); exec "sleep", "300"' >/dev/null 2>&1 3>&- & sp=$!
+  wait_until 5 bash -c '[ "$(ps -o pgid= -p "$1" | tr -d " ")" = "$1" ]' _ "$sp"
+  park_marker "$sp"
+  echo "B." > "$DUX_HOME/answer"
+  run dux-recover "$id" --retry --answer-file "$DUX_HOME/answer"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: the session for $id is still running as group $sp; end it in its tab, then rerun" ]
+  not_running "$w"
+  [ "$(dux-ledger get "$id" state)" = needs-decision ]; [ ! -e "$DUX_HOME/data/tasks/$id/retry" ]
+  [ "$(dux-ledger list | grep -c .)" -eq 1 ]
+  kill "$sp"; wait "$sp" 2>/dev/null || true
+  run dux-recover "$id" --retry --answer-file "$DUX_HOME/answer"
+  [ "$status" -eq 0 ]
+  new="$(cat "$DUX_HOME/data/tasks/$id/retry")"
+  [ "$(printf '%s\n' "$output" | tail -n 1)" = "retried $id as $new" ]
+  [ "$(dux-ledger get "$id" state)" = failed ]
+}
+
 @test "--retry after a decision records the answer, supersedes, and spawns" {
   export FAKE_HERDR_RUN=1 FAKE_WORKER_SCRIPT="$DUX_HOME/state/script" DUX_WRAP_POLL_SECS=1
   printf 'report all clear\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
@@ -640,4 +697,52 @@ retire_line="failed: stopped for security-boundary upgrade; worktree kept"
   grep -qxF -- '- Risk: bounded' "$b"
   [ "$(grep -c '^- Plan: ' "$b" || true)" -eq 0 ]
   [ "$(grep -c '^- Tasks: ' "$b" || true)" -eq 0 ]
+}
+
+@test "a retry of work that plans first plans again, even after its plan was approved" {
+  task_in failed ship; kill_worker
+  id2="$(dux-task-new proj ship)"
+  t2="$DUX_HOME/data/tasks/$id2"
+  cp "$DUX_HOME/data/tasks/$id/intent.md" "$t2/intent.md"
+  cp "$DUX_HOME/data/tasks/$id/criteria.md" "$t2/criteria.md"
+  dux-brief "$id2" --intent-file "$t2/intent.md" --criteria-file "$t2/criteria.md" --phase planning >/dev/null
+  printf 'implementation\n' > "$t2/phase"
+  dux-ledger set "$id2" state failed
+  fake_run "$id2" r01 ship acme/proj "$DUX_HOME/proj"
+  id="$id2" run dux-recover "$id2" --retry
+  [ "$status" -eq 0 ]
+  new="$(cat "$t2/retry")"
+  [ "$(cat "$DUX_HOME/data/tasks/$new/phase")" = planning ]
+  b="$DUX_HOME/data/tasks/$new/brief.md"
+  grep -qxF -- '- Phase: planning' "$b"
+  grep -qxF -- '- Risk: complex' "$b"
+  [ "$(grep -c '^- Plan: ' "$b" || true)" -eq 0 ]
+}
+
+# A retry is the same work again, so it waits on the same delivery under the
+# same check, and carries the record of what was verified. Its start checks all
+# of it again, and waits while any of it no longer holds.
+@test "a retry of a task that waits keeps waiting on the same delivery, and its start checks it again" {
+  delivered
+  export FAKE_GH_CHECK_RUNS='{"check_runs":[{"name":"deploy api","status":"completed","conclusion":"success"}]}'
+  waiting 'deploy api'; old="$DUX_HOME/data/tasks/$id"
+  # other is not trusted in this suite, so this start stops after the check.
+  run dux-spawn "$id"
+  [ "$status" -eq 2 ]; [ -f "$old/prerequisite" ]
+  dux-ledger set "$id" state failed
+  FAKE_GH_CHECK_RUNS='{"check_runs":[{"name":"deploy api","status":"completed","conclusion":"failure"}]}' \
+    run dux-recover "$id" --retry
+  [ "$status" -eq 2 ]
+  new="$(cat "$old/retry")"; t="$DUX_HOME/data/tasks/$new"
+  [ "$output" = "$(printf "finding: check 'deploy api' has not succeeded on the merge of %s; %s remains queued\nretry %s created but not spawned; run dux-spawn %s" "$pr" "$new" "$new" "$new")" ]
+  [ "$(cat "$t/after")" = "$pred" ]
+  [ "$(cat "$t/after-check")" = 'deploy api' ]
+  grep -qxF -- '- After check: deploy api succeeds' "$t/brief.md"
+  cmp "$old/prerequisite" "$t/prerequisite"
+  [ "$(dux-ledger get "$new" state)" = queued ]
+  trust_path "$DUX_HOME/other"
+  run dux-spawn "$new"
+  [ "$status" -eq 0 ]
+  [ "$(dux-ledger get "$new" state)" = running ]
+  cmp "$old/prerequisite" "$t/prerequisite"
 }

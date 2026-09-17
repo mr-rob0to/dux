@@ -48,18 +48,23 @@ bin/
                            --pr-template install|skip, required when the repo has
                            no pull request template
   dux-ledger               add/set/set-if/get/list/ack/unack over data/backlog.md; the only writer
-  dux-task-new             allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, folder, queued line
+  dux-task-new             allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, folder, queued line;
+                           --after names the one ship task it waits on, in tasks/<id>/after
   dux-intake               queue labelled GitHub issues as tasks; --show fences one issue's text
   dux-brief                render tasks/<id>/brief.md and tasks/<id>/worker-settings.json,
                            and for a ship task write tasks/<id>/risk (mode 600) from
-                           --risk bounded|complex, defaulting to complex
+                           --risk bounded|complex, defaulting to complex; --phase planning
+                           writes tasks/<id>/phase for work that plans first, and
+                           --after-check the check a waited-on merge must pass
   dux-worktree             create/remove/discard a worktree per the project's mechanism
   dux-spawn                worktree, tab and wrapper for a queued task; refusals including a
                            worktree Claude Code does not trust and a live worker on any
-                           other task
+                           other task; a task that waits starts only on a proved delivery,
+                           merged into the fetched base, recorded in tasks/<id>/prerequisite
   dux-worker-wrap          runs beside the tab, not inside it: task channel, launcher,
                            the harness's own process group, proposal rules, heartbeat,
-                           terminal state; parks a proved delivery and runs its rounds
+                           terminal state; parks a proved delivery, a question or a
+                           blocker, and runs its rounds
   dux-result               record-ship files the phases the branch's review mode owes, in
                            order, into a versioned receipt that names the mode; verify proves
                            a plan, ship, or scout result from the registry, Git, and GitHub.
@@ -68,12 +73,15 @@ bin/
                            five. A task classified separate cannot record or prove a combined
                            review, and escalation the other way needs no permission.
                            A ship brief naming no plan and no task range skips the checkbox
-                           proof and nothing else
-  dux-round                feedback on a delivered pull request: refuses unless the task is
-                           done, its session still parked in its tab and its pull request
-                           open, then writes tasks/<id>/round-<n>.md for the parked wrapper;
-                           eight rounds at most
-  dux-teardown             remove the worktree, close the container, mark done or failed;
+                           proof and nothing else. Work that plans first proves nothing
+                           before its approval, and is then held to the plan, task range and
+                           commit that approval names
+  dux-round                a round for a session parked in its tab: feedback on a done
+                           task's open pull request, an answer to needs-decision or blocked,
+                           or approval of a plan committed under --phase planning; writes
+                           tasks/<id>/round-<n>.md for the parked wrapper; eight rounds at most
+  dux-teardown             remove the worktree, close the container, mark done or failed,
+                           keeping a done task's delivery proof in tasks/<id>/delivery/;
                            --abandon lets go of a task that never started
   dux-watch                classify task events, record them, and raise local toasts
   dux-status               recompute the fleet digest and missed wakes from files
@@ -116,7 +124,8 @@ tests/fixtures/
 data/         (gitignored) projects.md registry; backlog.md ledger with acked state;
                            tasks/<id>/{intent.md,criteria.md,brief.md,issue.md,status.log,
                            report.md,worker-settings.json,risk,review,harness,hooks/,worktree.log,
-                           retry,retried-from}
+                           retry,retried-from,phase,after,after-check,prerequisite,
+                           round-<n>.md,round-<n>.approval,delivery/}
 state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
                            <id>.endpoint; <id>.pid; <id>.pgid; <id>.wrap.log; events.log;
                            <id>.run; <id>.portal; <id>.result-context;
@@ -205,7 +214,9 @@ the tab and catches a worker in a server whose socket vanished.
 
 1. Operator states a goal; Dux writes intent and criteria files and runs
    `dux-task-new <project> <shape>`, which allocates the id and folder and
-   appends the `queued` ledger line (`dux-ledger add`).
+   appends the `queued` ledger line (`dux-ledger add`). `--after <task-id>`
+   writes `tasks/<id>/after` first, naming the one `ship` task this one waits
+   on; sequencing is linear.
 2. `dux-brief <id> ...` renders `tasks/<id>/brief.md` (<=100 lines outside the
    fenced issue block) and `tasks/<id>/worker-settings.json`. A task with a
    `gh:` source needs `--issue-file`, and its brief carries one
@@ -214,7 +225,12 @@ the tab and catches a worker in a server whose socket vanished.
    also gets `tasks/<id>/risk`, `bounded` or `complex`, which is what
    `dux-worker-wrap` looks up in `config/models` instead of the shape. `--plan`
    and `--tasks` are one pair; the empty pair is plan-free shipping and needs
-   `--risk bounded`.
+   `--risk bounded`, or is work that plans first under `--phase planning`. That
+   brief runs on the complex model and tells the worker to commit a plan, ask
+   for its approval at `needs-decision` and build nothing before it, and
+   `tasks/<id>/phase` reads `planning` until an approval round moves it on. For a
+   task that waits, `--after-check <name>` writes `tasks/<id>/after-check`: a
+   check, such as a deployment, that has to have passed on the merge.
 3. `dux-spawn <id>` refuses with a finding unless: the lock is this session's
    (`dux-lock mine`), the task is `queued`, the project is registered, the
    brief has a `- Worktree: ` line to fill, the chosen worker harness is
@@ -240,6 +256,16 @@ the tab and catches a worker in a server whose socket vanished.
    started later, and the operator runs the same command again once the active
    task has stopped. It comes before the worktree and the container, so a
    refused task is unchanged and still `queued`.
+   A task that waits is refused the same way, ending `remains queued`, until the
+   task it waits on is proved delivered and merged. The ledger must say `done`;
+   the run record, the `/ship` receipt's `ci` commit and the consumed handoff
+   carrying the ledger's pull request must agree, read from `state/` or, once
+   that task is torn down, from the copy in `tasks/<after>/delivery/`; GitHub
+   must say that pull request merged from `dux/<after>` at that commit into the
+   registered base; the merge commit must be on that base once fetched; and a
+   check named in `after-check` must have succeeded on it. What was verified is
+   written to `tasks/<id>/prerequisite`, and a record already there, from an
+   earlier start or carried by a retry, must match or the task stays queued.
    Milestone 2 dispatches `claude` workers only. `codex` is refused by
    `harness_refusal` in `dux-env`, which `dux-spawn` and `dux-worker-wrap` both
    call, so the `--harness` flag, `config/worker-harness` and
@@ -322,17 +348,25 @@ the tab and catches a worker in a server whose socket vanished.
    `ended: the session ended without a terminal status`, because a process the
    wrapper did not fork leaves no exit status to read.
 
-   A `plan` or `ship` run whose `done` is proved parks instead of ending, once
-   the harness's `Stop` hook has touched `<channel>/stopped` after the terminal
-   line. The wait for that is `DUX_WRAP_IDLE_SECS` (60 seconds), and running out
+   A `plan` or `ship` run whose `done` is proved parks instead of ending, and so
+   does one that ends at `needs-decision` or `blocked`, once the harness's `Stop`
+   hook has touched `<channel>/stopped` after the terminal line. The wait for
+   that is `DUX_WRAP_IDLE_SECS` (60 seconds), and running out
    proves nothing: the run ends as any other does. A parked wrapper publishes
    the handoff, writes `state/<id>.parked` naming the run, itself and the group,
    and waits with the session idle at its prompt. Spawn and `dux-round` count a
    parked session as idle only while all three still hold. `dux-round <id>
-   --file <path>` takes a `done` task whose pull request is open, moves the
-   ledger to `running`, and renames `tasks/<id>/round-<n>.md` into place. The
-   wrapper takes it up only after the watcher has consumed the parked run's
-   handoff. It removes the marker, stages the file in the channel at mode 400,
+   --file <path>` takes a `done` task whose pull request is open for feedback.
+   `--purpose answer` takes a `needs-decision` or `blocked` task, and approves
+   nothing. `--purpose approval` takes a `needs-decision` ship task briefed
+   `--phase planning`, with `--plan`, `--tasks` and `--commit`: the commit must
+   be the branch tip, with the plan committed there holding every task in the
+   range. It writes `tasks/<id>/round-<n>.approval`, naming the plan, the range
+   and the full commit, and moves the phase to `implementation`. Every purpose
+   moves the ledger to `running` and renames `tasks/<id>/round-<n>.md` into
+   place. A session no longer in its tab is refused, and its answer goes to a
+   fresh task through `dux-recover --retry` instead. The wrapper takes the round
+   up only after the watcher has consumed the parked run's handoff. It removes the marker, stages the file in the channel at mode 400,
    and types `Read <channel>/round-<n>.md and follow it.` into the tab through
    `dux-backend prompt`: the one line Dux ever writes there. The round is a new
    run, `<nonce>r<n>`, with its own run record and result context carrying
@@ -341,9 +375,11 @@ the tab and catches a worker in a server whose socket vanished.
    stale for the days its task sat parked.
 7. `dux-teardown <id>` (the ledger says terminal, worktree clean, branch pushed)
    ends a parked session first, the wrapper with `TERM` and then the harness's
-   group, so the tab closes with nothing waiting in it. It then
-   removes the worktree, closes the container, clears the run's retained
-   references, and reports the ledger's own state and PR url. For a `done` task
+   group, so the tab closes with nothing waiting in it. For a `done` task it
+   copies the run record, the `/ship` receipts and the last handoff into
+   `tasks/<id>/delivery/` for a task that waits on it, and a copy it cannot make
+   is a finding that leaves everything in place. It then removes the worktree,
+   closes the container, clears the run's retained references, and reports the ledger's own state and PR url. For a `done` task
    from an issue whose PR is in that issue's repository, it posts one comment,
    `Dux delivered PR <url>.`, on the first teardown that completes; a failed
    comment is a warning, not a refusal.
@@ -354,8 +390,9 @@ the tab and catches a worker in a server whose socket vanished.
    filesystem rather than the ledger, because a spawn killed between the worktree
    and the state write leaves a live task still reading `queued`: a run record, a
    pid file, a pgid file, a portal or a worktree is a refusal naming the one it
-   found. On success the ledger reads `dropped` and `data/tasks/<id>` is gone; no
-   project repo, branch or pull request is touched.
+   found. On success the ledger reads `dropped` and `data/tasks/<id>`, with any
+   record of what the task waited on, is gone; no project repo, branch or pull
+   request is touched.
 
 ## The task channel
 
@@ -442,11 +479,17 @@ whole handoff or none of it.
 - A parked run's handoff is published before the session is left idle, and its
   receipt stays at `state/<id>.ship-receipt`, where the watcher checks it, until
   that handoff is consumed. Only then does the wrapper keep it as
-  `state/<id>.ship-receipt.delivered`, and only then will it take up a round,
-  because a round writes the run records again. Each round is proved on its own:
+  `state/<id>.ship-receipt.delivered`, or `.unfinished` after a question or a
+  blocker, and only then will it take up a round, because a round writes the
+  run records again. Each round is proved on its own:
   its run, its receipt, its final commit, and a branch that still holds the
   commit the round started from. A round that rewrote what the operator
   reviewed is `ended`, never `done`.
+- Work that plans first proves nothing before its approval. After it, a `done`
+  is proved only when the plan differs from the approved commit in box ticks and
+  the three lines under **Where this stands** alone, and every box in the
+  approved range is ticked. The ticks are not the proof of delivery; the
+  receipt, the pull request and CI still are.
 - Sequences are retained for the whole run. `dux-teardown` is their lifecycle
   owner, and clears them with `state/<id>.run`, `state/<id>.result-context`,
   `state/<id>.ship-receipt`, `state/<id>.wrap.log`, `state/<id>.portal`,
@@ -562,7 +605,7 @@ text, not about a hostile program.
 | `failed` | Show the saved failure and offer one retry or a scout. |
 | `done` | Nothing to recover. A pull request goes out as `Review, then merge or send feedback: <url>`; feedback is a round through `dux-round`, and a round that ends `failed` or `ended` leaves the pull request open and takes no further round. |
 | from before the upgrade | `--retire-legacy` stops the old wrapper and publishes one retirement handoff; the branch and worktree are kept for one retry or a teardown. |
-| `blocked`, `needs-decision` | Relay the meaning of fenced status data; append the operator answer to one fresh retry. |
+| `blocked`, `needs-decision` | Relay the meaning of fenced status data. A session parked in its tab takes the operator's answer, or approval of the plan it committed, as a round through `dux-round`; otherwise append the answer to one fresh retry. |
 
 ## Session lifecycle (exists today)
 
