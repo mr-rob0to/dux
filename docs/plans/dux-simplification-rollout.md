@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 24 have landed. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 25 have landed. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -27,7 +27,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 1,223 after task 24 | Not recorded |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 1,291 after task 25 | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -902,8 +902,22 @@ tests added and one wrapper test changed; fifteen breaks, each failing on its ow
 **Files:** `bin/dux-result`, `tests/dux-result.bats`.  
 **Acceptance:** Valid approval and completed boxes for the recorded range are both required.
 
-- [ ] Extend completion proof without treating checked boxes as delivery evidence.
-- [ ] Break-verify missing approval, changed substance, and incomplete-task protections.
+- [x] Extend completion proof without treating checked boxes as delivery evidence.
+- [x] Break-verify missing approval, changed substance, and incomplete-task protections.
+
+**Landed with this task.** Approved work completes only when the tasks its approval names have
+every box ticked. `dux-result` reads those boxes from the approved plan and range, after comparing
+the plan with the approved commit, and still requires the receipt and green checks. The approval's
+range must be one the box reader can read. The permitted-edit test no longer proves an unchanged
+plan first, because its boxes are unticked. Two result tests added and one changed; seven breaks,
+each failing on its own:
+
+- Approved work never reading its boxes (result test line 1397). Boxes read for a range other than
+  the approval's (1405). The approval's range not checked (1410).
+- A run with no approval passing that step (1422): a later check still refused it, with the
+  message that a plan with no name "is not committed at the commit its approval names". A changed
+  plan passing once every box is ticked (1425).
+- Approved work skipping its receipt (1430) or its checks (1435).
 
 ## Task 26: Record one predecessor
 

@@ -1297,9 +1297,6 @@ verify_amended() {  # $1 a sed script
 
 @test "an approved plan may tick its boxes and rewrite the lines under Where this stands" {
   approved_run
-  verify_amended ''
-  [ "$status" -eq 0 ]
-  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
   verify_amended 's/^- \[ \] Do/- [x] Do/'
   [ "$status" -eq 0 ]
   [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
@@ -1391,4 +1388,50 @@ verify_amended() {  # $1 a sed script
   run dux-result verify "$id" "$runid"
   [ "$status" -eq 1 ]
   [ "$output" = "dux: docs/plans/p.md, the plan its approval names, is gone from dux/$id" ]
+}
+
+@test "approved work completes only once the tasks its approval names have every box ticked" {
+  approved_run
+  t="$DUX_HOME/data/tasks/$id"
+  verify_amended ''
+  [ "$status" -eq 1 ]
+  [ "$output" = "dux: task 1 in docs/plans/p.md still has an unchecked box" ]
+  verify_amended 's/^- \[ \] Do one\.$/- [x] Do one./'
+  [ "$status" -eq 1 ]
+  [ "$output" = "dux: task 2 in docs/plans/p.md still has an unchecked box" ]
+  # Only the approved range counts.
+  printf 'plan=docs/plans/p.md\ntasks=1\ncommit=%s\n' "$approved" > "$t/round-1.approval"
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 0 ]
+  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
+  printf 'plan=docs/plans/p.md\ntasks=one\ncommit=%s\n' "$approved" > "$t/round-1.approval"
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: the approval recorded for $id at round 1 names no task range" ]
+}
+
+@test "ticked boxes are not delivery: approved work still needs its approval, its approved plan, its receipt and green checks" {
+  approved_run
+  t="$DUX_HOME/data/tasks/$id"
+  verify_amended 's/^- \[ \] Do/- [x] Do/'
+  [ "$status" -eq 0 ]
+  [ "$output" = "done: PR https://github.com/acme/proj/pull/7" ]
+  mv "$t/round-1.approval" "$DUX_HOME/kept.approval"
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [ "$output" = "dux: $id has no approval to build: none is recorded at or before round 1" ]
+  mv "$DUX_HOME/kept.approval" "$t/round-1.approval"
+  verify_amended 's/^- \[ \] Do/- [x] Do/; s/^\*\*Acceptance:\*\* Two is done\.$/**Acceptance:** Two is started./'
+  [ "$status" -eq 1 ]
+  [ "$output" = "dux: the acceptance criteria in docs/plans/p.md changed since its approval; they need approving again" ]
+  verify_amended 's/^- \[ \] Do/- [x] Do/'
+  rm "$DUX_HOME/state/$id.ship-receipt"
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [ "$output" = "dux: no /ship receipt for this task; the gate did not run under Dux" ]
+  receipt_v2 separate checks review security pr ci
+  export FAKE_GH_PR_CHECKS='[{"name":"build","state":"FAILURE"}]'
+  run dux-result verify "$id" "$runid"
+  [ "$status" -eq 1 ]
+  [ "$output" = "dux: pull request 7 of acme/proj has checks that are not green: build (FAILURE)" ]
 }

@@ -336,6 +336,8 @@ load_approval() {
     ''|/*|*..*|*[!A-Za-z0-9._/-]*)
       finding "the approval recorded for $id at round $k names no plan inside the repository" ;;
   esac
+  expand_range "$approved_tasks" >/dev/null \
+    || finding "the approval recorded for $id at round $k names no task range"
 }
 
 # A plan with what may change after its approval masked: the state of each box,
@@ -467,9 +469,16 @@ check_ship_shape() {
   # it names a plan whose boxes nothing can find, or a range with no plan to
   # find them in, and neither is a state dux-brief can produce.
   if [ -n "$plan_path" ] || [ -n "$task_range" ]; then check_plan_tasks; fi
-  # Work briefed to plan first names no plan in its brief; its approval does.
-  # A phase this reader does not know is held to an approval too.
-  [ -z "$run_phase" ] || { load_approval; check_approved_plan; }
+  # Work briefed to plan first names no plan in its brief; its approval does,
+  # and only the tasks it approved need their boxes ticked. Ticked boxes are
+  # progress, not delivery: the receipt and the checks below still decide. A
+  # phase this reader does not know is held to an approval too.
+  if [ -n "$run_phase" ]; then
+    load_approval
+    check_approved_plan
+    plan_path="$approved_plan"; task_range="$approved_tasks"
+    check_plan_tasks
+  fi
   check_receipt
   require_green_checks
 }
