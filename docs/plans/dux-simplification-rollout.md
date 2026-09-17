@@ -1,7 +1,7 @@
 # Dux simplification rollout plan
 
 **Where this stands**
-- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 28 have landed. Milestone 4 is not started.
+- Approved by the operator on 2026-09-15. Milestone 1, tasks 1 to 10, merged as pull request #51. Milestone 2, tasks 11 to 19, merged as pull request #52; recording and installing R2 is the operator's. Milestone 3, tasks 20 to 30, is in progress: tasks 20 to 29 have landed. Milestone 4 is not started.
 - The token-efficiency baseline's two incomplete worker-through-CI exercises remain open; PR #46 merged, and the feedback work it owned is milestone 2, tasks 11 to 19.
 - Four milestones deliver the approved changes; external policies activate only after their recorded supporting revisions are installed.
 
@@ -27,7 +27,7 @@ Use this file's numbered task ranges when dispatching each milestone:
 |---|---|---:|---|---|
 | M1: Policy and review gate | 1–10 | 1,650–2,350 | 2,259 | https://github.com/mr-rob0to/dux/pull/51 |
 | M2: Amended PR #46 | 11–19 | 1,750–2,450 | 1,976 | https://github.com/mr-rob0to/dux/pull/52 |
-| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 1,979 after task 28 | Not recorded |
+| M3: Answers, approval, sequencing | 20–30 | 1,750–2,450 | 2,251 after task 29 | Not recorded |
 | M4: Usage evidence and evaluation | 31–36 | 500–1,000 | Not recorded | Not recorded |
 
 Record actual task counts and added lines before implementation and as work lands. If a milestone exceeds a limit, stop before implementing it. Reduce incidental scope or obtain a revised independently usable split. Required acceptance dependencies stay together.
@@ -1033,8 +1033,56 @@ failing on its own:
 **Files:** `AGENTS.md`, `docs/constitution.md`, policy skills, affected specs, `docs/ARCHITECTURE.md`, `README.md`, this plan.  
 **Acceptance:** Current instructions describe only installed support and preserve separate repository ownership.
 
-- [ ] Align answer, approval, integrated planning, and prerequisite instructions.
-- [ ] Retain explicit recovery for lost sessions and operator-only merge.
+- [x] Align answer, approval, integrated planning, and prerequisite instructions.
+- [x] Retain explicit recovery for lost sessions and operator-only merge.
+
+**Landed with this task.** The instructions now say what this checkout does, each from the
+stage that carries it.
+
+- `AGENTS.md`: from stage m3, an answer to `needs-decision` or `blocked`, and approval of a
+  plan a worker committed under `--phase planning`, go to the parked session through
+  `skills/dux-recover`, and an answer never approves a plan. Before that stage, or once the
+  session is no longer in its tab, each is a fresh task through `skills/dux-recover`. Work in
+  another repository is its own task, created `--after` the one it follows, and stays queued
+  until capacity is free and what it waits on is proved merged; Dux dispatches it, not the
+  operator. The file stays at 150 lines.
+- `skills/dux-dispatch`: `--after` at creation, with the API change landing before its
+  client; `--phase planning` only for work that needs a plan because of its size alone, since
+  every other line of the plan test owes a design review that worker does not run;
+  `--after-check` names an existing deployment or contract check and never invents one; a
+  refusal ending `remains queued` is relayed, and a waiting task is spawned after the teardown
+  of the task it waits on. Teardown's copy of the delivery, and abandon removing the record,
+  are named.
+- `skills/dux-recover`: the answer goes to `bin/dux-round --purpose answer` when the script's
+  own `next:` line names it, and to a retry otherwise. Approval is the operator's explicit word
+  on that plan, range and commit; the operator reads the plan in the worktree and this session
+  does not. A retry of a waiting task waits on the same task and check. The paragraph on a
+  feedback round that ends badly no longer says every other ending stops the session, since a
+  question or a blocker now parks.
+- `docs/ARCHITECTURE.md`, `README.md`, and status notes in the feedback-rounds and
+  one-session specs carry the same. `bin/dux-doctor` now says this checkout implements m3, as
+  its comment asks; the default in `templates/config/policy-stage` stays m1 until the operator
+  installs R3.
+- Operator-only merge is unchanged, and now pinned in `AGENTS.md` and the dispatch skill.
+- The constitution needed no amendment. Principle 1's exception covers only a feedback round
+  on an open pull request, and its rule that a different repository or a lost session gets a
+  fresh worker is what this milestone implements. Principle 6's one fixed line per round is
+  the line answer and approval rounds type.
+
+25 breaks, one at a time, each failing at its own assertion. In `tests/contract.bats`: the old
+lifecycle arrow (729); the stage m3 qualifier on answers (744); the sentence that an answer
+never approves (745); the lost session left out of the fallback (746); `--purpose answer`
+dropped (748); `--commit` dropped from the approval command (749); the recover skill's
+sentence that an answer never starts the build (750); the plan read into the session (751);
+the retry command dropped (752); `not built yet` restored (756);
+`--after` dropped from `AGENTS.md` (763); the merge dropped from what a queued task waits on
+(764); `--phase planning` dropped from the pair rule (765); `--after` dropped from the
+`dux-task-new` usage (767); `--phase planning` dropped from the brief usage (768); any check
+allowed (769); inventing one allowed (770); `remains queued` dropped (771); spawning after
+teardown dropped (772); plan-first allowed for any plan (773); the design-review sentence
+dropped (774); the retry of a waiting task (776); merge without the operator's explicit word
+(780); the dispatch skill's merge line (781). In `tests/dux-doctor.bats`: the stage line back
+at m2 (101 and 124).
 
 ## Task 30: Verify M3 and stopped-run rollback
 

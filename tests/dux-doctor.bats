@@ -95,12 +95,12 @@ own_checkout() {
 
 @test "a stage this checkout does not implement is a failure, not a switch" {
   tools
-  printf 'm3\n' > "$DUX_HOME/config/policy-stage"
+  printf 'm4\n' > "$DUX_HOME/config/policy-stage"
   PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
   [ "$status" -eq 1 ]
-  [[ "$output" == *"FAIL policy stage: config says m3 and this checkout implements m2"* ]]
+  [[ "$output" == *"FAIL policy stage: config says m4 and this checkout implements m3"* ]]
   # And nothing is reported as available on the strength of a value like that.
-  [[ "$output" != *"policy: m3"* ]]
+  [[ "$output" != *"policy: m4"* ]]
   printf 'whenever\n' > "$DUX_HOME/config/policy-stage"
   PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
   [ "$status" -eq 1 ]
@@ -118,4 +118,10 @@ own_checkout() {
   PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
   [ "$status" -eq 0 ]
   [[ "$output" == *"policy: m2; unavailable: same-session answers and approval, dispatch waiting on a predecessor, usage reporting;"* ]]
+  # And answers, approval and waiting on a predecessor, so m3 is too.
+  printf 'm3\n' > "$DUX_HOME/config/policy-stage"
+  PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"ok policy stage m3"* ]]
+  [[ "$output" == *"policy: m3; unavailable: usage reporting; use existing recovery for those"* ]]
 }

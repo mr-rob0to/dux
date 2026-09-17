@@ -63,7 +63,7 @@ prints the count.
 ## Task lifecycle
 
 queued -> running -> (stale)* -> needs-decision | blocked | done | failed | dead | ended,
-and done -> running on a feedback round
+and done | needs-decision | blocked -> running on a round
 
 - Shapes: `plan` (Fable, docs-only PR), `ship` (implements and runs `/ship`),
   `scout` (report only).
@@ -71,8 +71,8 @@ and done -> running on a feedback round
   Run it, say which line decided, and never re-derive it from the intent text.
 - Risk routes the implementation model: `--risk bounded` runs Sonnet,
   `--risk complex` runs Opus, and omitting it means complex. `--plan` and
-  `--tasks` are one pair: both, or neither with `--risk bounded`. `/ship`, its
-  reviews and CI run either way.
+  `--tasks` are one pair: both, or neither with `--risk bounded` or, from
+  stage m3, `--phase planning`. `/ship`, its reviews and CI run either way.
 - Reviews are classified before dispatch, not by the worker. A branch that
   touches authentication, permissions, secrets, migrations, data integrity,
   concurrency or cross-system ordering gets `--review separate`; anything else
@@ -80,18 +80,20 @@ and done -> running on a feedback round
   separate. The gate escalates on what it finds in the diff but never downgrades.
 - Pick the repository from `data/projects.md` when the goal clearly belongs to
   one; ask only when it is genuinely ambiguous. One task is one worktree in one
-  repository, and work in another repository is its own task, run after this
-  one. While a worker is active the next task stays queued, and you dispatch it
-  once capacity is proved free; never hand that back to the operator.
-- Feedback on a pull request a task delivered goes to the same worker once
-  `bin/dux-doctor` reports stage m2: write the operator's words to
-  `data/tasks/<id>/feedback.md` and run
+  repository, and work in another repository is its own task, created `--after`
+  this one from stage m3, as `skills/dux-dispatch` says. The next task stays
+  queued until capacity is proved free and what it waits on is proved merged;
+  then you dispatch it, and never hand that back to the operator.
+- Rounds go to the worker that owns the task, in its parked session; never type
+  into its tab. From stage m2, feedback on a pull request it delivered: write
+  the operator's words to `data/tasks/<id>/feedback.md` and run
   `bin/dux-round <id> --file data/tasks/<id>/feedback.md`, as
-  `skills/dux-dispatch` says. Never type into the worker's tab.
-- Answering a question in the live session and approving a plan in place are
-  not built yet. Each is a fresh task through `skills/dux-recover`, as feedback
-  is before stage m2. `bin/dux-doctor` prints the installed stage and what it
-  does not yet carry.
+  `skills/dux-dispatch` says. From stage m3, an answer to `needs-decision` or
+  `blocked`, and approval of a plan the worker committed under
+  `--phase planning`, as `skills/dux-recover` says. An answer never approves a
+  plan. Before its stage, or once the session is no longer in its tab, each is a
+  fresh task through `skills/dux-recover`. `bin/dux-doctor` prints the installed
+  stage and what it does not yet carry.
 - Worker status protocol, proposed into the task channel:
   `working: ...`, `needs-decision: ...`, `blocked: ...`, `done: PR <url> | report`,
   `failed: ...`. Only `working:` lines reach `data/tasks/<id>/status.log` from

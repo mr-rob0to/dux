@@ -25,10 +25,16 @@ The script does the mechanics and prints what it did. You judge and relay.
      not proved, relay the fenced reason, then either ask the operator to
      accept `--classify failed` or dispatch a fresh task. Never declare done.
    - For **failed**, give the failure tail's meaning in one line. Retry once
-     only after the operator asks, or dispatch a scout.
+     only after the operator asks, or dispatch a scout. A retry of a task
+     created `--after` another waits on the same task and check, and its start
+     proves that delivery again.
    - For **blocked** or **needs-decision**, relay the meaning of the capped,
      cleaned status data. Put the operator's answer in
-     `data/tasks/<id>/answer.md`, then run
+     `data/tasks/<id>/answer.md`. From stage m3, when the script's own `next:`
+     line names `dux-round`, the session is parked in its tab and takes the
+     answer there:
+     `bin/dux-round <id> --purpose answer --file data/tasks/<id>/answer.md`.
+     Otherwise run
      `bin/dux-recover <id> --retry --answer-file data/tasks/<id>/answer.md`.
    - For a task that was **already running before the security-boundary
      upgrade**, and only that: `bin/dux-recover <id> --retire-legacy`. The
@@ -39,22 +45,31 @@ The script does the mechanics and prints what it did. You judge and relay.
      if the operator asks, otherwise a teardown.
 4. Run `bin/dux-ledger ack <id> <event-state>` after handling the wake.
 
-Two things the operator will ask for are not built yet, and each one comes back
-here rather than to the worker's tab: an answer that resumes the live session in
-place, and approving a plan the same worker then builds. Feedback on a pull
-request a worker delivered goes through `skills/dux-dispatch` from stage m2, and
-comes back here before that stage or once the task can no longer take a round.
-Each is a fresh task with the answer or the feedback copied into its Intent,
-exactly as a retry is. `bin/dux-doctor` prints the installed rollout stage and
-what it does not yet carry. Do not tell the operator to type into a worker's tab
-to get one of them: what they type there is instruction to that worker and Dux
-neither sees it nor proves anything that comes of it.
+**Approving a plan in place.** From stage m3, a `ship` task briefed
+`--phase planning` stops at `needs-decision` asking for approval of a task range
+in a plan it committed, at a commit. The operator reads that plan in the task's
+worktree; never read it into this session, since the worker wrote it. Only the
+operator's explicit approval of that plan, range and commit is an approval:
+write their words to `data/tasks/<id>/approval.md` and run
+`bin/dux-round <id> --purpose approval --file data/tasks/<id>/approval.md --plan <path> --tasks <range> --commit <sha>`.
+Anything else they say is an answer, and an answer never starts the build. Once
+approved, a plan changed beyond its ticked boxes and the three lines under
+**Where this stands** is not proved; the worker asks again at `needs-decision`.
 
-**A feedback round that does not end `done`.** The task is whatever the round
-ended in, `failed` or `ended`, and its session is gone: every ending but
-`done: PR` stops it. The pull request is untouched by that. It is still open, at
+Answers and approval before stage m3, feedback before stage m2, and any of them
+once the session is no longer in its tab (`bin/dux-round` refuses and says so)
+come back here. Each is a fresh task with the answer or the feedback copied into
+its Intent, exactly as a retry is. `bin/dux-doctor` prints the installed rollout
+stage and what it does not yet carry. Do not tell the operator to type into a
+worker's tab to get one of them: what they type there is instruction to that
+worker and Dux neither sees it nor proves anything that comes of it.
+
+**A feedback round that ends `failed` or `ended`.** The task is whatever the
+round ended in, and its session is gone: only `done: PR`, a question and a
+blocker leave it parked. The pull request is untouched by that. It is still open, at
 whatever commit the round pushed or did not, and its url stays in the ledger. No
-further round is possible, because `bin/dux-round` takes `done` only. The
+further round is possible, because `bin/dux-round` takes a task that is `done`,
+`needs-decision` or `blocked`. The
 operator's moves are the ones they already have: merge it on GitHub and tear the
 task down, or tear it down and let the pull request go. An `ended` round is
 classified `failed` first, on the operator's word. A correction they still want
