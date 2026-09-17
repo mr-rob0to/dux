@@ -341,7 +341,7 @@ the tab and catches a worker in a server whose socket vanished.
    the wrapper used to do to its own environment before forking has to travel
    in it. The wrapper titles the tab, runs the launcher in it with `dux-backend
    run`, and then asks `dux-backend pid` once a second, for up to
-   `DUX_WRAP_START_SECS` (120 seconds), what that pane is running. The answer
+   `DUX_WRAP_START_SECS` (300 seconds), what that pane is running. The answer
    counts only when it carries the harness's own process name and the task
    worktree as its directory; a harness that never appears, or a multiplexer
    that cannot say, is a refusal rather than a guess. The process group that
