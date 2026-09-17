@@ -876,6 +876,19 @@ EOF
   [ "$status" -ne 0 ]
 }
 
+# Issue #53: a harness merely slow to appear is not a harness that never
+# started. Delaying the pane run past a window that would have failed under
+# the old 120s default, but staying inside a generous one, must still finish.
+@test "a harness that appears late but inside the window is supervised, not refused" {
+  prepare scout
+  printf 'report all clear\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  export DUX_WRAP_FORK_PAUSE_SECS=3 DUX_WRAP_START_SECS=8
+  run wrap
+  [ "$status" -eq 0 ]
+  [ "$(handoff_status)" = "done: report" ]
+  [ "$(handoff_event)" = done ]
+}
+
 # Discovery asks two questions of the pane's foreground process: is it the
 # harness, and is it in this task's worktree. A pane holding anything else is a
 # refusal at the end of the window, never a wrapper supervising the wrong thing.

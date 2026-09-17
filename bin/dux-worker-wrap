@@ -17,9 +17,13 @@ epfile="$DUX_STATE/$id.endpoint"
 poll="${DUX_WRAP_POLL_SECS:-5}"; beat="${DUX_HEARTBEAT_SECS:-300}"
 # A real Claude Code start is slower than it looks: measured 2026-09-15 on a
 # quiet machine, 40s from dux-spawn to a harness the multiplexer would name, and
-# longer under load. The window only decides how long a start that has really
-# failed takes to be reported, and spawn does not wait on it, so it is generous.
-start_secs="${DUX_WRAP_START_SECS:-120}"
+# longer under load. 120s proved too tight in observed dispatch (issue #53):
+# a harness that was merely slow to appear got marked failed, one of them after
+# it had already delivered a merged PR. The window only decides how long a
+# start that has really failed takes to be reported, and spawn does not wait
+# on it, so a generous 300s costs nothing but reporting time on a genuine
+# failure.
+start_secs="${DUX_WRAP_START_SECS:-300}"
 branch="dux/$id"
 
 [ -d "$task" ] || finding "no task folder for $id"
