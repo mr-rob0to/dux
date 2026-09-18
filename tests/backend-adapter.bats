@@ -531,3 +531,34 @@ teardown_file() {
   [ "$status" -eq 2 ]
   [[ "$output" == *"finding: herdr pane process-info returned no process information"* ]]
 }
+
+# Measured 2026-09-18: Claude Code runs a caffeinate child, so the reply was
+# [caffeinate, claude] and a lookup that read only entry 0 never found claude.
+@test "herdr pid finds the named process when a child sits in front of it" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  ep="$(dux-backend open t43 "$DUX_HOME")"
+  cat > "$DUX_HOME/state/procinfo.json" <<'JSON'
+{"result":{"process_info":{"foreground_process_group_id":4242,"shell_pid":1,
+ "foreground_processes":[
+  {"pid":4300,"argv0":"caffeinate","name":"caffeinate","cwd":"/wrong","cmdline":"caffeinate -i"},
+  {"pid":4242,"argv0":"claude","name":"2.1.0","cwd":"/work tree","cmdline":"claude SECRET"}],
+ "pane_id":"w1:p9"},"type":"pane_process_info"}}
+JSON
+  FAKE_HERDR_PROCINFO_FILE="$DUX_HOME/state/procinfo.json" run dux-backend pid "$ep" claude
+  [ "$status" -eq 0 ]
+  [ "$output" = "4242 4242 /work tree" ]
+}
+
+@test "herdr pid is not-there when no foreground process has the name" {
+  [ "${DUX_BACKEND:-}" = herdr ] || skip
+  ep="$(dux-backend open t44 "$DUX_HOME")"
+  cat > "$DUX_HOME/state/procinfo.json" <<'JSON'
+{"result":{"process_info":{"foreground_process_group_id":4242,"shell_pid":1,
+ "foreground_processes":[
+  {"pid":4300,"argv0":"caffeinate","name":"caffeinate","cwd":"/x","cmdline":"caffeinate -i"}],
+ "pane_id":"w1:p9"},"type":"pane_process_info"}}
+JSON
+  FAKE_HERDR_PROCINFO_FILE="$DUX_HOME/state/procinfo.json" run dux-backend pid "$ep" claude
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}

@@ -47,7 +47,8 @@ backend_prompt() {  # endpoint text
   herdr pane run "$pane" "$2" >/dev/null 2>&1 || finding "herdr could not type into $1"
 }
 
-# The pane's innermost foreground process, when its command name is <name>.
+# The pane's foreground process whose command name is <name>, wherever it sits
+# in the list: Claude Code runs a caffeinate child, which is listed before it.
 # Measured 2026-09-14 against Herdr's own CLI: the reply nests under
 # .result.process_info, foreground_processes is ordered innermost first, and a
 # live Claude Code session reports argv0 "claude" with its version in .name, so
@@ -62,11 +63,11 @@ backend_pid() {  # endpoint name; prints "<pid> <pgid> <cwd>", 1 when it is not 
     || finding "herdr pane process-info failed for $pane"
   printf '%s' "$out" | jq -e '.result.process_info | type == "object"' >/dev/null 2>&1 \
     || finding "herdr pane process-info returned no process information for $pane"
-  line="$(printf '%s' "$out" | jq -r '.result.process_info
+  line="$(printf '%s' "$out" | jq -r --arg n "$name" '.result.process_info
       | (.foreground_processes // []) as $f
-      | if ($f | length) == 0 then empty
-        else [($f[0].pid | tostring), (.foreground_process_group_id | tostring),
-              ($f[0].argv0 // "-"), ($f[0].cwd // "-")] | join(" ") end')" \
+      | ([$f[] | select(.argv0 == $n)] | first // empty) as $p
+      | [($p.pid | tostring), (.foreground_process_group_id | tostring),
+         $p.argv0, ($p.cwd // "-")] | join(" ")')" \
     || finding "herdr pane process-info is unreadable for $pane"
   [ -n "$line" ] || return 1
   pid="${line%% *}"; line="${line#* }"
