@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-3 done.
+- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-4 done.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -277,9 +277,9 @@ tab closed, pending handoff, ninth round) still refuses with its existing text.
 
 **Steps**
 
-- [ ] Replace the test at `dux-round.bats` 330 with the three cases above, failing first.
-- [ ] Remove the block; re-read `dux-round` from the liveness checks to the ledger move.
-- [ ] Break-verify: put a `fleet_running`-against-limit refusal into `dux-round`; the at-limit
+- [x] Replace the test at `dux-round.bats` 330 with the three cases above, failing first.
+- [x] Remove the block; re-read `dux-round` from the liveness checks to the ledger move.
+- [x] Break-verify: put a `fleet_running`-against-limit refusal into `dux-round`; the at-limit
       round test fails. Restore.
 
 ## Task 5: Remove `fleet_busy`, keep `parked` proved
