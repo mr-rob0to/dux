@@ -115,6 +115,34 @@ settled() {  # $1 state, [$2 pr]
   git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$id"
 }
 
+# Several workers can share a repository. Tearing one down touches only its own
+# worktree, tab and state files, and the one beside it runs on.
+@test "tearing down a finished task leaves another task running beside it untouched" {
+  spawned scout; a="$id"; wa="$wt"
+  spawned scout; b="$id"; wb="$wt"
+  # b is live: a wrapper, and a process group of its own.
+  stand_in "dux-worker-wrap $b" > "$DUX_HOME/state/$b.pid"
+  perl -e 'use POSIX; POSIX::setsid(); exec("sleep", "60")' </dev/null >/dev/null 2>&1 3>&- &
+  g=$!
+  wait_until 10 group_runs "$g"
+  echo "$g" > "$DUX_HOME/state/$b.pgid"
+  b_record() {  # every state file of b with its checksum, then its ledger row
+    local f
+    for f in "$DUX_HOME/state/$b".*; do printf '%s %s\n' "$f" "$(cksum < "$f")"; done
+    dux-ledger line "$b"
+  }
+  before="$(b_record)"
+  id="$a"; settled done
+  run dux-teardown "$a"
+  [ "$status" -eq 0 ]
+  [ ! -d "$wa" ]; grep -qx 'pane close w1:p9' "$FAKE_HERDR_LOG"
+  for f in "$DUX_HOME/state/$a".*; do [ ! -e "$f" ] || { echo "${f##*/} survived"; return 1; }; done
+  [ -d "$wb" ]; refute grep -q 'w1:p10' "$FAKE_HERDR_LOG"
+  [ "$(b_record)" = "$before" ]
+  kill -0 "$(cat "$DUX_HOME/state/$b.pid")"; group_runs "$g"
+  kill -- "-$g"
+}
+
 # Handoff sequences are kept for the whole run so a restarted watcher can replay
 # the one it was applying. Teardown is the one place they are cleared.
 @test "teardown is where a run's retained references go" {

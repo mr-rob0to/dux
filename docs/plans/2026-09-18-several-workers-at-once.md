@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-7 done.
+- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-8 done.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -361,14 +361,14 @@ files; every `state/<b>.*` file is unchanged.
 
 **Steps**
 
-- [ ] First key the fake's process id, working directory and input file by pane id, so two
+- [x] First key the fake's process id, working directory and input file by pane id, so two
       tabs hold two workers. Every existing test stays green with no edits to it.
-- [ ] Add the tests. Fix the comment at `e2e-dispatch.bats` 251-255 ("Two workers never run at once").
-- [ ] Break-verify 1: remove the not-at-base refusal on the reuse path in `dux-worktree create`;
+- [x] Add the tests. Fix the comment at `e2e-dispatch.bats` 251-255 ("Two workers never run at once").
+- [x] Break-verify 1: remove the not-at-base refusal on the reuse path in `dux-worktree create`;
       the refusal test fails.
-- [ ] Break-verify 2: make `dux-spawn` write `running` with `set` instead of `set-if` and drop
+- [x] Break-verify 2: make `dux-spawn` write `running` with `set` instead of `set-if` and drop
       the `queued` check; the second-spawn test fails.
-- [ ] If either timing-based test fails once under load and passes on a re-run, say so in the
+- [x] If either timing-based test fails once under load and passes on a re-run, say so in the
       pull request; do not loosen the assertion.
 
 ## Task 9: Status and doctor show the limit
