@@ -1,0 +1,13 @@
+# How many Dux workers may run at once, across every registered repository.
+# dux-spawn counts the tasks the ledger holds as running or stale and refuses
+# a start at this number; the task stays queued until a worker finishes.
+#
+# Rounds (feedback, answers, approval) continue a session that was already
+# admitted and are never refused for this, so the count can pass it while
+# they run.
+#
+# 1 gives back one worker at a time.
+#
+# Copy this file to config/max-workers to change it: a whole number from 1 to
+# 99. The installer seeds the value once and never edits one you wrote.
+3

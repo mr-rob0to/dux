@@ -1,3 +1,4 @@
+bats_require_minimum_version 1.5.0
 load helpers/setup
 
 @test "dux-env exports paths under DUX_HOME and creates them" {
@@ -219,6 +220,86 @@ load helpers/setup
   [ "$status" -eq 0 ]
   [ -z "$stderr" ] || { echo "producer wrote to stderr: $stderr"; return 1; }
   [ "$output" = first ] || { echo "wanted 'first', got '$output'"; return 1; }
+}
+
+# ---- the worker limit and the running count ---------------------------------
+# How many workers may run at once is one number, and spawn refuses at it. A
+# value that is not a number from 1 to 99 is a finding, never a default: a
+# limit silently read as 3 is a spending brake the operator thinks is on.
+limit_is() {  # $1 file content, or - for no operator file; runs worker_limit
+  rm -f "$DUX_HOME/config/max-workers"
+  [ "$1" = - ] || printf '%s' "$1" > "$DUX_HOME/config/max-workers"
+  run --separate-stderr bash -c 'source "$DUX_ROOT/bin/dux-env"; worker_limit'
+}
+
+@test "worker_limit reads the seeded 3, the template when the operator has no file, and the operator's number" {
+  # setup seeds config/ from the templates, as a fresh install does.
+  cmp -s "$DUX_ROOT/templates/config/max-workers" "$DUX_HOME/config/max-workers"
+  run --separate-stderr bash -c 'source "$DUX_ROOT/bin/dux-env"; worker_limit'
+  [ "$status" -eq 0 ]; [ "$output" = 3 ]
+  limit_is -
+  [ "$status" -eq 0 ]; [ "$output" = 3 ]
+  limit_is $'# the operator says\n\n7\n'
+  [ "$status" -eq 0 ]; [ "$output" = 7 ]
+  limit_is $'1\n'
+  [ "$status" -eq 0 ]; [ "$output" = 1 ]
+  limit_is $'99'
+  [ "$status" -eq 0 ]; [ "$output" = 99 ]
+}
+
+@test "worker_limit refuses a value that is not a whole number from 1 to 99" {
+  for v in 0 100 3x -1 07; do
+    limit_is "$v"$'\n'
+    [ "$status" -eq 2 ] || { echo "$v gave $status"; return 1; }
+    [ -z "$output" ] || { echo "$v printed a limit: $output"; return 1; }
+    [ "$stderr" = "finding: config/max-workers must be a whole number from 1 to 99, not '$v'" ] \
+      || { echo "$v: $stderr"; return 1; }
+  done
+  # An empty file, and one holding nothing but a note, say so too.
+  for v in '' $'# only a note\n'; do
+    limit_is "$v"
+    [ "$status" -eq 2 ]
+    [ "$stderr" = "finding: config/max-workers must be a whole number from 1 to 99, not ''" ]
+  done
+}
+
+@test "worker_limit is a finding when neither the operator nor the template has a file" {
+  mkdir -p "$DUX_HOME/fakeroot/bin"; cp "$DUX_ROOT/bin/dux-env" "$DUX_HOME/fakeroot/bin/"
+  rm -f "$DUX_HOME/config/max-workers"
+  DUX_ROOT="$DUX_HOME/fakeroot" run --separate-stderr bash -c 'source "$DUX_ROOT/bin/dux-env"; worker_limit'
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [ "$stderr" = "finding: no worker limit in config/max-workers or templates/config/max-workers" ]
+}
+
+@test "fleet_running counts running and stale tasks and nothing else" {
+  local s n=0
+  for s in queued running running stale needs-decision blocked done failed ended dead dropped; do
+    n=$((n + 1))
+    dux-ledger add "t$n-ship-20260918-aaa" proj ship local
+    dux-ledger set "t$n-ship-20260918-aaa" state "$s"
+  done
+  run --separate-stderr bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_running'
+  [ "$status" -eq 0 ]; [ "$output" = 3 ]
+  # An empty ledger is a count of none, not a failure.
+  : > "$DUX_HOME/data/backlog.md"
+  run --separate-stderr bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_running'
+  [ "$status" -eq 0 ]; [ "$output" = 0 ]
+}
+
+# Either list failing is "could not count", never a count of what the other
+# one said: a ledger that stops answering must not read as an empty fleet.
+@test "fleet_running returns 1 and prints nothing when the ledger cannot list" {
+  dux-ledger add a-ship-20260918-aaa proj ship local
+  dux-ledger set a-ship-20260918-aaa state running
+  for which in running stale; do
+    r="$(root_with_stub dux-ledger "#!/usr/bin/env bash
+if [ \"\$1 \$2 \$3\" = 'list --state $which' ]; then echo 'finding: cannot read the ledger' >&2; exit 2; fi
+exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
+    DUX_ROOT="$r" run --separate-stderr bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_running'
+    [ "$status" -eq 1 ] || { echo "list --state $which failing gave $status: $output"; return 1; }
+    [ -z "$output" ]
+  done
 }
 
 # ---- the two helpers spawn, the wrapper and teardown share -----------------

@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #64; implementation under way on one branch. Task 1 done.
+- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-2 done.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -234,11 +234,11 @@ overwrites one the operator wrote.
 
 **Steps**
 
-- [ ] Write the failing tests first.
-- [ ] Move `first_value`; count function declarations in both files before and after.
-- [ ] Add `worker_limit`, `fleet_running` and the template.
-- [ ] Break-verify 1: make `worker_limit` fall back to 3 on a bad value; the bad-value test fails.
-- [ ] Break-verify 2: make `fleet_running` ignore a failed `dux-ledger list`; the ledger-failure
+- [x] Write the failing tests first.
+- [x] Move `first_value`; count function declarations in both files before and after.
+- [x] Add `worker_limit`, `fleet_running` and the template.
+- [x] Break-verify 1: make `worker_limit` fall back to 3 on a bad value; the bad-value test fails.
+- [x] Break-verify 2: make `fleet_running` ignore a failed `dux-ledger list`; the ledger-failure
       test fails. Paste both failures into the commit.
 
 ## Task 3: Spawn admits up to the limit

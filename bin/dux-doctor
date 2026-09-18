@@ -52,16 +52,6 @@ fi
 # The milestone that lands the next stage raises this line.
 STAGE_HERE="m4"
 
-first_value() {  # $1 file; the first line that is neither blank nor a note
-  local line
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in '#'* | '') continue ;; esac
-    printf '%s\n' "$line"
-    return 0
-  done < "$1"
-  return 1
-}
-
 # What a stage leaves unavailable, said in the order the rollout adds it. Each
 # one has a way through that works today, which is the part the operator needs.
 unavailable_at() {  # $1 stage

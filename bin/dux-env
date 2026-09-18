@@ -200,6 +200,45 @@ EOF
   return 1
 }
 
+first_value() {  # $1 file; the first line that is neither blank nor a note
+  local line
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in '#'* | '') continue ;; esac
+    printf '%s\n' "$line"
+    return 0
+  done < "$1"
+  return 1
+}
+
+# How many workers may run at once. A spending brake, not a safety boundary:
+# every task has its own worktree, branch, tab and state files at any count, so
+# spawn counts from the ledger and evidence about another task blocks nothing.
+# The operator's file wins, and only when nothing at all is there is the
+# template read. A value that is not a whole number from 1 to 99 is a finding
+# and never a default: a limit silently read as another number is a brake the
+# operator believes is on.
+worker_limit() {  # prints the limit, or a finding
+  local f v
+  for f in "$DUX_CONFIG/max-workers" "$DUX_ROOT/templates/config/max-workers"; do
+    [ -e "$f" ] || [ -L "$f" ] || continue
+    v="$(first_value "$f" 2>/dev/null)" || v=""
+    case "$v" in [1-9] | [1-9][0-9]) printf '%s\n' "$v"; return 0 ;; esac
+    finding "config/max-workers must be a whole number from 1 to 99, not '$(cap_line "$v")'"
+  done
+  finding "no worker limit in config/max-workers or templates/config/max-workers"
+}
+
+# How many tasks the ledger holds as running or stale, which is what spawn holds
+# against the limit. A list that fails is "could not count", never a count of
+# none. It takes no id: the task asking is queued, which spawn has already
+# proved, so it is never in the count.
+fleet_running() {  # prints the count, or returns 1 printing nothing
+  local ledger="$DUX_ROOT/bin/dux-ledger" running stale
+  running="$("$ledger" list --state running 2>/dev/null)" || return 1
+  stale="$("$ledger" list --state stale 2>/dev/null)" || return 1
+  printf '%s\n%s\n' "$running" "$stale" | awk 'NF { n++ } END { print n + 0 }'
+}
+
 # The one place a task id is accepted, so every script that builds a path from one
 # reaches the same answer. "." and ".." would resolve $DUX_TASKS/$id to a parent.
 valid_task_id() {  # $1 id; a finding when it is not one
