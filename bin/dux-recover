@@ -215,8 +215,8 @@ release_channel() {
       if kill -0 -- "-$pg" 2>/dev/null; then
         echo "the worker's own processes for $id are still running as group $pg; its task channel stays until they are gone"
         # The wrapper is gone and the session is not: it lives in the task's tab
-        # now, so nothing here will end it, and it holds the one-worker slot
-        # until somebody does.
+        # now, so nothing here will end it, and its task channel stays until
+        # somebody does.
         echo "the worker's session is still running in the task's tab; end it there, then run dux-recover $id again"
         return 0
       fi ;;

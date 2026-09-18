@@ -19,9 +19,9 @@ description: Show the fleet digest. Use when the operator asks what is running, 
 5. The digest counts the ledger. A worker that says it is finished changes
    nothing there until its result is proved, so a task still counted as running
    is running.
-6. When the digest shows no worker running and a task is queued, dispatch it
-   through `skills/dux-dispatch` rather than reporting the free capacity and
-   waiting to be asked.
+6. When the `workers:` line shows fewer running than the limit and a task is
+   queued, dispatch it through `skills/dux-dispatch` rather than reporting the
+   room and waiting to be asked.
 
 Never edit `data/backlog.md`. Never read the worker's tab, by any means: no
 pane capture, no scrollback, no screenshot.

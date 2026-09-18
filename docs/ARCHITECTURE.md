@@ -61,8 +61,8 @@ bin/
                            --after-check the check a waited-on merge must pass
   dux-worktree             create/remove/discard a worktree per the project's mechanism
   dux-spawn                worktree, tab and wrapper for a queued task; refusals including a
-                           worktree Claude Code does not trust and a live worker on any
-                           other task; a task that waits starts only on a proved delivery,
+                           worktree Claude Code does not trust and the worker limit in
+                           config/max-workers; a task that waits starts only on a proved delivery,
                            merged into the fetched base, recorded in tasks/<id>/prerequisite
   dux-worker-wrap          runs beside the tab, not inside it: task channel, launcher,
                            the harness's own process group, proposal rules, heartbeat,
@@ -249,21 +249,23 @@ the tab and catches a worker in a server whose socket vanished.
    answers only for the current backend and an unrenamed container, while the
    pidfile is written by the wrapper, which spawn starts itself on every
    backend.
-   One more refusal covers the whole fleet: no other registered task may have a
-   worker that might be alive. Its `state/<other>.pid` must be absent or name a
-   pid no longer running `dux-worker-wrap <other>`; its `state/<other>.pgid`
-   must be absent or name a process group nothing answers for; and where the
-   ledger still records that task as `running` or `stale`, `dux-backend find
-   <other>` must report no container. The pgid file is the one that matters now
-   that a worker is a live session: the session outlives its wrapper, so a
-   wrapper killed while the harness sits at its prompt leaves a pidfile reading
-   gone and a tab full of agent, and the pidfile alone would let a second worker
-   start beside it. The pane outlives the worker on both backends, so a task the
-   ledger has settled is not read as busy. Evidence that cannot be read
-   refuses. This is a refusal and not a queue: nothing is reserved, nothing is
-   started later, and the operator runs the same command again once the active
-   task has stopped. It comes before the worktree and the container, so a
-   refused task is unchanged and still `queued`.
+   One more refusal is the worker limit, across every registered project.
+   `worker_limit` in `dux-env` reads `config/max-workers`, or
+   `templates/config/max-workers` when the operator has none: a whole number
+   from 1 to 99, seeded as 3, and anything else is a finding. `fleet_running`
+   counts the tasks the ledger holds as `running` or `stale`. Spawn refuses
+   when that count has reached the limit, or when either cannot be read, and
+   each refusal ends `remains queued`. A parked session is `done`,
+   `needs-decision` or `blocked` in the ledger, so it is not counted, and a
+   round is never refused for the limit, so the count can pass it while rounds
+   run. Nothing another task leaves behind is read: the limit is a spending
+   brake, not a safety boundary, and what keeps two workers apart at any count
+   is that each has its own worktree, branch, tab and state files. Spawns that
+   overlap all count the same number and can start past the limit, which is
+   why the dispatch skill runs one spawn at a time. Setting the file to `1`
+   gives back one worker at a time. The check comes before the worktree and the
+   container, so a refused task is unchanged and still `queued`, and Dux spawns
+   it again on a later wake.
    A task that waits is refused the same way, ending `remains queued`, until the
    task it waits on is proved delivered and merged. The ledger must say `done`;
    the run record, the `/ship` receipt's `ci` commit and the consumed handoff
@@ -362,8 +364,9 @@ the tab and catches a worker in a server whose socket vanished.
    that is `DUX_WRAP_IDLE_SECS` (60 seconds), and running out
    proves nothing: the run ends as any other does. A parked wrapper publishes
    the handoff, writes `state/<id>.parked` naming the run, itself and the group,
-   and waits with the session idle at its prompt. Spawn and `dux-round` count a
-   parked session as idle only while all three still hold. `dux-round <id>
+   and waits with the session idle at its prompt. `dux-round` and `dux-teardown`
+   count the task's own session as parked only while all three still hold, and
+   nothing reads another task's marker. `dux-round <id>
    --file <path>` takes a `done` task whose pull request is open for feedback.
    `--purpose answer` takes a `needs-decision` or `blocked` task, and approves
    nothing. `--purpose approval` takes a `needs-decision` ship task briefed

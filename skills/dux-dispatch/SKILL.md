@@ -14,13 +14,16 @@ when something is off; relay the finding verbatim and stop.
 - Pick which registered project the goal belongs to from what the registry
   records, and say which one you picked. Ask the operator only when two of them
   would both be a reasonable reading. Work that spans two repositories is two
-  tasks, run one after the other, never one task in two worktrees. From stage
-  m3 the second is created `--after` the first (step 2), and an API change lands
-  before the client that uses it.
+  tasks, never one task in two worktrees. An API change lands before the client
+  that uses it, so from stage m3 the client is created `--after` the API task
+  (step 2).
 - `bin/dux-lock mine` must exit 0. If it does not, say Dux is read-only and stop.
-- One worker at a time, across every registered project. If one is active, say
-  the task is queued and dispatch it yourself once `bin/dux-status` shows the
-  capacity free. Do not hand capacity back to the operator to manage.
+- Several workers run at once, in one repository or several, up to the number in
+  `config/max-workers`. Dispatch independent tasks together. Create a task
+  `--after` another only when it needs that task's merge, or plainly changes the
+  same files. At the limit, spawn refuses and the task stays queued; you spawn it
+  on a later wake, as `AGENTS.md` says. Do not hand the limit back to the
+  operator to manage.
 
 ## Dispatch
 
@@ -87,6 +90,9 @@ when something is off; relay the finding verbatim and stop.
 7. Read the brief's Intent and criteria back in two lines. Spawn unless the
    operator objects.
 8. `bin/dux-spawn <id>`, with the Bash tool timeout raised to 600000 ms: a `ship` spawn runs the project's own worktree setup (venv builds, generated projects) and can take minutes. If it is cut off anyway, run the same command again; a clean, untouched worktree is reused. Workers are Claude only this milestone; `--harness codex` is refused with a finding. That says nothing about Codex as the ship gate's reviewer.
+   Run one `bin/dux-spawn` at a time: never as parallel tool calls, never in the
+   background, and wait for its `spawned` line before the next. Spawns that
+   overlap all count the same running tasks and can start past the limit.
    The spawn opens a tab and the worker runs in it as a live session the
    operator can watch and type to. Two refusals are about that tab: a repository
    Claude Code has not been told to trust (the operator opens a session in it
@@ -113,8 +119,8 @@ makes the change. Its session has waited at its prompt since `done`.
    `data/tasks/<id>/feedback.md`. They are the operator's, not a worker's.
 2. `bin/dux-round <id> --file data/tasks/<id>/feedback.md`. It refuses a task
    that is not `done`, a pull request that is merged or closed, a session no
-   longer in its tab, another active worker, and a task that has had eight
-   rounds. Each refusal is a finding: relay it verbatim and stop.
+   longer in its tab, and a task that has had eight rounds. Each refusal is a
+   finding: relay it verbatim and stop. The worker limit never refuses a round.
 3. On `round <n> sent to <id>`, tell the operator the worker is on it in its
    tab, on the same pull request. The next wake is that round's own ending.
 

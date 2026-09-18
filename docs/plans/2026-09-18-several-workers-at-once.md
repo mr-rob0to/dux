@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-9 done.
+- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-10 done.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -416,9 +416,9 @@ finds nothing. The brief stays within its 100-line cap. Wrapper tests assert the
 
 **Steps**
 
-- [ ] Print the grep's match count first, edit, print it again at zero.
-- [ ] Update the two wrapper tests and the brief test.
-- [ ] No break-verification: wording only.
+- [x] Print the grep's match count first, edit, print it again at zero.
+- [x] Update the two wrapper tests and the brief test.
+- [x] No break-verification: wording only.
 
 ## Task 11: Run it installed, then hand over the policy lines
 
