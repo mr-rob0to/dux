@@ -139,6 +139,8 @@ case "$1 ${2:-}" in
     # pass against the fixture instead of against a real process.
     [ -n "${FAKE_HERDR_PROCINFO_FAIL:-}" ] && { echo '{"error":{"code":"server_unreachable"}}' >&2; exit 1; }
     [ -n "${FAKE_HERDR_PROCINFO_JUNK:-}" ] && { echo '{"result":{}}'; exit 0; }
+    # A canned reply, for shapes no real process can produce on demand.
+    [ -n "${FAKE_HERDR_PROCINFO_FILE:-}" ] && { cat "$FAKE_HERDR_PROCINFO_FILE"; exit 0; }
     pid=""; [ -f "$procpid" ] && pid="$(cat "$procpid")"
     if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
       comm="$(ps -o comm= -p "$pid" 2>/dev/null | sed 's/^ *//; s/ *$//')"
