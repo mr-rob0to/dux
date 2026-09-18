@@ -282,11 +282,7 @@ EOF
   dux-spawn "$first" >/dev/null
   run dux-spawn "$next"
   [ "$status" -eq 2 ]
-  case "$output" in
-    "finding: another Dux worker is active: $first; $next remains queued") ;;
-    "finding: $next waits on $first, which is running and has not delivered yet; $next remains queued") ;;
-    *) false ;;
-  esac
+  [ "$output" = "finding: $next waits on $first, which is running and has not delivered yet; $next remains queued" ]
   wait_file "$DUX_HOME/state/$first.handoffs/1/status" 60
   [ "$(cat "$DUX_HOME/state/$first.handoffs/1/status")" = "done: PR $pr" ]
   wait_for_workers 30

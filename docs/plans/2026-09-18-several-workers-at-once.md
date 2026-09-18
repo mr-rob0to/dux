@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-2 done.
+- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-3 done.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -258,11 +258,11 @@ them.
 
 **Steps**
 
-- [ ] Rewrite the tests at `dux-spawn.bats` 319 and 493-640 first; record the test count before.
-- [ ] Replace the `fleet_busy` block; reword the comment near line 202.
-- [ ] Re-read the whole admission section of `dux-spawn` top to bottom after the edit.
-- [ ] Compare the test count after; account for every test removed or merged in the commit body.
-- [ ] Break-verify: change the comparison so the limit admits one more; the at-limit test fails.
+- [x] Rewrite the tests at `dux-spawn.bats` 319 and 493-640 first; record the test count before.
+- [x] Replace the `fleet_busy` block; reword the comment near line 202.
+- [x] Re-read the whole admission section of `dux-spawn` top to bottom after the edit.
+- [x] Compare the test count after; account for every test removed or merged in the commit body.
+- [x] Break-verify: change the comparison so the limit admits one more; the at-limit test fails.
 
 ## Task 4: Rounds no longer read other tasks
 
