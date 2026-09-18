@@ -42,13 +42,14 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
   esac
 }
 
-# A worker needs six tools: Bash, Read, Glob, Grep, Write and Edit. Everything
+# A worker needs seven tools: Bash, Read, Glob, Grep, Write, Edit and Skill
+# (without Skill it cannot run /ship). Everything
 # else the harness offers is prompt a Dux worker never uses, paid for on every
 # turn. The MCP flags are the same argument about connections: an empty config,
 # strictly, so an MCP server the operator has for their own sessions is not
 # loaded into a worker. Both entry points get them from one shared string, so a
 # printed command and an executed one cannot say different things.
-@test "the claude adapter limits a worker to the six tools it uses" {
+@test "the claude adapter limits a worker to the seven tools it uses" {
   [ "${DUX_WORKER_HARNESS:-}" = claude ] || skip "claude only"
   for f in worker_cmd worker_launcher; do
     if [ "$f" = worker_cmd ]; then
@@ -62,10 +63,10 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
       # quoting itself holds is the space-in-a-path test's job.
       out="$(tr -d "'" < "$chan/launch")"
     fi
-    # The value the flag was actually given, not a substring of it: a seventh
-    # tool appended to the list would match "...,Write,Edit" and pass.
+    # The value the flag was actually given, not a substring of it: an eighth
+    # tool appended to the list would match "...,Write,Edit,Skill" and pass.
     got="$(printf '%s\n' "$out" | tr ' ' '\n' | grep -A1 -xF -- --tools | sed -n 2p)"
-    [ "$got" = Bash,Read,Glob,Grep,Write,Edit ] || { echo "$f: tool list is '$got': $out"; return 1; }
+    [ "$got" = Bash,Read,Glob,Grep,Write,Edit,Skill ] || { echo "$f: tool list is '$got': $out"; return 1; }
     [[ "$out" == *"--strict-mcp-config"* ]] || { echo "$f: not strict about MCP: $out"; return 1; }
     [[ "$out" == *"--mcp-config $DUX_ROOT/templates/worker-mcp.json"* ]] || { echo "$f: no MCP file: $out"; return 1; }
     [[ "$out" == *"--no-chrome"* ]] || { echo "$f: chrome not disabled: $out"; return 1; }

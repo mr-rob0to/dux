@@ -5,10 +5,12 @@ set -u
 # The flags both entry points share, written once so a printed command and an
 # executed one cannot drift apart.
 #
-# --tools: a Dux worker reads, searches, writes and runs commands, and that is
-# all. Every other built-in tool is prompt on every turn that nothing in a task
-# ever calls. Skills, /ship included, are not one of them: the harness puts a
-# skill's instructions in the prompt, so the gate still runs with the six. Safe
+# --tools: a Dux worker reads, searches, writes and runs commands, and invokes
+# skills, and that is all. Every other built-in tool is prompt on every turn
+# that nothing in a task ever calls. Skill is the exception: since Claude Code
+# 2.1.276 a skill, /ship included, can only be invoked when Skill is in this
+# list, and without it the gate cannot run. It costs one tool description per
+# turn. Safe
 # mode is not used, because it would take Bash away; settings-source isolation
 # is not used, because it would take the project's own instructions away.
 #
@@ -19,7 +21,7 @@ set -u
 #
 # --no-chrome: same argument, for the browser integration.
 claude_flags=(
-  --tools 'Bash,Read,Glob,Grep,Write,Edit'
+  --tools 'Bash,Read,Glob,Grep,Write,Edit,Skill'
   --strict-mcp-config --mcp-config "$DUX_ROOT/templates/worker-mcp.json"
   --no-chrome
 )
