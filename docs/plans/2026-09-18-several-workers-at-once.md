@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted and design-reviewed once; waiting for the operator's approval. No task started.
+- Approved and merged as PR #64; implementation under way on one branch. Task 1 done.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -210,11 +210,11 @@ No earlier text is deleted.
 
 **Steps**
 
-- [ ] Add the spec section: the limit, the ledger count, rounds exempt, isolation points 1-7,
+- [x] Add the spec section: the limit, the ledger count, rounds exempt, isolation points 1-7,
       same-repository behavior, the shared-records table.
-- [ ] Mark the guard passage superseded, with a pointer.
-- [ ] Add the two dated notes to the rollout spec and plan.
-- [ ] No break-verification: prose only.
+- [x] Mark the guard passage superseded, with a pointer.
+- [x] Add the two dated notes to the rollout spec and plan.
+- [x] No break-verification: prose only.
 
 ## Task 2: The limit and the count in `dux-env`
 

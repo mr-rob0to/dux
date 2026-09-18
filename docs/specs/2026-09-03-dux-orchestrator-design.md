@@ -324,6 +324,8 @@ trust. `2026-09-14-interactive-worker-sessions.md` sections 5.1 and 5.2 are the
 authority for that; the rest of this section stands.
 The one-worker guard skips the process-group signal of a task whose ledger state is
 `done`: a parked session is idle (`2026-09-15-feedback-rounds-on-a-delivered-pr.md`, section 8).
+Superseded on 2026-09-18 by section 5.7, "Several workers at once": there is no
+one-worker guard any more, and spawn counts running workers against one limit.
 
 `dux-task-new <project> <shape> [--source local|gh:<owner>/<repo>#<n>]`
 allocates the id, creates `tasks/<id>/` with an empty `status.log`, and appends
@@ -478,11 +480,117 @@ and a worktree it cannot ask about is a refusal too. On success it sets the
 ledger to `dropped`, removes `data/tasks/<id>`, and prints `abandoned <id>`. It
 touches no project repository, branch or pull request.
 
+### 5.7 Several workers at once
+
+Amended 2026-09-18 by `docs/plans/2026-09-18-several-workers-at-once.md`. This
+section replaces the one-worker guard described in section 5.5,
+`2026-09-14-interactive-worker-sessions.md` section 6 and
+`2026-09-15-feedback-rounds-on-a-delivered-pr.md` section 8. Those stay as the
+record of what was built.
+
+**The limit.** `config/max-workers` holds one whole number from 1 to 99. The
+installer seeds it from `templates/config/max-workers`, which says 3. `dux-spawn`
+counts the tasks the ledger holds as `running` or `stale`. If the count has
+reached the limit, it refuses before creating anything, and the task stays
+`queued`. A parked session (ledger `done`, `needs-decision` or `blocked`) is not
+`running`, so it never counts, and no special exemption is needed. Nothing else
+reads other tasks: `dux-round` does not check the limit at all. Setting the file
+to `1` gives back one worker at a time, which is the rollback.
+
+The limit is a spending brake, not a safety boundary. Safety between workers comes
+from each task having its own worktree, branch, tab and state files (below), and
+holds at any count. That is why the count is read from the ledger rather than from
+process evidence, and why uncertain evidence about some other task no longer blocks
+the whole fleet.
+
+Three helpers in `bin/dux-env` carry it:
+
+- `first_value <file>`: the first line that is not blank and not a `#` note.
+- `worker_limit`: prints the limit. It reads `config/max-workers`, else
+  `templates/config/max-workers`. Anything but `[1-9]` or `[1-9][0-9]` is
+  `finding: config/max-workers must be a whole number from 1 to 99, not '<value>'`.
+  No file in either place is
+  `finding: no worker limit in config/max-workers or templates/config/max-workers`.
+- `fleet_running`: prints how many tasks the ledger lists as `running` or `stale`.
+  It returns 1, printing nothing, when either list fails. It takes no id: the task
+  asking is `queued`, which spawn has already proved, so it is never in the count.
+
+Spawn's refusals for capacity, each exit 2 with the task left `queued`, no worktree
+and no tab:
+
+- `finding: <n> Dux workers are running and the limit is <m> (config/max-workers); <id> remains queued`
+- `finding: cannot count the running Dux workers: the ledger did not answer; <id> remains queued`
+- the two `worker_limit` findings above, with `; <id> remains queued` appended.
+
+The check comes after spawn's own-task checks and before the worktree is made, so
+a refused task is untouched. `dux-status` prints `workers: <n> running (limit <m>)`
+and `dux-doctor` checks that the limit file holds a usable number.
+
+**Rounds.** A round (feedback, answer, approval) is never refused for capacity. It
+continues work that was already admitted, the operator is usually waiting on it,
+and there is no queue for a refused round, so refusing it would make Dux remember
+to resend it. The running count can therefore pass the limit by however many
+parked sessions are woken. That is accepted.
+
+**Worktree and branch isolation.** Two live workers never share a worktree or a
+branch because both names come from the task id, and the id is unique:
+
+1. `dux-ledger add` refuses an id already in the ledger, under the ledger mutex.
+2. The branch is always `dux/<id>`. `dux-worktree create` refuses when that branch
+   already exists without a clean, untouched worktree of its own.
+3. Git itself refuses to check one branch out in two worktrees, under every
+   worktree mechanism (`git`, `make`, `script`).
+4. `dux-worktree create` refuses a worktree path equal to the primary checkout.
+5. `dux-spawn` refuses a task that is not `queued`, that has a live pidfile, or that
+   has a container, and moves `queued` to `running` with a compare-and-set. So one
+   task never gets two workers.
+6. The wrapper supervises a harness only when its working directory is this task's
+   worktree.
+7. The pre-push hook is installed per worktree, from the task's own folder, and
+   refuses a push to the base branch. It does not stop a push to another task's
+   branch; the brief rule below covers that, and a worker has no reason to try.
+
+**Two tasks that want the same repository both run.** Each gets its own worktree
+cut from freshly fetched `origin/<base>`. Whichever pull request merges second is
+then behind its base, and the feedback round already handles that: the round tells
+the worker to merge the base in, and a real conflict stops at `needs-decision`.
+When the operator or Dux can see up front that two goals change the same files,
+the second task is created `--after` the first. There is no per-repository lock and
+no second setting.
+
+A worker is trusted but not confined: nothing stops one from walking into a sibling
+worktree. The brief carries one rule line saying other workers may be running
+beside it and their worktrees and branches are not to be touched.
+
+**Overlapping spawns.** `dux-spawn` counts near its start and writes `running` at
+its end, and building a worktree in between can take minutes. So spawns that
+overlap all count the same number and can all start, past the limit. A spawn cut
+off after its wrapper started also leaves a live worker the ledger still reads as
+`queued`, which the count misses until the watcher or a rerun settles it. Both cost
+tokens, not correctness. The fix is a rule in `skills/dux-dispatch`, not a lock: one
+`dux-spawn` at a time, never as parallel tool calls, never in the background, and
+wait for `spawned` before the next. Overlapping spawns in one repository can also
+collide on the shared `.git` fetch and refuse, which the same rule avoids. A task
+whose wrapper died while its session still sits in the tab reads `dead`, not
+`running`, and is not counted until recovery tells the operator to end it.
+
+**How shared records stay correct.** Each row has a two-task test.
+
+| Record | Why it stays correct with several workers |
+|---|---|
+| Ledger `data/backlog.md` | Every writing verb takes the `mkdir` mutex and replaces the file with one rename; readers see a whole file |
+| `state/events.log` | One writer only: the single watcher, which `watch.pid` enforces. Each line names its task |
+| Wakes and acknowledgements | A wake names its task; `ack` and `unack` rewrite only that task's row and compare that task's state |
+| Handoffs | Kept per task under `state/<id>.handoffs/`, checked against that task's run id before anything is written |
+| Parked markers | `state/<id>.parked` names that task's run, wrapper and group, and counts only while all three match that task's own files |
+| Rounds | `dux-round` reads only its own task; the wrapper takes up only `data/tasks/<id>/round-<n>.md` |
+| Worktrees and branches | The isolation points above |
+
 ## 6. Supervision
 
 Supervising a harness the wrapper did not fork, the beat that replaces the output file,
 and the one-worker guard's pgid read are in `2026-09-14-interactive-worker-sessions.md`
-sections 5.2, 5.5 and 6.
+sections 5.2, 5.5 and 6. The guard itself is superseded by section 5.7.
 
 ### 6.1 Watcher (`dux-watch`)
 

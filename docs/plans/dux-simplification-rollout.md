@@ -1421,6 +1421,8 @@ Deferred thresholds from spec section 11, and only those. None is met:
   allowance, and no harness relates usage to allowance (task 32).
 - **Parallel workers:** not met. No record measures how long a task waited for the one worker
   slot.
+  Note, 2026-09-18: the operator lifted this deferral; see
+  `docs/plans/2026-09-18-several-workers-at-once.md`.
 - **General dependency graph:** not met. Every deliverable here sat in one repository, and none
   waited on another.
 - **Transcript checkpoints or resumption after process loss:** not met. The sample has one start
@@ -1461,6 +1463,8 @@ Questions and answers continue the live owning task. Ordinary answers cannot aut
 Plan-only delivery remains distinct from integrated work. Separate registered repositories receive separate worktrees. Unproved or incomplete prerequisites prevent dispatch, including missing required deployment evidence.
 
 Dux starts the next authorized task after verified capacity and prerequisites. Installed exercises never run two active implementation workers.
+
+Note, 2026-09-18: the operator lifted the parallel-workers deferral, so several workers now run at once up to `config/max-workers`; see `docs/plans/2026-09-18-several-workers-at-once.md`.
 
 Stopped-run rollback preserves evidence and worktrees, records incomplete status, and enters explicit recovery without acceptance by an incompatible reader.
 
