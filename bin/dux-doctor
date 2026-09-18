@@ -80,6 +80,11 @@ case "$stage" in
   *)  fail "policy stage" "'$stage' is not a rollout stage (m1, m2, m3, m4)"; stage="" ;;
 esac
 
+# ---- worker limit --------------------------------------------------------
+# The number dux-spawn starts workers up to. A value it cannot read refuses
+# every start, so doctor fails on it with the reason.
+if limit="$(worker_limit 2>&1)"; then ok "worker limit $limit"; else fail "worker limit" "${limit#finding: }"; fi
+
 reg="$DUX_DATA/projects.md"
 if [ -s "$reg" ] && grep -q '^- ' "$reg"; then ok "registry"; else fail "registry" "no projects in $reg; run dux-project add"; fi
 

@@ -45,6 +45,12 @@ fi
 
 w="$(cat "$DUX_STATE/watch.pid" 2>/dev/null)"
 if pid_runs "$w" dux-watch; then echo "watcher: running (pid $w)"; else echo "watcher: not running"; fi
+# Workers holding a place in any project, against the limit dux-spawn starts
+# them up to. Neither failing stops the digest: a limit that cannot be read is
+# said here and named by dux-doctor, and a count the ledger cannot give is said
+# as unavailable, never as none.
+limit="$(worker_limit 2>/dev/null)" || limit=unreadable
+if n="$(fleet_running)"; then echo "workers: $n running (limit $limit)"; else echo "workers: count unavailable (limit $limit)"; fi
 if [ -f "$DUX_STATE/dux.lock" ] && [ -f "$DUX_STATE/wakes.base" ]; then
   base="$(tr -d ' ' < "$DUX_STATE/wakes.base")"
   case "$base" in ''|*[!0-9]*) base=0 ;; esac

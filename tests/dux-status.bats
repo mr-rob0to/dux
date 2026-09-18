@@ -23,6 +23,7 @@ task() {  # $1 id, $2 project, $3 state, [$4 pr], [$5 endpoint]
   run --separate-stderr dux-status
   [ "$status" -eq 0 ]; [ -z "$stderr" ]
   expected="watcher: not running
+workers: 3 running (limit 3)
 api
   queued 1
   running 2 (1 stale)
@@ -49,7 +50,7 @@ unacknowledged
   task a1 api done https://example.invalid/pr/7
   dux-ledger ack a1 done
   run dux-status
-  [ "$output" = $'watcher: not running\napi\n  ready 1\nios' ]
+  [ "$output" = $'watcher: not running\nworkers: 0 running (limit 3)\napi\n  ready 1\nios' ]
 }
 
 @test "torn-down tasks are archived instead of ready or failed" {
@@ -57,7 +58,7 @@ unacknowledged
   task a1 api done https://example.invalid/pr/7 -; task a2 api failed - -
   dux-ledger ack a1 done; dux-ledger ack a2 failed
   run dux-status
-  [ "$output" = $'watcher: not running\napi\nios' ]
+  [ "$output" = $'watcher: not running\nworkers: 0 running (limit 3)\napi\nios' ]
 }
 
 # The digest counts the ledger. A worker writing its own ending into the status
@@ -88,7 +89,63 @@ unacknowledged
   printf 'x\nx\nx\nx\nx\n' > "$DUX_HOME/state/events.log"
   run dux-status
   [ "${lines[0]}" = "watcher: running (pid $w)" ]
-  [ "${lines[1]}" = "wakes this session: 3 (restart after 10)" ]
+  [ "${lines[1]}" = "workers: 0 running (limit 3)" ]
+  [ "${lines[2]}" = "wakes this session: 3 (restart after 10)" ]
+}
+
+# ---- the workers line ------------------------------------------------------
+# One line for the whole fleet: the tasks running or stale in any project,
+# against the limit dux-spawn starts workers up to.
+@test "the workers line counts running and stale tasks in every project against the operator's limit" {
+  setup_fleet
+  task a1 api running; task a2 api stale; task a3 api queued; task a4 api blocked; task i1 ios running
+  printf '# the operator says\n5\n' > "$DUX_HOME/config/max-workers"
+  run --separate-stderr dux-status
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "${lines[0]}" = "watcher: not running" ]
+  [ "${lines[1]}" = "workers: 3 running (limit 5)" ]
+}
+
+@test "with no operator file the workers line reads the template's limit" {
+  setup_fleet
+  task a1 api running
+  rm "$DUX_HOME/config/max-workers"
+  run --separate-stderr dux-status
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "${lines[1]}" = "workers: 1 running (limit 3)" ]
+}
+
+# A limit that cannot be read is said on the line and the digest carries on.
+# dux-doctor names what is wrong with the file.
+@test "an unreadable limit is said on the workers line and every project block still prints" {
+  setup_fleet
+  task a1 api running; task a2 api done https://example.invalid/pr/7; task i1 ios queued
+  printf 'lots\n' > "$DUX_HOME/config/max-workers"
+  run --separate-stderr dux-status
+  [ "$status" -eq 0 ]
+  expected="watcher: not running
+workers: 1 running (limit unreadable)
+api
+  running 1
+  ready 1
+ios
+  queued 1
+unacknowledged
+  done: a2 (api)"
+  [ "$output" = "$expected" ]
+}
+
+# A ledger that cannot list its running tasks is not an empty fleet.
+@test "a count the ledger cannot give is said as unavailable, never as none" {
+  setup_fleet
+  task a1 api running
+  r="$(root_with_stub dux-ledger "#!/usr/bin/env bash
+if [ \"\$1 \$2 \$3\" = 'list --state running' ]; then echo 'finding: cannot read the ledger' >&2; exit 2; fi
+exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
+  DUX_ROOT="$r" run --separate-stderr dux-status
+  [ "$status" -eq 0 ]
+  [ "${lines[1]}" = "workers: count unavailable (limit 3)" ]
+  [[ "$output" == *$'\napi\n  running 1'* ]]
 }
 
 @test "--prs annotates ready PRs and warns when gh fails" {
@@ -139,9 +196,9 @@ unacknowledged
   [ "${lines[0]}" = intake ]; [ "${lines[1]}" = "  no project has issues enabled" ]
 }
 
-@test "an empty registry prints only watcher state" {
+@test "an empty registry prints only the watcher and workers lines" {
   run dux-status
-  [ "$output" = "watcher: not running" ]
+  [ "$output" = $'watcher: not running\nworkers: 0 running (limit 3)' ]
 }
 
 @test "--intake still names a reason when the failure prints no line of its own" {

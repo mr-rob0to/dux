@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-8 done.
+- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-9 done.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -387,8 +387,8 @@ is unreadable.
 
 **Steps**
 
-- [ ] Tests first, then the two small additions.
-- [ ] No break-verification: formatting and straightforward mapping. The protection behind the
+- [x] Tests first, then the two small additions.
+- [x] No break-verification: formatting and straightforward mapping. The protection behind the
       number is Task 2's.
 
 ## Task 10: Wording for workers, Dux and readers
