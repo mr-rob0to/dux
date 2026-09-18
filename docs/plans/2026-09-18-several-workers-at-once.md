@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-6 done.
+- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-7 done.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -337,10 +337,10 @@ unacknowledged, acknowledging A leaves B listed by `dux-ledger list --unacked`.
 
 **Steps**
 
-- [ ] Add the three tests.
-- [ ] Break-verify 1: make the rejected-handoff branch in `pass` stop the loop instead of
+- [x] Add the three tests.
+- [x] Break-verify 1: make the rejected-handoff branch in `pass` stop the loop instead of
       moving on; the second test fails because B has no event.
-- [ ] No second break. A line written twice is a crash-replay fault, which `dux-watch.bats`
+- [x] No second break. A line written twice is a crash-replay fault, which `dux-watch.bats`
       500-512 and 531-545 already cover; a finished task is not visited again, so a
       two-task test cannot reach it. Acknowledgement isolation is Task 6's row break.
 
