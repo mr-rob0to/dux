@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-5 done.
+- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-6 done.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -317,9 +317,9 @@ scripts and the one watcher, and the held and stale mutex are already tested at
 
 **Steps**
 
-- [ ] Add both tests. Green on first run is expected here; that is why the breaks matter.
-- [ ] Break-verify 1: remove `lock_ledger` from `set-if`; the held-mutex test fails.
-- [ ] Break-verify 2: make `write_field` match every row; the row-isolation test fails.
+- [x] Add both tests. Green on first run is expected here; that is why the breaks matter.
+- [x] Break-verify 1: remove `lock_ledger` from `set-if`; the held-mutex test fails.
+- [x] Break-verify 2: make `write_field` match every row; the row-isolation test fails.
 
 ## Task 7: The watcher with two tasks in one pass
 
