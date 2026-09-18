@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-4 done.
+- Approved and merged as PR #64; implementation under way on one branch. Tasks 1-5 done.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -296,9 +296,9 @@ task A never reading as parked for task B.
 
 **Steps**
 
-- [ ] Re-home the tests first, green against the unchanged `parked`.
-- [ ] Delete `fleet_busy`; `make check`.
-- [ ] Break-verify, one at a time, three breaks and three distinct failures: drop the run
+- [x] Re-home the tests first, green against the unchanged `parked`.
+- [x] Delete `fleet_busy`; `make check`.
+- [x] Break-verify, one at a time, three breaks and three distinct failures: drop the run
       comparison, drop the group comparison, drop the wrapper comparison. These tests were
       rewritten, so each is seen to fail again.
 

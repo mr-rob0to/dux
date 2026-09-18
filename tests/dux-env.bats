@@ -302,54 +302,63 @@ exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
   done
 }
 
-# ---- the two helpers spawn, the wrapper and teardown share -----------------
-# Spawn's own suite reads every refusal through the start it blocks. These read
-# the helpers' answers directly, which is what a round and teardown call.
-@test "fleet_busy answers free when no other task has evidence, and names a live wrapper when one does" {
-  dux-ledger add a-scout-20260916-aaa proj scout local
-  dux-ledger add b-ship-20260916-bbb proj ship local
-  run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy b-ship-20260916-bbb'
-  [ "$status" -eq 1 ]; [ -z "$output" ]
-  p="$(stand_in "dux-worker-wrap a-scout-20260916-aaa")"
-  echo "$p" > "$DUX_HOME/state/a-scout-20260916-aaa.pid"
-  run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy b-ship-20260916-bbb'
-  [ "$status" -eq 0 ]; [ "$output" = "live a-scout-20260916-aaa" ]
-  # A task never blocks itself.
-  run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy a-scout-20260916-aaa'
-  [ "$status" -eq 1 ]; [ -z "$output" ]
-  reap "$p"
-}
-
-@test "fleet_busy reads another task's live group, and a group file it cannot read, as busy" {
-  dux-ledger add a-scout-20260916-aaa proj scout local
-  ps -o pgid= -p $$ | tr -d ' ' > "$DUX_HOME/state/a-scout-20260916-aaa.pgid"
-  run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy b-ship-20260916-bbb'
-  [ "$status" -eq 0 ]; [ "$output" = "live a-scout-20260916-aaa" ]
-  printf 'x\n' > "$DUX_HOME/state/a-scout-20260916-aaa.pgid"
-  run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy b-ship-20260916-bbb'
-  [ "$status" -eq 0 ]; [ "$output" = "pgidfile a-scout-20260916-aaa" ]
-}
-
-@test "fleet_busy lets a parked task's wrapper and group through, only on a marker that still names them" {
+# ---- parked, which a round and teardown read --------------------------------
+# A session counts as parked only while its marker names the task's current
+# run, its own live wrapper and its group. Each test first sees the marker hold,
+# then changes one thing.
+park_a() {  # sets $a with a live wrapper $p, the test's group $g and run r1; no marker yet
   a=a-ship-20260916-aaa
-  dux-ledger add "$a" proj ship local; dux-ledger set "$a" state done
-  p="$(stand_in "dux-worker-wrap $a")"; q="$(stand_in "dux-worker-wrap $a")"
+  p="$(stand_in "dux-worker-wrap $a")"
   g="$(ps -o pgid= -p $$ | tr -d ' ')"
   echo "$p" > "$DUX_HOME/state/$a.pid"; echo "$g" > "$DUX_HOME/state/$a.pgid"
   printf 'version=1\nrun=r1\n' > "$DUX_HOME/state/$a.run"
-  busy_when_parked() {  # $1 run, $2 wrapper, $3 group, as the marker names them
-    printf 'run=%s\nwrapper=%s\npgid=%s\n' "$1" "$2" "$3" > "$DUX_HOME/state/$a.parked"
-    run bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_busy b-ship-20260916-bbb'
-  }
-  busy_when_parked r1 "$p" "$g"
-  [ "$status" -eq 1 ]; [ -z "$output" ]
-  # Another run, another wrapper, another group: none of them is this session parked.
-  busy_when_parked r0 "$p" "$g"; [ "$output" = "live $a" ]
-  busy_when_parked r1 "$q" "$g"; [ "$output" = "live $a" ]
-  busy_when_parked r1 "$p" 999999; [ "$output" = "live $a" ]
+}
+is_parked() {  # $1 id
+  run bash -c 'source "$DUX_ROOT/bin/dux-env"; parked "$1"' _ "$1"
+}
+parked_when() {  # $1 run, $2 wrapper, $3 group, as a's marker names them; then asks about a
+  printf 'run=%s\nwrapper=%s\npgid=%s\n' "$1" "$2" "$3" > "$DUX_HOME/state/$a.parked"
+  is_parked "$a"
+}
+
+@test "parked holds on a marker naming this run, wrapper and group, and not on another run" {
+  park_a
+  # A live session with no marker is at work.
+  is_parked "$a"; [ "$status" -eq 1 ]
+  parked_when r1 "$p" "$g"; [ "$status" -eq 0 ]
+  parked_when r0 "$p" "$g"; [ "$status" -eq 1 ]
+  # No run file is no current run to match.
+  rm "$DUX_HOME/state/$a.run"
+  parked_when r1 "$p" "$g"; [ "$status" -eq 1 ]
+  reap "$p"
+}
+
+@test "parked does not hold on a marker naming another group, or when the group file does not say" {
+  park_a
+  parked_when r1 "$p" "$g"; [ "$status" -eq 0 ]
+  parked_when r1 "$p" 999999; [ "$status" -eq 1 ]
+  printf 'x\n' > "$DUX_HOME/state/$a.pgid"
+  parked_when r1 "$p" "$g"; [ "$status" -eq 1 ]
+  reap "$p"
+}
+
+@test "parked does not hold for another wrapper, a wrapper that has gone, or another task" {
+  park_a
+  q="$(stand_in "dux-worker-wrap $a")"
+  parked_when r1 "$p" "$g"; [ "$status" -eq 0 ]
+  # A second live wrapper for this task is not the one its pidfile names.
+  parked_when r1 "$q" "$g"; [ "$status" -eq 1 ]
   # A wrapper that has gone leaves a group nobody is parking.
   reap "$p"
-  busy_when_parked r1 "$p" "$g"; [ "$output" = "live $a" ]
+  parked_when r1 "$p" "$g"; [ "$status" -eq 1 ]
+  # Task a parked again under q. Its marker never parks b, not even copied
+  # beside copies of a's files: the wrapper it names is a's.
+  echo "$q" > "$DUX_HOME/state/$a.pid"
+  parked_when r1 "$q" "$g"; [ "$status" -eq 0 ]
+  b=b-ship-20260916-bbb
+  is_parked "$b"; [ "$status" -eq 1 ]
+  for f in pid pgid run parked; do cp "$DUX_HOME/state/$a.$f" "$DUX_HOME/state/$b.$f"; done
+  is_parked "$b"; [ "$status" -eq 1 ]
   reap "$q"
 }
 
