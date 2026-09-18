@@ -97,7 +97,7 @@ bin/
   backends/herdr.sh        tab per task in the Dux workspace; endpoint herdr:<pane_id>
   workers/claude.sh        worker harness adapter: worker_cmd, worker_run, worker_effort_ok;
                            both entry points share one flag list: --tools limited to
-                           Bash,Read,Glob,Grep,Write,Edit, --strict-mcp-config with the
+                           Bash,Read,Glob,Grep,Write,Edit,Skill, --strict-mcp-config with the
                            empty templates/worker-mcp.json, and --no-chrome
   workers/codex.sh         same adapter for Codex; tested, not dispatchable in milestone 2.
                            worker_usage reads a codex exec --json event stream: input with
