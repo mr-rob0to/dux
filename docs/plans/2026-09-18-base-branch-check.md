@@ -9,7 +9,7 @@
 
 **Where this stands**
 - Approved and merged as #67; Tasks 1 to 8 are one ship task on one branch.
-- Tasks 1 to 7 are done. Task 8, the operating rules and a real check, is next.
+- Tasks 1 to 8 are done. The branch goes through `/ship` next.
 - When done, Dux tells the operator once, with the run url, when any registered base goes red.
 
 **Estimated diff:** ~1,300 added lines across 8 tasks, about 850 of them tests and the `gh`
@@ -312,9 +312,9 @@ prints. Both read local files only; the digest makes no new network call.
 
 **Steps**
 
-- [ ] Edit the five files. Dry-run both skills as the constitution asks.
-- [ ] Do the real check and record it.
-- [ ] Break-verify: none owed here. The rules are prose, and Tasks 2 to 7 hold the guards.
+- [x] Edit the five files. Dry-run both skills as the constitution asks.
+- [x] Do the real check and record it.
+- [x] Break-verify: none owed here. The rules are prose, and Tasks 2 to 7 hold the guards.
 
 ## After the merge: one installed run, by Dux and the operator
 
