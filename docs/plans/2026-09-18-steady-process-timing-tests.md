@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved (PR #68). Building: tasks 1 and 2 landed; their container runs are queued.
+- Approved (PR #68). Building: tasks 1 to 3 landed; their container runs are queued.
 - Picks up the "hardening pass" that the flaky-test notes have asked for since milestone 4.
 - When done, the four tests below stop failing at random, and one wrong `dux-spawn` message is fixed.
 
@@ -201,16 +201,16 @@ which were left, with the count of each.
 
 **Steps**
 
-- [ ] Add a test in `tests/harness.bats`: a group whose only member is a zombie is gone; a
+- [x] Add a test in `tests/harness.bats`: a group whose only member is a zombie is gone; a
       group with one live member is not.
-- [ ] Add `group_gone` and move the three call sites onto it.
-- [ ] Break-verify `group_gone`: make it always true, confirm the "one live member" test
+- [x] Add `group_gone` and move the three call sites onto it.
+- [x] Break-verify `group_gone`: make it always true, confirm the "one live member" test
       fails, restore, paste. Test 37's own group check cannot serve here: the wrapper stops
       the group before it publishes, so that line never sees a live group.
-- [ ] Break-verify the protection test 37 guards: remove the group `kill -TERM` from the
+- [x] Break-verify the protection test 37 guards: remove the group `kill -TERM` from the
       wrapper's INT/TERM trap, confirm test 37 fails at its `handoff_status` line (the run
       finishes as `done: report` instead of `ended`), restore, paste.
-- [ ] Print the match count of `kill -0` in those four files before and after, and compare.
+- [x] Print the match count of `kill -0` in those four files before and after, and compare.
 
 ## Task 4: Spawn recognises a run that started and finished between two looks
 

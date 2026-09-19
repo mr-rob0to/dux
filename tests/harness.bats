@@ -145,3 +145,30 @@ load helpers/setup
   wait "$done_pid"
   gone "$done_pid"
 }
+
+# The same holds for a group on Linux: kill -0 on it answers while a member is a
+# zombie, which is how a pane's group looks while tmux has not collected the
+# pane's process. group_gone asks whether anything in the group still runs.
+@test "group_gone is true for a group whose only member is a zombie, false while a member runs" {
+  # A parent forks a child that leads a group of its own and prints its pid once
+  # it does. The parent never collects it. Told "exit", the child ends at once;
+  # told "sleep", it stays alive in its group.
+  lead_group() {  # $1 exit|sleep, $2 file for the child's pid
+    # shellcheck disable=SC2016
+    perl -e '$| = 1; if (fork == 0) { setpgrp(0, 0); print "$$\n"; exit 0 if $ARGV[0] eq "exit"; sleep 60; exit 0 } sleep 60' "$1" > "$2" &
+    echo $! >> "$DUX_HOME/state/stand-ins"
+    wait_until 5 test -s "$2"
+    g="$(cat "$2")"
+    echo "$g" >> "$DUX_HOME/state/stand-ins"
+  }
+  lead_group exit "$DUX_HOME/zombie-group"
+  is_zombie() { case "$(ps -o stat= -p "$g" 2>/dev/null | tr -d ' ')" in Z*) return 0 ;; esac; return 1; }
+  wait_until 5 is_zombie
+  # What makes this the case that matters on Linux: kill -0 on the group still
+  # answers. macOS refuses it with "Operation not permitted", so there the old
+  # question already gave the right answer.
+  if [ "$(uname -s)" = Linux ]; then kill -0 -- "-$g"; fi
+  group_gone "$g"
+  lead_group sleep "$DUX_HOME/live-group"
+  refute group_gone "$g"
+}

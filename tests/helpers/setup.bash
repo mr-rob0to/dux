@@ -181,6 +181,12 @@ gone() {  # $1 pid; 0 once it has ended, collected or not
 
 not_running() { gone "$1"; }
 
+# Whether a process group has ended: nothing in it runs. On Linux kill -0 on a
+# group answers while a member is a zombie, which is how a pane's group looks
+# while tmux has not collected its process. group_runs in dux-env already reads
+# a group that way and fails closed, and has its own tests in dux-env.bats.
+group_gone() { ! group_runs "$1"; }  # $1 pgid
+
 # A bare `! cmd` can never fail a bats test: bash ignores errexit for a command
 # whose return value is being inverted. An assertion that something is absent
 # goes through this instead, so that the inversion happens inside a function

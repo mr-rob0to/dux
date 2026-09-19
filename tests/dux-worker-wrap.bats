@@ -250,8 +250,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
   wrap
   op="$(cat "$DUX_HOME/state/orphan.pid")"
   [[ "$op" =~ ^[0-9]+$ ]]
-  run kill -0 "$op"
-  [ "$status" -ne 0 ]
+  gone "$op"
   [ "$(handoff_status)" = "done: report" ]
 }
 
@@ -282,8 +281,7 @@ channel_of() { sed -n 's#^DUX_STATUS_LOG=\(.*\)/status.outbox$#\1#p' "$1"; }
     sleep 0.2
   done
   wait "$wp" || true
-  run kill -0 "$sp"
-  [ "$status" -ne 0 ]
+  gone "$sp"
   [ "$(handoff_status)" = "done: report" ]
 }
 
@@ -780,8 +778,7 @@ EOF
   wait "$wp" || true
   [ "$(handoff_status)" = "ended: the session ended without a terminal status" ]
   # The harness's whole group went with it, from outside its parent chain.
-  run kill -0 -- "-$hg"
-  [ "$status" -ne 0 ]
+  group_gone "$hg"
 }
 
 # ---- risk routes a ship task's model ---------------------------------------
@@ -872,8 +869,7 @@ EOF
   [ "$(handoff_status)" = "done: report" ]
   [ "$(handoff_event)" = done ]
   # The session and everything it started went with the line.
-  run kill -0 -- "-$hg"
-  [ "$status" -ne 0 ]
+  group_gone "$hg"
 }
 
 # Discovery asks two questions of the pane's foreground process: is it the

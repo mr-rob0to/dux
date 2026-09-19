@@ -106,7 +106,7 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
   sleep 3
   [ "$(count dead "$id")" -eq 1 ]
   kill -TERM -- "-$harness_pgid" 2>/dev/null || true
-  wait_until 5 bash -c "! kill -0 -- -$harness_pgid 2>/dev/null"
+  wait_until 5 group_gone "$harness_pgid"
 }
 
 @test "a worker that finishes produces exactly one done event, even across a watcher restart" {
@@ -231,7 +231,7 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
   [ -d "$channel" ]
   [ "$(dux-ledger get "$id" state)" = failed ]
   kill -TERM -- "-$pg" 2>/dev/null || true
-  wait_until 10 bash -c "! kill -0 -- -$pg 2>/dev/null"
+  wait_until 10 group_gone "$pg"
   dux-teardown "$id" >/dev/null
   [ ! -e "$channel" ]
   for f in portal pgid run handoffs result-context; do
