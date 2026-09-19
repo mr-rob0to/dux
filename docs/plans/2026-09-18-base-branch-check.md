@@ -9,7 +9,7 @@
 
 **Where this stands**
 - Approved and merged as #67; Tasks 1 to 8 are one ship task on one branch.
-- Tasks 1 to 3 are done. Task 4, every registered project, is next.
+- Tasks 1 to 4 are done. Task 5, the notification line, is next.
 - When done, Dux tells the operator once, with the run url, when any registered base goes red.
 
 **Estimated diff:** ~1,300 added lines across 8 tasks, about 850 of them tests and the `gh`
@@ -207,8 +207,8 @@ as in Design and spec sections 4 and 5.
 
 **Steps**
 
-- [ ] Write the failing tests, then the loop.
-- [ ] Break-verify, one at a time:
+- [x] Write the failing tests, then the loop.
+- [x] Break-verify, one at a time:
   1. Write `main` in place of the registered base. Expect "a staging base is asked about
      staging" to fail.
   2. Stop at the first project that does not answer. Expect "one silent project does not hide

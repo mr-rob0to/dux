@@ -348,3 +348,53 @@ attempt=1" ]
   run dux-base ack widgets
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-base"* ]]
 }
+
+# ---- every registered project ----------------------------------------------
+
+CALL="--event push --limit 20 --json databaseId,headSha,status,conclusion,attempt"
+gadgets() { make_github_repo gadgets; dux-project add "$DUX_HOME/gadgets" --base staging --pr-template skip >/dev/null; }
+runs_for() {  # $1 widgets fixture, $2 gadgets fixture; "" leaves that repository without an answer
+  mkdir -p "$DUX_HOME/runs"
+  [ -z "$1" ] || cp "$(runs "$1")" "$DUX_HOME/runs/widgets.json"
+  [ -z "$2" ] || cp "$(runs "$2")" "$DUX_HOME/runs/gadgets.json"
+  export FAKE_GH_RUNS_DIR="$DUX_HOME/runs"
+}
+
+@test "a staging base is asked about staging" {
+  widgets; gadgets
+  runs_for green.json red-failure.json
+  run --separate-stderr dux-base check
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "$(cat "$FAKE_GH_LOG")" = "run list --repo acme/widgets --branch main $CALL
+run list --repo acme/gadgets --branch staging $CALL" ]
+  [ "$output" = "widgets main green
+gadgets staging red https://github.com/acme/gadgets/actions/runs/17000000201" ]
+  [[ "$(cat "$DUX_HOME/state/events.log")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z\ base-red:\ gadgets$ ]]
+  [ "$(dux-base get gadgets url)" = "https://github.com/acme/gadgets/actions/runs/17000000201" ]
+  no_call_folder
+}
+
+@test "one silent project does not hide the next" {
+  widgets; gadgets
+  runs_for "" red-failure.json
+  run --separate-stderr dux-base check
+  [ "$status" -eq 0 ]
+  [ "$(events_count)" -eq 1 ]
+  [ "$output" = "widgets main no-answer
+gadgets staging red https://github.com/acme/gadgets/actions/runs/17000000201" ]
+  [ "$stderr" = "dux: base: widgets: no answer from GitHub (gh exited 1)" ]
+  [ "$(dux-base get gadgets reported)" = "$A:17000000201:1" ]
+}
+
+@test "a project that is not on GitHub makes no call and stops nothing" {
+  make_repo "$DUX_HOME/local" main
+  dux-project add "$DUX_HOME/local" --base main --pr-template skip >/dev/null
+  widgets
+  export FAKE_GH_RUNS="$(runs red-failure.json)"
+  run --separate-stderr dux-base check
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "$output" = "local main none
+widgets main red $RUNS_URL/17000000201" ]
+  [ "$(cat "$FAKE_GH_LOG")" = "run list --repo acme/widgets --branch main $CALL" ]
+  [ ! -e "$DUX_HOME/state/base/local" ]
+}

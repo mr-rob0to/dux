@@ -151,12 +151,15 @@ case "$gh_secs" in ''|*[!0-9]*|0) finding "DUX_BASE_GH_SECS must be a whole numb
 
 cmd="${1:-}"; shift || true
 case "$cmd" in
+  # One project, or every registered one in turn. A project that gets no
+  # answer, or makes no call, never stops the ones after it.
   check)
-    [ $# -eq 1 ] || finding "$usage"
-    valid_project "$1"
+    [ $# -le 1 ] || finding "$usage"
+    [ $# -eq 0 ] || valid_project "$1"
     call_dir="$(mktemp -d "$DUX_STATE/base-call.XXXXXXXX" 2>/dev/null)" \
       || finding "cannot make a folder for GitHub's answer under $DUX_STATE"
-    check_one "$1" || exit $? ;;
+    if [ $# -eq 1 ]; then check_one "$1" || exit $?; exit 0; fi
+    for p in $("$projects" list); do check_one "$p" || true; done ;;
   get)
     [ $# -eq 2 ] || finding "$usage"
     valid_project "$1"
