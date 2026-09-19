@@ -81,6 +81,14 @@ setup() {
   [ "$(cat "$DUX_HOME/config/policy-stage")" = m2 ]
 }
 
+@test "install seeds the worker limit once and never overwrites the operator's" {
+  dux-install
+  cmp -s "$DUX_ROOT/templates/config/max-workers" "$DUX_HOME/config/max-workers"
+  printf '5\n' > "$DUX_HOME/config/max-workers"
+  dux-install
+  [ "$(cat "$DUX_HOME/config/max-workers")" = 5 ]
+}
+
 @test "install says what a real directory holds before it proposes replacing it" {
   mkdir -p "$DUX_SKILLS_DIR/ship/inner"
   echo old > "$DUX_SKILLS_DIR/ship/SKILL.md"; echo more > "$DUX_SKILLS_DIR/ship/.hidden"

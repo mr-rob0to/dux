@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted and design-reviewed once; waiting for the operator's approval. No task started.
+- Approved and merged as PR #64. Tasks 1-10 done; the operator chose to ship them without Task 11, which Dux runs on the installed build after this merges.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
@@ -210,11 +210,11 @@ No earlier text is deleted.
 
 **Steps**
 
-- [ ] Add the spec section: the limit, the ledger count, rounds exempt, isolation points 1-7,
+- [x] Add the spec section: the limit, the ledger count, rounds exempt, isolation points 1-7,
       same-repository behavior, the shared-records table.
-- [ ] Mark the guard passage superseded, with a pointer.
-- [ ] Add the two dated notes to the rollout spec and plan.
-- [ ] No break-verification: prose only.
+- [x] Mark the guard passage superseded, with a pointer.
+- [x] Add the two dated notes to the rollout spec and plan.
+- [x] No break-verification: prose only.
 
 ## Task 2: The limit and the count in `dux-env`
 
@@ -234,11 +234,11 @@ overwrites one the operator wrote.
 
 **Steps**
 
-- [ ] Write the failing tests first.
-- [ ] Move `first_value`; count function declarations in both files before and after.
-- [ ] Add `worker_limit`, `fleet_running` and the template.
-- [ ] Break-verify 1: make `worker_limit` fall back to 3 on a bad value; the bad-value test fails.
-- [ ] Break-verify 2: make `fleet_running` ignore a failed `dux-ledger list`; the ledger-failure
+- [x] Write the failing tests first.
+- [x] Move `first_value`; count function declarations in both files before and after.
+- [x] Add `worker_limit`, `fleet_running` and the template.
+- [x] Break-verify 1: make `worker_limit` fall back to 3 on a bad value; the bad-value test fails.
+- [x] Break-verify 2: make `fleet_running` ignore a failed `dux-ledger list`; the ledger-failure
       test fails. Paste both failures into the commit.
 
 ## Task 3: Spawn admits up to the limit
@@ -258,11 +258,11 @@ them.
 
 **Steps**
 
-- [ ] Rewrite the tests at `dux-spawn.bats` 319 and 493-640 first; record the test count before.
-- [ ] Replace the `fleet_busy` block; reword the comment near line 202.
-- [ ] Re-read the whole admission section of `dux-spawn` top to bottom after the edit.
-- [ ] Compare the test count after; account for every test removed or merged in the commit body.
-- [ ] Break-verify: change the comparison so the limit admits one more; the at-limit test fails.
+- [x] Rewrite the tests at `dux-spawn.bats` 319 and 493-640 first; record the test count before.
+- [x] Replace the `fleet_busy` block; reword the comment near line 202.
+- [x] Re-read the whole admission section of `dux-spawn` top to bottom after the edit.
+- [x] Compare the test count after; account for every test removed or merged in the commit body.
+- [x] Break-verify: change the comparison so the limit admits one more; the at-limit test fails.
 
 ## Task 4: Rounds no longer read other tasks
 
@@ -277,9 +277,9 @@ tab closed, pending handoff, ninth round) still refuses with its existing text.
 
 **Steps**
 
-- [ ] Replace the test at `dux-round.bats` 330 with the three cases above, failing first.
-- [ ] Remove the block; re-read `dux-round` from the liveness checks to the ledger move.
-- [ ] Break-verify: put a `fleet_running`-against-limit refusal into `dux-round`; the at-limit
+- [x] Replace the test at `dux-round.bats` 330 with the three cases above, failing first.
+- [x] Remove the block; re-read `dux-round` from the liveness checks to the ledger move.
+- [x] Break-verify: put a `fleet_running`-against-limit refusal into `dux-round`; the at-limit
       round test fails. Restore.
 
 ## Task 5: Remove `fleet_busy`, keep `parked` proved
@@ -296,9 +296,9 @@ task A never reading as parked for task B.
 
 **Steps**
 
-- [ ] Re-home the tests first, green against the unchanged `parked`.
-- [ ] Delete `fleet_busy`; `make check`.
-- [ ] Break-verify, one at a time, three breaks and three distinct failures: drop the run
+- [x] Re-home the tests first, green against the unchanged `parked`.
+- [x] Delete `fleet_busy`; `make check`.
+- [x] Break-verify, one at a time, three breaks and three distinct failures: drop the run
       comparison, drop the group comparison, drop the wrapper comparison. These tests were
       rewritten, so each is seen to fail again.
 
@@ -317,9 +317,9 @@ scripts and the one watcher, and the held and stale mutex are already tested at
 
 **Steps**
 
-- [ ] Add both tests. Green on first run is expected here; that is why the breaks matter.
-- [ ] Break-verify 1: remove `lock_ledger` from `set-if`; the held-mutex test fails.
-- [ ] Break-verify 2: make `write_field` match every row; the row-isolation test fails.
+- [x] Add both tests. Green on first run is expected here; that is why the breaks matter.
+- [x] Break-verify 1: remove `lock_ledger` from `set-if`; the held-mutex test fails.
+- [x] Break-verify 2: make `write_field` match every row; the row-isolation test fails.
 
 ## Task 7: The watcher with two tasks in one pass
 
@@ -337,10 +337,10 @@ unacknowledged, acknowledging A leaves B listed by `dux-ledger list --unacked`.
 
 **Steps**
 
-- [ ] Add the three tests.
-- [ ] Break-verify 1: make the rejected-handoff branch in `pass` stop the loop instead of
+- [x] Add the three tests.
+- [x] Break-verify 1: make the rejected-handoff branch in `pass` stop the loop instead of
       moving on; the second test fails because B has no event.
-- [ ] No second break. A line written twice is a crash-replay fault, which `dux-watch.bats`
+- [x] No second break. A line written twice is a crash-replay fault, which `dux-watch.bats`
       500-512 and 531-545 already cover; a finished task is not visited again, so a
       two-task test cannot reach it. Acknowledgement isolation is Task 6's row break.
 
@@ -361,14 +361,14 @@ files; every `state/<b>.*` file is unchanged.
 
 **Steps**
 
-- [ ] First key the fake's process id, working directory and input file by pane id, so two
+- [x] First key the fake's process id, working directory and input file by pane id, so two
       tabs hold two workers. Every existing test stays green with no edits to it.
-- [ ] Add the tests. Fix the comment at `e2e-dispatch.bats` 251-255 ("Two workers never run at once").
-- [ ] Break-verify 1: remove the not-at-base refusal on the reuse path in `dux-worktree create`;
+- [x] Add the tests. Fix the comment at `e2e-dispatch.bats` 251-255 ("Two workers never run at once").
+- [x] Break-verify 1: remove the not-at-base refusal on the reuse path in `dux-worktree create`;
       the refusal test fails.
-- [ ] Break-verify 2: make `dux-spawn` write `running` with `set` instead of `set-if` and drop
+- [x] Break-verify 2: make `dux-spawn` write `running` with `set` instead of `set-if` and drop
       the `queued` check; the second-spawn test fails.
-- [ ] If either timing-based test fails once under load and passes on a re-run, say so in the
+- [x] If either timing-based test fails once under load and passes on a re-run, say so in the
       pull request; do not loosen the assertion.
 
 ## Task 9: Status and doctor show the limit
@@ -387,8 +387,8 @@ is unreadable.
 
 **Steps**
 
-- [ ] Tests first, then the two small additions.
-- [ ] No break-verification: formatting and straightforward mapping. The protection behind the
+- [x] Tests first, then the two small additions.
+- [x] No break-verification: formatting and straightforward mapping. The protection behind the
       number is Task 2's.
 
 ## Task 10: Wording for workers, Dux and readers
@@ -416,9 +416,9 @@ finds nothing. The brief stays within its 100-line cap. Wrapper tests assert the
 
 **Steps**
 
-- [ ] Print the grep's match count first, edit, print it again at zero.
-- [ ] Update the two wrapper tests and the brief test.
-- [ ] No break-verification: wording only.
+- [x] Print the grep's match count first, edit, print it again at zero.
+- [x] Update the two wrapper tests and the brief test.
+- [x] No break-verification: wording only.
 
 ## Task 11: Run it installed, then hand over the policy lines
 

@@ -21,6 +21,8 @@ Preserve:
 
 No parallel implementation, allowance scheduler, general workflow engine, usage database, or automatic global-configuration changes are authorized.
 
+Note, 2026-09-18: the operator lifted the parallel-workers deferral. Dux now runs up to `config/max-workers` workers at once; see `docs/plans/2026-09-18-several-workers-at-once.md` and section 5.7 of the orchestrator spec.
+
 The baseline records a successful second-worker refusal and later start. It also records repeated setup for small PR feedback. It does not measure the unique value or cost of a second shipping review, design-review overhead, or savings from narrower break-verification. Savings from those changes remain hypotheses.
 
 The two incomplete installed worker-through-CI exercises in the token-efficiency plan remain incomplete until milestone 4 supplies the missing evidence. A local test or reviewer launch is not completed delivery.
@@ -221,6 +223,8 @@ When another worker is active, leave work queued. Dux dispatches the next author
 
 Multiple positively parked sessions may remain open after R2. Activation still passes the global admission check. No capacity settings, reservations, repository-picker workflow, or parallel execution are introduced.
 
+Note, 2026-09-18: the operator lifted the parallel-workers deferral. Tasks in one repository or several run at the same time up to `config/max-workers`, and rounds are not counted against it; see `docs/plans/2026-09-18-several-workers-at-once.md`.
+
 ### 7.1 Recorded prerequisites after R3
 
 Add one optional `--after <task-id>` reference at task creation. Support linear sequencing only.
@@ -314,6 +318,8 @@ The base orchestrator design remains authoritative outside these named changes.
 
 Retain the token-efficiency baseline's plan-free bounded shipping, risk-based models, one active Dux-managed worker, Sonnet coordinator, and restricted worker tools with qualified review. At the matching installed milestone, supersede universal separate security review, blanket deferral of minimal usage reporting, and operator-managed capacity retry.
 
+Note, 2026-09-18: "one active Dux-managed worker" no longer holds; the operator lifted the parallel-workers deferral. See `docs/plans/2026-09-18-several-workers-at-once.md`.
+
 Retain live terminals from the interactive-worker-sessions spec. Replace its pending resume-by-session-ID mechanism with PR #46's live-session continuation. Retain the one-session-planning spec's approval and bounded-context intent; supersede nested implementation delegation.
 
 Do not revive M7–M9, their page generator, or a separate plan-to-implementation framework. Historical evidence and checkboxes remain intact; add short supersession notices.
@@ -325,7 +331,7 @@ Deferred thresholds:
 | Narrower feedback-round review | Five to ten measured deliveries show whole-branch review dominates usage; retain final-commit coverage |
 | More usage automation | At least ten deliveries with usable metadata and repeated collection costs above five minutes |
 | Token limits or allowance scheduling | Serialized runs repeatedly exhaust allowance and harness data meaningfully relates usage to it |
-| Parallel workers | Material measured queue delay after serialization and separate operator approval |
+| Parallel workers | Material measured queue delay after serialization and separate operator approval. Note, 2026-09-18: the operator lifted this deferral; see `docs/plans/2026-09-18-several-workers-at-once.md` |
 | General dependency graph | Repeated workflows cannot fit a linear prerequisite chain |
 | Transcript checkpoints or resumption after process loss | Multiple measured losses make bounded fresh recovery materially expensive |
 | Further review removal | Matched evidence shows no unique important findings; a serious escaped defect reopens the decision |
@@ -333,5 +339,7 @@ Deferred thresholds:
 Five to ten successful deliveries do not establish the absence of rare defects.
 
 Rejected alternatives remain one global implementation agent, automatic parallel workers, universal two-review shipping, operator-managed repository routing, an allowance scheduler, policy-only receipt changes, a competing continuation design, automatic global-file installation, and broad nested delegation.
+
+Note, 2026-09-18: parallel workers are no longer a rejected alternative; the operator lifted the deferral, bounded by `config/max-workers`. See `docs/plans/2026-09-18-several-workers-at-once.md`.
 
 Fewer independent reviews may lose unique findings. That tradeoff remains subject to measured evaluation and rollback.

@@ -21,6 +21,7 @@
 ## Rules
 - The operator may be watching your terminal and may type to you. What they type is instruction. Dux reads only the status file.
 - Stay inside the worktree above. Never push to `{{BASE}}`. Never merge. Never `--no-verify`, never change `core.hooksPath`, never touch the forge's refs API.
+- Other Dux workers may be running in other worktrees of this repository. Never touch their worktrees or their dux/ branches.
 - Report only by appending one line to the file named by `$DUX_STATUS_LOG`: `<state>: <one line>`, state one of working, needs-decision, blocked, done, failed.
 - That file is a proposal, not the record. Append only: never rewrite or shorten what you already wrote. One line, at most 200 bytes.
 - Write one terminal line per round (done, failed, blocked, needs-decision) and then stop. After `done: PR <url>`, wait at your prompt and do nothing until a prompt from Dux names a round file: anything done before that is unsupervised and will not be proved.

@@ -60,20 +60,16 @@ fi
 alive_at="$("$backend" find "$id")" || exit $?
 [ -z "$alive_at" ] || finding "a container for $id already exists at $alive_at; close it or tear the task down before spawning it again"
 
-# One Dux-managed worker at a time; dux-env's fleet_busy says why a start waits.
-if busy="$(fleet_busy "$id")"; then
-  other="${busy#* }"
-  case "${busy%% *}" in
-    roster)  finding "cannot tell whether another Dux worker is alive: the ledger could not list the tasks; $id remains queued" ;;
-    live)    finding "another Dux worker is active: $other; $id remains queued" ;;
-    pidfile) finding "cannot tell whether a worker for $other is alive: $DUX_STATE/$other.pid does not say; $id remains queued" ;;
-    # Its own wording because it is its own file: an operator told to look at
-    # the pidfile would find a perfectly good one and no fault to fix.
-    pgidfile) finding "cannot tell whether a worker for $other is alive: $DUX_STATE/$other.pgid does not say; $id remains queued" ;;
-    ledger)  finding "cannot tell whether a worker for $other is alive: the ledger did not answer; $id remains queued" ;;
-    backend) finding "cannot tell whether a worker for $other is alive: the backend did not answer; $id remains queued" ;;
-  esac
-fi
+# At most config/max-workers tasks run at once (spec section 5.7), counted from
+# the ledger. Nothing another task leaves behind is read: the limit is a
+# spending brake, and what keeps two workers apart is that each has its own
+# worktree, branch, tab and state files. Every refusal leaves the task queued
+# and nothing made.
+limit="$(worker_limit 2>&1)" || finding "${limit#finding: }; $id remains queued"
+running="$(fleet_running)" \
+  || finding "cannot count the running Dux workers: the ledger did not answer; $id remains queued"
+[ "$running" -lt "$limit" ] \
+  || finding "$running Dux workers are running and the limit is $limit (config/max-workers); $id remains queued"
 
 # A task created with --after starts only once the task it waits on is delivered
 # and merged where Dux registered that task. The delivery is what Dux proved: the
@@ -198,8 +194,8 @@ if ! set_worktree_line "- Worktree: $wt"; then
 fi
 # An interactive claude in a directory it has not seen asks whether to trust the
 # folder, and the cursor sits on "No, exit". Print mode never asked. A worker
-# left at that dialog would pass discovery, never touch its beat file, and hold
-# the one-worker slot until the stale wake twenty minutes later, on every
+# left at that dialog would pass discovery, never touch its beat file, and count
+# against the worker limit until the stale wake twenty minutes later, on every
 # unattended run. So the answer is read before the tab opens, out of the
 # operator's own file, and never written: Claude Code rewrites that file from
 # every live session, so a Dux write would race the operator's.

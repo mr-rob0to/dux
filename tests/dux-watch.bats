@@ -544,6 +544,49 @@ start_loop() { DUX_WATCH_INTERVAL_SECS="${1:-1}" dux-watch >> "$watchlog" 2>&1 3
   [ -e "$d/consumed" ]
 }
 
+# With several workers, two results can be waiting when a pass starts. Each
+# lands on its own task, and one that is refused never holds the other back.
+event_for() {  # $1 id, $2 state; exactly one whole line in the events log says so
+  [ "$(grep -Ecx "[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z $2: $1" "$events")" -eq 1 ]
+}
+
+@test "two results waiting for one pass each land on their own task, once" {
+  running_task t1 plan; running_task t2 plan
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  handoff t2 "done: PR https://github.com/acme/proj/pull/8" done
+  dux-watch --once
+  [ "$(events_count)" -eq 2 ]; event_for t1 done; event_for t2 done
+  [ "$(dux-ledger get t1 state)" = done ]; [ "$(dux-ledger get t1 pr)" = "https://github.com/acme/proj/pull/7" ]
+  [ "$(dux-ledger get t2 state)" = done ]; [ "$(dux-ledger get t2 pr)" = "https://github.com/acme/proj/pull/8" ]
+  [ -e "$(seq_dir t1)/consumed" ]; [ -e "$(seq_dir t2)/consumed" ]
+  dux-watch --once
+  [ "$(events_count)" -eq 2 ]
+}
+
+@test "a refused result for the task reached first does not stop the next task's result in the same pass" {
+  running_task t1 plan; running_task t2 plan
+  [ "$(dux-ledger list --state running)" = $'t1\nt2' ]
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done otherrun
+  handoff t2 "done: PR https://github.com/acme/proj/pull/8" done
+  run --separate-stderr dux-watch --once
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"finding: watch: t1: handoff 1 names run otherrun, not this task's run"* ]]
+  [ "$(dux-ledger get t1 state)" = running ]; [ "$(dux-ledger get t1 pr)" = - ]
+  [ ! -e "$(seq_dir t1)/consumed" ]
+  [ "$(dux-ledger get t2 state)" = done ]; [ "$(dux-ledger get t2 pr)" = "https://github.com/acme/proj/pull/8" ]
+  [ "$(events_count)" -eq 1 ]; event_for t2 done
+}
+
+@test "acknowledging one task's result leaves the other's still waiting to be handled" {
+  running_task t1 plan; running_task t2 plan
+  handoff t1 "done: PR https://github.com/acme/proj/pull/7" done
+  handoff t2 "done: PR https://github.com/acme/proj/pull/8" done
+  dux-watch --once
+  [ "$(dux-ledger list --unacked)" = $'t1\nt2' ]
+  dux-ledger ack t1 done
+  [ "$(dux-ledger list --unacked)" = t2 ]
+}
+
 @test "an unknown status word is logged and skipped" {
   running_task t1; status_is t1 "pondering: hmm"
   run --separate-stderr dux-watch --once

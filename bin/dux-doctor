@@ -52,16 +52,6 @@ fi
 # The milestone that lands the next stage raises this line.
 STAGE_HERE="m4"
 
-first_value() {  # $1 file; the first line that is neither blank nor a note
-  local line
-  while IFS= read -r line || [ -n "$line" ]; do
-    case "$line" in '#'* | '') continue ;; esac
-    printf '%s\n' "$line"
-    return 0
-  done < "$1"
-  return 1
-}
-
 # What a stage leaves unavailable, said in the order the rollout adds it. Each
 # one has a way through that works today, which is the part the operator needs.
 unavailable_at() {  # $1 stage
@@ -89,6 +79,11 @@ case "$stage" in
   '') fail "policy stage" "no value in $DUX_CONFIG/policy-stage or $DUX_ROOT/templates/config/policy-stage" ;;
   *)  fail "policy stage" "'$stage' is not a rollout stage (m1, m2, m3, m4)"; stage="" ;;
 esac
+
+# ---- worker limit --------------------------------------------------------
+# The number dux-spawn starts workers up to. A value it cannot read refuses
+# every start, so doctor fails on it with the reason.
+if limit="$(worker_limit 2>&1)"; then ok "worker limit $limit"; else fail "worker limit" "${limit#finding: }"; fi
 
 reg="$DUX_DATA/projects.md"
 if [ -s "$reg" ] && grep -q '^- ' "$reg"; then ok "registry"; else fail "registry" "no projects in $reg; run dux-project add"; fi

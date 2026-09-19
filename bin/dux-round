@@ -127,19 +127,8 @@ case "$rc" in
   *) exit "$rc" ;;
 esac
 
-# One Dux-managed worker at a time, the check dux-spawn makes. This task's own
-# parked session is not another worker.
-if busy="$(fleet_busy "$id")"; then
-  other="${busy#* }"
-  case "${busy%% *}" in
-    roster)   finding "cannot tell whether another Dux worker is alive: the ledger could not list the tasks; $purpose for $id was not sent" ;;
-    live)     finding "another Dux worker is active: $other; $purpose for $id was not sent" ;;
-    pidfile)  finding "cannot tell whether a worker for $other is alive: $DUX_STATE/$other.pid does not say; $purpose for $id was not sent" ;;
-    pgidfile) finding "cannot tell whether a worker for $other is alive: $DUX_STATE/$other.pgid does not say; $purpose for $id was not sent" ;;
-    ledger)   finding "cannot tell whether a worker for $other is alive: the ledger did not answer; $purpose for $id was not sent" ;;
-    backend)  finding "cannot tell whether a worker for $other is alive: the backend did not answer; $purpose for $id was not sent" ;;
-  esac
-fi
+# Nothing here reads another task or the worker limit. A round continues work
+# that was already admitted and is never refused for capacity (spec section 5.7).
 
 project="$("$ledger" get "$id" project)" || exit $?
 repo="$("$DUX_ROOT/bin/dux-project" get "$project" path)" || exit $?

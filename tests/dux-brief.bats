@@ -25,6 +25,7 @@ setup_task() {  # $1 shape; prints id
   grep -qxF -- "- Base branch: main" "$b"
   grep -qxF -- "- Branch: dux/$id" "$b"
   grep -qxF -- "- Worktree: <set by dux-spawn>" "$b"
+  grep -qxF -- "- Other Dux workers may be running in other worktrees of this repository. Never touch their worktrees or their dux/ branches." "$b"
   grep -qF "Ship the login screen." "$b"
   grep -qF "2. Tests pass." "$b"
   grep -qF '`$DUX_STATUS_LOG`' "$b"
@@ -89,15 +90,15 @@ setup_task() {  # $1 shape; prints id
 
 @test "a brief of exactly 100 lines is written and one line more is a finding" {
   id="$(setup_task scout)"
-  # The template and the shape lines render to 27, the criteria fixture to 2,
-  # so 71 lines of intent land on the cap exactly.
-  for i in $(seq 1 71); do echo "intent line $i"; done > "$DUX_HOME/intent"
+  # The template and the shape lines render to 28, the criteria fixture to 2,
+  # so 70 lines of intent land on the cap exactly.
+  for i in $(seq 1 70); do echo "intent line $i"; done > "$DUX_HOME/intent"
   run dux-brief "$id" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria"
   [ "$status" -eq 0 ]
   [ "$(wc -l < "$DUX_HOME/data/tasks/$id/brief.md" | tr -d " ")" -eq 100 ]
 
   # The same fixture, one line longer, into a fresh task: a brief is written once.
-  echo "intent line 72" >> "$DUX_HOME/intent"
+  echo "intent line 71" >> "$DUX_HOME/intent"
   id2="$(dux-task-new proj scout)"
   run dux-brief "$id2" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria"
   [ "$status" -eq 2 ]

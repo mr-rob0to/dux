@@ -252,7 +252,8 @@ EOF
 # the ship task before it works, and again while that pull request is open. Once
 # GitHub reports it merged into the base, and the check the waiting brief names
 # has passed on the merge, the waiting task starts in its own repository and
-# keeps what was verified. Two workers never run at once.
+# keeps what was verified. What holds it back is the merge it waits on, never
+# the worker limit, which has room for both.
 @test "a task in another repository starts only once the ship task before it is merged and checked" {
   ready || skip
   export FAKE_GH_PR_LIST_FILE="$DUX_HOME/state/pr.json"
@@ -282,11 +283,7 @@ EOF
   dux-spawn "$first" >/dev/null
   run dux-spawn "$next"
   [ "$status" -eq 2 ]
-  case "$output" in
-    "finding: another Dux worker is active: $first; $next remains queued") ;;
-    "finding: $next waits on $first, which is running and has not delivered yet; $next remains queued") ;;
-    *) false ;;
-  esac
+  [ "$output" = "finding: $next waits on $first, which is running and has not delivered yet; $next remains queued" ]
   wait_file "$DUX_HOME/state/$first.handoffs/1/status" 60
   [ "$(cat "$DUX_HOME/state/$first.handoffs/1/status")" = "done: PR $pr" ]
   wait_for_workers 30
@@ -315,6 +312,40 @@ EOF
   wait_file "$DUX_HOME/state/$next.handoffs/1/status" 60
   [ "$(cat "$DUX_HOME/state/$next.handoffs/1/status")" = "done: report" ]
   [ "$(sed -n 's/^worktree=//p' "$DUX_HOME/state/$next.result-context")" = "$DUX_HOME/other/.worktrees/dux-$next" ]
+}
+
+# Several workers at once in one repository. Each has its own worktree, branch,
+# push guard and tab, and a second start of a running task is refused.
+@test "two workers run at once in one repository, each on its own worktree, branch and tab" {
+  ready || skip
+  worker_env
+  printf 'report all clear\nstatus working: starting\nsleep 15\nstatus done: report\n' > "$FAKE_WORKER_SCRIPT"
+  a="$(fixture_task proj scout)"; b="$(fixture_task proj scout)"
+  dux-spawn "$a" >/dev/null
+  dux-spawn "$b" >/dev/null
+  wait_file "$DUX_HOME/state/$a.pgid" 30; wait_file "$DUX_HOME/state/$b.pgid" 30
+  # Both live, each wrapper holding its own session.
+  kill -0 "$(cat "$DUX_HOME/state/$a.pid")"; kill -0 "$(cat "$DUX_HOME/state/$b.pid")"
+  [ "$(cat "$DUX_HOME/state/$a.pgid")" != "$(cat "$DUX_HOME/state/$b.pgid")" ]
+  [ "$(dux-ledger get "$a" endpoint)" != "$(dux-ledger get "$b" endpoint)" ]
+  for t in "$a" "$b"; do
+    w="$DUX_HOME/proj/.worktrees/dux-$t"
+    [ "$(dux-worktree path "$t")" = "$w" ]
+    [ "$(git -C "$w" branch --show-current)" = "dux/$t" ]
+    [ "$(git -C "$w" config --worktree --get core.hooksPath)" = "$DUX_HOME/data/tasks/$t/hooks" ]
+    (cd "$w" && git commit -q --allow-empty -m "work on $t")
+    run git -C "$w" push -q origin HEAD:refs/heads/main
+    [ "$status" -ne 0 ]; [[ "$output" == *"finding: refusing to push to main from a Dux worktree"* ]]
+  done
+  run dux-status
+  [[ $'\n'"$output"$'\n' == *$'\nproj\n  running 2\n'* ]]
+  # A second start of a running task is refused before anything is made.
+  row="$(dux-ledger line "$a")"; ep="$(cat "$DUX_HOME/state/$a.endpoint")"
+  run dux-spawn "$a"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: task $a is running, not queued" ] || { echo "refused: $output"; return 1; }
+  [ "$(dux-ledger line "$a")" = "$row" ]; [ "$(cat "$DUX_HOME/state/$a.endpoint")" = "$ep" ]
+  [ "$(git -C "$DUX_HOME/proj" worktree list | wc -l | tr -d ' ')" -eq 3 ]
 }
 
 # Work that plans first, spawned and parked at the question that asks for its

@@ -316,11 +316,10 @@ codex_refused() {  # asserts the last `run` refused and started nothing for $id
   [ "$status" -eq 0 ]
   grep -qxF "issue comment 12 --repo acme/widgets --body Dux started on branch \`dux/$id\`." "$FAKE_GH_LOG"
   [ "$(grep -c '^issue comment' "$FAKE_GH_LOG")" -eq 1 ]
-  # One Dux worker at a time, so the second task only starts once the first has
-  # finished and been settled. That is the ordinary sequence, not a test trick.
+  # The first still counts as running, which the limit of 3 allows. It has to
+  # have finished all the same: the fake Herdr holds one live worker at a time.
   wait_result "$id"
   wait_for_workers 30
-  dux-ledger set "$id" state done
   id2="$(dux-task-new proj scout --source 'gh:acme/widgets#13')"
   printf 'acme/widgets#13: A title\n\nBody\n' > "$DUX_HOME/data/tasks/$id2/issue.md"
   dux-brief "$id2" --intent-file "$DUX_HOME/i" --criteria-file "$DUX_HOME/c" --issue-file "$DUX_HOME/data/tasks/$id2/issue.md" >/dev/null
@@ -485,13 +484,14 @@ exit 2")"
   wait_result "$id"
 }
 
-# ---- one Dux-managed worker at a time --------------------------------------
-# Several long workers on one subscription is the waste this refuses. It is a
-# refusal and not a queue: the operator reruns the same spawn once the active
-# task has stopped, and there is no scheduler to go wrong.
+# ---- the worker limit ---------------------------------------------------------
+# A start is refused once the ledger holds as many running or stale tasks as
+# config/max-workers allows (spec section 5.7). The limit is a spending brake,
+# not what keeps workers apart: each task has its own worktree, branch, tab and
+# state files at any count, so nothing another task leaves behind is read.
 
-# A process whose command line names another task's wrapper, which is the
-# evidence dux-spawn reads. $$ would not do: the check asks what the pid is
+# A process whose command line names another task's wrapper, which is what a
+# live worker looks like. $$ would not do: pid_runs asks what the pid is
 # running, not merely that something is.
 live_wrapper_for() {  # $1 id; prints the pid
   local p; p="$(stand_in "dux-worker-wrap $1")"
@@ -499,81 +499,64 @@ live_wrapper_for() {  # $1 id; prints the pid
   echo "$p"
 }
 
-@test "a live worker on another task refuses the start and creates nothing" {
-  a="$(fixture_task proj scout)"
-  b="$(fixture_task proj ship)"
-  live_wrapper_for "$a" >/dev/null
-  run dux-spawn "$b"
-  rm -f "$DUX_HOME/state/$a.pid"
-  [ "$status" -eq 2 ]
-  [ "$output" = "finding: another Dux worker is active: $a; $b remains queued" ]
-  [ "$(dux-ledger get "$b" state)" = queued ]
-  [ ! -d "$DUX_HOME/proj/.worktrees" ]
-  run git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$b"; [ "$status" -ne 0 ]
-  grep -qxF -- '- Worktree: <set by dux-spawn>' "$DUX_HOME/data/tasks/$b/brief.md"
-  [ ! -e "$DUX_HOME/state/$b.endpoint" ]
-  # The backend is asked whether a container exists, which is a read; what must
-  # not have happened is a container being made or a worker being started.
-  run grep -c '^tab create' "$FAKE_HERDR_LOG"; [ "$output" = 0 ]
-  [ ! -s "$FAKE_WORKER_LOG" ]
+other_task() {  # $1 name, $2 ledger state; a row and nothing else
+  dux-ledger add "$1-scout-20260918-aaa" proj scout local
+  dux-ledger set "$1-scout-20260918-aaa" state "$2"
 }
 
-@test "the same spawn goes through once the other worker has stopped" {
-  a="$(fixture_task proj scout)"
+counts() {  # the tab creations and worker starts so far
+  printf '%s %s' "$(grep -c '^tab create' "$FAKE_HERDR_LOG")" "$(wc -l < "$FAKE_WORKER_LOG" | tr -d ' ')"
+}
+
+# Refused before anything was made: still queued, no worktree, no branch, the
+# brief as it was, no endpoint, and no tab opened or worker started since.
+untouched() {  # $1 id, $2 counts before the spawn
+  [ "$(dux-ledger get "$1" state)" = queued ]
+  [ ! -d "$DUX_HOME/proj/.worktrees/dux-$1" ]
+  run git -C "$DUX_HOME/proj" show-ref --verify --quiet "refs/heads/dux/$1"; [ "$status" -ne 0 ]
+  grep -qxF -- '- Worktree: <set by dux-spawn>' "$DUX_HOME/data/tasks/$1/brief.md"
+  [ ! -e "$DUX_HOME/state/$1.endpoint" ]
+  [ "$(counts)" = "$2" ]
+}
+
+@test "with the limit at 3 a third start goes through and a fourth is refused, creating nothing" {
+  [ "$(first_value "$DUX_HOME/config/max-workers")" = 3 ]
+  other_task o1 running
+  other_task o2 stale
   b="$(fixture_task proj ship)"
-  pid="$(live_wrapper_for "$a")"
-  run dux-spawn "$b"
-  [ "$status" -eq 2 ]
-  reap "$pid"
-  # The pidfile stays, naming a pid that is gone: that is what an ordinary
-  # finished run leaves behind, and it must not keep refusing for ever.
-  [ -f "$DUX_HOME/state/$a.pid" ]
   run dux-spawn "$b"
   [ "$status" -eq 0 ]
-  wait_result "$b"
+  wait_result "$b"; wait_for_workers 30
+  # Nothing here applies b's result, so the ledger still counts it as running.
+  c="$(fixture_task proj ship)"
+  before="$(counts)"
+  run dux-spawn "$c"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: 3 Dux workers are running and the limit is 3 (config/max-workers); $c remains queued" ]
+  untouched "$c" "$before"
 }
 
-@test "evidence about another task that cannot be read blocks the start" {
-  a="$(fixture_task proj scout)"
+# A running task counts whatever else is true of it, its container included,
+# and a task that settles stops counting.
+@test "with the limit at 1 a second start is refused, and goes through once the other settles" {
+  printf '1\n' > "$DUX_HOME/config/max-workers"
+  other_task a running
   b="$(fixture_task proj ship)"
-  printf 'not-a-pid\n' > "$DUX_HOME/state/$a.pid"
   run dux-spawn "$b"
   [ "$status" -eq 2 ]
-  # Named for what went quiet, not reported as a live worker: the two are fixed
-  # differently, and saying "active" about a file nobody can read is a guess.
-  [ "$output" = "finding: cannot tell whether a worker for $a is alive: $DUX_HOME/state/$a.pid does not say; $b remains queued" ]
-  [ "$(dux-ledger get "$b" state)" = queued ]
-  [ ! -d "$DUX_HOME/proj/.worktrees" ]
-}
-
-# The harness outlives its wrapper now: an operator who kills the wrapper leaves
-# a live session in a tab and a pidfile that reads gone. The group file is the
-# signal for that, and it is read the same fail-closed way the pidfile is.
-@test "another task's live harness group refuses the start, and an unreadable one blocks it" {
-  a="$(fixture_task proj scout)"
-  b="$(fixture_task proj ship)"
-  # This test's own process group: a group that certainly answers kill -0.
-  ps -o pgid= -p $$ | tr -d ' ' > "$DUX_HOME/state/$a.pgid"
-  run dux-spawn "$b"
-  [ "$status" -eq 2 ]
-  [ "$output" = "finding: another Dux worker is active: $a; $b remains queued" ]
-  [ "$(dux-ledger get "$b" state)" = queued ]
-  [ ! -d "$DUX_HOME/proj/.worktrees" ]
-  printf 'x\n' > "$DUX_HOME/state/$a.pgid"
-  run dux-spawn "$b"
-  [ "$status" -eq 2 ]
-  [ "$output" = "finding: cannot tell whether a worker for $a is alive: $DUX_HOME/state/$a.pgid does not say; $b remains queued" ]
-  # A group that is gone stops refusing, the way a dead pidfile does.
-  rm -f "$DUX_HOME/state/$a.pgid"
+  [ "$output" = "finding: 1 Dux workers are running and the limit is 1 (config/max-workers); $b remains queued" ]
+  untouched "$b" "0 0"
+  dux-ledger set a-scout-20260918-aaa state done
   run dux-spawn "$b"
   [ "$status" -eq 0 ]
   wait_result "$b"
 }
 
 # A parked session is idle at its prompt. Once the watcher has applied its
-# result it holds no slot, but while its handoff is pending the ledger still
-# reads running, and a start waits as it always has.
-@test "a parked task lets a start through once its result is applied, and not before" {
+# result the ledger reads done and it does not count; while its handoff is
+# pending the ledger still reads running, and it does.
+@test "a parked task does not count once its result is applied, and does before" {
+  printf '1\n' > "$DUX_HOME/config/max-workers"
   a="$(fixture_task proj scout)"
   run dux-spawn "$a"
   [ "$status" -eq 0 ]
@@ -585,80 +568,73 @@ live_wrapper_for() {  # $1 id; prints the pid
   b="$(fixture_task proj ship)"
   run dux-spawn "$b"
   [ "$status" -eq 2 ]
-  [ "$output" = "finding: another Dux worker is active: $a; $b remains queued" ]
+  [ "$output" = "finding: 1 Dux workers are running and the limit is 1 (config/max-workers); $b remains queued" ]
   dux-ledger set "$a" state done
   run dux-spawn "$b"
   [ "$status" -eq 0 ]
   wait_result "$b"
 }
 
-@test "a container for a task Dux believes is running blocks the start" {
-  a="$(fixture_task proj scout)"
-  run dux-spawn "$a"
-  [ "$status" -eq 0 ]
-  wait_result "$a"
-  wait_for_workers 30
-  # The pane outlives the worker on both backends, so with the pidfile settled
-  # the container is the only signal left. Dux still records $a as running, so
-  # it cannot tell that pane from one with a worker in it.
-  rm -f "$DUX_HOME/state/$a.pid"
-  [ -n "$(dux-backend find "$a")" ]
-  [ "$(dux-ledger get "$a" state)" = running ]
+# These used to refuse every start: a pidfile or group file nobody can read,
+# and a live wrapper or group, on another task. They are not read at all now.
+@test "another task's unreadable or live evidence no longer refuses a start" {
+  a="$(fixture_task proj scout)"; dux-ledger set "$a" state running
+  printf 'not-a-pid\n' > "$DUX_HOME/state/$a.pid"
+  printf 'x\n' > "$DUX_HOME/state/$a.pgid"
   b="$(fixture_task proj ship)"
   run dux-spawn "$b"
-  [ "$status" -eq 2 ]
-  [ "$output" = "finding: another Dux worker is active: $a; $b remains queued" ]
-  [ "$(dux-ledger get "$b" state)" = queued ]
-  [ ! -d "$DUX_HOME/proj/.worktrees/dux-$b" ]
+  [ "$status" -eq 0 ]
+  wait_result "$b"; wait_for_workers 30
+  live_wrapper_for "$a" >/dev/null
+  ps -o pgid= -p $$ | tr -d ' ' > "$DUX_HOME/state/$a.pgid"
+  c="$(fixture_task proj ship)"
+  run dux-spawn "$c"
+  [ "$status" -eq 0 ]
+  wait_result "$c"
 }
 
-# A pidfile that cannot be read blocks because Dux cannot prove the slot is
-# free. The other two readings are the same question: a ledger that will not
-# answer about another task, and a backend that will not answer about one Dux
-# believes is running, are both "could not tell". Skipping them answers "free"
-# on no evidence, which is the one answer that puts two agents on one account.
-@test "a ledger that cannot answer about another task blocks the start" {
-  a="$(fixture_task proj scout)"
+# Nor is another task asked about: a ledger or a backend that will not answer
+# about it used to refuse the start, and the start never asks them now.
+@test "a ledger or backend that cannot answer about another task no longer refuses a start" {
+  a="$(fixture_task proj scout)"; dux-ledger set "$a" state running
   b="$(fixture_task proj ship)"
-  r="$(root_with_stub dux-ledger "#!/usr/bin/env bash
+  r="$(root_with_stub dux-backend "#!/usr/bin/env bash
+if [ \"\$1\" = find ] && [ \"\$2\" = $a ]; then echo 'finding: the backend is unavailable' >&2; exit 2; fi
+exec $DUX_ROOT/bin/dux-backend \"\$@\"")"
+  printf '%s\n' "#!/usr/bin/env bash
 if [ \"\$1\" = get ] && [ \"\$2\" = $a ]; then echo 'finding: cannot read the ledger' >&2; exit 2; fi
-exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
+exec $DUX_ROOT/bin/dux-ledger \"\$@\"" > "$r/bin/dux-ledger"
+  run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$b"
+  [ "$status" -eq 0 ]
+  wait_result "$b"
+}
+
+@test "a limit file that is not a usable number refuses the start, and so does no limit at all" {
+  b="$(fixture_task proj ship)"
+  printf '3x\n' > "$DUX_HOME/config/max-workers"
+  run dux-spawn "$b"
+  [ "$status" -eq 2 ]
+  [ "$output" = "finding: config/max-workers must be a whole number from 1 to 99, not '3x'; $b remains queued" ]
+  untouched "$b" "0 0"
+  rm -f "$DUX_HOME/config/max-workers"
+  r="$DUX_HOME/root-nolimit"; mkdir -p "$r"
+  cp -R "$DUX_ROOT/bin" "$r/bin"; cp -R "$DUX_ROOT/templates" "$r/templates"
+  rm -f "$r/templates/config/max-workers"
   run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$b"
   [ "$status" -eq 2 ]
-  [ "$output" = "finding: cannot tell whether a worker for $a is alive: the ledger did not answer; $b remains queued" ]
-  [ "$(dux-ledger get "$b" state)" = queued ]
-  [ ! -d "$DUX_HOME/proj/.worktrees" ]
+  [ "$output" = "finding: no worker limit in config/max-workers or templates/config/max-workers; $b remains queued" ]
+  untouched "$b" "0 0"
 }
 
-@test "a ledger that cannot list the tasks blocks the start" {
+@test "a ledger that cannot list the tasks refuses the start" {
   b="$(fixture_task proj ship)"
   r="$(root_with_stub dux-ledger "#!/usr/bin/env bash
 if [ \"\$1\" = list ]; then echo 'finding: cannot read the ledger' >&2; exit 2; fi
 exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
   run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$b"
   [ "$status" -eq 2 ]
-  [ "$output" = "finding: cannot tell whether another Dux worker is alive: the ledger could not list the tasks; $b remains queued" ]
-  [ "$(dux-ledger get "$b" state)" = queued ]
-  [ ! -d "$DUX_HOME/proj/.worktrees" ]
-}
-
-@test "a backend that cannot answer about a running task blocks the start" {
-  a="$(fixture_task proj scout)"
-  run dux-spawn "$a"
-  [ "$status" -eq 0 ]
-  wait_result "$a"
-  wait_for_workers 30
-  rm -f "$DUX_HOME/state/$a.pid"
-  [ "$(dux-ledger get "$a" state)" = running ]
-  b="$(fixture_task proj ship)"
-  r="$(root_with_stub dux-backend "#!/usr/bin/env bash
-if [ \"\$1\" = find ] && [ \"\$2\" = $a ]; then echo 'finding: the backend is unavailable' >&2; exit 2; fi
-exec $DUX_ROOT/bin/dux-backend \"\$@\"")"
-  run env DUX_ROOT="$r" "$r/bin/dux-spawn" "$b"
-  [ "$status" -eq 2 ]
-  [ "$output" = "finding: cannot tell whether a worker for $a is alive: the backend did not answer; $b remains queued" ]
-  [ "$(dux-ledger get "$b" state)" = queued ]
-  [ ! -d "$DUX_HOME/proj/.worktrees/dux-$b" ]
+  [ "$output" = "finding: cannot count the running Dux workers: the ledger did not answer; $b remains queued" ]
+  untouched "$b" "0 0"
 }
 
 @test "a settled task's leftover container does not block a new start" {

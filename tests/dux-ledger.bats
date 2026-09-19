@@ -127,6 +127,42 @@ load helpers/setup
   [ ! -d "$DUX_HOME/data/backlog.md.lock" ]
 }
 
+# Several workers means the coordinator's scripts and the watcher write rows of
+# different tasks. A write to one task's row never moves another's.
+@test "set, set-if, ack and unack on one task leave another task's row byte for byte as it was" {
+  a=a-ship-20260918-aaa; b=b-ship-20260918-bbb
+  # b is done and acknowledged before a exists, so every write after it is to a.
+  dux-ledger add "$b" proj ship local; dux-ledger set "$b" state done; dux-ledger ack "$b" done
+  dux-ledger add "$a" proj ship local
+  row="$(dux-ledger line "$b")"
+  [[ "$row" == *" state=done "*" acked=done "* ]]
+  b_unchanged_after() {  # $@ one write to a's row
+    "$@" || { echo "failed: $*"; return 1; }
+    [ "$(dux-ledger line "$b")" = "$row" ] || { echo "after $*: $(dux-ledger line "$b")"; return 1; }
+  }
+  b_unchanged_after dux-ledger set "$a" state running
+  b_unchanged_after dux-ledger set-if "$a" state running done
+  b_unchanged_after dux-ledger ack "$a" done
+  [ "$(dux-ledger get "$a" acked)" = done ]
+  b_unchanged_after dux-ledger unack "$a"
+  [ "$(dux-ledger get "$a" state)" = done ]; [ "$(dux-ledger get "$a" acked)" = - ]
+}
+
+@test "set-if writes nothing while the mutex is held, and lands once it is released" {
+  dux-ledger add t1 proj scout local
+  before="$(cat "$DUX_HOME/data/backlog.md")"
+  mkdir "$DUX_HOME/data/backlog.md.lock"
+  dux-ledger set-if t1 state queued running > "$DUX_HOME/set-if.out" 2>&1 &
+  writer=$!
+  sleep 1
+  [ "$(cat "$DUX_HOME/data/backlog.md")" = "$before" ]
+  kill -0 "$writer"
+  rmdir "$DUX_HOME/data/backlog.md.lock"
+  wait "$writer" || { cat "$DUX_HOME/set-if.out"; return 1; }
+  [ "$(dux-ledger get t1 state)" = running ]
+  [ ! -d "$DUX_HOME/data/backlog.md.lock" ]
+}
+
 @test "add writes acked=- and ack records the current state" {
   dux-ledger add t1 proj scout local
   [[ "$(dux-ledger line t1)" == *" pr=- acked=- (updated "* ]]

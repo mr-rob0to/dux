@@ -317,6 +317,23 @@ commit_in() {  # $1 project name, $2... paths to add and push
   [ "$status" -eq 2 ]; [[ "$output" == "finding: a worktree on dux/$id already exists and is not at origin/main"* ]]
 }
 
+# Several workers can run in one repository. Each task has its own worktree on
+# its own branch, and a worktree with work in it is never taken up again.
+@test "two tasks in one repository get their own worktrees and branches, and one with work in it is not reused" {
+  register proj
+  a="$(dux-task-new proj scout)"; b="$(dux-task-new proj scout)"
+  wa="$(dux-worktree create "$a")"; wb="$(dux-worktree create "$b")"
+  [ "$wa" = "$DUX_HOME/proj/.worktrees/dux-$a" ]; [ "$wb" = "$DUX_HOME/proj/.worktrees/dux-$b" ]
+  [ "$(git -C "$wa" branch --show-current)" = "dux/$a" ]
+  [ "$(git -C "$wb" branch --show-current)" = "dux/$b" ]
+  (cd "$wa" && git commit -q --allow-empty -m "work on a")
+  run dux-worktree create "$a"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: a worktree on dux/$a already exists and is not at origin/main: $wa"* ]]
+  [ "$(git -C "$wa" log -1 --format=%s)" = "work on a" ]
+  [ "$(git -C "$wb" rev-parse HEAD)" = "$(git -C "$DUX_HOME/proj" rev-parse origin/main)" ]
+}
+
 @test "the pre-push hook refuses the base branch and allows the task branch" {
   register proj
   id="$(dux-task-new proj scout)"

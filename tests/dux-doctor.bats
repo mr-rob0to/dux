@@ -128,3 +128,27 @@ own_checkout() {
   [[ "$output" == *"ok policy stage m4"* ]]
   [[ "$output" == *"policy: m4; unavailable: nothing"* ]]
 }
+
+# ---- the worker limit -------------------------------------------------------
+
+@test "doctor reports the worker limit from the operator's file, or the template's when there is none" {
+  tools
+  printf '# the operator says\n5\n' > "$DUX_HOME/config/max-workers"
+  PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
+  [ "$status" -eq 0 ]
+  [[ $'\n'"$output"$'\n' == *$'\nok worker limit 5\n'* ]]
+  rm "$DUX_HOME/config/max-workers"
+  PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
+  [ "$status" -eq 0 ]
+  [[ $'\n'"$output"$'\n' == *$'\nok worker limit 3\n'* ]]
+}
+
+@test "a limit that is not a whole number from 1 to 99 fails doctor with the reason" {
+  tools
+  printf 'lots\n' > "$DUX_HOME/config/max-workers"
+  PATH="$DUX_HOME/bin:$PATH" DUX_BACKEND=herdr run dux-doctor
+  [ "$status" -eq 1 ]
+  want="FAIL worker limit: config/max-workers must be a whole number from 1 to 99, not 'lots'"
+  [[ $'\n'"$output"$'\n' == *$'\n'"$want"$'\n'* ]]
+  [[ "$output" != *"ok worker limit"* ]]
+}

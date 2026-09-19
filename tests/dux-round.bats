@@ -321,13 +321,52 @@ approval_refused() {  # $1 the finding
   gone "no wrapper is running for it"
 }
 
-@test "another live worker holds the round back, in dux-spawn's words" {
-  parked_task
+# A round continues work that was already admitted, so it reads only its own
+# task: another worker beside it neither holds it back nor is touched by it,
+# whatever that worker's files say and however many are running.
+other_live() {  # sets $other, a ship task running beside $id with a live wrapper and group
   other="$(dux-task-new proj ship)"
   dux-ledger set "$other" state running
   stand_in "dux-worker-wrap $other" > "$s/$other.pid"
+  ps -o pgid= -p $$ | tr -d ' ' > "$s/$other.pgid"
+}
+others_record() {  # every state file of $other with its checksum, then its ledger row
+  local f
+  for f in "$s/$other".*; do printf '%s %s\n' "$f" "$(cksum < "$f")"; done
+  dux-ledger line "$other"
+}
+sent_leaving_other_alone() {  # $1 the record of $other before the round
+  [ "$status" -eq 0 ] || { echo "refused: $output"; return 1; }
+  [ "$output" = "round 1 sent to $id" ]
+  [ "$(dux-ledger get "$id" state)" = running ]
+  [ "$(others_record)" = "$1" ]
+}
+
+@test "a round goes while another worker is live, and nothing of that worker changes" {
+  parked_task
+  other_live
+  before="$(others_record)"
   run dux-round "$id" --file "$feedback"
-  refused "another Dux worker is active: $other; feedback for $id was not sent"
+  sent_leaving_other_alone "$before"
+}
+
+@test "a round goes when another task's pidfile cannot be read" {
+  parked_task
+  other_live
+  printf 'not-a-pid\n' > "$s/$other.pid"
+  before="$(others_record)"
+  run dux-round "$id" --file "$feedback"
+  sent_leaving_other_alone "$before"
+}
+
+@test "a round goes when the running count is already at the limit" {
+  parked_task
+  other_live
+  printf '1\n' > "$DUX_HOME/config/max-workers"
+  [ "$(bash -c 'source "$DUX_ROOT/bin/dux-env"; fleet_running')" = 1 ]
+  before="$(others_record)"
+  run dux-round "$id" --file "$feedback"
+  sent_leaving_other_alone "$before"
 }
 
 @test "the worktree, the base and the pull request are checked before anything is written" {
