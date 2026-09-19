@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# Asks GitHub what happened to the newest push run on each registered base
+# branch, and keeps one record per project. See
+# docs/specs/2026-09-18-base-branch-check.md.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+projects="$DUX_ROOT/bin/dux-project"
+base_home="$DUX_STATE/base"
+gh_secs="${DUX_BASE_GH_SECS:-60}"
+usage="usage: dux-base check [<project>] | get <project> <key> | ack <project> <key> | list --unacked"
+
+# Spec sections 3 and 6. Every field of every row is in shape or there is no
+# answer at all. Then the head commit of the run with the highest id is the one
+# judged, and every run on it counts. A word in shape that the spec does not
+# name is never an error: an unknown status is not finished, an unknown
+# conclusion is neither red nor green. Ids are compared by length, then as
+# text, so a long id is never rounded on its way through a number.
+# Prints "red <sha> <run>:<attempt>...", lowest run first, "green <sha>
+# <run>:<attempt>", "pending" or "none".
+# shellcheck disable=SC2016
+judge='
+def shaped(re):
+  if (type == "number" or type == "string") and (tostring | test(re)) then tostring
+  else error("out of shape") end;
+if length != 1 or (.[0] | type) != "array" then error("out of shape") else .[0] end
+| map({ id: (.databaseId | shaped("^[0-9]{1,20}$")),
+        sha: (.headSha | shaped("^[0-9a-f]{40}$")),
+        status: (.status | shaped("^[a-z_]{0,32}$")),
+        conclusion: (.conclusion | shaped("^[a-z_]{0,32}$")),
+        attempt: (.attempt | shaped("^[0-9]{1,20}$")) })
+| sort_by([(.id | length), .id])
+| if length == 0 then "none" else
+    .[-1].sha as $sha
+    | map(select(.sha == $sha)) as $runs
+    | ($runs | map(select(.status == "completed"
+        and (.conclusion == "failure" or .conclusion == "timed_out"
+             or .conclusion == "startup_failure")))) as $red
+    | ($runs | map(select(.conclusion == "success"))) as $green
+    | if ($red | length) > 0 then "red \($sha) " + ($red | map("\(.id):\(.attempt)") | join(" "))
+      elif ($runs | any(.status != "completed")) then "pending"
+      elif ($green | length) > 0 then "green \($sha) \($green[0].id):\($green[0].attempt)"
+      else "none" end
+  end'
+
+valid_project() {  # $1 name; the rule dux-project add holds a name to
+  case "$1" in ''|*[!A-Za-z0-9._-]*) finding "project name must match [A-Za-z0-9._-]+: $(cap_line "$1")" ;; esac
+  case "$1" in *[!.]*) ;; *) finding "project name must not be all dots: $1" ;; esac
+}
+
+record_of() { printf '%s' "$base_home/$1/record"; }
+field() { sed -n "s/^$2=//p" "$(record_of "$1")" 2>/dev/null | take_line; }  # $1 project, $2 key
+run_url() { printf 'https://github.com/%s/actions/runs/%s' "$1" "$2"; }  # $1 slug, $2 run
+
+# Written whole, through a temporary file and a rename, so a reader sees the
+# old record or the new one and never half of either.
+write_record() {  # $1 project, $2 verdict, $3 sha, $4 run, $5 attempt, $6 reported
+  local dir="$base_home/$1" tmp
+  mkdir -p "$dir" 2>/dev/null || return 1
+  tmp="$dir/.record.$$"
+  if { printf 'verdict=%s\nsha=%s\nrun=%s\nattempt=%s\nreported=%s\nchecked=%s\n' \
+         "$2" "$3" "$4" "$5" "$6" "$(now)" > "$tmp" && mv -f "$tmp" "$dir/record"; } 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null
+  return 1
+}
+
+# ---- one call to GitHub, with a time limit ----------------------------------
+# macOS has no timeout command, so gh runs in the background and is looked at
+# once a second. Whatever ends this script, the trap stops gh and removes the
+# folder its answer was written to.
+call_dir=""; call_pid=""
+stop_call() {
+  [ -n "$call_pid" ] || return 0
+  kill "$call_pid" 2>/dev/null
+  wait "$call_pid" 2>/dev/null
+  call_pid=""
+}
+trap 'stop_call; [ -z "$call_dir" ] || rm -rf "$call_dir"' EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+
+ask() {  # $1 project, $2 slug, $3 base; prints the judged answer, or says why there is none
+  local out="$call_dir/runs" waited=0 rc
+  gh run list --repo "$2" --branch "$3" --event push --limit 20 \
+    --json databaseId,headSha,status,conclusion,attempt < /dev/null > "$out" 2>/dev/null &
+  call_pid=$!
+  while kill -0 "$call_pid" 2>/dev/null; do
+    if [ "$waited" -ge "$gh_secs" ]; then
+      stop_call
+      log "base: $1: no answer from GitHub within ${gh_secs}s"
+      return 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$call_pid"; rc=$?; call_pid=""
+  [ "$rc" -eq 0 ] || { log "base: $1: no answer from GitHub (gh exited $rc)"; return 1; }
+  jq -rs "$judge" "$out" 2>/dev/null \
+    || { log "base: $1: no answer from GitHub (the answer is out of shape)"; return 1; }
+}
+
+# Only red and green change the record. Pending, none and no answer leave it
+# exactly as it was, so nothing but a green run clears a red base.
+check_one() {  # $1 project; prints "<project> <base> <answer>"
+  local path base slug answer verdict sha runs run reported
+  path="$("$projects" get "$1" path)" || return $?
+  base="$("$projects" get "$1" base)" || return $?
+  if ! slug="$(github_slug "$path")"; then echo "$1 $base none"; return 0; fi
+  if ! answer="$(ask "$1" "$slug" "$base")"; then echo "$1 $base no-answer"; return 0; fi
+  read -r verdict sha runs <<EOF
+$answer
+EOF
+  run="${runs%% *}"
+  reported="$(field "$1" reported)"
+  case "$verdict" in
+    red)
+      write_record "$1" red "$sha" "${run%%:*}" "${run#*:}" "${reported:--}" \
+        || log "base: $1: cannot save $(record_of "$1")"
+      echo "$1 $base red $(run_url "$slug" "${run%%:*}")" ;;
+    green)
+      write_record "$1" green "$sha" "${run%%:*}" "${run#*:}" "${reported:--}" \
+        || log "base: $1: cannot save $(record_of "$1")"
+      echo "$1 $base green" ;;
+    *) echo "$1 $base $verdict" ;;
+  esac
+}
+
+case "$gh_secs" in ''|*[!0-9]*|0) finding "DUX_BASE_GH_SECS must be a whole number of seconds above 0, not '$(cap_line "$gh_secs")'" ;; esac
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  check)
+    [ $# -eq 1 ] || finding "$usage"
+    valid_project "$1"
+    call_dir="$(mktemp -d "$DUX_STATE/base-call.XXXXXXXX" 2>/dev/null)" \
+      || finding "cannot make a folder for GitHub's answer under $DUX_STATE"
+    check_one "$1" || exit $? ;;
+  get)
+    [ $# -eq 2 ] || finding "$usage"
+    valid_project "$1"
+    case "$2" in
+      verdict|sha|run|attempt|reported|checked|acked|url) ;;
+      *) finding "unknown base key $(cap_line "$2")" ;;
+    esac
+    [ -f "$(record_of "$1")" ] || finding "no base record for $1"
+    case "$2" in
+      acked)
+        acked="$(head -n 1 "$base_home/$1/acked" 2>/dev/null)"
+        echo "${acked:--}" ;;
+      *) field "$1" "$2" ;;
+    esac ;;
+  *) finding "$usage" ;;
+esac

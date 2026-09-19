@@ -9,7 +9,7 @@
 
 **Where this stands**
 - Approved and merged as #67; Tasks 1 to 8 are one ship task on one branch.
-- Task 1 is done. Task 2, reading one base branch, is next.
+- Tasks 1 and 2 are done. Task 3, reporting once, is next.
 - When done, Dux tells the operator once, with the run url, when any registered base goes red.
 
 **Estimated diff:** ~1,300 added lines across 8 tasks, about 850 of them tests and the `gh`
@@ -143,9 +143,9 @@ per run, at its latest attempt. A re-run is the same run id with a higher `attem
 
 **Steps**
 
-- [ ] Extend the fake and write the fixtures. Count the fake's existing tests before and after.
-- [ ] Write the failing tests, then the script.
-- [ ] Break-verify, one at a time, pasting each failure into the commit body:
+- [x] Extend the fake and write the fixtures. Count the fake's existing tests before and after.
+- [x] Write the failing tests, then the script.
+- [x] Break-verify, one at a time, pasting each failure into the commit body:
   1. Drop `timed_out` from the red list. Expect "a run that timed out is red" to fail.
   2. Ignore `gh`'s exit status. Expect "a poll GitHub did not answer leaves a red base red" to
      fail.
