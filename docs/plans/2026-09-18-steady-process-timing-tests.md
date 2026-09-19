@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted and design-reviewed; waiting for the operator's approval.
+- Approved (PR #68). Built: tasks 1 to 6 done. After the fixes, 3 of 500 Linux runs still failed; the pull request says why.
 - Picks up the "hardening pass" that the flaky-test notes have asked for since milestone 4.
 - When done, the four tests below stop failing at random, and one wrong `dux-spawn` message is fixed.
 
@@ -159,11 +159,11 @@ burners in the container, which is enough to show a rate near 20 percent: `job-m
 
 **Steps**
 
-- [ ] Write `tests/repeat` and a happy-path test in `tests/harness.bats` that it counts one
+- [x] Write `tests/repeat` and a happy-path test in `tests/harness.bats` that it counts one
       failing and one passing stub job correctly.
-- [ ] Add the container recipe to `CONTRIBUTING.md`.
-- [ ] Run the baseline and paste the table into the commit body.
-- [ ] No break-verify owed: this is a counting tool, and the stub test covers the count.
+- [x] Add the container recipe to `CONTRIBUTING.md`.
+- [x] Run the baseline and paste the table into the commit body.
+- [x] No break-verify owed: this is a counting tool, and the stub test covers the count.
 
 ## Task 2: A dead process no longer counts as alive
 
@@ -178,11 +178,11 @@ the zombie, false for a live process, and true for a pid that does not exist.
 
 **Steps**
 
-- [ ] Write the zombie test first and see it fail against `kill -0`.
-- [ ] Add `gone` and move the three helpers onto it.
-- [ ] Break-verify: put `kill -0` back inside `gone`, confirm the zombie test fails, restore,
+- [x] Write the zombie test first and see it fail against `kill -0`.
+- [x] Add `gone` and move the three helpers onto it.
+- [x] Break-verify: put `kill -0` back inside `gone`, confirm the zombie test fails, restore,
       paste the failure into the commit body.
-- [ ] Break-verify that a survivor is still caught: in adapter test 39 make the pane command
+- [x] Break-verify that a survivor is still caught: in adapter test 39 make the pane command
       ignore TERM (`trap '' TERM`), confirm `wait_until 15 not_running` fails, restore, paste.
 
 ## Task 3: A group of dead processes no longer counts as alive
@@ -201,16 +201,16 @@ which were left, with the count of each.
 
 **Steps**
 
-- [ ] Add a test in `tests/harness.bats`: a group whose only member is a zombie is gone; a
+- [x] Add a test in `tests/harness.bats`: a group whose only member is a zombie is gone; a
       group with one live member is not.
-- [ ] Add `group_gone` and move the three call sites onto it.
-- [ ] Break-verify `group_gone`: make it always true, confirm the "one live member" test
+- [x] Add `group_gone` and move the three call sites onto it.
+- [x] Break-verify `group_gone`: make it always true, confirm the "one live member" test
       fails, restore, paste. Test 37's own group check cannot serve here: the wrapper stops
       the group before it publishes, so that line never sees a live group.
-- [ ] Break-verify the protection test 37 guards: remove the group `kill -TERM` from the
+- [x] Break-verify the protection test 37 guards: remove the group `kill -TERM` from the
       wrapper's INT/TERM trap, confirm test 37 fails at its `handoff_status` line (the run
       finishes as `done: report` instead of `ended`), restore, paste.
-- [ ] Print the match count of `kill -0` in those four files before and after, and compare.
+- [x] Print the match count of `kill -0` in those four files before and after, and compare.
 
 ## Task 4: Spawn recognises a run that started and finished between two looks
 
@@ -231,15 +231,15 @@ runs under `check-bash32` on macOS report 0.
 
 **Steps**
 
-- [ ] Write the three tests first. The first fails on today's code with the false finding.
-- [ ] Add the pause knob and the rule. Re-read the whole start-check block afterwards: every
+- [x] Write the three tests first. The first fails on today's code with the false finding.
+- [x] Add the pause knob and the rule. Re-read the whole start-check block afterwards: every
       undo path and every finding must still be reachable.
-- [ ] Amend the spec passage and ARCHITECTURE in the same commit.
-- [ ] Break-verify the new case: remove the added case, confirm the first test fails with
+- [x] Amend the spec passage and ARCHITECTURE in the same commit.
+- [x] Break-verify the new case: remove the added case, confirm the first test fails with
       the false finding, restore, paste.
-- [ ] Break-verify the refusal guard: make the prefix match never true, confirm the second
+- [x] Break-verify the refusal guard: make the prefix match never true, confirm the second
       test fails because a refusal is reported as `spawned`, restore, paste.
-- [ ] Break-verify the TERM guard: drop the "sent no TERM" condition, confirm the third test
+- [x] Break-verify the TERM guard: drop the "sent no TERM" condition, confirm the third test
       fails because a run spawn stopped is reported as `spawned`, restore, paste.
 
 ## Task 5: The supervise test decides when silence starts
@@ -255,11 +255,11 @@ ended event after `--stop`. `tests/repeat job-m/e2e-supervise-herdr 100 12` and 
 
 **Steps**
 
-- [ ] Run test 1 with the 5-second start pause and record today's failure.
-- [ ] Add `age_task`, raise the limit, call `age_task` after the first status line.
-- [ ] Break-verify stale detection: in `bin/dux-watch` make the age comparison never choose
+- [x] Run test 1 with the 5-second start pause and record today's failure.
+- [x] Add `age_task`, raise the limit, call `age_task` after the first status line.
+- [x] Break-verify stale detection: in `bin/dux-watch` make the age comparison never choose
       `stale`, confirm test 1 fails at `count_is stale "$id" 1`, restore, paste.
-- [ ] Break-verify "exactly once": remove the `[ "$target" != "$lstate" ] || continue` line,
+- [x] Break-verify "exactly once": remove the `[ "$target" != "$lstate" ] || continue` line,
       confirm test 1 fails at the event count after the sleep, restore, paste.
 
 ## Task 6: Measure again, and write down how to wait
@@ -277,9 +277,9 @@ names any test that still failed and what was seen.
 
 **Steps**
 
-- [ ] Run every measurement from Task 1 again and record the table.
-- [ ] Write the `CONTRIBUTING.md` section.
-- [ ] If any job is above 0, stop and report it; do not raise a deadline to reach 0.
+- [x] Run every measurement from Task 1 again and record the table.
+- [x] Write the `CONTRIBUTING.md` section.
+- [x] If any job is above 0, stop and report it; do not raise a deadline to reach 0.
 
 ## Milestone acceptance
 

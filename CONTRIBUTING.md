@@ -81,6 +81,19 @@ Four rules, and the tests enforce all of them:
 Every script has a matching file in `tests/`. Design changes go through
 `docs/specs/` before the code.
 
+### Waiting in a test
+
+A busy machine makes every step slower, so a test waits for the thing it cares
+about, not for a clock: `wait_until <seconds> <command>` polls until the command
+succeeds.
+
+- **A process has ended:** ask `gone <pid>` or `group_gone <pgid>`, never bare
+  `kill -0`, which still answers for a process that ended but was not collected.
+- **Time has passed:** move the clock with `age_task <id> <seconds>` instead of
+  sleeping past a small limit, which a slow start can reach first.
+- **Nothing more happened:** only here is a fixed `sleep` fine, before counting
+  events that must not have grown. A slow machine makes it weaker, never red.
+
 ## 4. Check it
 
 ```bash
@@ -93,6 +106,21 @@ Running one file on its own, or putting the output back in a readable order:
 ```bash
 bats tests/dux-watch.bats
 make test JOBS=1
+```
+
+Measuring a test that fails only some of the time: `tests/repeat <make-job>
+<runs> [burners]` runs one job that many times with that many busy loops beside
+it, and prints how many runs failed and which tests failed in them. Linux is
+measured in a container. The repository is copied in, not mounted. Keep
+`--init`: without it nothing collects a finished wrapper, and spawn reads it as
+still running.
+
+```bash
+docker run -d --init --cpus 4 --name dux-load ubuntu:24.04 sleep infinity
+docker exec dux-load sh -c 'apt-get update -q && apt-get install -y -q bats shellcheck tmux jq git make perl procps && useradd -m dev'
+git archive HEAD | docker exec -i -u dev dux-load sh -c 'mkdir ~/dux && tar -x -C ~/dux'
+docker exec -u dev -e TERM=xterm -w /home/dev/dux dux-load tests/repeat job-m/backend-tmux 25 12
+docker rm -f dux-load
 ```
 
 ## 5. Open the pull request

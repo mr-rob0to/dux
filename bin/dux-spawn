@@ -241,10 +241,14 @@ wpid="$(cd "$wt" && { set -m; nohup "$DUX_ROOT/bin/dux-worker-wrap" "$id" < /dev
 case "$wpid" in ''|*[!0-9]*) undo_open; finding "the wrapper for $id did not report a pid; see $wraplog" ;; esac
 
 # Three endings, first one wins: the wrapper writes its pidfile and is alive, so
-# the task is running; the wrapper is gone, so it refused; or the window runs
-# out with neither, which is a wrapper that is stuck before its pidfile and is
-# stopped rather than left behind.
-waited=0; live=0
+# the task is running; the wrapper is gone, so it refused, unless what it
+# published says its run started and ended between two looks; or the window
+# runs out with neither, which is a wrapper that is stuck before its pidfile and
+# is stopped rather than left behind.
+# Tests only: holds off the first look, so a run that starts and ends between
+# two looks happens every time and not one run in ten.
+[ -z "${DUX_SPAWN_LOOK_PAUSE_SECS:-}" ] || sleep "$DUX_SPAWN_LOOK_PAUSE_SECS"
+waited=0; live=0; termed=0
 while [ "$waited" -lt "${DUX_SPAWN_START_SECS:-10}" ]; do
   if pid_runs "$(cat "$pidfile" 2>/dev/null)" "dux-worker-wrap $id"; then live=1; break; fi
   kill -0 "$wpid" 2>/dev/null || break
@@ -252,8 +256,22 @@ while [ "$waited" -lt "${DUX_SPAWN_START_SECS:-10}" ]; do
 done
 if [ "$live" = 0 ] && kill -0 "$wpid" 2>/dev/null; then
   kill -TERM "$wpid" 2>/dev/null || true
+  termed=1
   waited=0
   while [ "$waited" -lt 10 ] && kill -0 "$wpid" 2>/dev/null; do waited=$((waited + 1)); sleep 1; done
+fi
+# A wrapper that went by itself, with no signal from here, and published an
+# ending. Sequence $seq_before is this run's first handoff, never an earlier
+# run's. A line starting "failed: wrapper: " is a refusal, and so is a status
+# file that is missing, empty or more than one line. Any other line is a run
+# that started and ended between two looks, so spawn goes on as for a live
+# wrapper and the watcher applies the ending as for any run. A run spawn
+# stopped itself never gets here, whatever it published.
+if [ "$live" = 0 ] && [ "$termed" = 0 ] && [ "$(handoff_next_seq "$id")" != "$seq_before" ]; then
+  ending="$(handoff_home "$id")/$seq_before/status"
+  if [ -s "$ending" ] && [ "$(wc -l < "$ending" | tr -d ' ')" = 1 ]; then
+    case "$(cat "$ending")" in "failed: wrapper: "*) ;; *) live=1 ;; esac
+  fi
 fi
 if [ "$live" = 0 ]; then
   # A refusal made after the wrapper opened its run record leaves a failed

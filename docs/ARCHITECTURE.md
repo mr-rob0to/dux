@@ -318,7 +318,14 @@ the tab and catches a worker in a server whose socket vanished.
    wrapper lived: one that published nothing is undone, tab closed, endpoint
    cleared, worktree discarded and the brief's line put back, and one that
    published its refusal is left exactly as it stands, because the watcher owns
-   what follows and the tab holds what the operator would want to see. A wrapper
+   what follows and the tab holds what the operator would want to see. Spawn
+   looks once a second, so a short run can start and end between two looks. A
+   wrapper that went without a signal from spawn and published one line that
+   does not start with `failed: wrapper: ` is that run, and spawn goes on as for
+   a live wrapper. It reads the handoff whose sequence it recorded before
+   starting the wrapper, never an earlier run's, and a `status` that is missing,
+   empty or more than one line counts as a refusal. A wrapper spawn had to
+   signal is never counted as started, whatever it published. A wrapper
    that is still there after the signal and ten more seconds is neither: undoing
    under a live wrapper would close the tab it is about to run in and discard
    the worktree it is about to work in, so everything stays where it is and the

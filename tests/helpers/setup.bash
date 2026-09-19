@@ -143,7 +143,7 @@ wait_for_workers() {  # $1 seconds; returns 1 if a worker is still alive after t
       case "$pidfile" in */watch.pid) continue ;; esac
       pid="$(cat "$pidfile" 2>/dev/null)"
       case "$pid" in '' | *[!0-9]*) continue ;; esac
-      if kill -0 "$pid" 2>/dev/null; then live=1; fi
+      if ! gone "$pid"; then live=1; fi
     done
     if [ "$live" -eq 0 ]; then return 0; fi
     i=$((i + 1))
@@ -163,7 +163,39 @@ stand_in() {  # $1 command-line needle
   echo $!
 }
 
-not_running() { ! kill -0 "$1" 2>/dev/null; }
+# Whether a process has ended. kill -0 is not that question: it answers for a
+# zombie too, a process that has ended and that its parent has not collected,
+# and tmux can leave a pane's killed process like that for more than fifteen
+# seconds (measured on Linux, 2026-09-18). A zombie has ended. A ps that fails
+# or prints nothing leaves the process counted as running, the way group_runs
+# in dux-env reads it, because a process wrongly called gone is a survivor
+# nobody catches.
+gone() {  # $1 pid; 0 once it has ended, collected or not
+  local stat
+  kill -0 "$1" 2>/dev/null || return 0
+  stat="$(ps -o stat= -p "$1" 2>/dev/null)" || return 1
+  stat="${stat#"${stat%%[! ]*}"}"
+  case "$stat" in Z*) return 0 ;; esac
+  return 1
+}
+
+not_running() { gone "$1"; }
+
+# Whether a process group has ended: nothing in it runs. On Linux kill -0 on a
+# group answers while a member is a zombie, which is how a pane's group looks
+# while tmux has not collected its process. group_runs in dux-env already reads
+# a group that way and fails closed, and has its own tests in dux-env.bats.
+group_gone() { ! group_runs "$1"; }  # $1 pgid
+
+# Moves a task's last sign of life that many seconds into the past: the times of
+# its status.log and state/<id>.pid, which the watcher counts silence from. A
+# test that needs a long silence sets the clock, instead of sleeping past a
+# limit so small that a slow start reaches it first.
+age_task() {  # $1 id, $2 seconds
+  # shellcheck disable=SC2016
+  perl -e '$t = time - shift; exit(utime($t, $t, @ARGV) == @ARGV ? 0 : 1)' "$2" \
+    "$DUX_HOME/data/tasks/$1/status.log" "$DUX_HOME/state/$1.pid"
+}
 
 # A bare `! cmd` can never fail a bats test: bash ignores errexit for a command
 # whose return value is being inverted. An assertion that something is absent
@@ -179,7 +211,7 @@ wait_until() {  # $1 seconds, $2.. command; polls every 0.2 seconds
 reap() {  # $1 pid; kill it and wait until it is actually gone
   local p="$1" i=0
   kill "$p" 2>/dev/null || return 0
-  while kill -0 "$p" 2>/dev/null; do
+  while ! gone "$p"; do
     i=$((i + 1)); [ "$i" -ge 50 ] && return 1
     sleep 0.2
   done

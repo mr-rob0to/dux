@@ -97,3 +97,78 @@ load helpers/setup
     case "$output" in finding:*) ;; *) echo "no finding on a directory we do not own: $output"; return 1 ;; esac
   fi
 }
+
+# tests/repeat is how a flake rate is measured, so what it counts has to be
+# right: runs that failed, out of runs made, and which tests failed how often.
+# Stub jobs give it a known answer: one fails every other run, one never does.
+@test "repeat counts the failed runs of a job and names the tests that failed" {
+  mkdir -p "$DUX_HOME/jobs"
+  cd "$DUX_HOME/jobs"
+  printf '%s\n' \
+    'job/flaky:' \
+    '	@n=$$(($$(cat count 2>/dev/null || echo 0) + 1)); echo $$n > count; \' \
+    '	if [ $$((n % 2)) -eq 1 ]; then echo "not ok 3 sometimes"; exit 1; fi; echo "ok 3 sometimes"' \
+    'job/pass:' \
+    '	@echo "ok 1 always"' > Makefile
+  run "$DUX_ROOT/tests/repeat" job/flaky 4
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "job/flaky: 2 failures in 4 runs" ]
+  [ "${lines[1]}" = "  2x 3 sometimes" ]
+  [ "${#lines[@]}" -eq 2 ]
+  run "$DUX_ROOT/tests/repeat" job/pass 3 1
+  [ "$status" -eq 0 ]
+  [ "$output" = "job/pass: 0 failures in 3 runs" ]
+}
+
+# A process that has ended and that its parent has not collected is a zombie,
+# and kill -0 still answers for it. tmux can leave a pane's killed process like
+# that for more than fifteen seconds, so a test asking kill -0 whether it has
+# ended waits out its deadline and fails. gone is the question that matters.
+@test "gone is true for an ended process nobody collected, false for a live one" {
+  # The parent forks a child that exits at once, prints its pid, and never waits.
+  # shellcheck disable=SC2016
+  perl -e '$| = 1; my $c = fork; if ($c == 0) { exit 0 } print "$c\n"; sleep 60' > "$DUX_HOME/zombie" &
+  parent=$!
+  echo "$parent" >> "$DUX_HOME/state/stand-ins"
+  wait_until 5 test -s "$DUX_HOME/zombie"
+  z="$(cat "$DUX_HOME/zombie")"
+  is_zombie() { case "$(ps -o stat= -p "$z" 2>/dev/null | tr -d ' ')" in Z*) return 0 ;; esac; return 1; }
+  wait_until 5 is_zombie
+  # What makes this the case that matters: kill -0 still answers for it.
+  kill -0 "$z"
+  gone "$z"
+  sleep 60 & live=$!
+  echo "$live" >> "$DUX_HOME/state/stand-ins"
+  refute gone "$live"
+  # A pid this shell has already collected no longer names any process.
+  sleep 0 & done_pid=$!
+  wait "$done_pid"
+  gone "$done_pid"
+}
+
+# The same holds for a group on Linux: kill -0 on it answers while a member is a
+# zombie, which is how a pane's group looks while tmux has not collected the
+# pane's process. group_gone asks whether anything in the group still runs.
+@test "group_gone is true for a group whose only member is a zombie, false while a member runs" {
+  # A parent forks a child that leads a group of its own and prints its pid once
+  # it does. The parent never collects it. Told "exit", the child ends at once;
+  # told "sleep", it stays alive in its group.
+  lead_group() {  # $1 exit|sleep, $2 file for the child's pid
+    # shellcheck disable=SC2016
+    perl -e '$| = 1; if (fork == 0) { setpgrp(0, 0); print "$$\n"; exit 0 if $ARGV[0] eq "exit"; sleep 60; exit 0 } sleep 60' "$1" > "$2" &
+    echo $! >> "$DUX_HOME/state/stand-ins"
+    wait_until 5 test -s "$2"
+    g="$(cat "$2")"
+    echo "$g" >> "$DUX_HOME/state/stand-ins"
+  }
+  lead_group exit "$DUX_HOME/zombie-group"
+  is_zombie() { case "$(ps -o stat= -p "$g" 2>/dev/null | tr -d ' ')" in Z*) return 0 ;; esac; return 1; }
+  wait_until 5 is_zombie
+  # What makes this the case that matters on Linux: kill -0 on the group still
+  # answers. macOS refuses it with "Operation not permitted", so there the old
+  # question already gave the right answer.
+  if [ "$(uname -s)" = Linux ]; then kill -0 -- "-$g"; fi
+  group_gone "$g"
+  lead_group sleep "$DUX_HOME/live-group"
+  refute group_gone "$g"
+}

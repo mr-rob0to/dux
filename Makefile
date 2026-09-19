@@ -91,7 +91,7 @@ check-branch:
 	@$(MAKE) --no-print-directory check-bash32
 
 SHELL_FILES = bin/dux-* bin/backends/*.sh bin/workers/*.sh templates/hooks/pre-push \
-              tests/fakes/* tests/helpers/*.bash skills/ship/ship-guard skills/ship/ship-env
+              tests/fakes/* tests/helpers/*.bash tests/repeat skills/ship/ship-guard skills/ship/ship-env
 
 lint: lint-shell lint-identifiers lint-pipes
 
