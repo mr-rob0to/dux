@@ -414,3 +414,31 @@ widgets main red $RUNS_URL/17000000201" ]
 run list --repo acme/widgets --branch main $CALL
 run list --repo acme/widgets --branch main $CALL" ]
 }
+
+# ---- the milestone replay ----------------------------------------------------
+# The push runs on this repository's main from 15 to 18 September 2026, each in
+# its final state, arrive one at a time in the order they were created, and
+# every state is checked twice. Five commits went red in those four days.
+
+@test "four days of runs on main report each red commit once, a32fe04 included" {
+  local all k twice before
+  widgets
+  all="$(runs replay-2026-09-15-to-18.json)"
+  export FAKE_GH_RUNS="$DUX_HOME/runs-so-far.json"
+  for k in $(seq 1 "$(jq length "$all")"); do
+    jq ".[-$k:]" "$all" > "$FAKE_GH_RUNS"
+    for twice in 1 2; do
+      before="$(events_count)"
+      dux-base check widgets >/dev/null
+      [ "$(events_count)" -eq "$before" ] || dux-base get widgets reported >> "$DUX_HOME/reports"
+    done
+  done
+  [ "$(cat "$DUX_HOME/reports")" = "920367410237b275127b22161af91eb00eb3e719:35037809694:1
+423292ba1fcb666965903a8623346732029744d0:35108798509:1
+877e6f7963a4551752646cf7f2ada61a9b443a12:35252358034:1
+a32fe0471bef65abf291cf23c601ac2dad481b53:35252854509:1
+a8acd791d23c1b251629c971c070ae72fd391a5d:35291522515:2" ]
+  [ "$(events_count)" -eq 5 ]
+  [ "$(dux-base get widgets verdict)" = green ]
+  [ "$(dux-base get widgets sha)" = e879e6c1c47a240dfbb4c1af6266b96ed9e258d4 ]
+}
