@@ -9,7 +9,7 @@
 
 **Where this stands**
 - Approved and merged as #67; Tasks 1 to 8 are one ship task on one branch.
-- Tasks 1 to 5 are done. Task 6, the watcher starting the check, is next.
+- Tasks 1 to 6 are done. Task 7, the digest, is next.
 - When done, Dux tells the operator once, with the run url, when any registered base goes red.
 
 **Estimated diff:** ~1,300 added lines across 8 tasks, about 850 of them tests and the `gh`
@@ -259,8 +259,8 @@ is logged once as `dux: watch: DUX_BASE_INTERVAL_SECS is not a whole number; the
 
 **Steps**
 
-- [ ] Write the failing tests, then the code. Re-read the whole loop and the trap after the edit.
-- [ ] Break-verify, one at a time:
+- [x] Write the failing tests, then the code. Re-read the whole loop and the trap after the edit.
+- [x] Break-verify, one at a time:
   1. Run the check in the foreground. Expect "a hung check does not delay a handoff" to fail.
   2. Ignore the `0`. Expect "interval 0 makes no call" to fail.
   3. Move the start into `pass`. Expect "--once starts no check" to fail.

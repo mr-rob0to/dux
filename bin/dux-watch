@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Turns worker state changes into events. A per-task surprise is logged and
 # skipped so supervision of every other task continues. See spec section 6.1.
+# The loop also starts the base branch check on a timer, and never waits for it.
 set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
@@ -12,6 +13,9 @@ stale_after="${DUX_STALE_SECS:-1200}"
 grace="${DUX_WATCH_GRACE_SECS:-120}"
 ledger="$DUX_ROOT/bin/dux-ledger"
 backend="$DUX_ROOT/bin/dux-backend"
+base_interval="${DUX_BASE_INTERVAL_SECS:-300}"
+basepid="$DUX_STATE/base.pid"
+basestamp="$DUX_STATE/base.started"
 usage="usage: dux-watch [--once] | dux-watch eval <id>"
 
 { : >> "$events"; } 2>/dev/null || finding "cannot write $events"
@@ -341,6 +345,28 @@ EOF
   fi
 }
 
+# ---- the base check -------------------------------------------------------
+# Started from the loop only, never from pass, --once or eval, and never waited
+# for or read: a hung GitHub call is that process's to stop, and supervision
+# goes on meanwhile. Its stderr is this watcher's log. A new one starts once
+# the last start is an interval old and the check it started has exited. See
+# docs/specs/2026-09-18-base-branch-check.md, sections 2 and 5.
+base_check=""
+start_base_check() {
+  local age
+  [ "$base_interval" -gt 0 ] || return 0
+  ! pid_runs "$(cat "$basepid" 2>/dev/null)" dux-base || return 0
+  if [ -e "$basestamp" ]; then
+    age=$(( $(date +%s) - $(mtime_epoch "$basestamp" 2>/dev/null || echo 0) ))
+    [ "$age" -ge "$base_interval" ] || return 0
+  fi
+  touch "$basestamp" 2>/dev/null || return 0
+  "$DUX_ROOT/bin/dux-base" check < /dev/null > /dev/null &
+  base_check=$!
+  echo "$base_check" > "$basepid"
+}
+stop_base_check() { ! pid_runs "$base_check" dux-base || kill "$base_check" 2>/dev/null; }
+
 case "${1:-}" in
   eval)
     [ $# -eq 2 ] || finding "$usage"
@@ -364,13 +390,20 @@ case "${1:-}" in
   *) finding "$usage" ;;
 esac
 
+case "$base_interval" in
+  ''|*[!0-9]*)
+    log "watch: DUX_BASE_INTERVAL_SECS is not a whole number; the base check is off"
+    base_interval=0 ;;
+esac
+
 echo $$ > "$watchpid" || finding "cannot write $watchpid"
 log "watch: started pid $$, every ${interval}s, stale after ${stale_after}s"
 sleeper=""
-trap 'log "watch: stopping"; [ -z "$sleeper" ] || kill "$sleeper" 2>/dev/null; exit 0' TERM INT
+trap 'log "watch: stopping"; [ -z "$sleeper" ] || kill "$sleeper" 2>/dev/null; stop_base_check; exit 0' TERM INT
 while :; do
   [ "$(cat "$watchpid" 2>/dev/null)" = "$$" ] || { log "watch: $watchpid names another watcher; exiting"; exit 0; }
   pass
+  start_base_check
   sleep "$interval" & sleeper=$!
   wait "$sleeper"
   sleeper=""
