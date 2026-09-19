@@ -38,6 +38,13 @@ is a routing mistake later, so get both right here.
    [--pr-template install|skip]`. The name defaults to the folder name; pass
    `--name` only when that is taken or unusable. Pass `--pr-template` only when
    step 3a printed `none`.
+4a. Run `bin/dux-base check <name>` and relay its one line in plain words. `red`
+   carries the run url, and its wake follows the rule in `skills/dux-status`.
+   `none` means the newest commit on the base has no run that passed or failed:
+   no push runs on GitHub yet, only cancelled or skipped ones, or a remote that
+   is not GitHub. A failure there would go unheard, so say so now. `pending`
+   means its checks are still running and `no-answer` that GitHub did not
+   answer; the watcher asks again later either way.
 5. Report the registry line in plain words: base branch, worktree mechanism,
    issue intake, and which of the three the template step did: installed at
    `.github/PULL_REQUEST_TEMPLATE.md` and needing a commit, left alone at the

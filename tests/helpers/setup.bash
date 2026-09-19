@@ -65,6 +65,8 @@ setup() {
   cp "$DUX_ROOT"/templates/config/* "$DUX_HOME/config/"
   export PATH="$DUX_ROOT/tests/fakes:$DUX_ROOT/bin:$PATH"
   export DUX_WATCHER=off
+  # A watcher a test starts checks no base branch unless the test asks for it.
+  export DUX_BASE_INTERVAL_SECS=0
   export FAKE_HERDR_LOG="$DUX_HOME/state/fake-herdr.log"
   export FAKE_HERDR_OUTPUT="$DUX_HOME/state/fake-herdr.out"
   export FAKE_WORKER_LOG="$DUX_HOME/state/fake-worker.log"
@@ -194,6 +196,13 @@ stop_watcher_if_any() {
     # teardown starts recreates the very directories rm -rf is removing.
     if pid_runs "$p" dux-watch; then reap "$p" || true; fi
     rm -f "$DUX_HOME/state/watch.pid"
+  fi
+  # The watcher's stop stops its base check. One still running here outlived a
+  # watcher that never got to stop it, and it writes under state/ too.
+  if [ -f "$DUX_HOME/state/base.pid" ]; then
+    p="$(cat "$DUX_HOME/state/base.pid" 2>/dev/null)"
+    if pid_runs "$p" dux-base; then reap "$p" || true; fi
+    rm -f "$DUX_HOME/state/base.pid"
   fi
   if [ -f "$DUX_HOME/state/stand-ins" ]; then
     while read -r p; do reap "$p" || true; done < "$DUX_HOME/state/stand-ins"

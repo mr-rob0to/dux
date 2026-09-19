@@ -6,6 +6,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 ledger="$DUX_ROOT/bin/dux-ledger"
 projects="$DUX_ROOT/bin/dux-project"
+bases="$DUX_ROOT/bin/dux-base"
 usage="usage: dux-status [--prs] [--intake]"
 prs=0
 intake=0
@@ -103,6 +104,10 @@ for project in $("$projects" list); do
     esac
   done
   echo "$project"
+  # From the base record the check keeps; the digest asks GitHub nothing.
+  if [ "$("$bases" get "$project" verdict 2>/dev/null)" = red ]; then
+    echo "  base red: $("$bases" get "$project" url)"
+  fi
   [ "$queued" = 0 ] || echo "  queued $queued"
   if [ "$running" != 0 ]; then
     suffix=""
@@ -125,9 +130,11 @@ for project in $("$projects" list); do
 done
 
 unacked="$("$ledger" list --unacked)"
-if [ -n "$unacked" ]; then
+base_unacked="$("$bases" list --unacked)"
+if [ -n "$unacked$base_unacked" ]; then
   echo unacknowledged
   for id in $unacked; do
     echo "  $("$ledger" get "$id" state): $id ($("$ledger" get "$id" project))"
   done
+  for project in $base_unacked; do echo "  base-red: $project"; done
 fi

@@ -51,6 +51,27 @@ case "$1 ${2:-}" in
            '{state: $s, headRefName: $h, baseRefName: $b, headRefOid: $o,
              mergeCommit: (if $m == "" then null else {oid: $m} end)}' ;;
     esac ;;
+  "run list")
+    # What real gh sends: one row per run, at its latest attempt. The rows come
+    # from a fixture file, FAKE_GH_RUNS for every repository, or
+    # FAKE_GH_RUNS_DIR/<name>.json for the repository --repo names, where a
+    # repository with no file does not answer. A fixture that is not JSON is
+    # printed as it is. FAKE_GH_RUN_EXIT is the status after the rows, so a
+    # call can fail with a readable answer in front of it. FAKE_GH_RUN_SLEEP
+    # hangs the call instead, as this very process, so stopping the pid it
+    # adds to FAKE_GH_PIDS stops the call.
+    if [ -n "${FAKE_GH_FAIL:-}" ]; then echo "fake gh: run list failed" >&2; exit 1; fi
+    if [ -n "${FAKE_GH_RUN_SLEEP:-}" ]; then
+      printf '%s\n' "$$" >> "${FAKE_GH_PIDS:-/dev/null}"
+      exec sleep "$FAKE_GH_RUN_SLEEP"
+    fi
+    repo=""; prev=""
+    for a in "$@"; do [ "$prev" != --repo ] || repo="$a"; prev="$a"; done
+    runs="${FAKE_GH_RUNS:-}"
+    [ -z "${FAKE_GH_RUNS_DIR:-}" ] || runs="$FAKE_GH_RUNS_DIR/${repo#*/}.json"
+    [ -f "$runs" ] || { echo "fake gh: no runs for $repo" >&2; exit 1; }
+    cat "$runs"
+    exit "${FAKE_GH_RUN_EXIT:-0}" ;;
   "api "*)
     # Only the check runs on a commit, which dux-spawn asks for by name.
     if [ -n "${FAKE_GH_FAIL:-}${FAKE_GH_API_FAIL:-}" ]; then echo "fake gh: api failed" >&2; exit 1; fi

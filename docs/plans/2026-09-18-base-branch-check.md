@@ -8,8 +8,8 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted and design-reviewed; waiting for the operator's approval. No task started.
-- Picks up a gap no milestone covered: nothing watches a base branch after a merge.
+- Approved and merged as #67; Tasks 1 to 8 are one ship task on one branch.
+- Tasks 1 to 8 are done. The branch goes through `/ship` next.
 - When done, Dux tells the operator once, with the run url, when any registered base goes red.
 
 **Estimated diff:** ~1,300 added lines across 8 tasks, about 850 of them tests and the `gh`
@@ -115,8 +115,8 @@ No decision is restated. `make check` passes.
 
 **Steps**
 
-- [ ] Add the pointers and the component line.
-- [ ] Break-verify: none owed. Prose only, no protection added.
+- [x] Add the pointers and the component line.
+- [x] Break-verify: none owed. Prose only, no protection added.
 
 ## Task 2: Read one base branch and give an answer
 
@@ -143,9 +143,9 @@ per run, at its latest attempt. A re-run is the same run id with a higher `attem
 
 **Steps**
 
-- [ ] Extend the fake and write the fixtures. Count the fake's existing tests before and after.
-- [ ] Write the failing tests, then the script.
-- [ ] Break-verify, one at a time, pasting each failure into the commit body:
+- [x] Extend the fake and write the fixtures. Count the fake's existing tests before and after.
+- [x] Write the failing tests, then the script.
+- [x] Break-verify, one at a time, pasting each failure into the commit body:
   1. Drop `timed_out` from the red list. Expect "a run that timed out is red" to fail.
   2. Ignore `gh`'s exit status. Expect "a poll GitHub did not answer leaves a red base red" to
      fail.
@@ -180,8 +180,8 @@ as in Design and spec sections 4 and 5.
 
 **Steps**
 
-- [ ] Write the failing tests, then the code.
-- [ ] Break-verify, one at a time:
+- [x] Write the failing tests, then the code.
+- [x] Break-verify, one at a time:
   1. Skip the comparison with `reported`. Expect "the same failed attempt is reported once" to
      fail with two lines.
   2. Leave the attempt out of the comparison. Expect "a re-run that fails is reported again" to
@@ -207,8 +207,8 @@ as in Design and spec sections 4 and 5.
 
 **Steps**
 
-- [ ] Write the failing tests, then the loop.
-- [ ] Break-verify, one at a time:
+- [x] Write the failing tests, then the loop.
+- [x] Break-verify, one at a time:
   1. Write `main` in place of the registered base. Expect "a staging base is asked about
      staging" to fail.
   2. Stop at the first project that does not answer. Expect "one silent project does not hide
@@ -231,8 +231,8 @@ as in Design and spec sections 4 and 5.
 
 **Steps**
 
-- [ ] Write the failing tests, then the code.
-- [ ] Break-verify, one at a time:
+- [x] Write the failing tests, then the code.
+- [x] Break-verify, one at a time:
   1. Drop `cap_line`. Expect "a base name is cleaned before it is shown" to fail.
   2. Add a `gh run rerun` after a red answer. Expect "the check only ever lists runs" to fail.
 
@@ -259,8 +259,8 @@ is logged once as `dux: watch: DUX_BASE_INTERVAL_SECS is not a whole number; the
 
 **Steps**
 
-- [ ] Write the failing tests, then the code. Re-read the whole loop and the trap after the edit.
-- [ ] Break-verify, one at a time:
+- [x] Write the failing tests, then the code. Re-read the whole loop and the trap after the edit.
+- [x] Break-verify, one at a time:
   1. Run the check in the foreground. Expect "a hung check does not delay a handoff" to fail.
   2. Ignore the `0`. Expect "interval 0 makes no call" to fail.
   3. Move the start into `pass`. Expect "--once starts no check" to fail.
@@ -283,8 +283,8 @@ prints. Both read local files only; the digest makes no new network call.
 
 **Steps**
 
-- [ ] Write the failing tests, then the code.
-- [ ] Break-verify: leave base reports out of `unacknowledged`. Expect "a base wake missed
+- [x] Write the failing tests, then the code.
+- [x] Break-verify: leave base reports out of `unacknowledged`. Expect "a base wake missed
       during a restart is listed" to fail. The `base red:` line is ordinary formatting; no break.
 
 ## Task 8: Operating rules, and a real check from the worktree
@@ -312,9 +312,9 @@ prints. Both read local files only; the digest makes no new network call.
 
 **Steps**
 
-- [ ] Edit the five files. Dry-run both skills as the constitution asks.
-- [ ] Do the real check and record it.
-- [ ] Break-verify: none owed here. The rules are prose, and Tasks 2 to 7 hold the guards.
+- [x] Edit the five files. Dry-run both skills as the constitution asks.
+- [x] Do the real check and record it.
+- [x] Break-verify: none owed here. The rules are prose, and Tasks 2 to 7 hold the guards.
 
 ## After the merge: one installed run, by Dux and the operator
 
