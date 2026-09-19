@@ -1,18 +1,40 @@
 #!/usr/bin/env bash
-# Formats one action-first line for a task event. See spec section 6.3.
+# Formats one action-first line for a task event, or for a red base branch.
+# See spec section 6.3 and docs/specs/2026-09-18-base-branch-check.md.
 set -u
 # shellcheck source=bin/dux-env
 source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
-usage="usage: dux-notify <id> [--toast]"
+usage="usage: dux-notify <id> [--toast] | --base <project> [--toast]"
 id="${1:-}"
 [ -n "$id" ] || finding "$usage"
 shift
+project=""
+if [ "$id" = --base ]; then
+  project="${1:-}"
+  [ -n "$project" ] || finding "$usage"
+  shift
+fi
 toast=0
 while [ $# -gt 0 ]; do
   case "$1" in --toast) toast=1 ;; *) finding "$usage" ;; esac
   shift
 done
+
+# Every word of a base line comes from the registry and the base record: the
+# url dux-base builds for the reported run, the project name and its base. No
+# gh call is made here, and nothing GitHub sent reaches the line but the run
+# id, which the check held to digits.
+if [ -n "$project" ]; then
+  url="$("$DUX_ROOT/bin/dux-base" get "$project" url 2>/dev/null)" || url=-
+  [ "$url" != - ] || finding "nothing to notify for $(cap_line "$project") (no base report)"
+  base="$("$DUX_ROOT/bin/dux-project" get "$project" base)" || exit $?
+  line="$(cap_line "Look, then fix or re-run: $url ($project $base is red)")"
+  echo "$line"
+  [ "$toast" = 0 ] || "$DUX_ROOT/bin/dux-backend" notify Dux "$line" >/dev/null 2>&1 || true
+  exit 0
+fi
+
 valid_task_id "$id"
 ledger="$DUX_ROOT/bin/dux-ledger"
 

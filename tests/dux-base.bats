@@ -398,3 +398,19 @@ widgets main red $RUNS_URL/17000000201" ]
   [ "$(cat "$FAKE_GH_LOG")" = "run list --repo acme/widgets --branch main $CALL" ]
   [ ! -e "$DUX_HOME/state/base/local" ]
 }
+
+# ---- nothing automatic -------------------------------------------------------
+
+@test "the check only ever lists runs" {
+  widgets
+  check_with red-failure.json >/dev/null
+  dux-notify --base widgets >/dev/null
+  dux-base ack widgets "$(dux-base get widgets reported)"
+  check_with rerun-failure.json >/dev/null
+  dux-notify --base widgets >/dev/null
+  check_with rerun-success.json >/dev/null
+  [ "$(events_count)" -eq 2 ]; [ "$(dux-base get widgets verdict)" = green ]
+  [ "$(cat "$FAKE_GH_LOG")" = "run list --repo acme/widgets --branch main $CALL
+run list --repo acme/widgets --branch main $CALL
+run list --repo acme/widgets --branch main $CALL" ]
+}

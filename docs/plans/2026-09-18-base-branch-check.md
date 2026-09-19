@@ -9,7 +9,7 @@
 
 **Where this stands**
 - Approved and merged as #67; Tasks 1 to 8 are one ship task on one branch.
-- Tasks 1 to 4 are done. Task 5, the notification line, is next.
+- Tasks 1 to 5 are done. Task 6, the watcher starting the check, is next.
 - When done, Dux tells the operator once, with the run url, when any registered base goes red.
 
 **Estimated diff:** ~1,300 added lines across 8 tasks, about 850 of them tests and the `gh`
@@ -231,8 +231,8 @@ as in Design and spec sections 4 and 5.
 
 **Steps**
 
-- [ ] Write the failing tests, then the code.
-- [ ] Break-verify, one at a time:
+- [x] Write the failing tests, then the code.
+- [x] Break-verify, one at a time:
   1. Drop `cap_line`. Expect "a base name is cleaned before it is shown" to fail.
   2. Add a `gh run rerun` after a red answer. Expect "the check only ever lists runs" to fail.
 
