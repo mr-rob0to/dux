@@ -173,7 +173,15 @@ design separates the two:
   three things:
   - `state/<id>.pid` names a live `dux-worker-wrap <id>`: mark the task `running` with
     the same `set-if` as today (`:168`).
-  - the wrapper's pid is gone: it refused before the harness started. A refusal after
+  - the wrapper's pid is gone: it refused before the harness started, unless its whole
+    run started and ended between two of spawn's looks, which are a second apart. So
+    when spawn sent it no `TERM` and it published a handoff, spawn first reads the
+    `status` of handoff sequence `$seq_before`, the number it recorded before starting
+    the wrapper, so this run's first handoff and never an earlier run's. One line that
+    does not start with `failed: wrapper: ` is a run that started: spawn marks the task
+    `running` exactly as for a live wrapper, and the watcher applies the ending as for
+    any run. A `failed: wrapper: ` line, or a `status` that is missing, empty or more
+    than one line, is a refusal, and what follows applies. A refusal after
     the run record exists (`handoff_ready`, `bin/dux-worker-wrap:194`) has left a
     `failed` handoff, which the watcher applies to a queued task (`watched_ids`,
     `bin/dux-watch:232-241`); spawn then touches nothing and prints the finding `the
@@ -183,12 +191,14 @@ design separates the two:
     and clear the endpoint file and ledger field, and prints `the wrapper for <id> did
     not start; see state/<id>.wrap.log`. Either way the task is not `running`.
   - the window ends with the wrapper alive and no pidfile: spawn sends it `TERM`, waits
-    up to ten seconds for it to go, and takes one of the two branches above by whether a
-    handoff exists. A wrapper still alive after that wait takes neither: undo would close
-    the tab it is about to run in and discard the worktree it is about to work in, and
-    nothing here can tell it to stop. So spawn leaves every reference where it is and
-    prints `the wrapper for <id> did not start and pid <pid> will not stop; stop it, then
-    run dux-recover <id>`, the same answer `undo` gives for a live container (`:147`).
+    up to ten seconds for it to go, and takes one of the two refusal branches above by
+    whether a handoff exists. A run spawn stopped itself is never marked `running`,
+    whatever its handoff says. A wrapper still alive after that wait takes neither:
+    undo would close the tab it is about to run in and discard the worktree it is about
+    to work in, and nothing here can tell it to stop. So spawn leaves every reference
+    where it is and prints `the wrapper for <id> did not start and pid <pid> will not
+    stop; stop it, then run dux-recover <id>`, the same answer `undo` gives for a live
+    container (`:147`).
   A fast refusal is already why `set-if` compares from `queued` (`:162-167`); the wait
   keeps that reasoning and adds the pid.
 

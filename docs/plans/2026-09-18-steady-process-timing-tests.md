@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved (PR #68). Building: tasks 1 to 3 landed; their container runs are queued.
+- Approved (PR #68). Building: tasks 1 to 4 landed; their container runs are queued.
 - Picks up the "hardening pass" that the flaky-test notes have asked for since milestone 4.
 - When done, the four tests below stop failing at random, and one wrong `dux-spawn` message is fixed.
 
@@ -231,15 +231,15 @@ runs under `check-bash32` on macOS report 0.
 
 **Steps**
 
-- [ ] Write the three tests first. The first fails on today's code with the false finding.
-- [ ] Add the pause knob and the rule. Re-read the whole start-check block afterwards: every
+- [x] Write the three tests first. The first fails on today's code with the false finding.
+- [x] Add the pause knob and the rule. Re-read the whole start-check block afterwards: every
       undo path and every finding must still be reachable.
-- [ ] Amend the spec passage and ARCHITECTURE in the same commit.
-- [ ] Break-verify the new case: remove the added case, confirm the first test fails with
+- [x] Amend the spec passage and ARCHITECTURE in the same commit.
+- [x] Break-verify the new case: remove the added case, confirm the first test fails with
       the false finding, restore, paste.
-- [ ] Break-verify the refusal guard: make the prefix match never true, confirm the second
+- [x] Break-verify the refusal guard: make the prefix match never true, confirm the second
       test fails because a refusal is reported as `spawned`, restore, paste.
-- [ ] Break-verify the TERM guard: drop the "sent no TERM" condition, confirm the third test
+- [x] Break-verify the TERM guard: drop the "sent no TERM" condition, confirm the third test
       fails because a run spawn stopped is reported as `spawned`, restore, paste.
 
 ## Task 5: The supervise test decides when silence starts
