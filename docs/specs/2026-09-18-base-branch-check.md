@@ -2,7 +2,7 @@
 
 Date: 2026-09-18. Status: proposed, for approval with its plan,
 `docs/plans/2026-09-18-base-branch-check.md`. Amends the living spec,
-`2026-09-03-dux-orchestrator-design.md`, sections 6.2, 6.3, 8 and 14, which the plan's Task 1
+`2026-09-03-dux-orchestrator-design.md`, sections 3, 6.2, 6.3, 8 and 14, which the plan's Task 1
 points here.
 
 ## 1. The problem
@@ -24,8 +24,10 @@ every five minutes and never waits for it. It keeps one small record per project
 the way a task event does.
 
 - **Who checks:** `bin/dux-base check`, started by `bin/dux-watch`.
-- **When:** on the watcher's first loop after it starts, then every `DUX_BASE_INTERVAL_SECS`
-  (default 300; `0` turns it off). Also by hand at any time.
+- **When:** in the watcher's loop, whenever the last start was more than
+  `DUX_BASE_INTERVAL_SECS` ago (default 300) and the check it started before has exited. After
+  a night with no session that is the first loop. `0` turns it off. A value that is not a whole
+  number is logged once and treated as off; it never stops the watcher. Also by hand at any time.
 - **How:** one `gh run list` call per project, for push runs on the registered base branch. It
   follows the branch, not a list of merges, so it sees direct pushes and merges made outside Dux,
   and it works the same for a base named `main` or `staging`.
@@ -36,79 +38,100 @@ session, so with no session there is nobody to send it.
 
 ## 3. What red means
 
-The commit judged is the head commit of the newest push run on the base branch. Every push run
-in the answer with that head commit counts, each at its latest attempt.
+The call is `gh run list --repo <slug> --branch <base> --event push --limit 20`. It returns one
+row per run, already at that run's latest attempt. The commit judged is the head commit of the
+run with the highest run id, which is the newest. Every row with that head commit counts.
 
-| Verdict | Rule |
+| Answer | Rule |
 |---|---|
-| `red` | A run on that commit has finished with `failure`, `timed_out` or `startup_failure`. Red wins even while other runs on the commit are still going |
-| `pending` | Not red, and a run on that commit has not finished |
-| `green` | Not red, nothing pending, and at least one run finished with `success` |
-| `none` | Anything else: no push runs at all, or only cancelled, skipped or neutral ones |
-| no answer | GitHub did not answer, the call ran past `DUX_BASE_GH_SECS` (default 60), or a field was not in the expected shape. The record is left exactly as it was: never red, never cleared |
+| `red` | A run on that commit has `status` `completed` and `conclusion` `failure`, `timed_out` or `startup_failure`. Red wins even while other runs on the commit are still going |
+| `pending` | Not red, and a run on that commit has any `status` other than `completed` |
+| `green` | Not red, nothing pending, and at least one run has `conclusion` `success` |
+| `none` | Anything else: no push runs at all, or only other conclusions such as `cancelled`, `skipped` or `neutral` |
+| no answer | `gh` exited non-zero, ran past the time limit, printed something `jq` cannot read, or sent a field out of shape (section 6) |
 
-A cancelled run is not red: the operator, or a newer push, stopped it. A repository whose checks
-do not run on GitHub Actions has no push runs and stays `none`; the check says so when run by
-hand, and the project skill runs it once at registration so the operator hears it then.
+Only `red` and `green` change the record. `pending`, `none` and no answer leave it exactly as it
+was. So a base last seen red stays red until a green run says otherwise: a GitHub error, a hang,
+a cancelled run or a newer commit still running never clears it, and none of them marks a base
+red.
+
+A repository whose checks do not run on GitHub Actions has no push runs and stays `none`. The
+check says so when run by hand, and the project skill runs it once at registration so the
+operator hears it then.
 
 Judging the newest run's commit, and not the branch tip, is deliberate. A later commit that
 started no run (a skipped workflow) does not make a broken base look fixed.
 
+**The time limit.** `gh` is started in the background with its output going to a file in a
+`mktemp -d` folder under `state/`. The script looks once a second, and after `DUX_BASE_GH_SECS`
+(default 60) it stops `gh` and counts the call as no answer. A trap removes the folder and stops
+`gh` when the script exits or is told to stop. Bash only; macOS has no `timeout` command.
+
 ## 4. Reporting once, and clearing
 
-The report key is `<sha>:<run id>:<attempt>` of the red run with the lowest run id on the judged
-commit. The record keeps the last key reported.
+The report key is `<sha>:<run id>:<attempt>`. The record keeps the last key reported.
 
-- Red with a key that differs from the last one reported: append the event, then save the key.
-- Red with the same key: nothing. The same failure is never reported twice, across any number of
-  checks, watcher restarts and Dux sessions, because the key is on disk.
-- A re-run that passes: the run's newest attempt is `success`, the verdict becomes `green`, and
-  the digest stops showing the base as red. Clearing is silent: no event, no notification.
-- A re-run that fails is a new attempt, so a new key, and is reported once. The operator who
-  pressed re-run and walked away hears only if it failed again; no news is good news.
-- A newer commit that is also red is a new key and is reported once.
+On a red answer:
 
-The event is appended before the key is saved, so a crash between the two repeats the line
-rather than losing it. A repeated line is caught at the wake: Dux compares `reported` with
-`acked` and stops when they match, as it does for a task.
+- If the reported key names the judged commit, and that run is still red at that attempt, it is
+  the same failure: nothing is written to the event log. This holds across any number of checks,
+  watcher restarts and Dux sessions, because the key is on disk. It also holds when a second
+  workflow on the same commit fails later.
+- Otherwise the new key is the red run with the lowest run id on the judged commit. The event
+  is appended, then the key is saved.
+
+So a re-run that fails (a new attempt) and a newer commit that is also red are each reported
+once. A re-run that passes makes the answer `green`: the record turns green and the digest stops
+showing the base as red. Clearing is silent: no event, no notification. The operator who pressed
+re-run and walked away hears only if it failed again; no news is good news.
+
+The event is appended before the key is saved, so a crash or a failed save between the two
+repeats the line rather than losing it. A repeated line is caught at the wake: Dux compares
+`reported` with `acked` and stops when they match, as it does for a task.
 
 ## 5. Formats
 
-Record, `state/base/<project>`, written whole through a temporary file and a rename:
+Record, `state/base/<project>/record`, written whole through a temporary file and a rename, and
+only by `check`:
 
-    version=1
-    base=main
-    sha=<40 hex>
     verdict=red
+    sha=<40 hex>
     run=<digits>
     attempt=<digits>
     reported=<sha>:<run>:<attempt>
-    acked=-
     checked=2026-09-18T00:41:07Z
 
-A record whose `base` differs from the registry's is thrown away and rebuilt. Event line:
-`<time> base-red: <project>`. It names a project, not a task.
+`verdict` is `red` or `green`. `sha`, `run` and `attempt` are those of the run that set it.
+Acknowledgement, `state/base/<project>/acked`, one line holding a key, written only by `ack`.
+The two writers share no file, so neither can overwrite the other and no lock is needed.
 
-Every read-decide-write of a record, the event append, and `ack` happen under one short mutex,
-`state/base.lock`, with the rules the ledger's mutex has. The GitHub call happens before the
-mutex is taken and before the record is read, so an acknowledgement that lands during a slow
-call is never overwritten with an older value.
+Event line: `<time> base-red: <project>`. It names a project, not a task.
+
+The watcher keeps `state/base.started` (touched at each start) and `state/base.pid` (the check
+it started). On its own stop it stops that check.
 
 ## 6. What Dux reads and what it says
 
-Only six fields are asked for: `databaseId`, `headSha`, `status`, `conclusion`, `attempt`, and
-`createdAt` for order. Each is checked against its shape (digits, 40 hex, a fixed list of words)
-before use, and one bad field makes the whole answer "no answer". Workflow names, commit titles
-and author names are repository content; they are never requested, stored or shown.
+Five fields are asked for, and no others: `databaseId`, `headSha`, `status`, `conclusion`,
+`attempt`. Shapes: `databaseId` and `attempt` are 1 to 20 digits; `headSha` is 40 hex;
+`status` and `conclusion` are 0 to 32 characters of `a-z` and `_`. One field out of shape makes
+the whole answer "no answer". A word in shape but not named in section 3 is never an error: an
+unknown `status` means not finished, an unknown `conclusion` means neither red nor green. A new
+word from GitHub therefore cannot silence the check.
+
+Workflow names, commit titles and author names are repository content. They are never
+requested, so they are never stored or shown.
 
 The url is built by Dux: `https://github.com/<slug>/actions/runs/<run id>`, where the slug comes
 from the registered path through `github_slug`. No url from GitHub's answer is used.
 
-`bin/dux-notify --base <project>` prints the one fixed line:
+`bin/dux-notify --base <project>` prints the one fixed line, passed through `cap_line`:
 
     Look, then fix or re-run: <url> (<project> <base> is red)
 
-It is pushed to the phone. `AGENTS.md` gains `base-red` in its push list and its wake rule.
+The url comes first so the 200-character cut can never shorten it. The line is pushed to the
+phone. The rule for a `base-red` wake lives in `skills/dux-status`; `AGENTS.md` points at it and
+names `base-red` in its push list, without growing past its 150-line cap.
 
 ## 7. What the operator does, and what Dux never does
 
@@ -125,6 +148,10 @@ state files. How many workers are running changes nothing. Its only shared file 
 
 After a restart everything is read from `state/base/`. An event that landed while no Monitor was
 armed is listed by `bin/dux-status` under `unacknowledged` until `bin/dux-base ack` records it.
+That is the usual path after a night: the first check finishes before the Monitor is armed.
+
+Two checks at once (the timer's and one by hand) can each append the same event line. The cost
+is one repeated line, dropped at the wake as a duplicate.
 
 ## 9. Options not taken
 
@@ -136,10 +163,14 @@ armed is listed by `bin/dux-status` under `unacknowledged` until `bin/dux-base a
   It also never sees a re-run, a direct push, or a merge whose task is torn down days later.
 - A scheduler outside Dux (launchd or cron): a second thing to install, check and remove, and it
   still cannot send the notification without a Dux session.
+- A lock around the records: with the acknowledgement in its own file, the only race left costs
+  one repeated line.
 
 ## 10. Not covered
 
 - Checks that do not run on GitHub Actions.
+- A run started by another workflow finishing, such as a deploy that follows the checks. It is
+  not a push run, so its failure is not seen.
 - A red base does not stop a dispatch or a merge. A worker that branches from a red base may see
   the same failure on its own pull request.
 - A flaky failure that a newer green commit replaces before the next check is never reported.
