@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved and merged as PR #64; tasks 1-10 done on one branch. Task 11 waits on the operator: a worker cannot install Dux or start real tasks.
+- Approved and merged as PR #64. Tasks 1-10 done; the operator chose to ship them without Task 11, which Dux runs on the installed build after this merges.
 - Picks up what the rollout plan deferred: "Parallel workers: not met" in `dux-simplification-rollout.md`.
 - When done, Dux starts up to `config/max-workers` workers at once, default 3, in any mix of repositories.
 
