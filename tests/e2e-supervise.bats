@@ -28,7 +28,9 @@ supervised_env() {
   trust_suite_root
   harness_shim
   export FAKE_WORKER_SCRIPT="$DUX_HOME/state/worker.script" DUX_WRAP_POLL_SECS=1 DUX_HEARTBEAT_SECS=1000
-  export DUX_WATCHER=on DUX_WATCH_INTERVAL_SECS=1 DUX_STALE_SECS=3 DUX_WATCH_GRACE_SECS=30
+  # A limit no start comes near. A test that needs a silent worker ages it with
+  # age_task; a small limit here is one a slow start reaches first.
+  export DUX_WATCHER=on DUX_WATCH_INTERVAL_SECS=1 DUX_STALE_SECS=3600 DUX_WATCH_GRACE_SECS=30
   if [ "$DUX_BACKEND" = tmux ]; then
     local v
     for v in DUX_HOME DUX_BACKEND DUX_TMUX_SOCKET DUX_TMUX_SESSION PATH FAKE_WORKER_SCRIPT FAKE_WORKER_LOG DUX_WRAP_POLL_SECS DUX_HEARTBEAT_SECS; do
@@ -57,6 +59,8 @@ ledger_is() { [ "$(dux-ledger get "$1" state)" = "$2" ]; }
   id="$(fixture_task proj scout)"
   dux-spawn "$id" >/dev/null
   wait_until 15 grep -q '^working: starting' "$DUX_HOME/data/tasks/$id/status.log"
+  # The worker has spoken and will say nothing more; its silence starts an hour ago.
+  age_task "$id" 3600
   wait_until 15 count_is stale "$id" 1
   wait_until 10 ledger_is "$id" stale
   [ "$(dux-ledger get "$id" state)" = stale ]

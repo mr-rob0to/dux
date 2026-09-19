@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved (PR #68). Building: tasks 1 to 4 landed; their container runs are queued.
+- Approved (PR #68). Building: tasks 1 to 5 landed; the after measurements are queued.
 - Picks up the "hardening pass" that the flaky-test notes have asked for since milestone 4.
 - When done, the four tests below stop failing at random, and one wrong `dux-spawn` message is fixed.
 
@@ -255,11 +255,11 @@ ended event after `--stop`. `tests/repeat job-m/e2e-supervise-herdr 100 12` and 
 
 **Steps**
 
-- [ ] Run test 1 with the 5-second start pause and record today's failure.
-- [ ] Add `age_task`, raise the limit, call `age_task` after the first status line.
-- [ ] Break-verify stale detection: in `bin/dux-watch` make the age comparison never choose
+- [x] Run test 1 with the 5-second start pause and record today's failure.
+- [x] Add `age_task`, raise the limit, call `age_task` after the first status line.
+- [x] Break-verify stale detection: in `bin/dux-watch` make the age comparison never choose
       `stale`, confirm test 1 fails at `count_is stale "$id" 1`, restore, paste.
-- [ ] Break-verify "exactly once": remove the `[ "$target" != "$lstate" ] || continue` line,
+- [x] Break-verify "exactly once": remove the `[ "$target" != "$lstate" ] || continue` line,
       confirm test 1 fails at the event count after the sleep, restore, paste.
 
 ## Task 6: Measure again, and write down how to wait

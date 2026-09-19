@@ -187,6 +187,16 @@ not_running() { gone "$1"; }
 # a group that way and fails closed, and has its own tests in dux-env.bats.
 group_gone() { ! group_runs "$1"; }  # $1 pgid
 
+# Moves a task's last sign of life that many seconds into the past: the times of
+# its status.log and state/<id>.pid, which the watcher counts silence from. A
+# test that needs a long silence sets the clock, instead of sleeping past a
+# limit so small that a slow start reaches it first.
+age_task() {  # $1 id, $2 seconds
+  # shellcheck disable=SC2016
+  perl -e '$t = time - shift; exit(utime($t, $t, @ARGV) == @ARGV ? 0 : 1)' "$2" \
+    "$DUX_HOME/data/tasks/$1/status.log" "$DUX_HOME/state/$1.pid"
+}
+
 # A bare `! cmd` can never fail a bats test: bash ignores errexit for a command
 # whose return value is being inverted. An assertion that something is absent
 # goes through this instead, so that the inversion happens inside a function
