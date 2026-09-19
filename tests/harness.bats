@@ -97,3 +97,25 @@ load helpers/setup
     case "$output" in finding:*) ;; *) echo "no finding on a directory we do not own: $output"; return 1 ;; esac
   fi
 }
+
+# tests/repeat is how a flake rate is measured, so what it counts has to be
+# right: runs that failed, out of runs made, and which tests failed how often.
+# Stub jobs give it a known answer: one fails every other run, one never does.
+@test "repeat counts the failed runs of a job and names the tests that failed" {
+  mkdir -p "$DUX_HOME/jobs"
+  cd "$DUX_HOME/jobs"
+  printf '%s\n' \
+    'job/flaky:' \
+    '	@n=$$(($$(cat count 2>/dev/null || echo 0) + 1)); echo $$n > count; \' \
+    '	if [ $$((n % 2)) -eq 1 ]; then echo "not ok 3 sometimes"; exit 1; fi; echo "ok 3 sometimes"' \
+    'job/pass:' \
+    '	@echo "ok 1 always"' > Makefile
+  run "$DUX_ROOT/tests/repeat" job/flaky 4
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "job/flaky: 2 failures in 4 runs" ]
+  [ "${lines[1]}" = "  2x 3 sometimes" ]
+  [ "${#lines[@]}" -eq 2 ]
+  run "$DUX_ROOT/tests/repeat" job/pass 3 1
+  [ "$status" -eq 0 ]
+  [ "$output" = "job/pass: 0 failures in 3 runs" ]
+}

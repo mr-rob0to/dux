@@ -159,11 +159,11 @@ burners in the container, which is enough to show a rate near 20 percent: `job-m
 
 **Steps**
 
-- [ ] Write `tests/repeat` and a happy-path test in `tests/harness.bats` that it counts one
+- [x] Write `tests/repeat` and a happy-path test in `tests/harness.bats` that it counts one
       failing and one passing stub job correctly.
-- [ ] Add the container recipe to `CONTRIBUTING.md`.
-- [ ] Run the baseline and paste the table into the commit body.
-- [ ] No break-verify owed: this is a counting tool, and the stub test covers the count.
+- [x] Add the container recipe to `CONTRIBUTING.md`.
+- [x] Run the baseline and paste the table into the commit body.
+- [x] No break-verify owed: this is a counting tool, and the stub test covers the count.
 
 ## Task 2: A dead process no longer counts as alive
 

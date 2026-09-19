@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Measures how often one make job fails: runs it <runs> times, one after
+# another, with <burners> busy loops beside it for load, and prints
+#   <job>: <failures> failures in <runs> runs
+# followed by each test that failed and in how many runs. It measures and does
+# not gate, so it exits 0 whatever the job did.
+#
+# Run it from the directory whose Makefile holds the job. Each run's output goes
+# to tests/tmp/repeat/<job>.<time>/<n>.log there, and one line per run to the
+# runs file beside them: the run number, the job's exit code, and its seconds.
+set -u
+usage="usage: tests/repeat <make-job> <runs> [burners]"
+job="${1:-}"; runs="${2:-}"; burners="${3:-0}"
+[ -n "$job" ] || { echo "$usage" >&2; exit 1; }
+case "$runs" in ''|0|*[!0-9]*) echo "$usage" >&2; exit 1 ;; esac
+case "$burners" in ''|*[!0-9]*) echo "$usage" >&2; exit 1 ;; esac
+
+dir="tests/tmp/repeat/$(printf '%s' "$job" | tr '/' '-').$(date +%Y%m%d-%H%M%S).$$"
+mkdir -p "$dir" || exit 1
+: > "$dir/failed-tests"; : > "$dir/runs"
+
+pids=""
+trap 'if [ -n "$pids" ]; then kill $pids 2>/dev/null; fi' EXIT
+trap 'exit 130' INT TERM
+i=0
+while [ "$i" -lt "$burners" ]; do
+  sh -c 'while :; do :; done' & pids="$pids $!"
+  i=$((i + 1))
+done
+
+failures=0; n=0
+while [ "$n" -lt "$runs" ]; do
+  n=$((n + 1))
+  start="$(date +%s)"
+  make --no-print-directory LOGS="$dir/$n" "$job" > "$dir/$n.log" 2>&1; rc=$?
+  echo "$n $rc $(( $(date +%s) - start ))" >> "$dir/runs"
+  [ "$rc" -eq 0 ] && continue
+  failures=$((failures + 1))
+  if grep '^not ok ' "$dir/$n.log" > "$dir/$n.failed"; then
+    sed 's/^not ok //' "$dir/$n.failed" >> "$dir/failed-tests"
+  else
+    echo "(no test named; see $dir/$n.log)" >> "$dir/failed-tests"
+  fi
+done
+
+echo "$job: $failures failures in $runs runs"
+sort "$dir/failed-tests" | uniq -c | sort -rn \
+  | awk '{ c = $1; sub(/^ *[0-9]+ /, ""); printf "  %dx %s\n", c, $0 }'
+exit 0
