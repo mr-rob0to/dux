@@ -72,7 +72,8 @@ write_record() {  # $1 project, $2 verdict, $3 sha, $4 run, $5 attempt, $6 repor
 # ---- one call to GitHub, with a time limit ----------------------------------
 # macOS has no timeout command, so gh runs in the background and is looked at
 # once a second. Whatever ends this script, the trap stops gh and removes the
-# folder its answer was written to.
+# folder its answer was written to. ask runs in this shell, never inside
+# $(...): a subshell would hold the pid the trap needs and ignore the trap.
 call_dir=""; call_pid=""
 stop_call() {
   [ -n "$call_pid" ] || return 0
@@ -84,7 +85,7 @@ trap 'stop_call; [ -z "$call_dir" ] || rm -rf "$call_dir"' EXIT
 trap 'exit 143' TERM
 trap 'exit 130' INT
 
-ask() {  # $1 project, $2 slug, $3 base; prints the judged answer, or says why there is none
+ask() {  # $1 project, $2 slug, $3 base; sets answer to the judged answer, or says why there is none
   local out="$call_dir/runs" waited=0 rc
   gh run list --repo "$2" --branch "$3" --event push --limit 20 \
     --json databaseId,headSha,status,conclusion,attempt < /dev/null > "$out" 2>/dev/null &
@@ -100,7 +101,7 @@ ask() {  # $1 project, $2 slug, $3 base; prints the judged answer, or says why t
   done
   wait "$call_pid"; rc=$?; call_pid=""
   [ "$rc" -eq 0 ] || { log "base: $1: no answer from GitHub (gh exited $rc)"; return 1; }
-  jq -rs "$judge" "$out" 2>/dev/null \
+  answer="$(jq -rs "$judge" "$out" 2>/dev/null)" \
     || { log "base: $1: no answer from GitHub (the answer is out of shape)"; return 1; }
 }
 
@@ -119,7 +120,7 @@ check_one() {  # $1 project; prints "<project> <base> <answer>"
   path="$("$projects" get "$1" path)" || return $?
   base="$("$projects" get "$1" base)" || return $?
   if ! slug="$(github_slug "$path")"; then echo "$1 $base none"; return 0; fi
-  if ! answer="$(ask "$1" "$slug" "$base")"; then echo "$1 $base no-answer"; return 0; fi
+  if ! ask "$1" "$slug" "$base"; then echo "$1 $base no-answer"; return 0; fi
   read -r verdict sha runs <<EOF
 $answer
 EOF

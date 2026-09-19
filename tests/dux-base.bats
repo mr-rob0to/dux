@@ -163,6 +163,22 @@ attempt=1" ]
   record_unchanged
 }
 
+@test "a check told to stop stops its call and removes its folder" {
+  red_base
+  : > "$DUX_HOME/gh.pids"
+  FAKE_GH_RUN_SLEEP=30 FAKE_GH_PIDS="$DUX_HOME/gh.pids" DUX_BASE_GH_SECS=60 \
+    dux-base check widgets > "$DUX_HOME/out" 2> "$DUX_HOME/err" 3>&- &
+  local check=$!
+  reap_later "$check"
+  wait_until 5 test -s "$DUX_HOME/gh.pids"
+  reap_later "$(cat "$DUX_HOME/gh.pids")"
+  kill -TERM "$check"
+  wait_until 5 not_running "$check"
+  wait_until 2 not_running "$(cat "$DUX_HOME/gh.pids")"
+  no_call_folder
+  record_unchanged
+}
+
 # ---- reading the record ---------------------------------------------------
 
 @test "get reads each key of the record" {
