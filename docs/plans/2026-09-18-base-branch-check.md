@@ -9,7 +9,7 @@
 
 **Where this stands**
 - Approved and merged as #67; Tasks 1 to 8 are one ship task on one branch.
-- Tasks 1 and 2 are done. Task 3, reporting once, is next.
+- Tasks 1 to 3 are done. Task 4, every registered project, is next.
 - When done, Dux tells the operator once, with the run url, when any registered base goes red.
 
 **Estimated diff:** ~1,300 added lines across 8 tasks, about 850 of them tests and the `gh`
@@ -180,8 +180,8 @@ as in Design and spec sections 4 and 5.
 
 **Steps**
 
-- [ ] Write the failing tests, then the code.
-- [ ] Break-verify, one at a time:
+- [x] Write the failing tests, then the code.
+- [x] Break-verify, one at a time:
   1. Skip the comparison with `reported`. Expect "the same failed attempt is reported once" to
      fail with two lines.
   2. Leave the attempt out of the comparison. Expect "a re-run that fails is reported again" to

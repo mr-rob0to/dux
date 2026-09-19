@@ -17,6 +17,7 @@ red_base() { widgets; check_with red-failure.json >/dev/null; cp "$(record)" "$D
 record_unchanged() { cmp "$DUX_HOME/record.before" "$(record)"; }
 no_call_folder() { local f; for f in "$DUX_HOME"/state/base-call.*; do [ ! -e "$f" ] || return 1; done; }
 reap_later() { printf '%s\n' "$@" >> "$DUX_HOME/state/stand-ins"; }
+events_count() { if [ -f "$DUX_HOME/state/events.log" ]; then wc -l < "$DUX_HOME/state/events.log" | tr -d ' '; else echo 0; fi; }
 
 # ---- what one base branch answers ------------------------------------------
 
@@ -194,5 +195,140 @@ attempt=1" ]
   run dux-base
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-base check [<project>] | get <project> <key> | ack <project> <key> | list --unacked"* ]]
   run dux-base check a b
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-base"* ]]
+}
+
+# ---- reporting once, clearing quietly --------------------------------------
+
+@test "the first red is one event line naming the project" {
+  widgets
+  run --separate-stderr check_with red-failure.json
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "$(events_count)" -eq 1 ]
+  [[ "$(cat "$DUX_HOME/state/events.log")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z\ base-red:\ widgets$ ]]
+  [ "$(dux-base get widgets reported)" = "$A:17000000201:1" ]
+  [ "$(dux-base get widgets url)" = "$RUNS_URL/17000000201" ]
+}
+
+@test "the same failed attempt is reported once" {
+  widgets
+  for i in 1 2 3 4; do check_with red-failure.json >/dev/null; done
+  [ "$(events_count)" -eq 1 ]
+  [ "$(dux-base get widgets reported)" = "$A:17000000201:1" ]
+}
+
+@test "a passing re-run clears the base without a word" {
+  widgets
+  check_with red-failure.json >/dev/null
+  run --separate-stderr check_with rerun-success.json
+  [ "$output" = "widgets main green" ]; [ -z "$stderr" ]
+  [ "$(dux-base get widgets verdict)" = green ]
+  [ "$(dux-base get widgets attempt)" = 2 ]
+  [ "$(events_count)" -eq 1 ]
+}
+
+@test "a re-run that fails is reported again" {
+  widgets
+  check_with red-failure.json >/dev/null
+  run check_with rerun-failure.json
+  [ "$output" = "widgets main red $RUNS_URL/17000000201" ]
+  [ "$(events_count)" -eq 2 ]
+  [ "$(dux-base get widgets reported)" = "$A:17000000201:2" ]
+}
+
+@test "a newer commit that is also red is reported again" {
+  widgets
+  check_with red-failure.json >/dev/null
+  run check_with newer-red.json
+  [ "$output" = "widgets main red $RUNS_URL/17000000301" ]
+  [ "$(events_count)" -eq 2 ]
+  [ "$(dux-base get widgets reported)" = "$B:17000000301:1" ]
+}
+
+@test "a second workflow failing on the same commit is not a second report" {
+  widgets
+  check_with two-workflows-higher-fails.json >/dev/null
+  [ "$(dux-base get widgets reported)" = "$A:17000000202:1" ]
+  run check_with two-workflows-both-fail.json
+  [ "$(events_count)" -eq 1 ]
+  [ "$output" = "widgets main red $RUNS_URL/17000000202" ]
+  [ "$(dux-base get widgets reported)" = "$A:17000000202:1" ]
+}
+
+@test "a record that cannot be saved still raises the event" {
+  widgets
+  mkdir -p "$DUX_HOME/state/base/widgets"; chmod 500 "$DUX_HOME/state/base/widgets"
+  run --separate-stderr check_with red-failure.json
+  chmod 700 "$DUX_HOME/state/base/widgets"
+  [ "$(events_count)" -eq 1 ]; [ ! -e "$(record)" ]
+  [ "$output" = "widgets main red $RUNS_URL/17000000201" ]
+  [ "$stderr" = "dux: base: widgets: cannot save $DUX_HOME/state/base/widgets/record; the next check reports it again" ]
+  # The next check repeats the line rather than losing it, and once the key
+  # is saved the line stops.
+  check_with red-failure.json >/dev/null
+  [ "$(events_count)" -eq 2 ]
+  check_with red-failure.json >/dev/null
+  [ "$(events_count)" -eq 2 ]
+  [ "$(dux-base get widgets reported)" = "$A:17000000201:1" ]
+}
+
+@test "an event that cannot be written leaves the report for the next check" {
+  widgets
+  local events="$DUX_HOME/state/events.log"
+  mv "$events" "$events.real" 2>/dev/null || : > "$events.real"; mkdir "$events"
+  run --separate-stderr check_with red-failure.json
+  rmdir "$events"; mv "$events.real" "$events"
+  [ "$output" = "widgets main red $RUNS_URL/17000000201" ]
+  [ "$stderr" = "dux: base: widgets: cannot append to $events; the next check tries again" ]
+  check_with red-failure.json >/dev/null
+  [ "$(events_count)" -eq 1 ]
+  [ "$(dux-base get widgets reported)" = "$A:17000000201:1" ]
+}
+
+# ---- acknowledging ---------------------------------------------------------
+
+@test "ack records the current report, and list --unacked follows it" {
+  widgets
+  check_with red-failure.json >/dev/null
+  [ "$(dux-base list --unacked)" = widgets ]
+  run --separate-stderr dux-base ack widgets "$A:17000000201:1"
+  [ "$status" -eq 0 ]; [ -z "$output" ]; [ -z "$stderr" ]
+  [ "$(dux-base get widgets acked)" = "$A:17000000201:1" ]
+  [ -z "$(dux-base list --unacked)" ]
+  cp "$DUX_HOME/state/base/widgets/acked" "$DUX_HOME/acked.before"
+  check_with red-failure.json >/dev/null
+  cmp "$DUX_HOME/acked.before" "$DUX_HOME/state/base/widgets/acked"
+  check_with rerun-failure.json >/dev/null
+  cmp "$DUX_HOME/acked.before" "$DUX_HOME/state/base/widgets/acked"
+  [ "$(dux-base list --unacked)" = widgets ]
+}
+
+@test "an old key is refused" {
+  widgets
+  check_with red-failure.json >/dev/null
+  check_with rerun-failure.json >/dev/null
+  run dux-base ack widgets "$A:17000000201:1"
+  [ "$status" -eq 2 ]
+  [[ "$output" == "finding: the base report for widgets is now $A:17000000201:2; refusing to acknowledge $A:17000000201:1"* ]]
+  [ ! -e "$DUX_HOME/state/base/widgets/acked" ]
+  [ "$(dux-base get widgets acked)" = - ]
+}
+
+@test "a green base with nothing reported is not waiting on anyone" {
+  widgets
+  check_with green.json >/dev/null
+  [ "$(dux-base get widgets reported)" = - ]
+  [ "$(dux-base get widgets url)" = - ]
+  [ -z "$(dux-base list --unacked)" ]
+  [ "$(events_count)" -eq 0 ]
+}
+
+@test "ack and list refuse what they cannot read" {
+  widgets
+  run dux-base ack widgets "$A:17000000201:1"
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: no base record for widgets"* ]]
+  run dux-base list
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-base"* ]]
+  run dux-base ack widgets
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-base"* ]]
 }

@@ -8,6 +8,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
 
 projects="$DUX_ROOT/bin/dux-project"
 base_home="$DUX_STATE/base"
+events="$DUX_STATE/events.log"
 gh_secs="${DUX_BASE_GH_SECS:-60}"
 usage="usage: dux-base check [<project>] | get <project> <key> | ack <project> <key> | list --unacked"
 
@@ -51,6 +52,7 @@ valid_project() {  # $1 name; the rule dux-project add holds a name to
 
 record_of() { printf '%s' "$base_home/$1/record"; }
 field() { sed -n "s/^$2=//p" "$(record_of "$1")" 2>/dev/null | take_line; }  # $1 project, $2 key
+acked_of() { local a; a="$(head -n 1 "$base_home/$1/acked" 2>/dev/null)"; printf '%s' "${a:--}"; }
 run_url() { printf 'https://github.com/%s/actions/runs/%s' "$1" "$2"; }  # $1 slug, $2 run
 
 # Written whole, through a temporary file and a rename, so a reader sees the
@@ -104,8 +106,16 @@ ask() {  # $1 project, $2 slug, $3 base; prints the judged answer, or says why t
 
 # Only red and green change the record. Pending, none and no answer leave it
 # exactly as it was, so nothing but a green run clears a red base.
+#
+# A failure is reported once, by its key <sha>:<run>:<attempt> (spec section
+# 4). The key already reported still stands while it names the judged commit
+# and that run is still red at that attempt, so a second workflow failing on
+# the same commit is not a second report. Otherwise the new key is the red run
+# with the lowest id. The event goes first and the key is saved after it: a
+# failure between the two repeats the line, which the wake drops as a
+# duplicate, where the other order would lose it.
 check_one() {  # $1 project; prints "<project> <base> <answer>"
-  local path base slug answer verdict sha runs run reported
+  local path base slug answer verdict sha runs run reported key again=""
   path="$("$projects" get "$1" path)" || return $?
   base="$("$projects" get "$1" base)" || return $?
   if ! slug="$(github_slug "$path")"; then echo "$1 $base none"; return 0; fi
@@ -117,13 +127,21 @@ EOF
   reported="$(field "$1" reported)"
   case "$verdict" in
     red)
-      write_record "$1" red "$sha" "${run%%:*}" "${run#*:}" "${reported:--}" \
-        || log "base: $1: cannot save $(record_of "$1")"
-      echo "$1 $base red $(run_url "$slug" "${run%%:*}")" ;;
+      key="$sha:$run"
+      case "$reported" in "$sha":*) case " $runs " in *" ${reported#"$sha":} "*) key="$reported" ;; esac ;; esac
+      run="${key#"$sha":}"
+      echo "$1 $base red $(run_url "$slug" "${run%%:*}")"
+      if [ "$key" != "$reported" ]; then
+        { printf '%s base-red: %s\n' "$(now)" "$1" >> "$events"; } 2>/dev/null \
+          || { log "base: $1: cannot append to $events; the next check tries again"; return 0; }
+        again="; the next check reports it again"
+      fi
+      write_record "$1" red "$sha" "${run%%:*}" "${run#*:}" "$key" \
+        || { log "base: $1: cannot save $(record_of "$1")$again"; return 0; } ;;
     green)
+      echo "$1 $base green"
       write_record "$1" green "$sha" "${run%%:*}" "${run#*:}" "${reported:--}" \
-        || log "base: $1: cannot save $(record_of "$1")"
-      echo "$1 $base green" ;;
+        || log "base: $1: cannot save $(record_of "$1")" ;;
     *) echo "$1 $base $verdict" ;;
   esac
 }
@@ -147,10 +165,37 @@ case "$cmd" in
     esac
     [ -f "$(record_of "$1")" ] || finding "no base record for $1"
     case "$2" in
-      acked)
-        acked="$(head -n 1 "$base_home/$1/acked" 2>/dev/null)"
-        echo "${acked:--}" ;;
+      acked) acked_of "$1"; echo ;;
+      url)
+        reported="$(field "$1" reported)"
+        case "$reported" in ''|-) echo -; exit 0 ;; esac
+        run="${reported#*:}"; run="${run%%:*}"
+        slug="$(github_slug "$("$projects" get "$1" path)")" \
+          || finding "cannot build a url for $1: its remote is not GitHub"
+        run_url "$slug" "$run"; echo ;;
       *) field "$1" "$2" ;;
     esac ;;
+  # Written only here, and only with the key the record holds now, so an
+  # acknowledgement can never cover a report it did not see. The record and
+  # this file each have one writer, which is why no lock is needed.
+  ack)
+    [ $# -eq 2 ] || finding "$usage"
+    valid_project "$1"
+    [ -f "$(record_of "$1")" ] || finding "no base record for $1"
+    reported="$(field "$1" reported)"
+    [ "$2" = "$reported" ] \
+      || finding "the base report for $1 is now $reported; refusing to acknowledge $(cap_line "$2")"
+    tmp="$base_home/$1/.acked.$$"
+    { printf '%s\n' "$2" > "$tmp" && mv -f "$tmp" "$base_home/$1/acked"; } 2>/dev/null \
+      || { rm -f "$tmp" 2>/dev/null; finding "cannot write $base_home/$1/acked"; } ;;
+  list)
+    { [ $# -eq 1 ] && [ "$1" = --unacked ]; } || finding "$usage"
+    for r in "$base_home"/*/record; do
+      [ -f "$r" ] || continue
+      p="${r%/record}"; p="${p##*/}"
+      reported="$(field "$p" reported)"
+      case "$reported" in ''|-) continue ;; esac
+      [ "$reported" = "$(acked_of "$p")" ] || echo "$p"
+    done ;;
   *) finding "$usage" ;;
 esac
