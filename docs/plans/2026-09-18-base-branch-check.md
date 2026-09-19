@@ -9,7 +9,7 @@
 
 **Where this stands**
 - Approved and merged as #67; Tasks 1 to 8 are one ship task on one branch.
-- Tasks 1 to 6 are done. Task 7, the digest, is next.
+- Tasks 1 to 7 are done. Task 8, the operating rules and a real check, is next.
 - When done, Dux tells the operator once, with the run url, when any registered base goes red.
 
 **Estimated diff:** ~1,300 added lines across 8 tasks, about 850 of them tests and the `gh`
@@ -283,8 +283,8 @@ prints. Both read local files only; the digest makes no new network call.
 
 **Steps**
 
-- [ ] Write the failing tests, then the code.
-- [ ] Break-verify: leave base reports out of `unacknowledged`. Expect "a base wake missed
+- [x] Write the failing tests, then the code.
+- [x] Break-verify: leave base reports out of `unacknowledged`. Expect "a base wake missed
       during a restart is listed" to fail. The `base red:` line is ordinary formatting; no break.
 
 ## Task 8: Operating rules, and a real check from the worktree

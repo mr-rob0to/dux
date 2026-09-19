@@ -216,3 +216,58 @@ exec $DUX_ROOT/bin/dux-ledger \"\$@\"")"
   [[ "$output" == *"  api: skipped: intake failed"* ]] \
     || { echo "wanted 'api: skipped: intake failed', got:"; echo "$output"; return 1; }
 }
+
+# ---- base branches ----------------------------------------------------------
+
+RED_URL=https://github.com/acme/widgets/actions/runs/17000000201
+widgets_checked() {  # $1 fixture; registers acme/widgets and checks its base once
+  make_github_repo widgets
+  dux-project add "$DUX_HOME/widgets" --base main --pr-template skip >/dev/null
+  FAKE_GH_RUNS="$BATS_TEST_DIRNAME/fixtures/runs/$1" dux-base check widgets >/dev/null
+}
+
+@test "a base wake missed during a restart is listed" {
+  widgets_checked red-failure.json
+  run --separate-stderr dux-status
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "$output" = "watcher: not running
+workers: 0 running (limit 3)
+widgets
+  base red: $RED_URL
+unacknowledged
+  base-red: widgets" ]
+  dux-base ack widgets "$(dux-base get widgets reported)"
+  run dux-status
+  [ "$output" = "watcher: not running
+workers: 0 running (limit 3)
+widgets
+  base red: $RED_URL" ]
+}
+
+@test "a green base, and a base never checked, show no base line" {
+  setup_fleet
+  widgets_checked green.json
+  run --separate-stderr dux-status
+  [ -z "$stderr" ]
+  [ "$output" = $'watcher: not running\nworkers: 0 running (limit 3)\napi\nios\nwidgets' ]
+}
+
+@test "a red base changes no task count and no ledger line" {
+  make_github_repo widgets
+  dux-project add "$DUX_HOME/widgets" --base main --pr-template skip >/dev/null
+  task t1 widgets running; task t2 widgets running
+  cp "$DUX_HOME/data/backlog.md" "$DUX_HOME/ledger.before"
+  run dux-status
+  [ "$output" = $'watcher: not running\nworkers: 2 running (limit 3)\nwidgets\n  running 2' ]
+  FAKE_GH_RUNS="$BATS_TEST_DIRNAME/fixtures/runs/red-failure.json" dux-base check >/dev/null
+  cmp "$DUX_HOME/ledger.before" "$DUX_HOME/data/backlog.md"
+  run dux-status
+  [ "$output" = "watcher: not running
+workers: 2 running (limit 3)
+widgets
+  base red: $RED_URL
+  running 2
+unacknowledged
+  base-red: widgets" ]
+  cmp "$DUX_HOME/ledger.before" "$DUX_HOME/data/backlog.md"
+}
