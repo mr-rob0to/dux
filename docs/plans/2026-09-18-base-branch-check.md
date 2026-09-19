@@ -8,8 +8,8 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted and design-reviewed; waiting for the operator's approval. No task started.
-- Picks up a gap no milestone covered: nothing watches a base branch after a merge.
+- Approved and merged as #67; Tasks 1 to 8 are one ship task on one branch.
+- Task 1 is done. Task 2, reading one base branch, is next.
 - When done, Dux tells the operator once, with the run url, when any registered base goes red.
 
 **Estimated diff:** ~1,300 added lines across 8 tasks, about 850 of them tests and the `gh`
@@ -115,8 +115,8 @@ No decision is restated. `make check` passes.
 
 **Steps**
 
-- [ ] Add the pointers and the component line.
-- [ ] Break-verify: none owed. Prose only, no protection added.
+- [x] Add the pointers and the component line.
+- [x] Break-verify: none owed. Prose only, no protection added.
 
 ## Task 2: Read one base branch and give an answer
 
