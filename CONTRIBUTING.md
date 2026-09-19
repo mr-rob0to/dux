@@ -81,6 +81,19 @@ Four rules, and the tests enforce all of them:
 Every script has a matching file in `tests/`. Design changes go through
 `docs/specs/` before the code.
 
+### Waiting in a test
+
+A busy machine makes every step slower, so a test waits for the thing it cares
+about, not for a clock: `wait_until <seconds> <command>` polls until the command
+succeeds.
+
+- **A process has ended:** ask `gone <pid>` or `group_gone <pgid>`, never bare
+  `kill -0`, which still answers for a process that ended but was not collected.
+- **Time has passed:** move the clock with `age_task <id> <seconds>` instead of
+  sleeping past a small limit, which a slow start can reach first.
+- **Nothing more happened:** only here is a fixed `sleep` fine, before counting
+  events that must not have grown. A slow machine makes it weaker, never red.
+
 ## 4. Check it
 
 ```bash

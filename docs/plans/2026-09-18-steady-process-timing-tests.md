@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved (PR #68). Building: tasks 1 to 5 landed; the after measurements are queued.
+- Approved (PR #68). Built: tasks 1 to 6 done. After the fixes, 3 of 500 Linux runs still failed; the pull request says why.
 - Picks up the "hardening pass" that the flaky-test notes have asked for since milestone 4.
 - When done, the four tests below stop failing at random, and one wrong `dux-spawn` message is fixed.
 
@@ -277,9 +277,9 @@ names any test that still failed and what was seen.
 
 **Steps**
 
-- [ ] Run every measurement from Task 1 again and record the table.
-- [ ] Write the `CONTRIBUTING.md` section.
-- [ ] If any job is above 0, stop and report it; do not raise a deadline to reach 0.
+- [x] Run every measurement from Task 1 again and record the table.
+- [x] Write the `CONTRIBUTING.md` section.
+- [x] If any job is above 0, stop and report it; do not raise a deadline to reach 0.
 
 ## Milestone acceptance
 
