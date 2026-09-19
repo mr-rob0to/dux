@@ -119,3 +119,29 @@ load helpers/setup
   [ "$status" -eq 0 ]
   [ "$output" = "job/pass: 0 failures in 3 runs" ]
 }
+
+# A process that has ended and that its parent has not collected is a zombie,
+# and kill -0 still answers for it. tmux can leave a pane's killed process like
+# that for more than fifteen seconds, so a test asking kill -0 whether it has
+# ended waits out its deadline and fails. gone is the question that matters.
+@test "gone is true for an ended process nobody collected, false for a live one" {
+  # The parent forks a child that exits at once, prints its pid, and never waits.
+  # shellcheck disable=SC2016
+  perl -e '$| = 1; my $c = fork; if ($c == 0) { exit 0 } print "$c\n"; sleep 60' > "$DUX_HOME/zombie" &
+  parent=$!
+  echo "$parent" >> "$DUX_HOME/state/stand-ins"
+  wait_until 5 test -s "$DUX_HOME/zombie"
+  z="$(cat "$DUX_HOME/zombie")"
+  is_zombie() { case "$(ps -o stat= -p "$z" 2>/dev/null | tr -d ' ')" in Z*) return 0 ;; esac; return 1; }
+  wait_until 5 is_zombie
+  # What makes this the case that matters: kill -0 still answers for it.
+  kill -0 "$z"
+  gone "$z"
+  sleep 60 & live=$!
+  echo "$live" >> "$DUX_HOME/state/stand-ins"
+  refute gone "$live"
+  # A pid this shell has already collected no longer names any process.
+  sleep 0 & done_pid=$!
+  wait "$done_pid"
+  gone "$done_pid"
+}

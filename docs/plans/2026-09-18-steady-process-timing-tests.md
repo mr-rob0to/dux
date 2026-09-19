@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Drafted and design-reviewed; waiting for the operator's approval.
+- Approved (PR #68). Building: tasks 1 and 2 landed; their container runs are queued.
 - Picks up the "hardening pass" that the flaky-test notes have asked for since milestone 4.
 - When done, the four tests below stop failing at random, and one wrong `dux-spawn` message is fixed.
 
@@ -178,11 +178,11 @@ the zombie, false for a live process, and true for a pid that does not exist.
 
 **Steps**
 
-- [ ] Write the zombie test first and see it fail against `kill -0`.
-- [ ] Add `gone` and move the three helpers onto it.
-- [ ] Break-verify: put `kill -0` back inside `gone`, confirm the zombie test fails, restore,
+- [x] Write the zombie test first and see it fail against `kill -0`.
+- [x] Add `gone` and move the three helpers onto it.
+- [x] Break-verify: put `kill -0` back inside `gone`, confirm the zombie test fails, restore,
       paste the failure into the commit body.
-- [ ] Break-verify that a survivor is still caught: in adapter test 39 make the pane command
+- [x] Break-verify that a survivor is still caught: in adapter test 39 make the pane command
       ignore TERM (`trap '' TERM`), confirm `wait_until 15 not_running` fails, restore, paste.
 
 ## Task 3: A group of dead processes no longer counts as alive
