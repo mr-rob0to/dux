@@ -1,0 +1,205 @@
+#!/usr/bin/env bash
+# Asks GitHub what happened to the newest push run on each registered base
+# branch, and keeps one record per project. See
+# docs/specs/2026-09-18-base-branch-check.md.
+set -u
+# shellcheck source=bin/dux-env
+source "$(dirname "${BASH_SOURCE[0]}")/dux-env"
+
+projects="$DUX_ROOT/bin/dux-project"
+base_home="$DUX_STATE/base"
+events="$DUX_STATE/events.log"
+gh_secs="${DUX_BASE_GH_SECS:-60}"
+usage="usage: dux-base check [<project>] | get <project> <key> | ack <project> <key> | list --unacked"
+
+# Spec sections 3 and 6. Every field of every row is in shape or there is no
+# answer at all. Then the head commit of the run with the highest id is the one
+# judged, and every run on it counts. A word in shape that the spec does not
+# name is never an error: an unknown status is not finished, an unknown
+# conclusion is neither red nor green. Ids are compared by length, then as
+# text, so a long id is never rounded on its way through a number.
+# Prints "red <sha> <run>:<attempt>...", lowest run first, "green <sha>
+# <run>:<attempt>", "pending" or "none".
+# shellcheck disable=SC2016
+judge='
+def shaped(re):
+  if (type == "number" or type == "string") and (tostring | test(re)) then tostring
+  else error("out of shape") end;
+if length != 1 or (.[0] | type) != "array" then error("out of shape") else .[0] end
+| map({ id: (.databaseId | shaped("^[0-9]{1,20}$")),
+        sha: (.headSha | shaped("^[0-9a-f]{40}$")),
+        status: (.status | shaped("^[a-z_]{0,32}$")),
+        conclusion: (.conclusion | shaped("^[a-z_]{0,32}$")),
+        attempt: (.attempt | shaped("^[0-9]{1,20}$")) })
+| sort_by([(.id | length), .id])
+| if length == 0 then "none" else
+    .[-1].sha as $sha
+    | map(select(.sha == $sha)) as $runs
+    | ($runs | map(select(.status == "completed"
+        and (.conclusion == "failure" or .conclusion == "timed_out"
+             or .conclusion == "startup_failure")))) as $red
+    | ($runs | map(select(.conclusion == "success"))) as $green
+    | if ($red | length) > 0 then "red \($sha) " + ($red | map("\(.id):\(.attempt)") | join(" "))
+      elif ($runs | any(.status != "completed")) then "pending"
+      elif ($green | length) > 0 then "green \($sha) \($green[0].id):\($green[0].attempt)"
+      else "none" end
+  end'
+
+valid_project() {  # $1 name; the rule dux-project add holds a name to
+  case "$1" in ''|*[!A-Za-z0-9._-]*) finding "project name must match [A-Za-z0-9._-]+: $(cap_line "$1")" ;; esac
+  case "$1" in *[!.]*) ;; *) finding "project name must not be all dots: $1" ;; esac
+}
+
+record_of() { printf '%s' "$base_home/$1/record"; }
+field() { sed -n "s/^$2=//p" "$(record_of "$1")" 2>/dev/null | take_line; }  # $1 project, $2 key
+acked_of() { local a; a="$(head -n 1 "$base_home/$1/acked" 2>/dev/null)"; printf '%s' "${a:--}"; }
+run_url() { printf 'https://github.com/%s/actions/runs/%s' "$1" "$2"; }  # $1 slug, $2 run
+
+# Written whole, through a temporary file and a rename, so a reader sees the
+# old record or the new one and never half of either.
+write_record() {  # $1 project, $2 verdict, $3 sha, $4 run, $5 attempt, $6 reported
+  local dir="$base_home/$1" tmp
+  mkdir -p "$dir" 2>/dev/null || return 1
+  tmp="$dir/.record.$$"
+  if { printf 'verdict=%s\nsha=%s\nrun=%s\nattempt=%s\nreported=%s\nchecked=%s\n' \
+         "$2" "$3" "$4" "$5" "$6" "$(now)" > "$tmp" && mv -f "$tmp" "$dir/record"; } 2>/dev/null; then
+    return 0
+  fi
+  rm -f "$tmp" 2>/dev/null
+  return 1
+}
+
+# ---- one call to GitHub, with a time limit ----------------------------------
+# macOS has no timeout command, so gh runs in the background and is looked at
+# once a second. Whatever ends this script, the trap stops gh and removes the
+# folder its answer was written to. ask runs in this shell, never inside
+# $(...): a subshell would hold the pid the trap needs and ignore the trap.
+call_dir=""; call_pid=""
+stop_call() {
+  [ -n "$call_pid" ] || return 0
+  kill "$call_pid" 2>/dev/null
+  wait "$call_pid" 2>/dev/null
+  call_pid=""
+}
+trap 'stop_call; [ -z "$call_dir" ] || rm -rf "$call_dir"' EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
+
+ask() {  # $1 project, $2 slug, $3 base; sets answer to the judged answer, or says why there is none
+  local out="$call_dir/runs" waited=0 rc
+  gh run list --repo "$2" --branch "$3" --event push --limit 20 \
+    --json databaseId,headSha,status,conclusion,attempt < /dev/null > "$out" 2>/dev/null &
+  call_pid=$!
+  while kill -0 "$call_pid" 2>/dev/null; do
+    if [ "$waited" -ge "$gh_secs" ]; then
+      stop_call
+      log "base: $1: no answer from GitHub within ${gh_secs}s"
+      return 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  wait "$call_pid"; rc=$?; call_pid=""
+  [ "$rc" -eq 0 ] || { log "base: $1: no answer from GitHub (gh exited $rc)"; return 1; }
+  answer="$(jq -rs "$judge" "$out" 2>/dev/null)" \
+    || { log "base: $1: no answer from GitHub (the answer is out of shape)"; return 1; }
+}
+
+# Only red and green change the record. Pending, none and no answer leave it
+# exactly as it was, so nothing but a green run clears a red base.
+#
+# A failure is reported once, by its key <sha>:<run>:<attempt> (spec section
+# 4). The key already reported still stands while it names the judged commit
+# and that run is still red at that attempt, so a second workflow failing on
+# the same commit is not a second report. Otherwise the new key is the red run
+# with the lowest id. The event goes first and the key is saved after it: a
+# failure between the two repeats the line, which the wake drops as a
+# duplicate, where the other order would lose it.
+check_one() {  # $1 project; prints "<project> <base> <answer>"
+  local path base slug answer verdict sha runs run reported key again=""
+  path="$("$projects" get "$1" path)" || return $?
+  base="$("$projects" get "$1" base)" || return $?
+  if ! slug="$(github_slug "$path")"; then echo "$1 $base none"; return 0; fi
+  if ! ask "$1" "$slug" "$base"; then echo "$1 $base no-answer"; return 0; fi
+  read -r verdict sha runs <<EOF
+$answer
+EOF
+  run="${runs%% *}"
+  reported="$(field "$1" reported)"
+  case "$verdict" in
+    red)
+      key="$sha:$run"
+      case "$reported" in "$sha":*) case " $runs " in *" ${reported#"$sha":} "*) key="$reported" ;; esac ;; esac
+      run="${key#"$sha":}"
+      echo "$1 $base red $(run_url "$slug" "${run%%:*}")"
+      if [ "$key" != "$reported" ]; then
+        { printf '%s base-red: %s\n' "$(now)" "$1" >> "$events"; } 2>/dev/null \
+          || { log "base: $1: cannot append to $events; the next check tries again"; return 0; }
+        again="; the next check reports it again"
+      fi
+      write_record "$1" red "$sha" "${run%%:*}" "${run#*:}" "$key" \
+        || { log "base: $1: cannot save $(record_of "$1")$again"; return 0; } ;;
+    green)
+      echo "$1 $base green"
+      write_record "$1" green "$sha" "${run%%:*}" "${run#*:}" "${reported:--}" \
+        || log "base: $1: cannot save $(record_of "$1")" ;;
+    *) echo "$1 $base $verdict" ;;
+  esac
+}
+
+case "$gh_secs" in ''|*[!0-9]*|0) finding "DUX_BASE_GH_SECS must be a whole number of seconds above 0, not '$(cap_line "$gh_secs")'" ;; esac
+
+cmd="${1:-}"; shift || true
+case "$cmd" in
+  # One project, or every registered one in turn. A project that gets no
+  # answer, or makes no call, never stops the ones after it.
+  check)
+    [ $# -le 1 ] || finding "$usage"
+    [ $# -eq 0 ] || valid_project "$1"
+    call_dir="$(mktemp -d "$DUX_STATE/base-call.XXXXXXXX" 2>/dev/null)" \
+      || finding "cannot make a folder for GitHub's answer under $DUX_STATE"
+    if [ $# -eq 1 ]; then check_one "$1" || exit $?; exit 0; fi
+    for p in $("$projects" list); do check_one "$p" || true; done ;;
+  get)
+    [ $# -eq 2 ] || finding "$usage"
+    valid_project "$1"
+    case "$2" in
+      verdict|sha|run|attempt|reported|checked|acked|url) ;;
+      *) finding "unknown base key $(cap_line "$2")" ;;
+    esac
+    [ -f "$(record_of "$1")" ] || finding "no base record for $1"
+    case "$2" in
+      acked) acked_of "$1"; echo ;;
+      url)
+        reported="$(field "$1" reported)"
+        case "$reported" in ''|-) echo -; exit 0 ;; esac
+        run="${reported#*:}"; run="${run%%:*}"
+        slug="$(github_slug "$("$projects" get "$1" path)")" \
+          || finding "cannot build a url for $1: its remote is not GitHub"
+        run_url "$slug" "$run"; echo ;;
+      *) field "$1" "$2" ;;
+    esac ;;
+  # Written only here, and only with the key the record holds now, so an
+  # acknowledgement can never cover a report it did not see. The record and
+  # this file each have one writer, which is why no lock is needed.
+  ack)
+    [ $# -eq 2 ] || finding "$usage"
+    valid_project "$1"
+    [ -f "$(record_of "$1")" ] || finding "no base record for $1"
+    reported="$(field "$1" reported)"
+    [ "$2" = "$reported" ] \
+      || finding "the base report for $1 is now $reported; refusing to acknowledge $(cap_line "$2")"
+    tmp="$base_home/$1/.acked.$$"
+    { printf '%s\n' "$2" > "$tmp" && mv -f "$tmp" "$base_home/$1/acked"; } 2>/dev/null \
+      || { rm -f "$tmp" 2>/dev/null; finding "cannot write $base_home/$1/acked"; } ;;
+  list)
+    { [ $# -eq 1 ] && [ "$1" = --unacked ]; } || finding "$usage"
+    for r in "$base_home"/*/record; do
+      [ -f "$r" ] || continue
+      p="${r%/record}"; p="${p##*/}"
+      reported="$(field "$p" reported)"
+      case "$reported" in ''|-) continue ;; esac
+      [ "$reported" = "$(acked_of "$p")" ] || echo "$p"
+    done ;;
+  *) finding "$usage" ;;
+esac

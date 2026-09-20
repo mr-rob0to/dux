@@ -7,7 +7,7 @@ setup() {
   cp "$DUX_ROOT"/templates/config/* "$DUX_HOME/config/"
   export PATH="$DUX_ROOT/tests/fakes:$DUX_ROOT/bin:$PATH"
   export FAKE_HERDR_LOG="$DUX_HOME/state/fake-herdr.log"; : > "$FAKE_HERDR_LOG"
-  export DUX_BACKEND=herdr DUX_WATCHER=off DUX_STALE_SECS=1200 DUX_WATCH_GRACE_SECS=120
+  export DUX_BACKEND=herdr DUX_WATCHER=off DUX_STALE_SECS=1200 DUX_WATCH_GRACE_SECS=120 DUX_BASE_INTERVAL_SECS=0
   events="$DUX_HOME/state/events.log"; watchlog="$DUX_HOME/state/watch.log"
 }
 
@@ -657,4 +657,111 @@ event_for() {  # $1 id, $2 state; exactly one whole line in the events log says 
 @test "bad watcher arguments are a usage finding" {
   run dux-watch --twice
   [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-watch [--once] | dux-watch eval <id>"* ]]
+}
+
+# ---- the base check ---------------------------------------------------------
+
+# One registered GitHub project whose base is red, and a call log to read.
+base_project() {
+  export GIT_AUTHOR_NAME=dux-test GIT_AUTHOR_EMAIL=dux-test@example.invalid
+  export GIT_COMMITTER_NAME=dux-test GIT_COMMITTER_EMAIL=dux-test@example.invalid
+  make_github_repo widgets
+  dux-project add "$DUX_HOME/widgets" --base main --pr-template skip >/dev/null
+  export FAKE_GH_LOG="$DUX_HOME/state/fake-gh.log"; : > "$FAKE_GH_LOG"
+  export FAKE_GH_RUNS="$BATS_TEST_DIRNAME/fixtures/runs/red-failure.json"
+}
+# gh hangs for 30 seconds on every call, inside a 60 second limit.
+hung_gh() {
+  : > "$DUX_HOME/gh.pids"
+  export FAKE_GH_RUN_SLEEP=30 FAKE_GH_PIDS="$DUX_HOME/gh.pids" DUX_BASE_GH_SECS=60
+}
+gh_calls() { wc -l < "$FAKE_GH_LOG" | tr -d ' '; }
+base_check_pid() { cat "$DUX_HOME/state/base.pid"; }
+
+@test "the watcher reports a red base by itself, once per interval" {
+  base_project
+  export DUX_BASE_INTERVAL_SECS=300
+  start_loop 1
+  wait_until 5 grep -q ' base-red: widgets$' "$events"
+  sleep 3
+  [ "$(gh_calls)" -eq 1 ]
+  [ "$(grep -c ' base-red: widgets$' "$events")" -eq 1 ]
+  [ -e "$DUX_HOME/state/base.started" ]
+  kill -0 "$loop"; kill "$loop"
+}
+
+@test "what the check says goes to the watcher's log" {
+  base_project
+  export FAKE_GH_RUN_EXIT=1 DUX_BASE_INTERVAL_SECS=300
+  start_loop 1
+  wait_until 5 grep -qF 'dux: base: widgets: no answer from GitHub (gh exited 1)' "$watchlog"
+  kill "$loop"
+}
+
+@test "a hung check does not delay a handoff" {
+  running_task t1; status_is t1 "working: on it"
+  base_project; hung_gh
+  export DUX_BASE_INTERVAL_SECS=300
+  start_loop 1
+  wait_until 5 test -s "$DUX_HOME/gh.pids"
+  cat "$DUX_HOME/gh.pids" >> "$DUX_HOME/state/stand-ins"
+  handoff t1 "done: report" done
+  wait_until 5 test -e "$(seq_dir t1)/consumed"
+  grep -q ' done: t1$' "$events"; [ "$(dux-ledger get t1 state)" = done ]
+  pid_runs "$(base_check_pid)" dux-base
+  kill "$loop"
+}
+
+@test "a check still running is not started again" {
+  base_project; hung_gh
+  export DUX_BASE_INTERVAL_SECS=1
+  start_loop 1
+  wait_until 5 test -s "$DUX_HOME/gh.pids"
+  cat "$DUX_HOME/gh.pids" >> "$DUX_HOME/state/stand-ins"
+  sleep 3
+  [ "$(wc -l < "$DUX_HOME/gh.pids" | tr -d ' ')" -eq 1 ]; [ "$(gh_calls)" -eq 1 ]
+  kill "$loop"
+}
+
+@test "stopping the watcher stops its check" {
+  base_project; hung_gh
+  export DUX_BASE_INTERVAL_SECS=300
+  start_loop 1
+  wait_until 5 test -s "$DUX_HOME/gh.pids"
+  local gh check; gh="$(cat "$DUX_HOME/gh.pids")"; check="$(base_check_pid)"
+  printf '%s\n' "$gh" "$check" >> "$DUX_HOME/state/stand-ins"
+  kill -TERM "$loop"
+  wait_until 5 not_running "$loop"
+  wait_until 5 not_running "$check"
+  wait_until 2 not_running "$gh"
+  refute ls -d "$DUX_HOME"/state/base-call.* 2>/dev/null
+}
+
+@test "interval 0 makes no call" {
+  base_project
+  export DUX_BASE_INTERVAL_SECS=0
+  start_loop 1
+  sleep 3
+  [ "$(gh_calls)" -eq 0 ]; [ ! -e "$DUX_HOME/state/base.started" ]
+  kill -0 "$loop"; kill "$loop"
+}
+
+@test "an interval that is not a whole number is logged once and makes no call" {
+  base_project
+  export DUX_BASE_INTERVAL_SECS=soon
+  start_loop 1
+  sleep 3
+  [ "$(gh_calls)" -eq 0 ]
+  [ "$(grep -c 'dux: watch: DUX_BASE_INTERVAL_SECS is not a whole number; the base check is off' "$watchlog")" -eq 1 ]
+  kill -0 "$loop"; kill "$loop"
+}
+
+@test "--once starts no check" {
+  base_project
+  export DUX_BASE_INTERVAL_SECS=1
+  run --separate-stderr dux-watch --once
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ ! -e "$DUX_HOME/state/base.started" ]; [ ! -e "$DUX_HOME/state/base.pid" ]
+  sleep 1
+  [ "$(gh_calls)" -eq 0 ]
 }

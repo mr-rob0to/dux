@@ -47,7 +47,7 @@ dux   Plan task started. You'll get a docs-only PR to approve.
   and turns state changes into one line each. Your session never tails their
   output, so your context stays yours.
 - **Interrupted on purpose.** One phone notification for a finished PR, a
-  blocking question, or a failure. Nothing else.
+  blocking question, a failure, or a base branch that goes red. Nothing else.
 - **No shared checkout, ever.** Every task gets its own git worktree and branch
   cut from a freshly fetched base. Agents cannot corrupt each other.
 - **Nothing merges on a claim.** Dux checks the branch, the PR and CI before it

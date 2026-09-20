@@ -92,6 +92,7 @@ its own completion. It *proposes*, and Dux proves.
     dux-intake              pull labelled GitHub issues into backlog.md as queued
     dux-ledger              add/set/get/list over data/backlog.md; the only writer
     dux-task-new            allocate <project>-<shape>-<yyyymmdd>-<3 alnum>, its folder, its queued line
+    dux-base                report a red base branch once (2026-09-18-base-branch-check.md)
     backends/tmux.sh        backend adapter (section 9)
     backends/herdr.sh       backend adapter (section 9)
     workers/claude.sh       worker harness adapter (section 19)
@@ -121,6 +122,7 @@ its own completion. It *proposes*, and Dux proves.
     watch.pid               pid of the current watcher
     watch.log               watcher output and changing open questions
     wakes.base              event line count when this session acquired the lock
+    base/<project>/         the base check's record and acknowledgement (2026-09-18-base-branch-check.md, section 5)
     <id>.endpoint           backend endpoint: tmux window id or herdr pane id
     <id>.out                worker stream-json output
     <id>.pid                pid of dux-worker-wrap; liveness for the watcher
@@ -659,6 +661,10 @@ when they return a stale task to `running`, so the same state can wake again
 after new progress. `dux-status` lists every event-state task whose
 acknowledgement differs.
 
+A `base-red: <project>` line names a project, not a task. It is written by the base branch
+check the watcher starts and acknowledged through `dux-base ack`
+(`2026-09-18-base-branch-check.md`, sections 4 and 8).
+
 Dux never reads `state/<id>.out` except inside `dux-recover`, and then only the
 last 40 lines.
 
@@ -678,6 +684,8 @@ unavailable. Remote Control on the Dux session is how the operator replies from
 a phone.
 For `done` with a pull request the line is `Review, then merge or send feedback:`
 (`2026-09-15-feedback-rounds-on-a-delivered-pr.md`, section 10).
+A red base branch has its own fixed line, `dux-notify --base <project>`, and is pushed
+(`2026-09-18-base-branch-check.md`, section 6).
 
 ### 6.4 Recovery (`dux-recover`)
 
@@ -763,6 +771,8 @@ has not acknowledged. `--prs` adds `gh pr view` state per ready PR; a failed
 each labelled project's intake output, or one `skipped:` line carrying the
 finding when that project's intake failed, so one bad project never hides the
 digest (section 14).
+A project whose base branch is red, and a base report not yet acknowledged, each get a line;
+both are read from local files (`2026-09-18-base-branch-check.md`, sections 4 and 8).
 
 ## 9. Runtime backends
 
@@ -1225,6 +1235,8 @@ receiving anything beyond the brief file and their project's own instructions.
 | Issue intake finds a closed issue that was already dispatched | nothing; the PR closes or references it |
 | Second Dux session | read-only, announced |
 | Monitor dies | AGENTS.md start-of-turn rule: if no monitor is armed and tasks are running, re-arm |
+| Base branch check gets no answer from GitHub | the base's record is left as it was (`2026-09-18-base-branch-check.md`, section 3) |
+| Base branch goes red | one `base-red` wake per failure; Dux never re-runs or fixes it (`2026-09-18-base-branch-check.md`, sections 4 and 7) |
 
 ## 15. Testing
 

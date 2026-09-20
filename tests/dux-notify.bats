@@ -82,3 +82,61 @@ status_is() { printf '%s\n' "$2" >> "$DUX_HOME/data/tasks/$1/status.log"; }
   run dux-notify nope; [ "$status" -eq 2 ]; [[ "$output" == "finding: task nope not in ledger"* ]]
   run dux-notify t-queued --loud; [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-notify <id> [--toast]"* ]]
 }
+
+# ---- a red base -------------------------------------------------------------
+
+BASE_URL=https://github.com/acme/widgets/actions/runs/17000000201
+red_widgets() {  # [$1 name], [$2 base]; registers acme/widgets and checks it red
+  make_github_repo widgets
+  dux-project add "$DUX_HOME/widgets" --name "${1:-widgets}" --base "${2:-main}" --pr-template skip >/dev/null
+  FAKE_GH_RUNS="$BATS_TEST_DIRNAME/fixtures/runs/red-failure.json" dux-base check "${1:-widgets}" >/dev/null
+  export DUX_BACKEND=herdr
+}
+
+@test "a red base leads with look, then fix or re-run" {
+  red_widgets
+  run --separate-stderr dux-notify --base widgets
+  [ "$status" -eq 0 ]; [ -z "$stderr" ]
+  [ "$output" = "Look, then fix or re-run: $BASE_URL (widgets main is red)" ]
+}
+
+@test "a long project name is cut, and the url is still whole" {
+  local name; name="$(printf 'w%.0s' $(seq 1 150))"
+  red_widgets "$name"
+  run dux-notify --base "$name"
+  [ "${#output}" -eq 200 ]; [[ "$output" == *"..." ]]
+  [[ "$(printf '%s' "$output" | cut -d' ' -f6)" =~ ^https://github\.com/acme/widgets/actions/runs/[0-9]+$ ]]
+  [[ "$output" == "Look, then fix or re-run: $BASE_URL (www"* ]]
+}
+
+@test "a base name is cleaned before it is shown" {
+  red_widgets widgets "ma$(printf '\342\200\213')in"
+  run dux-notify --base widgets
+  [ "$output" = "Look, then fix or re-run: $BASE_URL (widgets main is red)" ]
+}
+
+@test "--toast sends the base line to the backend" {
+  red_widgets
+  run dux-notify --base widgets --toast
+  [ "$status" -eq 0 ]
+  grep -qF "notification show Dux --body Look, then fix or re-run: $BASE_URL (widgets main is red)" "$FAKE_HERDR_LOG"
+  : > "$FAKE_HERDR_LOG"
+  dux-notify --base widgets >/dev/null
+  [ ! -s "$FAKE_HERDR_LOG" ]
+}
+
+@test "a base with nothing reported is a finding, and so is a project with no record" {
+  make_github_repo widgets
+  dux-project add "$DUX_HOME/widgets" --base main --pr-template skip >/dev/null
+  run dux-notify --base widgets
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: nothing to notify for widgets (no base report)"* ]]
+  FAKE_GH_RUNS="$BATS_TEST_DIRNAME/fixtures/runs/green.json" dux-base check widgets >/dev/null
+  run dux-notify --base widgets
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: nothing to notify for widgets (no base report)"* ]]
+  run dux-notify --base nope
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: nothing to notify for nope (no base report)"* ]]
+  run dux-notify --base
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-notify"* ]]
+  run dux-notify --base widgets --loud
+  [ "$status" -eq 2 ]; [[ "$output" == "finding: usage: dux-notify"* ]]
+}

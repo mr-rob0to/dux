@@ -86,9 +86,17 @@ bin/
   dux-teardown             remove the worktree, close the container, mark done or failed,
                            keeping a done task's delivery proof in tasks/<id>/delivery/;
                            --abandon lets go of a task that never started
-  dux-watch                classify task events, record them, and raise local toasts
-  dux-status               recompute the fleet digest and missed wakes from files
-  dux-notify               format one action-first phone notification line
+  dux-watch                classify task events, record them, and raise local toasts;
+                           the loop starts dux-base check every DUX_BASE_INTERVAL_SECS
+                           (300, 0 is off) and never waits for it, and its stop stops it
+  dux-base                 check asks GitHub for the newest push runs on each registered
+                           base branch, one gh run list call per project with a 60 second
+                           limit, and appends base-red: <project> once per failure; get,
+                           ack and list --unacked read and acknowledge state/base/
+  dux-status               recompute the fleet digest and missed wakes from files,
+                           including a red base and a base report not yet acknowledged
+  dux-notify               format one action-first phone notification line, for a task
+                           or, with --base, for a red base
   dux-recover              inspect or recover stale, dead, ended, and failed tasks;
                            retire one from before the security-boundary upgrade
   dux-backend              selects a backend once and dispatches to its adapter; prompt
@@ -125,6 +133,9 @@ tests/fixtures/
   security-review/         vulnerable.sh, clean.sh and expected.md: the planted defects a
                            security reviewer must find, and must not invent, before auto
                            will choose it. Never executed; implementation evidence only
+  runs/                    gh run list answers the base check is tested against, in the
+                           shape gh prints them; replay-* is this repository's own main
+                           from 15 to 18 September 2026, the rest are made-up commits
   hooks/pre-push           base-branch push guard, __BASE__ and __UPSTREAM__ rendered per task
   config/                  defaults dux-install copies into config/ (models, models-codex,
                            worker-harness, backend, reviewer, security-reviewer,
@@ -135,6 +146,7 @@ data/         (gitignored) projects.md registry; backlog.md ledger with acked st
                            retry,retried-from,phase,after,after-check,prerequisite,
                            round-<n>.md,round-<n>.approval,delivery/,usage.md}
 state/        (gitignored) dux.lock; watch.pid; watch.log; wakes.base;
+                           base.pid; base.started; base/<project>/{record,acked};
                            <id>.endpoint; <id>.pid; <id>.pgid; <id>.wrap.log; events.log;
                            <id>.run; <id>.portal; <id>.result-context;
                            channels/<id>.<run>/{status.outbox,report.outbox,brief.md,
@@ -607,6 +619,19 @@ text, not about a hostile program.
 8. Dux runs `dux-ledger ack <id> <event-state>` after handling the wake. The
    command refuses if the task has moved to a newer state. `dux-status` lists
    every unacknowledged state after a session restart.
+
+A red base branch wakes Dux the same way, from a second writer. Every five
+minutes the watcher's loop starts `dux-base check` in the background, never
+waits for it, and stops it when the watcher stops. The check makes one
+`gh run list` call per registered project and judges the head commit of the
+newest push run on its base branch (`2026-09-18-base-branch-check.md`, section
+3). A new failure appends `<time> base-red: <project>` to `state/events.log`
+before it saves the key `<sha>:<run>:<attempt>` in `state/base/<project>/record`,
+so a failed save repeats the line rather than losing it. Otherwise one key is
+reported once, and a passing run turns the record green without a line. On the
+wake Dux compares `dux-base get <project> reported` with `acked`, pushes the
+`dux-notify --base <project>` line, and runs `dux-base ack <project> <key>`
+(`skills/dux-status`). It never re-runs, reverts or fixes anything unasked.
 
 | State | Recovery |
 |---|---|
