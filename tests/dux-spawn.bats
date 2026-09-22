@@ -451,6 +451,62 @@ exit 2")"
   [ ! -d "$DUX_HOME/proj/.worktrees/dux-$id" ]
 }
 
+# Spawn looks for the wrapper once a second. A worker that finishes at once makes
+# a run of about two seconds, and on a busy machine that run can start and end
+# between two looks. The pause holds off the first look until it has, every
+# time. The ending it published says it started, so the task is running and the
+# watcher applies the ending as for any run.
+@test "a run that starts and ends between two looks is spawned, not refused" {
+  id="$(fixture_task proj scout)"
+  run --separate-stderr env DUX_SPAWN_LOOK_PAUSE_SECS=5 dux-spawn "$id"
+  if [ -n "$stderr" ]; then echo "expected no stderr, got: '$stderr'"; return 1; fi
+  [ "$status" -eq 0 ]
+  [ "$output" = "spawned $id endpoint=herdr:w1:p9 worktree=$DUX_HOME/proj/.worktrees/dux-$id" ]
+  [ "$(dux-ledger get "$id" state)" = running ]
+  wait_result "$id"
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/status")" = "done: report" ]
+}
+
+# The same pause with a wrapper that got as far as its run record and refused:
+# it wrote its pidfile, as the real one does first, published the refusal and
+# was gone before the first look. That is still a refusal.
+@test "a refusal published between two looks is still a refusal" {
+  id="$(fixture_task proj scout)"
+  r="$(root_with_stub dux-worker-wrap '#!/bin/sh
+echo $$ > "$DUX_HOME/state/$1.pid"
+d="$DUX_HOME/state/$1.handoffs/1"
+mkdir -p "$d"; echo run1 > "$d/run"; echo failed > "$d/event"
+echo "failed: wrapper: cannot start the worker for $1 in its tab" > "$d/status"
+exit 2')"
+  run env DUX_ROOT="$r" DUX_SPAWN_LOOK_PAUSE_SECS=5 "$r/bin/dux-spawn" "$id"
+  if [ "$status" -ne 2 ]; then echo "expected a refusal, got $status: '$output'"; return 1; fi
+  [[ "$output" == *"finding: the wrapper for $id refused before the harness started; see $DUX_HOME/state/$id.wrap.log"* ]]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+}
+
+# A run spawn stopped itself is never reported as spawned, whatever it published.
+# With no window at all, spawn signals a wrapper it has not seen start; the pause
+# gives the stub time to set its trap first. On the signal the stub publishes an
+# ending that is no refusal, and exits.
+@test "a run spawn stopped itself is not spawned, whatever it published" {
+  id="$(fixture_task proj scout)"
+  r="$(root_with_stub dux-worker-wrap '#!/bin/sh
+d="$DUX_HOME/state/$1.handoffs/1"
+ended() {
+  mkdir -p "$d"; echo run1 > "$d/run"; echo ended > "$d/event"
+  echo "ended: the session ended without a terminal status" > "$d/status"
+  kill "$s"; exit 0
+}
+trap ended TERM
+sleep 30 & s=$!
+wait "$s"')"
+  run env DUX_ROOT="$r" DUX_SPAWN_START_SECS=0 DUX_SPAWN_LOOK_PAUSE_SECS=2 "$r/bin/dux-spawn" "$id"
+  if [ "$status" -ne 2 ]; then echo "expected a refusal, got $status: '$output'"; return 1; fi
+  [[ "$output" == *"finding: the wrapper for $id refused before the harness started; see $DUX_HOME/state/$id.wrap.log"* ]]
+  [ "$(dux-ledger get "$id" state)" = queued ]
+  [ "$(cat "$DUX_HOME/state/$id.handoffs/1/status")" = "ended: the session ended without a terminal status" ]
+}
+
 @test "a worktree Claude Code does not trust is refused before any tab opens" {
   id="$(fixture_task proj scout)"
   trust_home

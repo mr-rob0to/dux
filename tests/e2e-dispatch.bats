@@ -433,7 +433,7 @@ EOF
   kill -TERM -- "-$pg"
   wait_file "$s/$id.handoffs/2/status" 30
   [ "$(cat "$s/$id.handoffs/2/status")" = "ended: the session ended without a terminal status" ]
-  wait_until 10 refute kill -0 "$wp" 2>/dev/null; refute kill -0 -- "-$pg" 2>/dev/null
+  wait_until 10 refute kill -0 "$wp" 2>/dev/null; group_gone "$pg"
   dux-watch --once
   [ "$(dux-ledger get "$id" state)" = ended ]
   grep -qx "run=$(cat "$s/$id.handoffs/2/run")" "$s/$id.run"
