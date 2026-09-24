@@ -12,12 +12,16 @@ AGENTS.md                  operating contract, always loaded (<=150 lines, teste
 CLAUDE.md                  two-line import of AGENTS.md
 .claude/settings.json      SessionStart: dux-lock acquire; SessionEnd: dux-lock release;
                            model claude-sonnet-5 for the orchestrator session
+.claude/skills/dux-*       committed links to ../../skills/dux-*, so the orchestrator session
+                           loads the four operator skills as project skills; nothing is
+                           linked outside the checkout (milestone 10)
 skills/
   dux-dispatch/SKILL.md    turn a goal into a running task, and tear it down after merge
   dux-project/SKILL.md     register a repo; ask before installing the PR template
   dux-status/SKILL.md      show the fleet digest and explain its next actions
   dux-recover/SKILL.md     judge and handle stale, dead, ended, or failed work
-  ship/SKILL.md            bundled delivery gate, installed by dux-install (milestone 1, task 8);
+  ship/SKILL.md            bundled delivery gate, read by path from this checkout and never
+                           installed (milestone 10);
                            each review run's usage: line, Codex's own counts for that run,
                            unknown, or in session total for an agent, goes in the pull request
                            (rollout milestone 4)
@@ -27,8 +31,8 @@ skills/
                            guard file (milestone 6). Sources nothing: it runs in a project
                            worktree with no DUX_HOME
   ship/ship-env            reviewer/security-reviewer/pr-template/pr-template-fallback/--root:
-                           what the gate reads out of the Dux checkout it was installed
-                           from. Values come from config/ and fall back to templates/config/;
+                           what the gate reads out of the Dux checkout it sits in.
+                           Values come from config/ and fall back to templates/config/;
                            both reviewers default to auto, which picks the command from what
                            the host has, on every run and never written down, and stops the
                            gate when the host has nothing to run; a stated value is never
@@ -114,12 +118,10 @@ bin/
   dux-doctor               preflight: CLIs, gh auth, backend CLI, both reviewers resolved the
                            way the gate resolves them, the rollout stage and what it leaves
                            unavailable, registry, lock
-  dux-install              symlink bundled skills, seed config, add model keys an existing
-                           config/models* is missing, write identifier denylist (task 8).
-                           Says what a real directory holds before proposing to replace it,
-                           and reports a second copy of a skill in the shared skills
-                           directory without touching it
-  dux-uninstall            remove only symlinks that point into this repo (task 8)
+  dux-install              seed config, add model keys an existing config/models* is
+                           missing, write identifier denylist (task 8). Creates no link
+                           and touches nothing outside the checkout and DUX_HOME
+                           (milestone 10)
 templates/
   PULL_REQUEST_TEMPLATE.md the template dux-project installs, with consent, into a
                            project that has none

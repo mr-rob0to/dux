@@ -50,6 +50,22 @@ load helpers/setup
   done
 }
 
+# The operator skills load as project skills from links committed in the
+# checkout, so nothing is installed outside it (spec section 18). A new
+# skills/dux-* folder without its link is a skill the orchestrator never sees,
+# and a link that exists only on one machine is the global install again.
+@test "every operator skill loads from a committed link in .claude/skills" {
+  local d n l
+  for d in "$DUX_ROOT"/skills/dux-*/; do
+    n="$(basename "$d")"; l=".claude/skills/$n"
+    [ -L "$DUX_ROOT/$l" ] || { echo "$l is missing or not a link"; return 1; }
+    [ "$(readlink "$DUX_ROOT/$l")" = "../../skills/$n" ] \
+      || { echo "$l points at $(readlink "$DUX_ROOT/$l"), not ../../skills/$n"; return 1; }
+    git -C "$DUX_ROOT" ls-files -s -- "$l" | grep '^120000 ' >/dev/null \
+      || { echo "$l is not committed as a link"; return 1; }
+  done
+}
+
 @test "session hooks acquire and release the lock" {
   run jq -r '.hooks.SessionStart[0].hooks[0].command' "$DUX_ROOT/.claude/settings.json"
   [[ "$output" == *"dux-lock acquire"* ]]

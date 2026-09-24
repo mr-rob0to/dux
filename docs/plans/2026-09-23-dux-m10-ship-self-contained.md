@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved 2026-09-23. Task 1 done; Task 2 next.
+- Approved 2026-09-23. Tasks 1 and 2 done; Task 3 next.
 - Milestone 6 made the gate stand alone but left it installed by symlink into `~/.claude/skills`; the move of the checkout broke every link.
 - When this merges, `bin/dux-install` touches nothing outside the checkout, workers read `skills/ship/SKILL.md` by path with `SHIP_GUARD` in their environment, and the Claude worker cannot invoke any global skill.
 
@@ -90,9 +90,9 @@ linking tests (lines 28 to 154 today). `bin/dux-install` run from a fresh clone
 leaves `~/.claude` untouched, proved by the test's throwaway `HOME`.
 
 **Steps**
-- [ ] Add the symlink contract test; see it fail.
-- [ ] Edit the installer, delete the uninstaller, add the four symlinks, prune the tests.
-- [ ] Break-verify: point one symlink at the wrong target; confirm the contract test names
+- [x] Add the symlink contract test; see it fail.
+- [x] Edit the installer, delete the uninstaller, add the four symlinks, prune the tests.
+- [x] Break-verify: point one symlink at the wrong target; confirm the contract test names
       it; restore; paste.
 
 ## Task 3: The skill finds its helpers beside itself; guard renames; no global path anywhere
