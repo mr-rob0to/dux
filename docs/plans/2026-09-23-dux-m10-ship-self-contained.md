@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved 2026-09-23. Tasks 1 to 3 done; Task 4 next.
+- Approved 2026-09-23. Tasks 1 to 4 done; Task 5 next.
 - Milestone 6 made the gate stand alone but left it installed by symlink into `~/.claude/skills`; the move of the checkout broke every link.
 - When this merges, `bin/dux-install` touches nothing outside the checkout, workers read `skills/ship/SKILL.md` by path with `SHIP_GUARD` in their environment, and the Claude worker cannot invoke any global skill.
 
@@ -144,9 +144,9 @@ one rule replaced, one Project line added.
 wording; a test asserts a scout brief has no Ship gate line.
 
 **Steps**
-- [ ] Update the tests; see them fail.
-- [ ] Edit the script and the two templates.
-- [ ] Break-verify: break the Ship gate line to a relative path; confirm the test fails;
+- [x] Update the tests; see them fail.
+- [x] Edit the script and the two templates.
+- [x] Break-verify: break the Ship gate line to a relative path; confirm the test fails;
       restore; paste.
 
 ## Task 5: The adapters hand over `SHIP_GUARD`; the Claude worker loses `Skill`

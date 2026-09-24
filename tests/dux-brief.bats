@@ -47,7 +47,12 @@ setup_task() {  # $1 shape; prints id
   b="$DUX_HOME/data/tasks/$id/brief.md"
   grep -qxF -- "- Plan: docs/plans/a&b.md" "$b"
   grep -qxF -- "- Tasks: 3-5" "$b"
-  grep -qF '/ship' "$b"
+  # The gate is named by the absolute path of this checkout's copy: the worker
+  # reads that file, and SHIP_GUARD in its environment points beside it.
+  grep -qxF -- "- Ship gate: $DUX_ROOT/skills/ship/SKILL.md" "$b"
+  [ -f "$(sed -n 's/^- Ship gate: //p' "$b")" ]
+  grep -qxF -- '- Deliver through the ship gate: read the file the Ship gate line names and follow it; reading and following that file is invoking the gate. SHIP_GUARD is set in your environment and points beside it. It is the only gate. Do not invoke any other ship skill (/ship, $ship), even if one is installed. Never open a PR by hand.' "$b"
+  grep -qxF -- 'Tasks 3-5 of docs/plans/a&b.md implemented, the ship gate run, CI green; then append `done: PR <url>` and wait at your prompt.' "$b"
   grep -qF 'done: PR <url>' "$b"
   # The host check and the Docker fallback must be one conditional rule the
   # worker evaluates itself, not two independent lines.
@@ -67,6 +72,17 @@ setup_task() {  # $1 shape; prints id
   grep -qF 'design review is a subagent inside this task' "$b"
   grep -qF 'never wait on the operator' "$b"
   [ "$(grep -c 'ubuntu:24.04' "$b" || true)" -eq 0 ]
+}
+
+# Only a ship worker delivers through the gate. A scout changes nothing and a
+# plan task opens a docs-only pull request, so neither is handed a gate file.
+@test "only a ship brief names the gate file" {
+  id="$(setup_task scout)"; id2="$(dux-task-new proj plan)"
+  for i in "$id" "$id2"; do
+    dux-brief "$i" --intent-file "$DUX_HOME/intent" --criteria-file "$DUX_HOME/criteria" >/dev/null
+    [ "$(grep -c '^- Ship gate: ' "$DUX_HOME/data/tasks/$i/brief.md" || true)" -eq 0 ] \
+      || { echo "the brief for $i names a gate file"; return 1; }
+  done
 }
 
 @test "the host-aware Docker rule is ship-only, not scout" {
@@ -351,7 +367,8 @@ SH
   # No plan, so no plan lines and a definition of done that names none.
   [ "$(grep -c '^- Plan: ' "$b" || true)" -eq 0 ]
   [ "$(grep -c '^- Tasks: ' "$b" || true)" -eq 0 ]
-  grep -qF 'The change described above implemented' "$b"
+  grep -qxF -- 'The change described above implemented, the ship gate run, CI green; then append `done: PR <url>` and wait at your prompt.' "$b"
+  grep -qxF -- "- Ship gate: $DUX_ROOT/skills/ship/SKILL.md" "$b"
   grep -qF 'done: PR <url>' "$b"
   grep -qxF -- '- Risk: bounded' "$b"
 }
@@ -374,7 +391,7 @@ SH
   grep -qxF -- "- Plan first. Write the plan for this intent under docs/plans/ in the worktree, with a \`## Task <n>:\` heading and checkboxes for each task and a three-line **Where this stands** block, and commit it on dux/$id. Implement nothing and open no pull request before it is approved." "$b"
   grep -qxF -- '- Then append `needs-decision: approve tasks <range> of <plan path> at <commit>` and wait at your prompt. Only a round file that approves that plan, range and commit starts implementation; an answer does not.' "$b"
   grep -qxF -- '- Once approved, only box ticks and the three lines under **Where this stands** may change in the plan. Any other change to it needs `needs-decision:` and a renewed approval.' "$b"
-  grep -qxF -- 'The plan committed on dux/'"$id"' and its approval asked for; once a round file approves it, the approved tasks implemented, /ship run, CI green; then append `done: PR <url>` and wait at your prompt.' "$b"
+  grep -qxF -- 'The plan committed on dux/'"$id"' and its approval asked for; once a round file approves it, the approved tasks implemented, the ship gate run, CI green; then append `done: PR <url>` and wait at your prompt.' "$b"
   [ "$(wc -l < "$b" | tr -d ' ')" -le 100 ]
 }
 

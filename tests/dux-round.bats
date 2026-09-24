@@ -181,7 +181,7 @@ The operator approves tasks 1-2 of docs/plans/p.md exactly as committed at $sha.
 - Run \`git fetch origin\` and \`git status\` before anything else, and start from what dux/$id holds now.
 - Implement tasks 1-2 of docs/plans/p.md in order, ticking each box as it lands.
 - In docs/plans/p.md, only box ticks and the three lines under **Where this stands** may differ from $sha. Any other change to the plan needs \`needs-decision:\` and a renewed approval.
-- Run \`/ship\`, then append \`done: PR <url>\` to the file named by \`\$DUX_STATUS_LOG\` and wait at the prompt. This round gets one terminal line, and every other rule in the brief still holds.
+- Run the ship gate, then append \`done: PR <url>\` to the file named by \`\$DUX_STATUS_LOG\` and wait at the prompt. This round gets one terminal line, and every other rule in the brief still holds.
 
 ## Approval (the operator's words)
 Rename the flag to --since.
@@ -425,7 +425,7 @@ The operator has read pull request $pr and sends the feedback below. This is the
 
 - Run \`git fetch origin\` and \`git status\` before anything else, and start from what dux/$id holds now.
 - Make the change as new commits on top. Never rebase, amend a pushed commit, squash or force-push: the operator has read what is there.
-- Run \`/ship\` again. It updates pull request $pr; never open another.
+- Run the ship gate again. It updates pull request $pr; never open another.
 - Then append \`done: PR $pr\` to the file named by \`\$DUX_STATUS_LOG\` and wait at the prompt. This round gets one terminal line, and every other rule in the brief still holds.
 
 ## Feedback (the operator's words)

@@ -132,7 +132,7 @@ esac
 shape_rules() {
   case "$shape" in
     plan)  echo "- The design review is a subagent inside this task; the docs-only PR is the approval artifact; never wait on the operator." ;;
-    ship)  echo "- Deliver through /ship; it is the only gate. Never open a PR by hand."
+    ship)  echo "- Deliver through the ship gate: read the file the Ship gate line names and follow it; reading and following that file is invoking the gate. SHIP_GUARD is set in your environment and points beside it. It is the only gate. Do not invoke any other ship skill (/ship, \$ship), even if one is installed. Never open a PR by hand."
            echo "- If your change touches process handling, stat, readlink, sed -i, date, mktemp, find, or file identity by device:inode, run the suite before pushing: if \`uname -s\` is Linux, run it directly; otherwise run it in a non-root user inside \`docker run -d --init -v <repo>:<repo> -w <worktree> ubuntu:24.04 sleep infinity\`, since macos-bash32 alone will not catch what check (Linux) catches."
            if [ "$phase" = planning ]; then
              echo "- Plan first. Write the plan for this intent under docs/plans/ in the worktree, with a \`## Task <n>:\` heading and checkboxes for each task and a three-line **Where this stands** block, and commit it on $branch. Implement nothing and open no pull request before it is approved."
@@ -147,11 +147,11 @@ done_line() {
     plan)  echo "Spec and plan under docs/specs/ and docs/plans/ in the worktree, docs-only PR opened against $base; then append \`done: PR <url>\` and wait at your prompt." ;;
     ship)
       if [ "$phase" = planning ]; then
-        echo "The plan committed on $branch and its approval asked for; once a round file approves it, the approved tasks implemented, /ship run, CI green; then append \`done: PR <url>\` and wait at your prompt."
+        echo "The plan committed on $branch and its approval asked for; once a round file approves it, the approved tasks implemented, the ship gate run, CI green; then append \`done: PR <url>\` and wait at your prompt."
       elif [ -n "$plan" ]; then
-        echo "Tasks $tasks of $plan implemented, /ship run, CI green; then append \`done: PR <url>\` and wait at your prompt."
+        echo "Tasks $tasks of $plan implemented, the ship gate run, CI green; then append \`done: PR <url>\` and wait at your prompt."
       else
-        echo "The change described above implemented, /ship run, CI green; then append \`done: PR <url>\` and wait at your prompt."
+        echo "The change described above implemented, the ship gate run, CI green; then append \`done: PR <url>\` and wait at your prompt."
       fi ;;
     scout) echo "Findings written to the file named by \`\$DUX_REPORT\`; then append \`done: report\`." ;;
   esac
@@ -178,6 +178,9 @@ while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in
     '{{INTENT}}')      cat "$intent" ;;
     '{{CRITERIA}}')    cat "$criteria" ;;
+    # The gate a ship worker reads and follows, by the path of this checkout's
+    # copy. The launcher exports SHIP_GUARD beside it (spec sections 5.3, 11).
+    '{{SHIP_GATE_LINE}}') if [ "$shape" = ship ]; then printf -- '- Ship gate: %s\n' "$DUX_ROOT/skills/ship/SKILL.md"; fi ;;
     '{{PLAN_LINES}}')  if [ -n "$plan" ]; then printf -- '- Plan: %s\n- Tasks: %s\n' "$plan" "$tasks"; fi ;;
     '{{RISK_LINE}}')   if [ "$shape" = ship ]; then printf -- '- Risk: %s\n' "$risk"; fi ;;
     '{{PHASE_LINE}}')  if [ -n "$phase" ]; then printf -- '- Phase: %s\n' "$phase"; fi ;;
