@@ -42,14 +42,16 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
   esac
 }
 
-# A worker needs seven tools: Bash, Read, Glob, Grep, Write, Edit and Skill
-# (without Skill it cannot run /ship). Everything
+# A worker needs six tools: Bash, Read, Glob, Grep, Write and Edit. Not Skill:
+# the gate is a file the brief names, which the worker reads and follows, and a
+# /ship installed for the operator's own sessions must be out of its reach.
+# Everything
 # else the harness offers is prompt a Dux worker never uses, paid for on every
 # turn. The MCP flags are the same argument about connections: an empty config,
 # strictly, so an MCP server the operator has for their own sessions is not
 # loaded into a worker. Both entry points get them from one shared string, so a
 # printed command and an executed one cannot say different things.
-@test "the claude adapter limits a worker to the seven tools it uses" {
+@test "the claude adapter limits a worker to the six tools it uses" {
   [ "${DUX_WORKER_HARNESS:-}" = claude ] || skip "claude only"
   for f in worker_cmd worker_launcher; do
     if [ "$f" = worker_cmd ]; then
@@ -63,10 +65,11 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
       # quoting itself holds is the space-in-a-path test's job.
       out="$(tr -d "'" < "$chan/launch")"
     fi
-    # The value the flag was actually given, not a substring of it: an eighth
-    # tool appended to the list would match "...,Write,Edit,Skill" and pass.
+    # The value the flag was actually given, not a substring of it: a seventh
+    # tool appended to the list, Skill above all, would match "...,Write,Edit"
+    # and pass.
     got="$(printf '%s\n' "$out" | tr ' ' '\n' | grep -A1 -xF -- --tools | sed -n 2p)"
-    [ "$got" = Bash,Read,Glob,Grep,Write,Edit,Skill ] || { echo "$f: tool list is '$got': $out"; return 1; }
+    [ "$got" = Bash,Read,Glob,Grep,Write,Edit ] || { echo "$f: tool list is '$got': $out"; return 1; }
     [[ "$out" == *"--strict-mcp-config"* ]] || { echo "$f: not strict about MCP: $out"; return 1; }
     [[ "$out" == *"--mcp-config $DUX_ROOT/templates/worker-mcp.json"* ]] || { echo "$f: no MCP file: $out"; return 1; }
     [[ "$out" == *"--no-chrome"* ]] || { echo "$f: chrome not disabled: $out"; return 1; }
@@ -95,6 +98,31 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
     codex)  grep -q -- '-m model-x' "$FAKE_WORKER_LOG"; grep -q -- 'model_reasoning_effort="high"' "$FAKE_WORKER_LOG" ;;
   esac
   grep -q -- 'the brief' "$FAKE_WORKER_LOG"
+}
+
+# The codex entry point hands a ship worker the same two variables the claude
+# launcher does, in its environment, and nothing on its command line changes.
+@test "the codex worker_run exports the ship recorder and guard and leaves its command line alone" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  unset SHIP_GUARD
+  dump="$DUX_HOME/state/dumped-env"
+  printf 'dump-env %s\n' "$dump" > "$FAKE_WORKER_SCRIPT"
+  run adapter worker_run "$DUX_HOME/brief.md" model-x high "$DUX_HOME/settings.json" \
+    "$chan/ship-record" "$DUX_ROOT/skills/ship/ship-guard"
+  [ "$status" -eq 0 ]
+  [ -s "$dump" ] || { echo "the harness dumped nothing: $output"; return 1; }
+  [ "$(sed -n 's/^DUX_SHIP_RECORD=//p' "$dump")" = "$chan/ship-record" ]
+  [ "$(sed -n 's/^SHIP_GUARD=//p' "$dump")" = "$DUX_ROOT/skills/ship/ship-guard" ]
+  want='codex exec -m model-x --sandbox danger-full-access -c shell_environment_policy.ignore_default_excludes=true -c model_reasoning_effort="high" the brief'
+  [ "$(cat "$FAKE_WORKER_LOG")" = "$want" ] || { echo "command line: $(cat "$FAKE_WORKER_LOG")"; return 1; }
+  # A task that does not ship gets neither.
+  : > "$FAKE_WORKER_LOG"; rm -f "$dump"
+  run adapter worker_run "$DUX_HOME/brief.md" model-x high "$DUX_HOME/settings.json"
+  [ "$status" -eq 0 ]
+  [ -s "$dump" ]
+  ! grep -q '^DUX_SHIP_RECORD=' "$dump"
+  ! grep -q '^SHIP_GUARD=' "$dump"
+  [ "$(cat "$FAKE_WORKER_LOG")" = "$want" ]
 }
 
 @test "worker_effort_ok accepts the harness's levels and rejects others" {
@@ -127,7 +155,7 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
   dump="$DUX_HOME/state/dumped-env"
   printf 'dump-env %s\n' "$dump" > "$FAKE_WORKER_SCRIPT"
   adapter worker_launcher "$chan/launch" "$DUX_HOME/brief.md" model-x high \
-    "$DUX_HOME/settings.json" "$DUX_ROOT/bin" "$chan/ship-record"
+    "$DUX_HOME/settings.json" "$DUX_ROOT/bin" "$chan/ship-record" "$DUX_ROOT/skills/ship/ship-guard"
   [ -x "$chan/launch" ]
 
   # A pane shell carrying everything Dux's own session carries.
@@ -145,6 +173,8 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
   [ "$(sed -n 's/^DUX_STATUS_LOG=//p' "$dump")" = "$chan/status.outbox" ]
   [ "$(sed -n 's/^DUX_REPORT=//p' "$dump")" = "$chan/report.outbox" ]
   [ "$(sed -n 's/^DUX_SHIP_RECORD=//p' "$dump")" = "$chan/ship-record" ]
+  # The gate the worker reads by path finds its helpers through this one.
+  [ "$(sed -n 's/^SHIP_GUARD=//p' "$dump")" = "$DUX_ROOT/skills/ship/ship-guard" ]
 
   # Element by element: a substring test would call a PATH holding
   # $DUX_ROOT/bin-of-something clean and a stripped one dirty by turns.
@@ -175,10 +205,13 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
   [ "$(sed -n 's/^CLAUDE_CONFIG_DIR=//p' "$dump")" = "$DUX_HOME/dux-config" ]
 }
 
-# A ship recorder is only a ship task's, and the launcher says so by leaving the
-# variable out rather than exporting an empty one a worker could still name.
-@test "a launcher without a ship recorder exports no DUX_SHIP_RECORD" {
+# A ship recorder and the gate's guard are only a ship task's, and the launcher
+# says so by leaving the variables out rather than exporting empty ones a worker
+# could still name. The shell running the tests loses any SHIP_GUARD of its own
+# first, so what the dump shows is the launcher's alone.
+@test "a launcher without a ship recorder exports no DUX_SHIP_RECORD and no SHIP_GUARD" {
   [ "${DUX_WORKER_HARNESS:-}" = claude ] || skip "claude only"
+  unset SHIP_GUARD
   dump="$DUX_HOME/state/dumped-env"
   printf 'dump-env %s\n' "$dump" > "$FAKE_WORKER_SCRIPT"
   adapter worker_launcher "$chan/launch" "$DUX_HOME/brief.md" model-x high \
@@ -187,6 +220,7 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
   [ "$status" -eq 0 ]
   [ -s "$dump" ]
   ! grep -q '^DUX_SHIP_RECORD=' "$dump"
+  ! grep -q '^SHIP_GUARD=' "$dump"
 }
 
 @test "the launcher is readable and runnable by its owner alone" {
@@ -207,10 +241,15 @@ adapter() {  # $@ function and args; runs inside a shell that sourced dux-env an
   [ "$status" -ne 0 ]
   [[ "$output" == *"a path or value holds a quote"* ]]
   [ ! -e "$chan/launch" ]
-  # The same for the optional last argument, which a ship task alone passes.
+  # The same for the two optional last arguments, which a ship task alone passes.
   run adapter worker_launcher "$chan/launch" "$DUX_HOME/brief.md" model-x high \
     "$DUX_HOME/settings.json" "$DUX_ROOT/bin" "$chan/ship'record"
   [ "$status" -ne 0 ]
+  [ ! -e "$chan/launch" ]
+  run adapter worker_launcher "$chan/launch" "$DUX_HOME/brief.md" model-x high \
+    "$DUX_HOME/settings.json" "$DUX_ROOT/bin" "$chan/ship-record" "$DUX_HOME/sh'ip/ship-guard"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"a path or value holds a quote"* ]]
   [ ! -e "$chan/launch" ]
 }
 

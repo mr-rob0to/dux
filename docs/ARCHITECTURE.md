@@ -107,11 +107,14 @@ bin/
                            types one line into a task's tab, which is how a round starts
   backends/tmux.sh         window per task, remain-on-exit; endpoint tmux:<session>:<window_id>
   backends/herdr.sh        tab per task in the Dux workspace; endpoint herdr:<pane_id>
-  workers/claude.sh        worker harness adapter: worker_cmd, worker_run, worker_effort_ok;
+  workers/claude.sh        worker harness adapter: worker_cmd, worker_launcher, worker_effort_ok;
                            both entry points share one flag list: --tools limited to
-                           Bash,Read,Glob,Grep,Write,Edit,Skill, --strict-mcp-config with the
-                           empty templates/worker-mcp.json, and --no-chrome
+                           Bash,Read,Glob,Grep,Write,Edit, --strict-mcp-config with the
+                           empty templates/worker-mcp.json, and --no-chrome. No Skill: the
+                           gate is read by path, and a /ship installed for the operator's
+                           own sessions stays out of a worker's reach (milestone 10)
   workers/codex.sh         same adapter for Codex; tested, not dispatchable in milestone 2.
+                           worker_run exports a ship task's recorder and SHIP_GUARD.
                            worker_usage reads a codex exec --json event stream: input with
                            cached input taken out, output, cache read, cache write, each
                            thread's last running total once, unknown where Codex gave none
@@ -359,7 +362,8 @@ the tab and catches a worker in a server whose socket vanished.
    (below), and writes a launcher into it: one `/bin/sh` file, mode 500, built
    by `worker_launcher` in `bin/workers/<harness>.sh`, which scrubs the
    environment, drops Dux's own `bin` from `PATH`, exports the two outbox
-   variables and then execs the harness on the brief. That file exists because
+   variables, and for a ship task the recorder and `SHIP_GUARD` (below), and
+   then execs the harness on the brief. That file exists because
    the pane's shell is the harness's parent now, not the wrapper, so everything
    the wrapper used to do to its own environment before forking has to travel
    in it. The wrapper titles the tab, runs the launcher in it with `dux-backend
@@ -449,15 +453,19 @@ and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
 - The worker's environment is scrubbed by the launcher, of `DUX_*`, `CLAUDE_*`,
   `HERDR_*`, `TMUX*` and `GIT_CONFIG_*`, and of Dux's own `PATH` entry. Only
   `DUX_STATUS_LOG`, `DUX_REPORT` and, when Dux has one, `CLAUDE_CONFIG_DIR` are
-  put back. The config directory travels because spawn read the trust record out
-  of it: with the name scrubbed and nothing put back, the worker would answer the
-  trust question out of a different file than the one that cleared it. It is the
+  put back, and for a ship task `DUX_SHIP_RECORD` and `SHIP_GUARD`. The config
+  directory travels because spawn read the trust record out of it: with the
+  name scrubbed and nothing put back, the worker would answer the trust
+  question out of a different file than the one that cleared it. It is the
   value Dux itself was given, baked in where the launcher is written, so a pane
   carrying another session's does not win. No `GIT_CONFIG_` name travels at
   all: an environment setting applies in every repository the worker touches,
   and the push guard belongs to the task worktree alone, which is where
-  `dux-worktree` wrote it. The brief names those two variables; no Dux path is
-  handed to a worker.
+  `dux-worktree` wrote it. The brief names the two outbox variables. The guard
+  is `skills/ship/ship-guard` in this checkout, beside the gate file a ship
+  brief names: the worker reads the gate by path, and nothing tells a file read
+  that way which folder it sits in (spec section 11). Beyond its task channel,
+  those two are the only Dux paths a worker is handed.
 - The harness runs in the pane's own process group, with the operator's keyboard
   on its standard input. The wrapper did not fork it and so cannot wait on it:
   it learns the group from the multiplexer, writes it to `state/<id>.pgid`, and

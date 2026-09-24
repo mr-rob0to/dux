@@ -553,6 +553,8 @@ SH
 
 @test "the worker inherits its task interfaces and nothing else of Dux's" {
   prepare scout
+  # So the count of the gate's guard below is the wrapper's alone.
+  unset SHIP_GUARD
   printf 'report all clear\ndump-env %s\nstatus done: report\n' "$DUX_HOME/state/worker.env" > "$FAKE_WORKER_SCRIPT"
   (cd "$wt" && CLAUDECODE=1 CLAUDE_PID=4242 CLAUDE_CODE_SESSION_ID=abc \
      HERDR_PANE_ID=w1:p9 TMUX=/tmp/sock,1,0 TMUX_PANE=%3 GIT_CONFIG_GLOBAL=/nowhere \
@@ -570,6 +572,7 @@ SH
   # at all: the worker's git is configured by the worktree it stands in.
   [ "$(grep -c '^DUX_' "$e" || true)" -eq 2 ]
   [ "$(grep -c '^DUX_SHIP_RECORD=' "$e" || true)" -eq 0 ]
+  [ "$(grep -c '^SHIP_GUARD=' "$e" || true)" -eq 0 ]
   grep -q "^DUX_STATUS_LOG=$DUX_HOME/state/channels/$id\." "$e"
   [ "$(grep -c '^GIT_CONFIG_' "$e" || true)" -eq 0 ]
   p="$(sed -n 's/^PATH=//p' "$e")"
@@ -620,8 +623,14 @@ EOF
   e="$DUX_HOME/state/worker.env"
   ch="$(channel_of "$e")"
   grep -qx "DUX_SHIP_RECORD=$ch/ship-record" "$e"
-  # The recorder is the only interface a ship gets beyond the two every worker has.
+  # The recorder is the only Dux interface a ship gets beyond the two every
+  # worker has. The guard sits beside the gate file its brief names, so the
+  # gate the worker reads finds its helpers there.
   [ "$(grep -c '^DUX_' "$e" || true)" -eq 3 ]
+  gate="$(sed -n 's/^- Ship gate: //p' "$DUX_HOME/data/tasks/$id/brief.md")"
+  [ "$gate" = "$DUX_ROOT/skills/ship/SKILL.md" ]
+  grep -qx "SHIP_GUARD=$(dirname "$gate")/ship-guard" "$e"
+  [ -x "$(dirname "$gate")/ship-guard" ]
   # The phase it filed is bound to this task, this run, and this branch, and the
   # worker chose none of the three.
   r="$DUX_HOME/state/$id.ship-receipt"

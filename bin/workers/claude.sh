@@ -5,12 +5,14 @@ set -u
 # The flags both entry points share, written once so a printed command and an
 # executed one cannot drift apart.
 #
-# --tools: a Dux worker reads, searches, writes and runs commands, and invokes
-# skills, and that is all. Every other built-in tool is prompt on every turn
-# that nothing in a task ever calls. Skill is the exception: since Claude Code
-# 2.1.276 a skill, /ship included, can only be invoked when Skill is in this
-# list, and without it the gate cannot run. It costs one tool description per
-# turn. Safe
+# --tools: a Dux worker reads, searches, writes and runs commands, and that is
+# all. Every other built-in tool is prompt on every turn that nothing in a task
+# ever calls. Skill is left out on purpose. The gate is a file the brief names,
+# in this checkout, and the worker reads it by path and follows it, so no skill
+# has to be invoked to run it. And a /ship installed for the operator's own
+# sessions has to be out of a worker's reach: run in place of this checkout's
+# copy, it would file no phase Dux can prove, and the delivery would end
+# unproved. Safe
 # mode is not used, because it would take Bash away; settings-source isolation
 # is not used, because it would take the project's own instructions away.
 #
@@ -21,7 +23,7 @@ set -u
 #
 # --no-chrome: same argument, for the browser integration.
 claude_flags=(
-  --tools 'Bash,Read,Glob,Grep,Write,Edit,Skill'
+  --tools 'Bash,Read,Glob,Grep,Write,Edit'
   --strict-mcp-config --mcp-config "$DUX_ROOT/templates/worker-mcp.json"
   --no-chrome
 )
@@ -39,16 +41,17 @@ worker_cmd() {  # brief model effort settings; the exec line the launcher carrie
 # The launcher is what the pane's shell runs. The shell in that pane is the
 # harness's parent now, not the wrapper, so everything the wrapper used to do to
 # its own environment before forking has to be in this file: the scrub, the
-# PATH without Dux's own bin directory, and the three outbox variables. Every
+# PATH without Dux's own bin directory, the three outbox variables, and for a
+# ship task the gate's guard. Every
 # path is baked in as a single-quoted literal, so a DUX_HOME holding a space
 # still works and no Dux environment has to reach the pane. A quote in any of
 # them would end a literal early, so it refuses instead, as the ship recorder
 # does.
-worker_launcher() {  # path brief model effort settings dux_bin [ship_record]
-  local path="$1" brief="$2" model="$3" effort="$4" settings="$5" dux_bin="$6" ship="${7:-}"
+worker_launcher() {  # path brief model effort settings dux_bin [ship_record] [ship_guard]
+  local path="$1" brief="$2" model="$3" effort="$4" settings="$5" dux_bin="$6" ship="${7:-}" guard="${8:-}"
   local channel q flag
   channel="$(dirname "$path")"
-  for q in "$path" "$brief" "$model" "$effort" "$settings" "$dux_bin" "$ship" "$channel" \
+  for q in "$path" "$brief" "$model" "$effort" "$settings" "$dux_bin" "$ship" "$guard" "$channel" \
            "${CLAUDE_CONFIG_DIR:-}" "${claude_flags[@]}"; do
     case "$q" in *\'*) log "cannot build a launcher: a path or value holds a quote"; return 1 ;; esac
   done
@@ -88,6 +91,10 @@ worker_launcher() {  # path brief model effort settings dux_bin [ship_record]
     [ -z "${CLAUDE_CONFIG_DIR:-}" ] \
       || printf "export CLAUDE_CONFIG_DIR='%s'\n" "$CLAUDE_CONFIG_DIR"
     [ -z "$ship" ] || printf "export DUX_SHIP_RECORD='%s'\n" "$ship"
+    # The gate's guard, for a ship task. The worker reads the gate as a file,
+    # and nothing tells a file read that way which folder it sits in, so this
+    # is how the gate finds the helpers beside it (spec section 11).
+    [ -z "$guard" ] || printf "export SHIP_GUARD='%s'\n" "$guard"
     # 4. The harness itself, as an ordinary interactive session whose opening
     # prompt is the brief. No -p, no --output-format, no --verbose.
     printf "exec claude --model '%s' --effort '%s' --dangerously-skip-permissions --settings '%s'" \

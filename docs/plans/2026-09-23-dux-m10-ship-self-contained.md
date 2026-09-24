@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved 2026-09-23. Tasks 1 to 4 done; Task 5 next.
+- Approved 2026-09-23. Tasks 1 to 5 done; Task 6 next.
 - Milestone 6 made the gate stand alone but left it installed by symlink into `~/.claude/skills`; the move of the checkout broke every link.
 - When this merges, `bin/dux-install` touches nothing outside the checkout, workers read `skills/ship/SKILL.md` by path with `SHIP_GUARD` in their environment, and the Claude worker cannot invoke any global skill.
 
@@ -169,9 +169,9 @@ comment at lines 45 to 46 says six tools and why. New tests: a ship launcher exp
 unchanged and its export is asserted through the fake `codex` dumping its environment.
 
 **Steps**
-- [ ] Update and add the tests; see them fail.
-- [ ] Edit the two adapters and the wrapper.
-- [ ] Break-verify: add `Skill` back and confirm the exact-match test fails; drop the export
+- [x] Update and add the tests; see them fail.
+- [x] Edit the two adapters and the wrapper.
+- [x] Break-verify: add `Skill` back and confirm the exact-match test fails; drop the export
       and confirm the launcher test fails; two failures; restore; paste.
 
 ## Task 6: Docs
