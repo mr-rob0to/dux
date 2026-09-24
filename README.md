@@ -52,9 +52,9 @@ dux   Plan task started. You'll get a docs-only PR to approve.
   cut from a freshly fetched base. Agents cannot corrupt each other.
 - **Nothing merges on a claim.** Dux checks the branch, the PR and CI before it
   agrees a task is finished, never because a worker said so.
-- **A pre-merge gate that ships with it.** `/ship` runs your project's checks, the
-  reviews the branch owes, and CI — then opens the PR and stops. It works in any
-  repo, with or without Dux.
+- **A pre-merge gate that ships with it.** The gate runs your project's checks,
+  the reviews the branch owes, and CI, then opens the PR and stops. Workers run
+  the copy in this checkout; your own sessions get the same gate as `/qed:ship`.
 - **GitHub issues as a queue.** Label an issue; it becomes a queued task, and the
   PR carries `Closes #n`.
 
@@ -201,8 +201,26 @@ gate that runs the checks, the reviews and CI, opens the PR, and stops there.
 
 ## The `/ship` gate
 
-Installing Dux puts the gate in your skills directory, so it works in any
-repository whether or not Dux dispatched the work.
+Dux carries its own copy of the gate in `skills/ship/`, and a worker reads it
+there by path: its brief names the file, and its launcher points `SHIP_GUARD` at
+the helper beside it. Installing Dux puts nothing in your home directory.
+
+For your own sessions, in any repository, the same gate is the `qed` plugin from
+[`mr-rob0to/agent-skills`](https://github.com/mr-rob0to/agent-skills). Install
+`qed@mr-rob0to`, then invoke `/qed:ship` in Claude Code or `$qed:ship` in Codex.
+
+```bash
+claude plugin marketplace add mr-rob0to/agent-skills
+claude plugin install qed@mr-rob0to
+codex plugin marketplace add mr-rob0to/agent-skills
+codex plugin add qed@mr-rob0to
+```
+
+`agent-skills` is upstream for the gate, and the copy here follows it. The
+`ship-guard` helper is copied byte for byte. The skill's prose is ported by
+hand. What only Dux needs, such as the phase recorder, lives only here.
+
+What the gate does, in order:
 
 1. Resolve the base branch from the repo, never assumed, then fetch it and
    confirm the branch is based on it.
@@ -284,9 +302,12 @@ upgrade.
 cd ~/dux && git pull && bin/dux-install
 ```
 
-`bin/dux-install` picks up new or renamed skills. It never overwrites a config
-file you have edited, so your settings survive. Finish any running task first —
-a worker started under the old version keeps running under it.
+`bin/dux-install` adds any config file or model key a newer version brings. It
+never overwrites a config file you have edited, so your settings survive. The
+skills come with the pull, so there is nothing to relink. Older versions linked
+the skills into your home directory; nothing reads those links now, and you can
+delete them. Finish any running task first: a worker started under the old
+version keeps running under it.
 
 </details>
 
@@ -309,7 +330,7 @@ Read [`CONTRIBUTING.md`](CONTRIBUTING.md) first. In short:
 ```bash
 brew install bats-core shellcheck
 make check         # after a change, about two minutes
-make check-branch  # before /ship, adds the bash 3.2 pass
+make check-branch  # before /qed:ship, adds the bash 3.2 pass
 ```
 
 Scripts are bash 3.2 and shellcheck clean, because macOS still ships bash 3.2.

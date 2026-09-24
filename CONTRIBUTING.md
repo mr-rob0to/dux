@@ -142,8 +142,10 @@ green.
 
 ## What happens next
 
-A maintainer reviews it. Changes to behaviour also go through the `/ship` gate,
-which runs an independent code review and a separate security pass on the diff.
+A maintainer reviews it. Changes to behaviour also go through the ship gate
+(`/qed:ship`, from the `qed@mr-rob0to` plugin), which runs the reviews the branch
+owes: one combined review, or a code review and a separate security pass when the
+diff touches a sensitive area such as authentication or data integrity.
 Findings come back on the PR; fix what matters and say plainly which ones you are
 not acting on and why.
 

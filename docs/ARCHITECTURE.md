@@ -246,7 +246,11 @@ the tab and catches a worker in a server whose socket vanished.
    fenced issue block) and `tasks/<id>/worker-settings.json`. A task with a
    `gh:` source needs `--issue-file`, and its brief carries one
    `- Issue: <owner>/<repo>#<n>` line taken from the ledger, never from the
-   issue text; that line is what `/ship` turns into `Closes #<n>`. A `ship` task
+   issue text; that line is what `/ship` turns into `Closes #<n>`. A `ship`
+   brief names the gate the worker reads and follows, by path, in one
+   `- Ship gate: <DUX_ROOT>/skills/ship/SKILL.md` line, and tells it to invoke
+   no other ship skill; the launcher exports `SHIP_GUARD` beside that file
+   (step 6). A `ship` task
    also gets `tasks/<id>/risk`, `bounded` or `complex`, which is what
    `dux-worker-wrap` looks up in `config/models` instead of the shape. `--plan`
    and `--tasks` are one pair; the empty pair is plan-free shipping and needs

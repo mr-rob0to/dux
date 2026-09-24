@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved 2026-09-23. Tasks 1 to 5 done; Task 6 next.
+- Approved 2026-09-23. Tasks 1 to 6 done; Task 7 next.
 - Milestone 6 made the gate stand alone but left it installed by symlink into `~/.claude/skills`; the move of the checkout broke every link.
 - When this merges, `bin/dux-install` touches nothing outside the checkout, workers read `skills/ship/SKILL.md` by path with `SHIP_GUARD` in their environment, and the Claude worker cannot invoke any global skill.
 
@@ -188,8 +188,8 @@ byte; prose ported by hand; Dux-only hooks live only here). ARCHITECTURE lists t
 **Acceptance:** `docs/ARCHITECTURE.md` matches what exists.
 
 **Steps**
-- [ ] Edit the three files.
-- [ ] Break-verify: not needed; prose.
+- [x] Edit the three files.
+- [x] Break-verify: not needed; prose.
 
 ## Task 7: Dry run with the branch's own Dux
 
