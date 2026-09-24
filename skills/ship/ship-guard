@@ -1,12 +1,11 @@
 #!/usr/bin/env bash
 # Remembers which commit each /ship phase saw, so a review cannot be outrun by
-# commits that land after it. Called by SKILL.md; see spec section 11.
+# commits that land after it. Called by SKILL.md, which sits beside it.
 #
-# It lives beside SKILL.md rather than under bin/ because dux-install symlinks
-# the skill directory and the helper has to travel with it, and because /ship
-# runs inside a project worktree that knows nothing about DUX_HOME. So it
-# sources nothing and carries its own finding(); the plan's header records that
-# deviation from constitution principle 2.
+# It lives beside SKILL.md because the skill folder is installed or copied as
+# one unit and the helper has to travel with it, and because /ship runs inside
+# a project that knows nothing about where the skill came from. So it sources
+# nothing and carries its own finding().
 set -u
 
 finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
@@ -25,14 +24,13 @@ branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null)" \
 encoded="$branch"
 encoded="${encoded//%/%25}"
 encoded="${encoded//\//%2F}"
-state="$gitdir/dux-ship/$encoded"
+state="$gitdir/ship-guard/$encoded"
 
 # Every key is a fixed word from this file, never anything a caller supplies.
 kv() {  # $1 key; prints the value, or nothing
   [ -f "$state" ] || return 0
   # head closes the pipe when it has its line, and sed reports the failed write
-  # on stderr rather than dying quietly. Read the rest away. This script is
-  # installed by symlink and cannot source dux-env's take_line.
+  # on stderr rather than dying quietly. Read the rest away.
   sed -n "s/^$1=//p" "$state" | { head -n 1; cat >/dev/null; }
 }
 
@@ -186,7 +184,7 @@ case "$cmd" in
       1) finding "a review mode needs a reason" ;;
       *) finding "$usage" ;;
     esac
-    mkdir -p "$gitdir/dux-ship" || die "cannot create $gitdir/dux-ship"
+    mkdir -p "$gitdir/ship-guard" || die "cannot create $gitdir/ship-guard"
     { echo "version=2"; echo "branch=$branch"; echo "fix_passes=0"
       echo "review_mode=$want"; echo "review_reason=$reason"; } > "$state" \
       || die "cannot write $state"
@@ -279,7 +277,7 @@ case "$cmd" in
     reason="$(kv review_reason)"
     reason="${reason//\\/\\\\}"
     reason="${reason//\"/\\\"}"
-    printf '<!-- dux-attestation:v1 {"head_sha":"%s","fix_passes":%s,"review_mode":"%s","review_reason":"%s","steps":[%s]} -->\n' \
+    printf '<!-- ship-attestation:v1 {"head_sha":"%s","fix_passes":%s,"review_mode":"%s","review_reason":"%s","steps":[%s]} -->\n' \
       "$(git rev-parse HEAD)" "$n" "$mode" "$reason" "$steps"
     ;;
 

@@ -59,25 +59,25 @@ Then:
 
 Record the resolved name and reuse it. It is written `$BASE` below.
 
-### Resolve the two helpers and open the gate
+### Resolve the two helpers
 
 The gate records which commit each phase saw, so a review cannot be outrun by
-commits that land after it. The helper sits beside this file, so `dux-install`'s
-symlink carries it. `ship-env`, which answers what the gate reads out of its own
-install, sits beside it and is resolved from it, so one override points both at
+commits that land after it. The helper that records them, `ship-guard`, sits
+beside this file. `ship-env`, which answers what the gate reads out of the Dux
+checkout, sits beside it and is resolved from it, so one override points both at
 one place.
 
 ```bash
 [ -z "${SHIP_GUARD:-}" ] || [ -x "${SHIP_GUARD}" ] || {
   echo "finding: SHIP_GUARD names $SHIP_GUARD, which is not executable" >&2; exit 2
 }
-SHIP_GUARD="$(for c in "${SHIP_GUARD:-}" "$HOME/.claude/skills/ship/ship-guard" \
-                       "$HOME/.agents/skills/ship/ship-guard"; do
-  [ -n "$c" ] && [ -x "$c" ] && { printf '%s' "$c"; break; }
-done)"
-[ -n "$SHIP_GUARD" ] || {
-  echo "finding: cannot find ship-guard; the gate does not run unguarded" >&2; exit 2
-}
+SHIP_DIR="${SHIP_DIR:-${CLAUDE_SKILL_DIR}}"
+[ -z "${SHIP_GUARD:-}" ] || SHIP_DIR="$(dirname "$SHIP_GUARD")"
+SHIP_GUARD="${SHIP_GUARD:-$SHIP_DIR/ship-guard}"
+if [ -z "$SHIP_DIR" ] || [ ! -x "$SHIP_GUARD" ]; then
+  echo "finding: cannot find ship-guard beside this skill; export SHIP_GUARD or set SHIP_DIR to the directory of this file; the gate does not run unguarded" >&2
+  exit 2
+fi
 SHIP_ENV="$(dirname "$SHIP_GUARD")/ship-env"
 [ -x "$SHIP_ENV" ] || {
   echo "finding: no runnable ship-env beside $SHIP_GUARD; the gate cannot read its reviewers" >&2
@@ -85,19 +85,28 @@ SHIP_ENV="$(dirname "$SHIP_GUARD")/ship-env"
 }
 ```
 
+The folder is found in this order. An exported `SHIP_GUARD` wins, and `SHIP_DIR`
+becomes its directory; a Dux worker's launcher exports it, pointing beside the
+file the brief names. Otherwise `SHIP_DIR` keeps a value it already has, or
+takes this skill's directory, which Claude Code writes into the block when it
+loads the skill. A file read by path, and every other harness, leaves that
+empty, so set `SHIP_DIR` to the directory holding this file before the block
+runs. Nothing here looks in a home directory or a fixed install path, so the
+gate runs the guard beside it, or the one `SHIP_GUARD` names, and no other.
+
 The gate is opened in step 0.5, once the review mode is known, because `open` records the mode.
 
 **A `SHIP_GUARD` that is set but not runnable is a stop, not a fall-through.**
-A typo in the override, or a copy left behind before the install became a
-symlink, would otherwise silently run a different guard than the one intended.
+A typo in the override would otherwise silently run a different guard than the
+one intended, or none.
 
 **If either helper cannot be resolved, stop and report.** Do not carry on
 without them: an unguarded run is the failure `ship-guard` exists to remove, and
 a gate that cannot read `ship-env` would have to invent a reviewer. Every call
 below is a refusal that stops the gate, never a warning to note and pass.
 
-`ship-env` answers out of the Dux checkout it was installed from, which it finds
-two directories above itself. Its values come from `config/<key>`, falling back
+`ship-env` answers out of the Dux checkout it sits in, which it finds two
+directories above itself. Its values come from `config/<key>`, falling back
 to the bundled `templates/config/<key>`, so the gate runs from a fresh clone
 before anyone has run the installer. A skill copied somewhere that is not a Dux
 checkout stops here rather than guessing.
@@ -270,8 +279,8 @@ A carried-forward manual review does not cover a combined gate: a manual correct
 security pass, and in a combined gate there is no later step that supplies one. Run the gate's own
 review here whenever the mode is combined.
 
-The reviewer is not named here. It is a command line the gate reads from its own
-install, so a stranger who cloned Dux gets a working reviewer and the operator
+The reviewer is not named here. It is a command line the gate reads from the Dux
+checkout, so a stranger who cloned Dux gets a working reviewer and the operator
 who wants another one edits a file instead of this skill.
 
 ```bash
@@ -280,7 +289,7 @@ RUN_DIR="$(mktemp -d)"; ANSWER="$RUN_DIR/stdout"
 case "$REVIEWER" in
   "codex exec "*) ANSWER="$RUN_DIR/answer"; REVIEWER="$REVIEWER --json -o $ANSWER" ;;
 esac
-$REVIEWER "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings." > "$RUN_DIR/stdout"
+$REVIEWER "Review the diff of this branch against $BASE for correctness, regressions, security, concurrency, backwards compatibility, and missing tests. Answer in this shape and no other: a literal '## Findings' header, then the findings ordered by severity with precise file:line references, or the single line 'No findings.' under that header when there are none. State explicitly when an area has no findings." > "$RUN_DIR/stdout" < /dev/null
 STATUS=$?
 awk 1 "$ANSWER"
 if [ "$ANSWER" = "$RUN_DIR/answer" ]; then
@@ -609,7 +618,7 @@ BODY="$(mktemp)"
 ```
 
 Last, after the prose, append the attestation. It is one HTML comment, marked
-`dux-attestation:v1`, carrying `head_sha`, `fix_passes` and the commit each guard
+`ship-attestation:v1`, carrying `head_sha`, `fix_passes` and the commit each guard
 phase recorded. It is built
 from the guard file, because that file's format has one owner, and it claims only
 what has already happened: no `pr` and no `ci`, which have not.
@@ -774,7 +783,7 @@ All of these mean: go back and do the step properly.
   step 0.5 and not step 0. It travels from there into `push-ok`, the attestation and Dux's
   completion proof, so all four agree on what ran.
 - **Both reviewers come from `ship-env`**, which reads `config/reviewer` and
-  `config/security-reviewer` in the Dux checkout the skill was installed from and falls back to
+  `config/security-reviewer` in the Dux checkout the skill sits in and falls back to
   the bundled `templates/config/` copies. Neither is named in this file, so changing the
   reviewer is a one-line edit to a config file and never an edit to the gate.
 - **`auto`, the bundled default for both, means `ship-env` picks the command from what this

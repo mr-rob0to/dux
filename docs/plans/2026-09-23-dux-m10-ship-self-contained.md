@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved 2026-09-23. Tasks 1 and 2 done; Task 3 next.
+- Approved 2026-09-23. Tasks 1 to 3 done; Task 4 next.
 - Milestone 6 made the gate stand alone but left it installed by symlink into `~/.claude/skills`; the move of the checkout broke every link.
 - When this merges, `bin/dux-install` touches nothing outside the checkout, workers read `skills/ship/SKILL.md` by path with `SHIP_GUARD` in their environment, and the Claude worker cannot invoke any global skill.
 
@@ -116,14 +116,14 @@ its test are left as they are; they describe a run at a named commit and hold ne
 global path.
 
 **Steps**
-- [ ] Update the tests, add the no-global-path test; see them fail.
-- [ ] Edit `SKILL.md`; copy `ship-guard` from `agent-skills` at its merged commit and name
+- [x] Update the tests, add the no-global-path test; see them fail.
+- [x] Edit `SKILL.md`; copy `ship-guard` from `agent-skills` at its merged commit and name
       that commit in the commit body.
-- [ ] Dry run: point `SHIP_GUARD` at a non-executable path and confirm Step 0 stops; unset
+- [x] Dry run: point `SHIP_GUARD` at a non-executable path and confirm Step 0 stops; unset
       `SHIP_GUARD`, `CLAUDE_SKILL_DIR` and `SHIP_DIR` and confirm the new finding; export
       `SHIP_GUARD` alone and confirm `SHIP_DIR` and `SHIP_ENV` resolve beside it. Paste all
       three.
-- [ ] Break-verify: break the no-global-path test by planting `~/.claude/skills/ship/ship-guard`
+- [x] Break-verify: break the no-global-path test by planting `~/.claude/skills/ship/ship-guard`
       in `SKILL.md`; confirm; restore; paste.
 
 ## Task 4: The brief and the round name the gate by path

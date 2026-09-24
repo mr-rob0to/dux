@@ -363,6 +363,14 @@ fi
 printf '## Findings\nNo findings.' > "$answer"
 echo '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"cache_write_input_tokens":0,"output_tokens":30}}'
 FAKE
+  # The real codex exec reads its input to the end before it starts, and a
+  # Claude Code shell hands commands an input that never ends. So this one
+  # refuses an input that is a pipe or a socket, the shape that hangs.
+  if [ -n "${FAKE_STDIN_CHECK:-}" ]; then
+    sed -i.bak '2i\
+if [ -p /dev/stdin ] || [ -S /dev/stdin ]; then echo "codex: input left open, waiting for it to end" >&2; exit 3; fi
+' "$DUX_HOME/fake/codex" && rm -f "$DUX_HOME/fake/codex.bak"
+  fi
   printf '#!/bin/sh\nprintf "## Findings\\nNo findings.\\n"\n' > "$DUX_HOME/fake/other-reviewer"
   chmod +x "$DUX_HOME/fake/ship-env" "$DUX_HOME/fake/codex" "$DUX_HOME/fake/other-reviewer"
 }
@@ -384,6 +392,20 @@ run_review_block() {
   [ "${#lines[@]}" -eq 3 ]
   # Nothing of the run is left behind.
   [ -z "$(ls -A "$DUX_HOME/tmp")" ]
+}
+
+# A real Claude Code session hung here for ten minutes on a one-line change:
+# the block left codex holding the shell's open input. Ported with its fix from
+# agent-skills commit c276f43.
+@test "the gate gives the reviewer no input to wait for" {
+  [ "${DUX_WORKER_HARNESS:-}" = codex ] || skip "codex only"
+  FAKE_STDIN_CHECK=1 gate_fakes 'codex exec -m some-model --sandbox read-only'
+  block="$(review_block)"
+  [ -n "$block" ] || { echo "step 6 carries no reviewer block"; return 1; }
+  run bash -c 'echo pending | env SHIP_ENV="$1" BASE=main TMPDIR="$2" PATH="$3" bash -c "$4"' _ \
+    "$DUX_HOME/fake/ship-env" "$DUX_HOME/tmp" "$DUX_HOME/fake:$PATH" "$block"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "## Findings" ]
 }
 
 @test "the gate shows a refused review model, leaves its usage unknown and fails" {
