@@ -8,7 +8,7 @@
 > and a review outside the gate is how the gate gets skipped.
 
 **Where this stands**
-- Approved 2026-09-23. Tasks 1 to 6 done; Task 7 next.
+- Approved 2026-09-23. Tasks 1 to 7 done; the ship gate is next.
 - Milestone 6 made the gate stand alone but left it installed by symlink into `~/.claude/skills`; the move of the checkout broke every link.
 - When this merges, `bin/dux-install` touches nothing outside the checkout, workers read `skills/ship/SKILL.md` by path with `SHIP_GUARD` in their environment, and the Claude worker cannot invoke any global skill.
 
@@ -208,8 +208,8 @@ run; Task 5's tests are its evidence.
 worker read and the `SHIP_GUARD` line from the launcher.
 
 **Steps**
-- [ ] Run it; paste excerpts.
-- [ ] Break-verify: not needed; the guards were broken at Tasks 3 to 5.
+- [x] Run it; paste excerpts.
+- [x] Break-verify: not needed; the guards were broken at Tasks 3 to 5.
 
 ## Milestone acceptance
 
