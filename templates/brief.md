@@ -11,6 +11,7 @@
 - Base branch: {{BASE}}
 - Branch: {{BRANCH}}
 - Worktree: <set by dux-spawn>
+{{SHIP_GATE_LINE}}
 {{PLAN_LINES}}
 {{RISK_LINE}}
 {{PHASE_LINE}}

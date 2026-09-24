@@ -50,6 +50,22 @@ load helpers/setup
   done
 }
 
+# The operator skills load as project skills from links committed in the
+# checkout, so nothing is installed outside it (spec section 18). A new
+# skills/dux-* folder without its link is a skill the orchestrator never sees,
+# and a link that exists only on one machine is the global install again.
+@test "every operator skill loads from a committed link in .claude/skills" {
+  local d n l
+  for d in "$DUX_ROOT"/skills/dux-*/; do
+    n="$(basename "$d")"; l=".claude/skills/$n"
+    [ -L "$DUX_ROOT/$l" ] || { echo "$l is missing or not a link"; return 1; }
+    [ "$(readlink "$DUX_ROOT/$l")" = "../../skills/$n" ] \
+      || { echo "$l points at $(readlink "$DUX_ROOT/$l"), not ../../skills/$n"; return 1; }
+    git -C "$DUX_ROOT" ls-files -s -- "$l" | grep '^120000 ' >/dev/null \
+      || { echo "$l is not committed as a link"; return 1; }
+  done
+}
+
 @test "session hooks acquire and release the lock" {
   run jq -r '.hooks.SessionStart[0].hooks[0].command' "$DUX_ROOT/.claude/settings.json"
   [[ "$output" == *"dux-lock acquire"* ]]
@@ -303,13 +319,32 @@ unwrapped() { sed -n "$1" "$2" | tr '\n' ' ' | tr -s ' '; }
 
 @test "the ship skill stops rather than running unguarded" {
   ship="$(unwrapped '1,$p' "$DUX_ROOT/skills/ship/SKILL.md")"
-  [[ "$ship" == *'.claude/skills/ship/ship-guard'* ]]
+  # The helpers are found beside the skill or where SHIP_GUARD says, never in a
+  # home directory (spec section 11).
+  [[ "$ship" == *'SHIP_DIR:-'* ]]
+  [[ "$ship" == *'CLAUDE_SKILL_DIR'* ]]
+  [[ "$ship" == *'export SHIP_GUARD or set SHIP_DIR'* ]]
   [[ "$ship" == *'the gate does not run unguarded'* ]]
   [[ "$ship" == *'Guard helper cannot be resolved'* ]]
   [[ "$ship" == *'HEAD moved during the gate'* ]]
   [[ "$ship" == *'push-ok refused'* ]]
   [[ "$ship" == *'the phase names another commit'* ]]
   [[ "$ship" == *'refused for an uncommitted change'* ]]
+}
+
+# Nothing tracked names a directory outside the checkout that the gate or the
+# installer once used: the gate is read by path, its helpers are found beside it,
+# and the installer links nothing (spec sections 11 and 18). Moving the checkout
+# broke every such link at once. The patterns are built from pieces so that this
+# file, which is itself under tests/, does not match them.
+@test "no tracked file names a global skill path or the old install variables" {
+  local c='.claude' a='.agents' hits
+  cd "$DUX_ROOT"
+  hits="$(git ls-files -z -- bin skills templates tests AGENTS.md README.md \
+      docs/ARCHITECTURE.md docs/specs \
+    | xargs -0 grep -nF -e "$c/skills/ship" -e "$a/skills" \
+      -e "DUX_SKILLS""_DIR" -e "DUX_SHARED_SKILLS""_DIR" -- || true)"
+  [ -z "$hits" ] || { echo "a global skill path or an old install variable:"; echo "$hits"; return 1; }
 }
 
 @test "the ship skill makes both reviewers answer in a shape it can read" {
@@ -515,7 +550,7 @@ EOF
   [[ "$eight" == *'--body-file'* ]]
   [[ "$eight" == *'<details>'* ]]
   [[ "$eight" == *'"$SHIP_GUARD" attest >> "$BODY"'* ]]
-  [[ "$eight" == *'dux-attestation:v1'* ]]
+  [[ "$eight" == *'ship-attestation:v1'* ]]
 }
 
 @test "a rebuilt body follows every push after a fix pass, step 9's included" {

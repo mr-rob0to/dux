@@ -12,12 +12,16 @@ AGENTS.md                  operating contract, always loaded (<=150 lines, teste
 CLAUDE.md                  two-line import of AGENTS.md
 .claude/settings.json      SessionStart: dux-lock acquire; SessionEnd: dux-lock release;
                            model claude-sonnet-5 for the orchestrator session
+.claude/skills/dux-*       committed links to ../../skills/dux-*, so the orchestrator session
+                           loads the four operator skills as project skills; nothing is
+                           linked outside the checkout (milestone 10)
 skills/
   dux-dispatch/SKILL.md    turn a goal into a running task, and tear it down after merge
   dux-project/SKILL.md     register a repo; ask before installing the PR template
   dux-status/SKILL.md      show the fleet digest and explain its next actions
   dux-recover/SKILL.md     judge and handle stale, dead, ended, or failed work
-  ship/SKILL.md            bundled delivery gate, installed by dux-install (milestone 1, task 8);
+  ship/SKILL.md            bundled delivery gate, read by path from this checkout and never
+                           installed (milestone 10);
                            each review run's usage: line, Codex's own counts for that run,
                            unknown, or in session total for an agent, goes in the pull request
                            (rollout milestone 4)
@@ -27,8 +31,8 @@ skills/
                            guard file (milestone 6). Sources nothing: it runs in a project
                            worktree with no DUX_HOME
   ship/ship-env            reviewer/security-reviewer/pr-template/pr-template-fallback/--root:
-                           what the gate reads out of the Dux checkout it was installed
-                           from. Values come from config/ and fall back to templates/config/;
+                           what the gate reads out of the Dux checkout it sits in.
+                           Values come from config/ and fall back to templates/config/;
                            both reviewers default to auto, which picks the command from what
                            the host has, on every run and never written down, and stops the
                            gate when the host has nothing to run; a stated value is never
@@ -103,23 +107,24 @@ bin/
                            types one line into a task's tab, which is how a round starts
   backends/tmux.sh         window per task, remain-on-exit; endpoint tmux:<session>:<window_id>
   backends/herdr.sh        tab per task in the Dux workspace; endpoint herdr:<pane_id>
-  workers/claude.sh        worker harness adapter: worker_cmd, worker_run, worker_effort_ok;
+  workers/claude.sh        worker harness adapter: worker_cmd, worker_launcher, worker_effort_ok;
                            both entry points share one flag list: --tools limited to
-                           Bash,Read,Glob,Grep,Write,Edit,Skill, --strict-mcp-config with the
-                           empty templates/worker-mcp.json, and --no-chrome
+                           Bash,Read,Glob,Grep,Write,Edit, --strict-mcp-config with the
+                           empty templates/worker-mcp.json, and --no-chrome. No Skill: the
+                           gate is read by path, and a /ship installed for the operator's
+                           own sessions stays out of a worker's reach (milestone 10)
   workers/codex.sh         same adapter for Codex; tested, not dispatchable in milestone 2.
+                           worker_run exports a ship task's recorder and SHIP_GUARD.
                            worker_usage reads a codex exec --json event stream: input with
                            cached input taken out, output, cache read, cache write, each
                            thread's last running total once, unknown where Codex gave none
   dux-doctor               preflight: CLIs, gh auth, backend CLI, both reviewers resolved the
                            way the gate resolves them, the rollout stage and what it leaves
                            unavailable, registry, lock
-  dux-install              symlink bundled skills, seed config, add model keys an existing
-                           config/models* is missing, write identifier denylist (task 8).
-                           Says what a real directory holds before proposing to replace it,
-                           and reports a second copy of a skill in the shared skills
-                           directory without touching it
-  dux-uninstall            remove only symlinks that point into this repo (task 8)
+  dux-install              seed config, add model keys an existing config/models* is
+                           missing, write identifier denylist (task 8). Creates no link
+                           and touches nothing outside the checkout and DUX_HOME
+                           (milestone 10)
 templates/
   PULL_REQUEST_TEMPLATE.md the template dux-project installs, with consent, into a
                            project that has none
@@ -241,7 +246,11 @@ the tab and catches a worker in a server whose socket vanished.
    fenced issue block) and `tasks/<id>/worker-settings.json`. A task with a
    `gh:` source needs `--issue-file`, and its brief carries one
    `- Issue: <owner>/<repo>#<n>` line taken from the ledger, never from the
-   issue text; that line is what `/ship` turns into `Closes #<n>`. A `ship` task
+   issue text; that line is what `/ship` turns into `Closes #<n>`. A `ship`
+   brief names the gate the worker reads and follows, by path, in one
+   `- Ship gate: <DUX_ROOT>/skills/ship/SKILL.md` line, and tells it to invoke
+   no other ship skill; the launcher exports `SHIP_GUARD` beside that file
+   (step 6). A `ship` task
    also gets `tasks/<id>/risk`, `bounded` or `complex`, which is what
    `dux-worker-wrap` looks up in `config/models` instead of the shape. `--plan`
    and `--tasks` are one pair; the empty pair is plan-free shipping and needs
@@ -357,7 +366,8 @@ the tab and catches a worker in a server whose socket vanished.
    (below), and writes a launcher into it: one `/bin/sh` file, mode 500, built
    by `worker_launcher` in `bin/workers/<harness>.sh`, which scrubs the
    environment, drops Dux's own `bin` from `PATH`, exports the two outbox
-   variables and then execs the harness on the brief. That file exists because
+   variables, and for a ship task the recorder and `SHIP_GUARD` (below), and
+   then execs the harness on the brief. That file exists because
    the pane's shell is the harness's parent now, not the wrapper, so everything
    the wrapper used to do to its own environment before forking has to travel
    in it. The wrapper titles the tab, runs the launcher in it with `dux-backend
@@ -447,15 +457,19 @@ and the wrapper decides what, if anything, reaches `status.log` and `report.md`.
 - The worker's environment is scrubbed by the launcher, of `DUX_*`, `CLAUDE_*`,
   `HERDR_*`, `TMUX*` and `GIT_CONFIG_*`, and of Dux's own `PATH` entry. Only
   `DUX_STATUS_LOG`, `DUX_REPORT` and, when Dux has one, `CLAUDE_CONFIG_DIR` are
-  put back. The config directory travels because spawn read the trust record out
-  of it: with the name scrubbed and nothing put back, the worker would answer the
-  trust question out of a different file than the one that cleared it. It is the
+  put back, and for a ship task `DUX_SHIP_RECORD` and `SHIP_GUARD`. The config
+  directory travels because spawn read the trust record out of it: with the
+  name scrubbed and nothing put back, the worker would answer the trust
+  question out of a different file than the one that cleared it. It is the
   value Dux itself was given, baked in where the launcher is written, so a pane
   carrying another session's does not win. No `GIT_CONFIG_` name travels at
   all: an environment setting applies in every repository the worker touches,
   and the push guard belongs to the task worktree alone, which is where
-  `dux-worktree` wrote it. The brief names those two variables; no Dux path is
-  handed to a worker.
+  `dux-worktree` wrote it. The brief names the two outbox variables. The guard
+  is `skills/ship/ship-guard` in this checkout, beside the gate file a ship
+  brief names: the worker reads the gate by path, and nothing tells a file read
+  that way which folder it sits in (spec section 11). Beyond its task channel,
+  those two are the only Dux paths a worker is handed.
 - The harness runs in the pane's own process group, with the operator's keyboard
   on its standard input. The wrapper did not fork it and so cannot wait on it:
   it learns the group from the multiplexer, writes it to `state/<id>.pgid`, and

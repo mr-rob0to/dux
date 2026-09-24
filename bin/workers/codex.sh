@@ -14,7 +14,11 @@ worker_cmd() {  # brief model effort settings(ignored)
     "$2" "$3" "$1"
 }
 
-worker_run() {  # brief model effort settings(ignored); replaces the current process
+# A ship task's recorder and the gate's guard travel in the environment, as the
+# claude launcher exports them, so the command line is the same for every shape.
+worker_run() {  # brief model effort settings(ignored) [ship_record] [ship_guard]; replaces the current process
+  [ -z "${5:-}" ] || export DUX_SHIP_RECORD="$5"
+  [ -z "${6:-}" ] || export SHIP_GUARD="$6"
   exec codex exec -m "$2" --sandbox danger-full-access -c shell_environment_policy.ignore_default_excludes=true \
     -c "model_reasoning_effort=\"$3\"" "$(cat "$1")"
 }

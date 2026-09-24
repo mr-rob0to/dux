@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Answers what /ship needs to know about the Dux checkout it was installed
-# from: the step 6 reviewer and the step 7 reviewer. Called by SKILL.md; see
+# Answers what /ship needs to know about the Dux checkout it sits in: the
+# step 6 reviewer and the step 7 reviewer. Called by SKILL.md; see
 # spec section 11, change 9, and section 18.
 #
-# It lives beside SKILL.md for the reasons ship-guard does: dux-install
-# symlinks the skill directory and the helper travels with it, and /ship runs
-# inside a project worktree that knows nothing about DUX_HOME. So it sources
+# It lives beside SKILL.md for the reasons ship-guard does: the skill folder is
+# read as one unit and the helper travels with it, and /ship runs inside a
+# project worktree that knows nothing about DUX_HOME. So it sources
 # nothing and carries its own finding(); the plan's header records that
 # deviation from constitution principle 2.
 #
@@ -18,8 +18,8 @@ finding() { printf 'finding: %s\n' "$*" >&2; exit 2; }
 
 usage="usage: ship-env reviewer | security-reviewer | review-mode <claim> <sensitive> | pr-template <repo> | pr-template-fallback | --root"
 
-# pwd -P resolves dux-install's directory symlink, so the checkout is the one
-# the skill was installed from and not wherever the link sits.
+# pwd -P resolves any symlink on the way, so the checkout is the one the file
+# really sits in and not wherever a link to it sits.
 here="$(cd "$(dirname "$0")" && pwd -P)" || finding "cannot resolve the directory ship-env runs from"
 root="${here%/*/*}"
 [ -d "$root/templates/config" ] \

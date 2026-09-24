@@ -211,9 +211,9 @@ if [ -s "$settings" ]; then
 fi
 # A ship worker records each /ship phase through a recorder made for this task
 # and this run. It is a script in the channel rather than a variable because the
-# worker's environment carries no Dux path of any kind, and the id and run are
+# worker's environment carries no Dux home, and the id and run are
 # baked in so a worker cannot file a phase against a sibling task.
-ship_record=""
+ship_record=""; ship_guard=""
 write_recorder() {  # for the run in $run
   {
     echo '#!/bin/sh'
@@ -229,6 +229,9 @@ if [ "$shape" = ship ]; then
   ship_record="$channel/ship-record"
   write_recorder || refuse "cannot stage the ship recorder in the task channel"
   chmod 500 "$ship_record" || refuse "cannot restrict $ship_record"
+  # Beside the gate file the brief names, which is how the gate the worker reads
+  # by path finds its helpers (spec section 11).
+  ship_guard="$DUX_ROOT/skills/ship/ship-guard"
 fi
 printf '%s\n' "$channel" > "$portal" || refuse "cannot write $portal"
 
@@ -391,7 +394,7 @@ intent_line="$(awk '/^## Intent$/ { f = 1; next } f && NF { print substr($0, 1, 
 # The launcher carries the scrub, the PATH and the outboxes, because the pane's
 # shell is the harness's parent and no Dux environment reaches it.
 launcher="$channel/launch"
-worker_launcher "$launcher" "$c_brief" "$model" "$effort" "$c_settings" "$DUX_ROOT/bin" "$ship_record" \
+worker_launcher "$launcher" "$c_brief" "$model" "$effort" "$c_settings" "$DUX_ROOT/bin" "$ship_record" "$ship_guard" \
   || refuse "cannot stage the launcher for $id in the task channel"
 
 [ "$signalled" = 0 ] || refuse "signalled before the harness started"

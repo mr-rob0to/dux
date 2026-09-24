@@ -15,7 +15,7 @@ new_repo() {  # $1 branch; prints the path
   echo "$d"
 }
 
-state_file() { echo "$(git rev-parse --absolute-git-dir)/dux-ship/$1"; }
+state_file() { echo "$(git rev-parse --absolute-git-dir)/ship-guard/$1"; }
 short() { git rev-parse --short HEAD; }
 
 full_gate() {
@@ -271,7 +271,7 @@ full_gate() {
   [ "$status" -eq 0 ]
   run guard record checks
   [ "$status" -eq 0 ]
-  [ -f "$repo/.git/dux-ship/main" ]
+  [ -f "$repo/.git/ship-guard/main" ]
 }
 
 @test "a linked worktree keeps its own guard file, and a slash in the branch is encoded" {
@@ -284,8 +284,8 @@ full_gate() {
   run guard open
   [ "$status" -eq 0 ]
   # Two gates, two files, neither inside the other's git directory.
-  [ -f "$repo/.git/dux-ship/main" ]
-  [ -f "$repo/.git/worktrees/wt/dux-ship/feat%2Fx" ]
+  [ -f "$repo/.git/ship-guard/main" ]
+  [ -f "$repo/.git/worktrees/wt/ship-guard/feat%2Fx" ]
   # The linked worktree's gate is its own: it has no phase recorded yet.
   run guard check checks
   [ "$status" -eq 2 ]
@@ -381,7 +381,7 @@ full_gate() {
   run guard attest
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: the review commit is not a commit id: "* ]]
-  [[ "$output" != *"dux-attestation"* ]]
+  [[ "$output" != *"ship-attestation"* ]]
 
   # Valid hex, 39 characters. Only the length check sees this.
   short="${head_sha%?}"
@@ -389,14 +389,14 @@ full_gate() {
   run guard attest
   [ "$status" -eq 2 ]
   [[ "$output" == "finding: the review commit is not a commit id: $short"* ]]
-  [[ "$output" != *"dux-attestation"* ]]
+  [[ "$output" != *"ship-attestation"* ]]
 
   # Restored: one attestation comment, and the value in it is the checked one.
   sed -i.bak "s|^review=.*|review=$head_sha|" "$f" && rm -f "$f.bak"
   run guard attest
   [ "$status" -eq 0 ]
   [ "$(grep -c -- '-->' <<< "$output")" -eq 1 ]
-  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  json="${output#<!-- ship-attestation:v1 }"; json="${json% -->}"
   [ "$(jq -r '.steps[] | select(.step == "review") | .sha' <<< "$json")" = "$head_sha" ]
 }
 
@@ -419,7 +419,7 @@ full_gate() {
   sed -i.bak 's/^fix_passes=00$/fix_passes=0/' "$f" && rm -f "$f.bak"
   run guard attest
   [ "$status" -eq 0 ]
-  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  json="${output#<!-- ship-attestation:v1 }"; json="${json% -->}"
   run jq -e . <<< "$json"
   [ "$status" -eq 0 ]
 }
@@ -494,9 +494,9 @@ full_gate() {
   run --separate-stderr guard attest
   [ "$status" -eq 0 ]
   [ -z "$stderr" ]
-  [[ "$output" == '<!-- dux-attestation:v1 '* ]]
+  [[ "$output" == '<!-- ship-attestation:v1 '* ]]
   [[ "$output" == *' -->' ]]
-  json="${output#<!-- dux-attestation:v1 }"
+  json="${output#<!-- ship-attestation:v1 }"
   json="${json% -->}"
   run jq -e . <<< "$json"
   [ "$status" -eq 0 ]
@@ -520,7 +520,7 @@ full_gate() {
   guard record checks && guard record review && guard record security
   run guard attest
   [ "$status" -eq 0 ]
-  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  json="${output#<!-- ship-attestation:v1 }"; json="${json% -->}"
   [ "$(jq -r .fix_passes <<< "$json")" = 1 ]
 }
 
@@ -552,7 +552,7 @@ full_gate() {
     [ "$status" -eq 2 ]
     [[ "$output" == "finding: the review commit is not a commit id: $bad"* ]] \
       || { echo "wrong refusal for '$bad': $output"; return 1; }
-    [[ "$output" != *dux-attestation* ]]
+    [[ "$output" != *ship-attestation* ]]
   done
 }
 
@@ -654,7 +654,7 @@ combined_gate() {
   head_sha="$(git rev-parse HEAD)"
   run guard attest
   [ "$status" -eq 0 ]
-  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  json="${output#<!-- ship-attestation:v1 }"; json="${json% -->}"
   run jq -e . <<< "$json"
   [ "$status" -eq 0 ]
   [ "$(jq -r .review_mode <<< "$json")" = combined ]
@@ -668,7 +668,7 @@ combined_gate() {
   full_gate
   run guard attest
   [ "$status" -eq 0 ]
-  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  json="${output#<!-- ship-attestation:v1 }"; json="${json% -->}"
   [ "$(jq -r .review_mode <<< "$json")" = separate ]
   [ "$(jq -r '[.steps[].step] | join(",")' <<< "$json")" = "checks,review,security" ]
 }
@@ -679,7 +679,7 @@ combined_gate() {
   guard record checks && guard record review
   run guard attest
   [ "$status" -eq 0 ]
-  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  json="${output#<!-- ship-attestation:v1 }"; json="${json% -->}"
   run jq -e . <<< "$json"
   [ "$status" -eq 0 ]
 }
@@ -725,7 +725,7 @@ combined_gate() {
   [ "$status" -eq 0 ]
   run guard attest
   [ "$status" -eq 0 ]
-  json="${output#<!-- dux-attestation:v1 }"; json="${json% -->}"
+  json="${output#<!-- ship-attestation:v1 }"; json="${json% -->}"
   [ "$(jq -r .review_mode <<< "$json")" = separate ]
   [ "$(jq -r '[.steps[].step] | join(",")' <<< "$json")" = "checks,review,security" ]
 }

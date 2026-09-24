@@ -57,7 +57,7 @@ Dux says plainly what it protects and what it does not.
   content, status and report text, PR URLs, result claims, and remote GitHub state.
   Every one of them is checked for grammar, size, ownership, shape, and outside
   evidence before it reaches canonical state or a word the operator reads.
-- Dux's own scripts, wrapper, watcher, installed `/ship` skill, and the operator are
+- Dux's own scripts, wrapper, watcher, bundled `/ship` skill, and the operator are
   trusted control code. A malicious project build or Git hook runs with worker
   privileges and can bypass Dux; that is the same accepted boundary.
 - Stronger isolation, a virtual machine or a container, is optional future work. It
@@ -241,6 +241,8 @@ Under 100 lines. Sections, all required:
 3. Project: path, base branch, branch, worktree path (written as
    `- Worktree: <set by dux-spawn>` by `dux-brief` and filled in by
    `dux-spawn` once the worktree exists), plan path and task range for ship.
+   A ship brief also names the gate the worker reads and follows, by path:
+   `- Ship gate: <DUX_ROOT>/skills/ship/SKILL.md` (section 11).
 4. Rules: work alone, never address the operator, stay inside the worktree,
    never push to base, never merge, same obstacle twice means `blocked` and stop,
    report through the status protocol only, and exit after writing `blocked`
@@ -913,7 +915,7 @@ All additions are prose in `SKILL.md` plus one helper script `ship-guard` the
 skill calls, kept in the ship skill directory.
 
 1. Reviewed-SHA binding. Guard state lives in
-   `$(git rev-parse --absolute-git-dir)/dux-ship/<branch>`, untracked and
+   `$(git rev-parse --absolute-git-dir)/ship-guard/<branch>`, untracked and
    per-worktree, so recording it never moves `HEAD` and the helper works from a
    subdirectory. One `key=value` per line: `version=1`, `branch=<name>`,
    `checks=<sha>`, `review=<sha>`, `security=<sha>`, `fix_passes=<n>`. A phase
@@ -985,7 +987,7 @@ skill calls, kept in the ship skill directory.
    yet uses the same form with an empty expected value, which refuses if the ref
    appeared in between.
 8. Attestation. `ship-guard attest` prints
-   `<!-- dux-attestation:v1 {"head_sha":"…","fix_passes":N,"steps":[{"step":"checks","status":"completed","sha":"…"},…]} -->`
+   `<!-- ship-attestation:v1 {"head_sha":"…","fix_passes":N,"steps":[{"step":"checks","status":"completed","sha":"…"},…]} -->`
    and step 8 appends it to the PR body. Data only, no policy claim. It is
    built from the guard file, because that file's format has one owner, and it
    carries only the three guard phases: step 8 writes it before `pr` and `ci`
@@ -1018,19 +1020,60 @@ skill calls, kept in the ship skill directory.
    has no template, and a lookup that failed must not be read as one.
 
 The ship skill is bundled in this repo at `skills/ship/` from milestone 1 and
-installed by `dux-install` (section 18), so this is an ordinary PR with a diff
-Codex can review and commits that can carry break-verification.
+read from the checkout by path (section 18), so this is an ordinary PR with a
+diff Codex can review and commits that can carry break-verification.
 
-`ship-guard` sits beside `SKILL.md` rather than under `bin/`, because
-`dux-install` symlinks the skill directory and the helper travels with it, and
-because `/ship` runs inside a project worktree that knows nothing about
-`DUX_HOME`. It sources nothing and defines its own `finding`. Step 0 resolves it
-once into `$SHIP_GUARD`: an already set `SHIP_GUARD`, else
-`~/.claude/skills/ship/ship-guard`, else `~/.agents/skills/ship/ship-guard`. When
-none is executable the gate stops; it never runs unguarded, and a `SHIP_GUARD`
-that is set but not executable stops it too rather than falling through to the
-next candidate, so a typo cannot silently run a different guard. Unlike
-`DUX_SHIP_RECORD`, which is set only under Dux, the guard runs on every `/ship`.
+`ship-guard` sits beside `SKILL.md` rather than under `bin/`, because the skill
+folder is read or copied as one unit and the helper travels with it, and because
+`/ship` runs inside a project worktree that knows nothing about `DUX_HOME`. It
+sources nothing and defines its own `finding`. Step 0 resolves both helpers once,
+with this block, and nothing else in the gate looks for them:
+
+```bash
+[ -z "${SHIP_GUARD:-}" ] || [ -x "${SHIP_GUARD}" ] || {
+  echo "finding: SHIP_GUARD names $SHIP_GUARD, which is not executable" >&2; exit 2
+}
+SHIP_DIR="${SHIP_DIR:-${CLAUDE_SKILL_DIR}}"
+[ -z "${SHIP_GUARD:-}" ] || SHIP_DIR="$(dirname "$SHIP_GUARD")"
+SHIP_GUARD="${SHIP_GUARD:-$SHIP_DIR/ship-guard}"
+if [ -z "$SHIP_DIR" ] || [ ! -x "$SHIP_GUARD" ]; then
+  echo "finding: cannot find ship-guard beside this skill; export SHIP_GUARD or set SHIP_DIR to the directory of this file; the gate does not run unguarded" >&2
+  exit 2
+fi
+SHIP_ENV="$(dirname "$SHIP_GUARD")/ship-env"
+[ -x "$SHIP_ENV" ] || {
+  echo "finding: no runnable ship-env beside $SHIP_GUARD; the gate cannot read its reviewers" >&2
+  exit 2
+}
+```
+
+It implements five rules, in order:
+
+1. A `SHIP_GUARD` that is set but not executable stops the gate. It never falls
+   through to another candidate, so a typo cannot silently run a different guard.
+2. `SHIP_DIR` keeps a value it already has; otherwise it takes
+   `${CLAUDE_SKILL_DIR}`, which Claude Code fills in when the skill is loaded
+   through its Skill tool and every other harness, and a file read by path,
+   leaves empty.
+3. `SHIP_GUARD` keeps a value it already has; otherwise it is
+   `$SHIP_DIR/ship-guard`. When `SHIP_GUARD` was set, `SHIP_DIR` becomes its
+   directory.
+4. An empty `SHIP_DIR` or a `SHIP_GUARD` that is not executable stops the gate
+   with `finding: cannot find ship-guard beside this skill; export SHIP_GUARD or
+   set SHIP_DIR to the directory of this file; the gate does not run unguarded`.
+5. `SHIP_ENV` is `ship-env` beside `SHIP_GUARD`; one that cannot run is a stop.
+
+No home directory and no fixed install path is read, so the gate runs the guard
+beside it, or the one `SHIP_GUARD` names, and no other. A Dux worker arrives at
+rule 3 with `SHIP_GUARD` set: `dux-worker-wrap` hands `worker_launcher` the path
+of `skills/ship/ship-guard` in this checkout for a ship task, the launcher
+exports it after its scrub of the harness's variables, and the brief names
+`skills/ship/SKILL.md` by path for the worker to read (section 5.3). A session
+that loads the skill through Claude Code arrives with `SHIP_DIR` filled in, and
+a copied folder on any other harness sets one of the two. Milestone 10 replaced
+an earlier search of two fixed home paths, which the move of the checkout broke
+for every worker at once. Unlike `DUX_SHIP_RECORD`, which is set only under
+Dux, the guard runs on every `/ship`.
 `bin/dux-result` does not read the guard file and `verify` is unchanged: it
 proves the five phases ran in order and that `ci` was recorded at the head, not
 that a review covered that head. The review-covers-head proof lives in the guard
@@ -1039,12 +1082,12 @@ section 6, not something a local file can settle. Teaching the receipt to carry
 the guard's verdict is a change to section 5.6 for a later milestone.
 
 `skills/ship/ship-env` sits beside it for the same reasons and answers the
-questions the gate has about the Dux checkout it was installed from: the step 6
+questions the gate has about the Dux checkout it lives in: the step 6
 reviewer, the step 7 reviewer, and the pull request template lookup and its
-fallback. It finds that checkout by resolving its own directory through
-`dux-install`'s symlink and taking the two levels above it; a checkout is one
+fallback. It finds that checkout by resolving its own directory, through any
+symlink on the way, and taking the two levels above it; a checkout is one
 whose `templates/config` is a directory, and anything else stops the gate. So a
-skill copied rather than installed stops it, unlike `ship-guard`, which needs
+skill copied out of the checkout stops it, unlike `ship-guard`, which needs
 nothing but the repository it is run in and keeps working when copied. Step 0
 derives `SHIP_ENV` from `SHIP_GUARD`'s directory, so one override points both
 helpers at one checkout. A value comes from `config/<key>` and falls back to
@@ -1309,7 +1352,10 @@ and is sized against the cap before its plan is written (constitution principle
   Built first for a delivered pull request, on 2026-09-15, as one line typed into the
   live session and no session id (`2026-09-15-feedback-rounds-on-a-delivered-pr.md`, section 12);
   the other states still respawn until the next milestone.
-- The ship skill is bundled in this repo and installed by symlink.
+- The ship skill is bundled in this repo and installed by symlink. Reversed by
+  milestone 10 on 2026-09-23: nothing is installed, a worker reads
+  `skills/ship/SKILL.md` from the checkout by path, and the operator's own
+  sessions get the gate from the `qed` plugin (section 18).
 - Dux is open source under the MIT license. The operator's personal rules stay in
   their global CLAUDE.md; the repo encodes them only as configurable defaults.
 - `finding` writes to stderr so command substitution can never swallow it.
@@ -1342,10 +1388,20 @@ product; there is no build or package.
   gate runs before the installer has. An explicit value in either file is never
   probed. `models` is read by `bin/dux-worker-wrap` for
   workers; the gate does not use it.
-- **Install**: `bin/dux-install` symlinks each bundled skill into
-  `~/.claude/skills/<name>`. An existing real directory there is refused until
-  the operator confirms, then moved to `<name>.bak`. `bin/dux-uninstall` removes
-  only symlinks that point into this repo. Updating the repo updates the skills.
+- **Install**: `bin/dux-install` seeds `config/` from `templates/config/`, adds
+  the model keys a newer template names, and writes the two identifier
+  denylists below. It creates no link and touches nothing outside the checkout
+  and `DUX_HOME`, which is the checkout unless set. The operator skills, `dux-project`, `dux-dispatch`, `dux-status` and
+  `dux-recover`, load as project skills: each `.claude/skills/<name>` is a
+  committed symlink to `../../skills/<name>`, and the orchestrator session runs
+  in the checkout. The ship skill is not loaded as a skill under Dux at all: the
+  brief names `skills/ship/SKILL.md` by path, and the launcher exports
+  `SHIP_GUARD` beside it (section 11). Updating the repo updates all of them.
+  The operator's own sessions get the gate from the `qed` plugin of the
+  `mr-rob0to/agent-skills` repository, installed as `qed@mr-rob0to` and invoked
+  as `/qed:ship`. That repository is upstream for the gate: `ship-guard` is
+  copied from it byte for byte, the gate's generic prose is ported by hand, and
+  what only Dux needs lives only here.
 - **No personal identifiers in tracked files**: no operator paths, usernames,
   project names, or accounts. `make lint` greps for two gitignored denylists
   that `dux-install` writes: `tests/personal-identifiers.txt`, the operator's
